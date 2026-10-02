@@ -17,10 +17,25 @@ import {
 
 export type ChartCategory = {
   id: string;
+  /** Well-known key e.g. cat-debt; falls back to id when absent. */
+  slug?: string;
   name: string;
   type?: CategoryType;
   isIncome?: boolean;
 };
+
+function isDebtCategory(categoryId: string | null | undefined, categories: ChartCategory[]): boolean {
+  if (!categoryId) return false;
+  if (categoryId === 'cat-debt' || categoryId.startsWith('cat-debt__')) return true;
+  const cat = categories.find((c) => c.id === categoryId);
+  const slug = cat?.slug ?? cat?.id;
+  return slug === 'cat-debt';
+}
+
+function debtCategoryId(categories: ChartCategory[]): string {
+  const hit = categories.find((c) => (c.slug ?? c.id) === 'cat-debt' || c.id === 'cat-debt' || c.id.startsWith('cat-debt__'));
+  return hit?.id ?? 'cat-debt';
+}
 
 export type ChartTransaction = {
   id?: string;
@@ -93,17 +108,18 @@ export function aggregateCategorySpend(
       const catType = typeById.get(categoryId) ?? 'spending';
       if (!categoryTypeCountsAsSpend(catType)) continue;
     }
-    if (categoryId === 'cat-debt' && t.id) debtTransactionIds.add(t.id);
-    addSpend(categoryId, Math.abs(amt), categoryId === 'cat-debt' ? 'Debt' : 'Unknown');
+    if (isDebtCategory(categoryId, categories) && t.id) debtTransactionIds.add(t.id);
+    addSpend(categoryId, Math.abs(amt), isDebtCategory(categoryId, categories) ? 'Debt' : 'Unknown');
   }
 
   // Repayments without a counted cat-debt transaction still represent a Debt outflow.
   // Linked repayments whose transaction is already counted are skipped to avoid double count.
+  const debtId = debtCategoryId(categories);
   for (const repayment of repayments) {
     if (repayment.date < fromDate || (toDate && repayment.date > toDate)) continue;
     if (repayment.transactionId && debtTransactionIds.has(repayment.transactionId)) continue;
     const amount = Number(repayment.amountNzd);
-    if (Number.isFinite(amount) && amount > 0) addSpend('cat-debt', amount, 'Debt');
+    if (Number.isFinite(amount) && amount > 0) addSpend(debtId, amount, 'Debt');
   }
 
 

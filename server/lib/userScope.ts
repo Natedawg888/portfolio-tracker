@@ -19,6 +19,7 @@ export const SCOPED_TABLES = [
   'income_plans',
   'budgets',
   'valuation_snapshots',
+  'budget_categories',
 ] as const;
 
 export type ScopedTable = (typeof SCOPED_TABLES)[number];
@@ -85,9 +86,10 @@ export function userFilter(column = 'user_id'): string {
  * cascade from parents when foreign_keys are on; we still delete in a safe order
  * and remove holding photo files under data/uploads/.
  *
- * Shared (not deleted here — still global until further isolation lands):
- *   budget_categories, app_settings, price_quotes, meta
+ * Shared (not deleted here):
+ *   app_settings, price_quotes, meta
  *   (data_owner_user_id is handled by the account-delete caller)
+ * budget_categories are per-user and deleted with the account.
  */
 export function deleteScopedDataForUser(
   db: Database,
@@ -120,6 +122,7 @@ export function deleteScopedDataForUser(
     'kiwisaver_accounts',
     'holdings',
     'valuation_snapshots',
+    'budget_categories',
   ];
 
   const seen = new Set<string>();

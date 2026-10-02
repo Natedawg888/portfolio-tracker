@@ -21,4 +21,5 @@ jobs:
       - run: npm run lint
       - run: npx tsc -b --pretty false
       - run: npm run test:cash-sync
+      - run: npm run test:prod-routing
       - run: npm run build

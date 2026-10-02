@@ -30,6 +30,7 @@ import {
   deleteScopedDataForUser,
   getDataOwnerUserId,
 } from '../lib/userScope.ts';
+import { seedCategoriesForUser } from '../lib/categories.ts';
 import {
   deleteAvatarFile,
   photoUrlFromPath,
@@ -233,7 +234,9 @@ router.post('/register', async (req, res) => {
     claimUnscopedRowsForOwner(db, id);
     claimedExistingData = true;
   }
-  // Later signups intentionally get empty scoped data (no rows with their user_id).
+  // Every user gets their own budget category set (owner claims legacy globals).
+  seedCategoriesForUser(db, id);
+  // Later signups intentionally get empty finance rows (holdings/txns/etc.).
 
   const { rawToken, expiresAt } = await createSession(id);
   res.setHeader('Set-Cookie', sessionCookieHeader(rawToken, expiresAt));
@@ -590,7 +593,8 @@ router.post('/change-email', async (req: AuthedRequest, res) => {
  * Removes: user row, all sessions, preferences (on user), avatar file,
  * per-user akahu_connections, and this user's scoped finance rows.
  * Does NOT wipe other users' data. Shared globals left intact (see AUTH.md):
- * budget_categories, app_settings, price_quotes, meta keys other than data_owner.
+ * app_settings, price_quotes, meta keys other than data_owner.
+ * (budget_categories are per-user and deleted with scoped data.)
  */
 router.post('/delete-account', async (req: AuthedRequest, res) => {
   if (!req.user) {
@@ -681,7 +685,7 @@ router.post('/delete-account', async (req: AuthedRequest, res) => {
       wasDataOwner: wasOwner,
     },
     sharedDataRemaining: [
-      'budget_categories (global seed + any custom categories)',
+      // budget_categories now per-user and removed with scoped delete
       'app_settings (GoMining params, collectable types, locale)',
       'price_quotes (shared quote cache)',
       'meta (schema_version etc.; data_owner cleared or reassigned)',

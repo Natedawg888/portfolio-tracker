@@ -65,7 +65,10 @@ function portfolioCreditId(kind: InvestingCreditKind): string {
  * real bank transactions that were imported without that category.
  */
 function isSavingsInterestOrDividend(row: PortfolioIncomeLike, text: string): boolean {
-  if (row.categoryId === DIVIDENDS_INCOME_CATEGORY_ID) return true;
+  if (
+    row.categoryId === DIVIDENDS_INCOME_CATEGORY_ID ||
+    (typeof row.categoryId === 'string' && row.categoryId.startsWith(`${DIVIDENDS_INCOME_CATEGORY_ID}__`))
+  ) return true;
 
   const category = (row.categoryName ?? '').toLowerCase();
   if (/\bdividend(?:s)?\b/.test(category)) return true;

@@ -11,6 +11,7 @@ import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import { useAuth } from '../auth/AuthContext';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
 import { ProfileMenu } from './ProfileMenu';
+import { QuietToast } from './QuietToast';
 
 /** Prefs that unlock at least one Value Search tool. */
 const VALUE_SEARCH_NAV_PREFS: AssetClassPrefKey[] = [
@@ -297,8 +298,9 @@ export function Layout() {
           <Outlet />
         </MoneyHiddenProvider>
       </main>
+      <QuietToast />
       <footer className="app-footer">
-        Local-first · email/password on this machine · metals via Metals.Dev when keyed (never invented)
+        Local-first · email/password · metals via Metals.Dev when keyed (never invented) · sync failures stay quiet
       </footer>
     </div>
   );

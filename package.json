@@ -12,7 +12,12 @@
     "lint": "oxlint",
     "db:init": "node --import tsx server/db/init-cli.ts",
     "db:backfill-mtg-meta": "node --import tsx scripts/backfill-mtg-meta.ts",
-    "test:cash-sync": "node --import tsx server/akahu/sync.cash.test.ts"
+    "test:cash-sync": "node --import tsx server/akahu/sync.cash.test.ts",
+    "test:prod-routing": "node --import tsx scripts/verify-prod-routing.ts",
+    "test:user-isolation": "node --import tsx scripts/verify-user-isolation.ts",
+    "start": "node --import tsx server/index.ts",
+    "db:backup": "node scripts/backup-db.mjs",
+    "db:restore": "node scripts/restore-db.mjs"
   },
   "dependencies": {
     "concurrently": "^8.2.2",

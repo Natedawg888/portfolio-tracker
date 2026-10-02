@@ -6,6 +6,7 @@
 import { Router } from 'express';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { requireUserId } from '../lib/userScope.ts';
+import { DEBT_SLUG, resolveCategoryIdOrSlug } from '../lib/categories.ts';
 import { getDb, queryAll, queryOne, run, newId } from '../db/index.ts';
 
 const router = Router();
@@ -23,7 +24,11 @@ function uid(req: { scopeUserId?: string; user?: { id?: string } | null }): stri
 }
 
 const SPENDING_FLOOR = '2026-10-01';
-const DEBT_CATEGORY_ID = 'cat-debt';
+/** @deprecated prefer resolveDebtCategoryId(db, userId) — kept for chart/export compat */
+const DEBT_CATEGORY_ID = DEBT_SLUG;
+function resolveDebtCategoryId(db: Parameters<typeof resolveCategoryIdOrSlug>[0], userId: string): string {
+  return resolveCategoryIdOrSlug(db, userId, DEBT_SLUG);
+}
 
 function normaliseKind(raw: unknown): 'person' | 'corporation' {
   const k = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
@@ -194,7 +199,7 @@ router.patch('/people/:id', async (req, res) => {
 router.delete('/people/:id', async (req, res) => {
   const db = await getDb();
   const id = req.params.id;
-  const existing = queryOne(db, 'SELECT id FROM debt_people WHERE id=?', [id]);
+  const existing = queryOne(db, 'SELECT id FROM debt_people WHERE id=? AND user_id=?', [id, uid(req)]);
   if (!existing) {
     res.status(404).json({ error: 'Creditor not found' });
     return;
@@ -275,16 +280,21 @@ router.post('/people/:id/repayments', async (req, res) => {
   let transactionId: string | null = null;
   if (b.transactionId != null && b.transactionId !== '') {
     const txnId = String(b.transactionId);
-    const txn = queryOne(db, 'SELECT id FROM transactions WHERE id=?', [txnId]);
+    const txn = queryOne(
+      db,
+      'SELECT id FROM transactions WHERE id=? AND user_id=?',
+      [txnId, uid(req)],
+    );
     if (!txn) {
       res.status(400).json({ error: 'Linked transaction not found' });
       return;
     }
     transactionId = txnId;
     // Categorise linked txn as Debt so it counts in spend charts
-    run(db, `UPDATE transactions SET category_id=? WHERE id=?`, [
-      DEBT_CATEGORY_ID,
+    run(db, `UPDATE transactions SET category_id=? WHERE id=? AND user_id=?`, [
+      resolveDebtCategoryId(db, uid(req)),
       transactionId,
+      uid(req),
     ]);
   }
 
@@ -309,8 +319,8 @@ router.post('/people/:id/repayments', async (req, res) => {
   const nextOutstanding = Math.max(0, prev - amount);
   run(
     db,
-    `UPDATE debt_people SET outstanding_nzd=?, updated_at=? WHERE id=?`,
-    [nextOutstanding, now, personId],
+    `UPDATE debt_people SET outstanding_nzd=?, updated_at=? WHERE id=? AND user_id=?`,
+    [nextOutstanding, now, personId, uid(req)],
   );
 
   const row = queryOne(
@@ -333,8 +343,10 @@ router.delete('/repayments/:id', async (req, res) => {
   const id = req.params.id;
   const existing = queryOne<{ person_id?: string; amount_nzd?: number }>(
     db,
-    'SELECT * FROM debt_repayments WHERE id=?',
-    [id],
+    `SELECT r.* FROM debt_repayments r
+     JOIN debt_people p ON p.id = r.person_id
+     WHERE r.id=? AND p.user_id=?`,
+    [id, uid(req)],
   );
   if (!existing) {
     res.status(404).json({ error: 'Repayment not found' });
@@ -346,16 +358,16 @@ router.delete('/repayments/:id', async (req, res) => {
   // Restore outstanding (never invent — reverse the recorded amount)
   const person = queryOne<{ outstanding_nzd?: number }>(
     db,
-    'SELECT outstanding_nzd FROM debt_people WHERE id=?',
-    [personId],
+    'SELECT outstanding_nzd FROM debt_people WHERE id=? AND user_id=?',
+    [personId, uid(req)],
   );
   if (person) {
     const now = new Date().toISOString();
     const restored = Number(person.outstanding_nzd ?? 0) + amount;
     run(
       db,
-      `UPDATE debt_people SET outstanding_nzd=?, updated_at=? WHERE id=?`,
-      [restored, now, personId],
+      `UPDATE debt_people SET outstanding_nzd=?, updated_at=? WHERE id=? AND user_id=?`,
+      [restored, now, personId, uid(req)],
     );
   }
   res.json({ ok: true, id });

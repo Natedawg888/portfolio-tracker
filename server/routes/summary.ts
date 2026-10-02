@@ -18,10 +18,18 @@ router.get('/net-worth', async (req: AuthedRequest, res) => {
   res.json(publicShape);
 });
 
+const processStartedAt = new Date().toISOString();
+
 router.get('/health', async (req, res) => {
   const db = await getDb();
   const meta = queryOne(db, `SELECT value FROM meta WHERE key='schema_version'`);
-  res.json({ ok: true, schemaVersion: meta?.value ?? null, currency: 'NZD' });
+  res.json({
+    ok: true,
+    schemaVersion: meta?.value ?? null,
+    currency: 'NZD',
+    startedAt: processStartedAt,
+    uptimeSec: Math.round(process.uptime()),
+  });
 });
 
 function mapSnapshot(r: Record<string, unknown>) {

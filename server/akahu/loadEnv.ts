@@ -10,11 +10,15 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
 let loaded = false;
 
-export function loadDotEnv(fileName = '.env'): void {
-  if (loaded) return;
-  loaded = true;
+export function loadDotEnv(fileName = '.env', opts?: { force?: boolean }): void {
+  if (loaded && !opts?.force) return;
+  if (!opts?.force) loaded = true;
   const envPath = path.join(ROOT, fileName);
-  if (!fs.existsSync(envPath)) return;
+  if (!fs.existsSync(envPath)) {
+    if (!opts?.force) loaded = true;
+    return;
+  }
+  if (opts?.force) loaded = true;
   const text = fs.readFileSync(envPath, 'utf8');
   for (const line of text.split(/\r?\n/)) {
     const trimmed = line.trim();

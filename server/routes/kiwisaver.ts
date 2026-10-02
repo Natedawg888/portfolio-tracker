@@ -294,7 +294,11 @@ router.get('/history', async (req, res) => {
   const snapExtra: Array<{ at: string; balanceNzd: number; returnsNzd: null; source: string }> =
     [];
   try {
-    const snaps = queryAll(db, `SELECT taken_at, breakdown_json FROM valuation_snapshots ORDER BY taken_at ASC`);
+    const snaps = queryAll(
+      db,
+      `SELECT taken_at, breakdown_json FROM valuation_snapshots WHERE user_id = ? ORDER BY taken_at ASC`,
+      [uid(req)],
+    );
     for (const s of snaps) {
       let breakdown: { byClass?: Record<string, number | null> } = {};
       try {

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, coerceBalance, formatAuckland, formatNzd } from '../api/client';
 import { maybeAutoSyncBankTransactions, maybeAutoSyncPortfolio } from '../lib/akahuTxnAutoSync';
+import { showQuietToast } from '../lib/quietToast';
 import { AssetBreakdownChart, type AssetBreakdownRow } from '../components/AssetBreakdownChart';
 import { DebtBreakdownChart, type DebtBreakdownPerson } from '../components/DebtBreakdownChart';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
@@ -65,7 +66,16 @@ export function Dashboard() {
         setDebtPeople(people);
         setError(null);
       })
-      .catch((e: Error) => setError(e.message));
+      .catch((e: Error) => {
+        setSummary((prev) => {
+          if (prev) {
+            showQuietToast('Could not refresh dashboard — showing last data.', { kind: 'warn' });
+            return prev;
+          }
+          setError(e.message);
+          return prev;
+        });
+      });
   }, []);
 
   useEffect(() => {
@@ -86,7 +96,7 @@ export function Dashboard() {
         const portOk = port.ran && port.result.ok;
         if (txnInserted || portOk) await load();
       } catch {
-        /* non-fatal */
+        showQuietToast('Bank/portfolio sync paused — showing last data.', { kind: 'warn' });
       }
     })();
     return () => {

@@ -31,6 +31,7 @@ data/
 .env
 .env.*
 !.env.example
+!.env.production.example
 
 # SQLite / DB artifacts anywhere
 *.db
@@ -53,3 +54,6 @@ api-*.err.log
 vite-*.err.log
 dev-*.err.log
 
+
+# Keep backup folder structure locally if created, but not DB dumps in git
+# (data/ already ignored)

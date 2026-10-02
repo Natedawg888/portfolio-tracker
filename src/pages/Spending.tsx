@@ -9,6 +9,7 @@ import {
   maybeAutoSyncBankTransactions,
   maybeAutoSyncPortfolio,
 } from '../lib/akahuTxnAutoSync';
+import { showQuietToast } from '../lib/quietToast';
 import type { DebtCreditorKind, DebtPerson, DebtRepayment, IncomeKind, IncomeMonthSummary, IncomeRecord, Transaction, TransactionSource } from '../types';
 import {
   CategorySpendChart,
@@ -29,7 +30,7 @@ import {
   type YearMonth,
 } from '../lib/period';
 import {
-  CHARITY_CATEGORY_ID,
+  isCharityCategoryId,
   linkCharityDonationToPaye,
   unlinkCharityDonationFromPaye,
 } from '../lib/charityPayeLink';
@@ -124,6 +125,15 @@ function isBankishAccount(a: CashAccount | undefined): boolean {
     || a.accountType === 'cheque'
     || a.accountType === 'savings'
     || a.accountType === 'credit';
+}
+
+function incomeCategoryIdFromList(
+  categories: Array<{ id: string; slug?: string }>,
+  kind: 'cash' | 'crypto',
+): string {
+  const slug = kind === 'crypto' ? 'cat-income-mining' : 'cat-income';
+  const hit = categories.find((c) => (c.slug ?? c.id) === slug || c.id === slug || c.id.startsWith(`${slug}__`));
+  return hit?.id ?? slug;
 }
 
 export function Spending() {
@@ -233,7 +243,7 @@ export function Spending() {
     setIncCryptoAsset('');
     setIncCryptoAmount('');
     setIncNotes('');
-    setIncCategoryId('cat-income');
+    setIncCategoryId(incomeCategoryIdFromList(categories, 'cash'));
     setShowIncomeModal(true);
   }
 
@@ -305,7 +315,16 @@ export function Spending() {
 
 
   useEffect(() => {
-    load().catch((e: Error) => setError(e.message));
+    load().catch((e: Error) => {
+      setTxns((prev) => {
+        if (Array.isArray(prev) && prev.length > 0) {
+          showQuietToast('Could not refresh budget — showing last data.', { kind: 'warn' });
+          return prev;
+        }
+        setError(e.message);
+        return prev;
+      });
+    });
   }, [load]);
 
   // Silent background Akahu auto-sync once on Budget/Spending open / refresh.
@@ -325,7 +344,7 @@ export function Spending() {
         // run inserted rows — either way the Transactions table must catch up.
         await loadRef.current();
       } catch {
-        /* silent */
+        showQuietToast('Bank sync paused — showing last transactions.', { kind: 'warn' });
       }
     })();
     return () => {
@@ -549,10 +568,10 @@ export function Spending() {
       setTxns((prevTxns) =>
         prevTxns.map((t) => (t.id === txnId ? { ...t, ...updated } : t)),
       );
-      if (prev?.categoryId === CHARITY_CATEGORY_ID && next !== CHARITY_CATEGORY_ID) {
+      if (isCharityCategoryId(prev?.categoryId) && !isCharityCategoryId(next)) {
         unlinkCharityDonationFromPaye(txnId);
       }
-      if (next === CHARITY_CATEGORY_ID) {
+      if (isCharityCategoryId(next)) {
         openCharityReceiptModal({ ...prev!, ...updated, categoryId: next });
       }
     } catch (err) {
@@ -569,7 +588,7 @@ export function Spending() {
     setMsg(null);
     try {
       await api.accounts.deleteTransaction(t.id);
-      if (t.categoryId === CHARITY_CATEGORY_ID) {
+      if (isCharityCategoryId(t.categoryId)) {
         unlinkCharityDonationFromPaye(t.id);
       }
       setTxns((prev) => prev.filter((x) => x.id !== t.id));
@@ -922,7 +941,7 @@ export function Spending() {
         kind: incKind,
         description: incDesc.trim() || (incKind === 'crypto' ? 'Crypto income' : 'Income'),
         accountId: incKind === 'cash' ? incAccountId || null : null,
-        categoryId: incCategoryId || (incKind === 'crypto' ? 'cat-income-mining' : 'cat-income'),
+        categoryId: incCategoryId || incomeCategoryIdFromList(categories, incKind === 'crypto' ? 'crypto' : 'cash'),
         cryptoAsset: incKind === 'crypto' ? incCryptoAsset.trim().toUpperCase() : undefined,
         cryptoAmount: incKind === 'crypto' ? Number(incCryptoAmount) : undefined,
         notes: incNotes.trim() || null,
@@ -1082,7 +1101,7 @@ export function Spending() {
     }
   }
 
-  if (error) return <div className="panel warn">Spending: {error}</div>;
+  if (error && (!txns || txns.length === 0)) return <div className="panel warn">Spending: {error}</div>;
 
   return (
     <div className="stack">
@@ -2185,7 +2204,7 @@ export function Spending() {
                             );
                           })}
                         </select>
-                        {t.categoryId === CHARITY_CATEGORY_ID && (
+                        {isCharityCategoryId(t.categoryId) && (
                           <button
                             type="button"
                             className="btn small"

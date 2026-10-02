@@ -28,6 +28,7 @@ type Step = 'credentials' | 'assets' | 'budgets' | 'connect';
 
 type TxCategory = {
   id: string;
+  slug?: string;
   name: string;
   parentId: string | null;
   colour: string | null;

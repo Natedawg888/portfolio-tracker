@@ -1,0 +1,20 @@
+# Railway — https://railway.app
+# Builder MUST stay Dockerfile (one service). A static / Nixpacks / Railpack
+# site serves dist/ only: GET /api/health is index.html and POST /api/auth/*
+# is 405 Allow: GET, HEAD. See docs/DEPLOY.md.
+# 1) New project → Deploy from GitHub → Natedawg888/portfolio-tracker → branch alpha (or main later)
+# 2) Settings → Root Directory: (repo root, not dist/)
+# 3) Settings → Build → Dockerfile (this file). Do not use a static output dir.
+# 4) Add volume mounted at /app/data (keeps sql.js SQLite across deploys)
+# 5) Variables: paste from .env.production.example (never commit real secrets)
+# 6) Generate domain on this service; healthcheck /api/health must be JSON {"ok":true}
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/api/health"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5

@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS bank_accounts (
 
 CREATE TABLE IF NOT EXISTS budget_categories (
   id          TEXT PRIMARY KEY,
+  user_id     TEXT,
+  -- Well-known key (cat-income, cat-debt, …); unique per user via migrateSchema index
+  slug        TEXT,
   name        TEXT NOT NULL,
   parent_id   TEXT REFERENCES budget_categories(id),
   colour      TEXT,
