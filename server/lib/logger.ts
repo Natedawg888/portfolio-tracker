@@ -23,7 +23,7 @@ function redact(value: unknown): unknown {
   return value;
 }
 
-function useJson(): boolean {
+function wantsJson(): boolean {
   const fmt = (process.env.LOG_FORMAT ?? '').toLowerCase();
   if (fmt === 'pretty') return false;
   if (fmt === 'json') return true;
@@ -38,7 +38,7 @@ export function log(level: LogLevel, msg: string, fields?: Record<string, unknow
     service: 'portfolio-tracker',
     ...(fields ? (redact(fields) as Record<string, unknown>) : {}),
   };
-  const line = useJson() ? JSON.stringify(payload) : `[${payload.at}] ${level.toUpperCase()} ${msg} ${fields ? JSON.stringify(redact(fields)) : ''}`;
+  const line = wantsJson() ? JSON.stringify(payload) : `[${payload.at}] ${level.toUpperCase()} ${msg} ${fields ? JSON.stringify(redact(fields)) : ''}`;
   if (level === 'error') console.error(line);
   else if (level === 'warn') console.warn(line);
   else console.log(line);
