@@ -3232,3 +3232,37 @@ body.nav-drawer-open {
     max-height: 94vh;
   }
 }
+
+/* Quiet toast — sync/quote soft failures (table stays visible) */
+.quiet-toast {
+  position: fixed;
+  z-index: 80;
+  left: 50%;
+  bottom: 1.25rem;
+  transform: translateX(-50%);
+  max-width: min(420px, calc(100vw - 2rem));
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.7rem 0.85rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+.quiet-toast--warn {
+  border-left: 3px solid var(--accent-2, #c9a227);
+}
+.quiet-toast-msg { flex: 1; }
+.quiet-toast-dismiss {
+  border: none;
+  background: transparent;
+  color: var(--muted, #888);
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.15rem;
+}
+.quiet-toast-dismiss:hover { color: var(--text); }

@@ -112,20 +112,32 @@ export function parseCookieHeader(header: string | undefined, name: string): str
   return null;
 }
 
+function cookieSecureEnabled(): boolean {
+  const v = (process.env.COOKIE_SECURE ?? '').trim().toLowerCase();
+  if (v === '1' || v === 'true' || v === 'yes') return true;
+  if (v === '0' || v === 'false' || v === 'no') return false;
+  // Default: Secure only in production (Railway/Fly HTTPS). Local npm run start on http keeps Secure off unless set.
+  return process.env.NODE_ENV === 'production';
+}
+
 export function sessionCookieHeader(rawToken: string, expiresAt: string): string {
   const maxAge = Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000));
-  // Local HTTP (Vite/Express) — Secure would drop the cookie on http://127.0.0.1
-  return [
+  const parts = [
     `${SESSION_COOKIE}=${encodeURIComponent(rawToken)}`,
     'Path=/',
     'HttpOnly',
     'SameSite=Lax',
     `Max-Age=${maxAge}`,
-  ].join('; ');
+  ];
+  // Local HTTP (Vite/Express) — Secure would drop the cookie on http://127.0.0.1
+  if (cookieSecureEnabled()) parts.push('Secure');
+  return parts.join('; ');
 }
 
 export function clearSessionCookieHeader(): string {
-  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+  const parts = [`${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`];
+  if (cookieSecureEnabled()) parts[0] += '; Secure';
+  return parts.join('');
 }
 
 export async function countUsers(): Promise<number> {

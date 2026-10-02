@@ -4,6 +4,7 @@
  * Icons still use public FMP CDN (UI only) — never invent prices.
  */
 import type { QuoteResult, QuoteSource } from '../../src/types/index.ts';
+import { logger } from '../lib/logger.ts';
 import { resolveStockIconUrl } from '../../src/lib/holdingIcons.ts';
 import { yahooEquitySymbol } from './history.ts';
 import { convertToNzd } from './fx.ts';
@@ -277,6 +278,7 @@ async function fetchStockQuoteInner(
   if (!live.ok) {
     const stale = lastGood.get(key);
     if (stale && Date.now() - stale.at < STALE_OK_MAX_MS && stale.quote.price != null) {
+      logger.warn('stocks_stale_fallback', { key, asOf: new Date(stale.at).toISOString() });
       const entry: CacheEntry = {
         at: Date.now(),
         name: stale.name,

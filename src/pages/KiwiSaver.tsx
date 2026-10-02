@@ -9,6 +9,7 @@ import {
   formatPortfolioSyncMsg,
   maybeAutoSyncPortfolio,
 } from '../lib/akahuTxnAutoSync';
+import { showQuietToast } from '../lib/quietToast';
 import { AssetLineChart, type LineSeries } from '../components/AssetLineChart';
 import type {
   KiwiSaverAccount,
@@ -262,18 +263,36 @@ export function KiwiSaver() {
         const st = await akahuStatus().catch(() => ({ configured: false }));
         if (!cancelled) setAkahuConfigured(st.configured);
 
-        const outcome = await maybeAutoSyncPortfolio();
-        if (!cancelled && outcome.ran) {
-          if (outcome.result.ok) {
-            setMsg(formatPortfolioSyncMsg(outcome.result));
-          } else {
-            setMsg(outcome.result.error ?? 'Akahu sync failed');
+        try {
+          const outcome = await maybeAutoSyncPortfolio();
+          if (!cancelled && outcome.ran) {
+            if (outcome.result.ok) {
+              setMsg(formatPortfolioSyncMsg(outcome.result));
+            } else {
+              showQuietToast(outcome.result.error ?? 'Akahu sync paused — showing last data.', {
+                kind: 'warn',
+              });
+            }
+          }
+        } catch {
+          if (!cancelled) {
+            showQuietToast('Akahu sync paused — showing last KiwiSaver data.', { kind: 'warn' });
           }
         }
 
         if (!cancelled) await load(null);
       } catch (e) {
-        if (!cancelled) setError((e as Error).message);
+        if (!cancelled) {
+          // Prefer quiet toast when we already have accounts; avoid blanking the page.
+          setAccounts((prev) => {
+            if (Array.isArray(prev) && prev.length > 0) {
+              showQuietToast('Could not refresh KiwiSaver — showing last data.', { kind: 'warn' });
+              return prev;
+            }
+            setError((e as Error).message);
+            return prev;
+          });
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }

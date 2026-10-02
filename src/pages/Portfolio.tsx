@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { api, formatNzd, formatAuckland } from '../api/client';
 import { maybeAutoSyncBankTransactions, maybeAutoSyncPortfolio } from '../lib/akahuTxnAutoSync';
+import { showQuietToast } from '../lib/quietToast';
 import { AssetBreakdownChart, type AssetBreakdownRow } from '../components/AssetBreakdownChart';
 import { HoldingPriceChart } from '../components/HoldingPriceChart';
 import {
@@ -1917,7 +1918,16 @@ export function Portfolio() {
         setSummary(net as PortfolioNetWorth);
         setError(null);
       })
-      .catch((e: Error) => setError(e.message));
+      .catch((e: Error) => {
+        setHoldings((prev) => {
+          if (prev.length > 0) {
+            showQuietToast('Could not refresh portfolio — showing last data.', { kind: 'warn' });
+            return prev;
+          }
+          setError(e.message);
+          return prev;
+        });
+      });
   }, []);
 
   const loadGmSettings = () => {
@@ -1986,7 +1996,7 @@ export function Portfolio() {
         if (cancelled) return;
         await portfolioLoadRef.current();
       } catch {
-        /* silent */
+        showQuietToast('Sync paused — showing last holdings.', { kind: 'warn' });
       }
     })();
     return () => {
@@ -2731,7 +2741,7 @@ export function Portfolio() {
     0,
   );
 
-  if (error) {
+  if (error && holdings.length === 0) {
     return <div className="panel warn">Portfolio API error: {error}</div>;
   }
 

@@ -9,6 +9,7 @@ import {
   maybeAutoSyncBankTransactions,
   maybeAutoSyncPortfolio,
 } from '../lib/akahuTxnAutoSync';
+import { showQuietToast } from '../lib/quietToast';
 import type { DebtCreditorKind, DebtPerson, DebtRepayment, IncomeKind, IncomeMonthSummary, IncomeRecord, Transaction, TransactionSource } from '../types';
 import {
   CategorySpendChart,
@@ -29,7 +30,6 @@ import {
   type YearMonth,
 } from '../lib/period';
 import {
-  CHARITY_CATEGORY_ID,
   isCharityCategoryId,
   linkCharityDonationToPaye,
   unlinkCharityDonationFromPaye,
@@ -315,7 +315,16 @@ export function Spending() {
 
 
   useEffect(() => {
-    load().catch((e: Error) => setError(e.message));
+    load().catch((e: Error) => {
+      setTxns((prev) => {
+        if (Array.isArray(prev) && prev.length > 0) {
+          showQuietToast('Could not refresh budget — showing last data.', { kind: 'warn' });
+          return prev;
+        }
+        setError(e.message);
+        return prev;
+      });
+    });
   }, [load]);
 
   // Silent background Akahu auto-sync once on Budget/Spending open / refresh.
@@ -335,7 +344,7 @@ export function Spending() {
         // run inserted rows — either way the Transactions table must catch up.
         await loadRef.current();
       } catch {
-        /* silent */
+        showQuietToast('Bank sync paused — showing last transactions.', { kind: 'warn' });
       }
     })();
     return () => {
@@ -1092,7 +1101,7 @@ export function Spending() {
     }
   }
 
-  if (error) return <div className="panel warn">Spending: {error}</div>;
+  if (error && (!txns || txns.length === 0)) return <div className="panel warn">Spending: {error}</div>;
 
   return (
     <div className="stack">

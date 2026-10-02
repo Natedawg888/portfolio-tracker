@@ -24,6 +24,12 @@ Other scripts:
 | `npm run build` | Typecheck + production build |
 | `npm run db:init` | Ensure empty DB/schema + seed categories |
 
+## Hosted deploy (Week 2)
+
+**Railway** (Docker) — see **[docs/DEPLOY.md](./docs/DEPLOY.md)** for volume, secrets, HTTPS cookies, and SQLite backup/restore (`npm run db:backup` / `db:restore`).
+
+Production: `npm run build && npm run start` (serves `dist/` + API; `HOST=0.0.0.0`, Secure cookies when `COOKIE_SECURE=true`).
+
 ## Stack
 
 - **Vite + React + TypeScript** frontend  

@@ -15,6 +15,7 @@
  * Without METALS_API_KEY: return unavailable/stubbed (cost-only / —).
  */
 import type { MetalKind, MetalUnit, QuoteResult } from '../../src/types/index.ts';
+import { logger } from '../lib/logger.ts';
 
 /** Grams per troy ounce (exact conventional factor). */
 export const TROY_OZ_GRAMS = 31.1034768;
@@ -136,6 +137,11 @@ function staleFromLastGood(reason: string): Record<MetalKind, QuoteResult> | nul
       Number.isFinite(lastGood!.results[m].price as number),
   );
   if (!allOk) return null;
+  logger.warn('metals_stale_fallback', {
+    reason,
+    asOf: lastGood.results.gold?.asOf ?? null,
+    fetchedAt: new Date(lastGood.fetchedAt).toISOString(),
+  });
   return Object.fromEntries(
     METAL_KINDS.map((metal) => {
       const g = lastGood!.results[metal];

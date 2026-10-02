@@ -17,6 +17,7 @@ import { resolveCryptoIconUrl } from '../../src/lib/holdingIcons.ts';
 import { getDb, queryOne, run, newId, persist } from '../db/index.ts';
 import { fetchSpotUsdThenNzd } from './cryptoSpotFallbacks.ts';
 import { fetchFxToNzd } from './fx.ts';
+import { logger } from '../lib/logger.ts';
 
 export type CryptoResolveResult = {
   ticker: string;
@@ -106,6 +107,10 @@ type IdCacheEntry = {
   name: string;
   thumb: string | null;
 };
+
+function markCryptoStale(id: string, at: number): void {
+  logger.warn('crypto_stale_fallback', { id, asOf: new Date(at).toISOString() });
+}
 
 const priceCache = new Map<string, PriceCacheEntry>();
 const lastGoodPrice = new Map<
@@ -204,6 +209,7 @@ function staleFromLastGood(
   const g = lastGoodPrice.get(coingeckoId);
   if (!g || g.nzd == null) return null;
   if (Date.now() - g.at > STALE_OK_MAX_MS) return null;
+  markCryptoStale(coingeckoId, g.at);
   return {
     at: g.at,
     nzd: g.nzd,

@@ -8,8 +8,11 @@ import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
-const DATA_DIR = path.join(ROOT, 'data');
-const DB_PATH = path.join(DATA_DIR, 'portfolio.db');
+/** Override with DATABASE_PATH (absolute or relative to cwd). Default ./data/portfolio.db */
+const DB_PATH = process.env.DATABASE_PATH
+  ? path.resolve(process.env.DATABASE_PATH)
+  : path.join(ROOT, 'data', 'portfolio.db');
+const DATA_DIR = path.dirname(DB_PATH);
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql');
 
 let SQL: SqlJsStatic | null = null;
