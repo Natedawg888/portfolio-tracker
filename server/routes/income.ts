@@ -19,6 +19,11 @@
 import { Router } from 'express';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { requireUserId } from '../lib/userScope.ts';
+import {
+  INCOME_MINING_SLUG,
+  INCOME_SLUG,
+  resolveCategoryIdOrSlug,
+} from '../lib/categories.ts';
 import { getDb, queryAll, queryOne, run, newId } from '../db/index.ts';
 import { resolveCryptoTicker } from '../quotes/crypto.ts';
 import type { QuoteResult } from '../../src/types/index.ts';
@@ -38,10 +43,15 @@ function uid(req: { scopeUserId?: string; user?: { id?: string } | null }): stri
 }
 
 const SPENDING_FLOOR = '2026-10-01';
-/** Generic income bucket (legacy / uncategorised). */
-const INCOME_CATEGORY_ID = 'cat-income';
-
 type Db = Awaited<ReturnType<typeof getDb>>;
+
+/** Generic income slug (legacy / uncategorised). Resolve per-user via resolveIncomeCategoryId. */
+const INCOME_CATEGORY_ID = INCOME_SLUG;
+
+function resolveIncomeCategoryId(db: Db, userId: string, kind: 'cash' | 'crypto' = 'cash'): string {
+  const slug = kind === 'crypto' ? INCOME_MINING_SLUG : INCOME_SLUG;
+  return resolveCategoryIdOrSlug(db, userId, slug);
+}
 
 
 function isIncomeCategory(db: Db, categoryId: string | null | undefined): boolean {
@@ -58,7 +68,7 @@ function isIncomeCategory(db: Db, categoryId: string | null | undefined): boolea
 }
 
 function defaultIncomeCategory(kind: 'cash' | 'crypto'): string {
-  return kind === 'crypto' ? 'cat-income-mining' : INCOME_CATEGORY_ID;
+  return kind === 'crypto' ? INCOME_MINING_SLUG : INCOME_CATEGORY_ID;
 }
 
 function mapRecord(r: Record<string, unknown>) {
@@ -116,10 +126,12 @@ function mapCategoryTxnAsIncome(r: Record<string, unknown>) {
  * Linked txn ids from Add income (cash + account). Matching is_income credits
  * are skipped so records + extras never double-count the same dollars.
  */
-function linkedIncomeTransactionIds(db: Db): Set<string> {
+function linkedIncomeTransactionIds(db: Db, userId: string): Set<string> {
   const rows = queryAll<{ transaction_id?: string }>(
     db,
-    `SELECT transaction_id FROM income_records WHERE transaction_id IS NOT NULL`,
+    `SELECT transaction_id FROM income_records
+     WHERE user_id = ? AND transaction_id IS NOT NULL`,
+    [userId],
   );
   const set = new Set<string>();
   for (const r of rows) {
@@ -131,6 +143,7 @@ function linkedIncomeTransactionIds(db: Db): Set<string> {
 /** Unlinked is_income inflows in [start, end] (amount > 0), keyed by category. */
 function unlinkedIncomeCategoryCredits(
   db: Db,
+  userId: string,
   start: string,
   end: string,
   linked: Set<string>,
@@ -140,11 +153,12 @@ function unlinkedIncomeCategoryCredits(
     `SELECT t.id, t.date, t.description, t.amount, t.account_id, t.category_id, t.source,
             t.created_at, a.name AS account_name, a.account_type, c.name AS category_name
      FROM transactions t
-     LEFT JOIN bank_accounts a ON a.id = t.account_id
-     INNER JOIN budget_categories c ON c.id = t.category_id AND (c.type = 'income' OR (c.type IS NULL AND c.is_income = 1))
-     WHERE t.date >= ? AND t.date <= ? AND t.amount > 0
+     LEFT JOIN bank_accounts a ON a.id = t.account_id AND a.user_id = t.user_id
+     INNER JOIN budget_categories c ON c.id = t.category_id AND c.user_id = t.user_id
+       AND (c.type = 'income' OR (c.type IS NULL AND c.is_income = 1))
+     WHERE t.user_id = ? AND t.date >= ? AND t.date <= ? AND t.amount > 0
      ORDER BY t.date DESC, t.created_at DESC`,
-    [start, end],
+    [userId, start, end],
   );
   const extras: ReturnType<typeof mapCategoryTxnAsIncome>[] = [];
   let extraIncome = 0;
@@ -352,8 +366,8 @@ router.get('/', async (req, res) => {
   const rows = queryAll(db, sql, params).map(mapRecord);
   // Bank sync / tagged income-category credits feed the same list (deduped vs linked Add income).
   const end = to ?? '9999-12-31';
-  const linked = linkedIncomeTransactionIds(db);
-  const { extras } = unlinkedIncomeCategoryCredits(db, from, end, linked);
+  const linked = linkedIncomeTransactionIds(db, uid(req));
+  const { extras } = unlinkedIncomeCategoryCredits(db, uid(req), from, end, linked);
   const merged = [...rows, ...extras].sort((a, b) => {
     if (a.date !== b.date) return a.date < b.date ? 1 : -1;
     return a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0;
@@ -394,12 +408,13 @@ router.get('/summary', async (req, res) => {
      FROM income_records
      WHERE date >= ? AND date <= ?
      GROUP BY COALESCE(category_id, ?)`,
-    [INCOME_CATEGORY_ID, start, end, INCOME_CATEGORY_ID],
+    [resolveIncomeCategoryId(db, uid(req), 'cash'), start, end, resolveIncomeCategoryId(db, uid(req), 'cash')],
   );
 
-  const linked = linkedIncomeTransactionIds(db);
+  const linked = linkedIncomeTransactionIds(db, uid(req));
   const { extraIncome, extraCount, byCategory: extraByCat } = unlinkedIncomeCategoryCredits(
     db,
+    uid(req),
     start,
     end,
     linked,
@@ -427,7 +442,9 @@ router.get('/summary', async (req, res) => {
 
   const catMeta = queryAll<{ id?: string; name?: string; sort_order?: number }>(
     db,
-    `SELECT id, name, sort_order FROM budget_categories WHERE type = 'income' OR (type IS NULL AND is_income = 1)`,
+    `SELECT id, name, sort_order FROM budget_categories
+     WHERE user_id = ? AND (type = 'income' OR (type IS NULL AND is_income = 1))`,
+    [uid(req)],
   );
   const nameById = new Map(catMeta.map((c) => [c.id as string, c.name as string]));
   const sortById = new Map(catMeta.map((c) => [c.id as string, Number(c.sort_order ?? 0)]));
@@ -590,7 +607,7 @@ router.post('/', async (req, res) => {
   let categoryId =
     typeof b.categoryId === 'string' && b.categoryId.trim()
       ? b.categoryId.trim()
-      : defaultIncomeCategory(kind);
+      : resolveIncomeCategoryId(db, uid(req), kind);
   if (!isIncomeCategory(db, categoryId)) {
     res.status(400).json({ error: 'categoryId must be an income category (Salary, Mining, …)' });
     return;
@@ -623,7 +640,11 @@ router.post('/', async (req, res) => {
   if (kind === 'cash') {
     accountId = typeof b.accountId === 'string' && b.accountId.trim() ? b.accountId.trim() : null;
     if (accountId) {
-      const acct = queryOne(db, `SELECT id FROM bank_accounts WHERE id=?`, [accountId]);
+      const acct = queryOne(
+        db,
+        `SELECT id FROM bank_accounts WHERE id=? AND user_id=?`,
+        [accountId, uid(req)],
+      );
       if (!acct) {
         res.status(400).json({ error: 'Unknown accountId' });
         return;
@@ -772,7 +793,11 @@ router.delete('/:id', async (req, res) => {
   }
   // Reverse crypto merge when possible (subtract qty; never invent if holding gone)
   if (existing.kind === 'crypto' && existing.holding_id && existing.crypto_amount != null) {
-    const holding = queryOne(db, `SELECT * FROM holdings WHERE id=?`, [existing.holding_id]);
+    const holding = queryOne(
+      db,
+      `SELECT * FROM holdings WHERE id=? AND user_id=?`,
+      [existing.holding_id, uid(req)],
+    );
     if (holding) {
       const qty = Number(existing.crypto_amount);
       const old =
@@ -786,13 +811,17 @@ router.delete('/:id', async (req, res) => {
           : holding.cost_basis_nzd;
       run(
         db,
-        `UPDATE holdings SET amount=?, cost_basis_nzd=?, updated_at=? WHERE id=?`,
-        [next, cost, new Date().toISOString(), holding.id],
+        `UPDATE holdings SET amount=?, cost_basis_nzd=?, updated_at=? WHERE id=? AND user_id=?`,
+        [next, cost, new Date().toISOString(), holding.id, uid(req)],
       );
     }
   }
   if (existing.transaction_id) {
-    run(db, `DELETE FROM transactions WHERE id=?`, [existing.transaction_id]);
+    run(
+      db,
+      `DELETE FROM transactions WHERE id=? AND user_id=?`,
+      [existing.transaction_id, uid(req)],
+    );
   }
   run(db, `DELETE FROM income_records WHERE id=? AND user_id=?`, [id, uid(req)]);
   res.json({ ok: true, id });

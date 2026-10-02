@@ -12,7 +12,8 @@
     "lint": "oxlint",
     "db:init": "node --import tsx server/db/init-cli.ts",
     "db:backfill-mtg-meta": "node --import tsx scripts/backfill-mtg-meta.ts",
-    "test:cash-sync": "node --import tsx server/akahu/sync.cash.test.ts"
+    "test:cash-sync": "node --import tsx server/akahu/sync.cash.test.ts",
+    "test:user-isolation": "node --import tsx scripts/verify-user-isolation.ts"
   },
   "dependencies": {
     "concurrently": "^8.2.2",

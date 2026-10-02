@@ -4,6 +4,7 @@
 import { Router } from 'express';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { requireUserId } from '../lib/userScope.ts';
+import { CHARITY_SLUG, resolveCategoryIdOrSlug } from '../lib/categories.ts';
 import { getDb, queryAll, queryOne, run, newId } from '../db/index.ts';
 import { coerceAkahuBalance } from '../akahu/sync.ts';
 import { TXN_SYNC_FROM_DATE } from '../akahu/syncTransactions.ts';
@@ -24,7 +25,19 @@ import {
   saveCharityReceipt,
 } from '../lib/uploads.ts';
 
-export const CHARITY_CATEGORY_ID = 'cat-charity';
+export const CHARITY_CATEGORY_ID = CHARITY_SLUG;
+
+function charityCategoryIdFor(db: Parameters<typeof resolveCategoryIdOrSlug>[0], userId: string): string {
+  return resolveCategoryIdOrSlug(db, userId, CHARITY_SLUG);
+}
+
+function isCharityCategoryId(categoryId: string | null | undefined, userCharityId: string): boolean {
+  if (!categoryId) return false;
+  if (categoryId === userCharityId) return true;
+  if (categoryId === CHARITY_SLUG) return true;
+  if (categoryId.startsWith(`${CHARITY_SLUG}__`)) return true;
+  return false;
+}
 
 const router = Router();
 
@@ -356,7 +369,11 @@ router.patch('/transactions/:id', async (req: AuthedRequest, res) => {
     if (b.categoryId === null || b.categoryId === '' || b.categoryId === undefined) {
       categoryId = null;
     } else if (typeof b.categoryId === 'string') {
-      const cat = queryOne(db, 'SELECT id FROM budget_categories WHERE id=?', [b.categoryId]);
+      const cat = queryOne(
+        db,
+        'SELECT id FROM budget_categories WHERE id=? AND user_id=?',
+        [b.categoryId, userId],
+      );
       if (!cat) {
         return res.status(400).json({ ok: false, error: 'Unknown categoryId' });
       }
@@ -417,7 +434,7 @@ router.patch('/transactions/:id', async (req: AuthedRequest, res) => {
         : typeof b.categoryId === 'string'
           ? b.categoryId
           : null;
-    if (nextCat !== CHARITY_CATEGORY_ID) {
+    if (!isCharityCategoryId(nextCat, charityCategoryIdFor(db, userId))) {
       const prevPath = (existing.receipt_path as string | null) ?? null;
       if (prevPath) {
         deleteCharityReceipt(prevPath);
@@ -510,7 +527,7 @@ router.post('/transactions/:id/receipt', async (req: AuthedRequest, res) => {
   run(
     db,
     `UPDATE transactions SET receipt_path=?, category_id=? WHERE id=? AND user_id=?`,
-    [receiptPath, CHARITY_CATEGORY_ID, id, userId],
+    [receiptPath, charityCategoryIdFor(db, userId), id, userId],
   );
   const row = queryOne(
     db,
@@ -641,7 +658,11 @@ router.post('/transactions/import-wallet-csv', async (req: AuthedRequest, res) =
       continue;
     }
     if (item.externalId) {
-      const dup = queryOne(db, 'SELECT id FROM transactions WHERE external_id=?', [item.externalId]);
+      const dup = queryOne(
+        db,
+        'SELECT id FROM transactions WHERE external_id=? AND user_id=?',
+        [item.externalId, userId],
+      );
       if (dup) {
         skippedDup += 1;
         continue;

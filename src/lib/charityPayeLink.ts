@@ -10,6 +10,14 @@ import {
 
 export const CHARITY_CATEGORY_ID = 'cat-charity';
 
+export function isCharityCategoryId(categoryId: string | null | undefined): boolean {
+  if (!categoryId) return false;
+  return (
+    categoryId === CHARITY_CATEGORY_ID ||
+    categoryId.startsWith(`${CHARITY_CATEGORY_ID}__`)
+  );
+}
+
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }

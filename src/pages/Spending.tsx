@@ -30,6 +30,7 @@ import {
 } from '../lib/period';
 import {
   CHARITY_CATEGORY_ID,
+  isCharityCategoryId,
   linkCharityDonationToPaye,
   unlinkCharityDonationFromPaye,
 } from '../lib/charityPayeLink';
@@ -124,6 +125,15 @@ function isBankishAccount(a: CashAccount | undefined): boolean {
     || a.accountType === 'cheque'
     || a.accountType === 'savings'
     || a.accountType === 'credit';
+}
+
+function incomeCategoryIdFromList(
+  categories: Array<{ id: string; slug?: string }>,
+  kind: 'cash' | 'crypto',
+): string {
+  const slug = kind === 'crypto' ? 'cat-income-mining' : 'cat-income';
+  const hit = categories.find((c) => (c.slug ?? c.id) === slug || c.id === slug || c.id.startsWith(`${slug}__`));
+  return hit?.id ?? slug;
 }
 
 export function Spending() {
@@ -233,7 +243,7 @@ export function Spending() {
     setIncCryptoAsset('');
     setIncCryptoAmount('');
     setIncNotes('');
-    setIncCategoryId('cat-income');
+    setIncCategoryId(incomeCategoryIdFromList(categories, 'cash'));
     setShowIncomeModal(true);
   }
 
@@ -549,10 +559,10 @@ export function Spending() {
       setTxns((prevTxns) =>
         prevTxns.map((t) => (t.id === txnId ? { ...t, ...updated } : t)),
       );
-      if (prev?.categoryId === CHARITY_CATEGORY_ID && next !== CHARITY_CATEGORY_ID) {
+      if (isCharityCategoryId(prev?.categoryId) && !isCharityCategoryId(next)) {
         unlinkCharityDonationFromPaye(txnId);
       }
-      if (next === CHARITY_CATEGORY_ID) {
+      if (isCharityCategoryId(next)) {
         openCharityReceiptModal({ ...prev!, ...updated, categoryId: next });
       }
     } catch (err) {
@@ -569,7 +579,7 @@ export function Spending() {
     setMsg(null);
     try {
       await api.accounts.deleteTransaction(t.id);
-      if (t.categoryId === CHARITY_CATEGORY_ID) {
+      if (isCharityCategoryId(t.categoryId)) {
         unlinkCharityDonationFromPaye(t.id);
       }
       setTxns((prev) => prev.filter((x) => x.id !== t.id));
@@ -922,7 +932,7 @@ export function Spending() {
         kind: incKind,
         description: incDesc.trim() || (incKind === 'crypto' ? 'Crypto income' : 'Income'),
         accountId: incKind === 'cash' ? incAccountId || null : null,
-        categoryId: incCategoryId || (incKind === 'crypto' ? 'cat-income-mining' : 'cat-income'),
+        categoryId: incCategoryId || incomeCategoryIdFromList(categories, incKind === 'crypto' ? 'crypto' : 'cash'),
         cryptoAsset: incKind === 'crypto' ? incCryptoAsset.trim().toUpperCase() : undefined,
         cryptoAmount: incKind === 'crypto' ? Number(incCryptoAmount) : undefined,
         notes: incNotes.trim() || null,
@@ -2185,7 +2195,7 @@ export function Spending() {
                             );
                           })}
                         </select>
-                        {t.categoryId === CHARITY_CATEGORY_ID && (
+                        {isCharityCategoryId(t.categoryId) && (
                           <button
                             type="button"
                             className="btn small"

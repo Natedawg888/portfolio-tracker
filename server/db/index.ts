@@ -431,6 +431,7 @@ function migrateSchema(database: Database) {
     { table: 'income_plans', index: 'idx_income_plans_user' },
     { table: 'budgets', index: 'idx_budgets_user' },
     { table: 'valuation_snapshots', index: 'idx_valuation_snapshots_user' },
+    { table: 'budget_categories', index: 'idx_budget_categories_user' },
   ];
   for (const { table, index } of scopedTables) {
     const cols = tableColumns(database, table);
@@ -477,6 +478,21 @@ function migrateSchema(database: Database) {
         [ownerId],
       );
     }
+  }
+
+  // budget_categories.slug for well-known seeds (cat-debt, cat-income, …)
+  {
+    const catCols = tableColumns(database, 'budget_categories');
+    if (catCols.size > 0 && !catCols.has('slug')) {
+      database.run(`ALTER TABLE budget_categories ADD COLUMN slug TEXT`);
+    }
+    database.run(
+      `UPDATE budget_categories SET slug = id WHERE slug IS NULL OR slug = ''`,
+    );
+    database.run(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_budget_categories_user_slug
+       ON budget_categories(user_id, slug) WHERE slug IS NOT NULL AND user_id IS NOT NULL`,
+    );
   }
 
   // Rebuild external_id uniqueness to be per-user (drop global unique indexes)
@@ -550,18 +566,40 @@ function seedDefaults(database: Database) {
     ['cat-transfer-out', 'Transfer out', 'transfer_out', 95],
     ['cat-transfer-in', 'Transfer in', 'transfer_in', 96],
   ];
-  for (const [id, name, type, sort] of categories) {
-    const isIncome = type === 'income' ? 1 : 0;
-    database.run(
-      `INSERT OR IGNORE INTO budget_categories (id, name, parent_id, colour, type, is_income, sort_order)
-       VALUES (?, ?, NULL, NULL, ?, ?, ?)`,
-      [id, name, type, isIncome, sort],
-    );
+  // Global seed rows (user_id NULL) only when the table has no categories yet.
+  // First signup claims them; later users get per-user copies via seedCategoriesForUser.
+  const countStmt = database.prepare(`SELECT COUNT(*) AS c FROM budget_categories`);
+  let catCount = 0;
+  if (countStmt.step()) {
+    catCount = Number((countStmt.getAsObject() as { c?: number }).c ?? 0);
   }
-  // Existing DBs: ensure Investments / transfer seeds have correct type
-  database.run(`UPDATE budget_categories SET type = 'transfer_out', is_income = 0 WHERE id = 'cat-investments'`);
-  database.run(`UPDATE budget_categories SET type = 'transfer_out', is_income = 0 WHERE id = 'cat-transfer-out'`);
-  database.run(`UPDATE budget_categories SET type = 'transfer_in', is_income = 0 WHERE id = 'cat-transfer-in'`);
+  countStmt.free();
+  if (catCount === 0) {
+    for (const [id, name, type, sort] of categories) {
+      const isIncome = type === 'income' ? 1 : 0;
+      database.run(
+        `INSERT OR IGNORE INTO budget_categories (id, user_id, slug, name, parent_id, colour, type, is_income, sort_order)
+         VALUES (?, NULL, ?, ?, NULL, NULL, ?, ?, ?)`,
+        [id, id, name, type, isIncome, sort],
+      );
+    }
+  }
+  // Existing DBs: ensure Investments / transfer seeds have correct type (any matching slug/id)
+  database.run(
+    `UPDATE budget_categories SET type = 'transfer_out', is_income = 0
+     WHERE id = 'cat-investments' OR slug = 'cat-investments'`,
+  );
+  database.run(
+    `UPDATE budget_categories SET type = 'transfer_out', is_income = 0
+     WHERE id = 'cat-transfer-out' OR slug = 'cat-transfer-out'`,
+  );
+  database.run(
+    `UPDATE budget_categories SET type = 'transfer_in', is_income = 0
+     WHERE id = 'cat-transfer-in' OR slug = 'cat-transfer-in'`,
+  );
+  database.run(
+    `UPDATE budget_categories SET slug = id WHERE slug IS NULL OR slug = ''`,
+  );
 }
 
 export async function getDb(): Promise<Database> {

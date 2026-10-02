@@ -20,7 +20,7 @@ When the **first** account is created:
 1. `meta.data_owner_user_id` is set to that user.
 2. All existing holdings, accounts, transactions, etc. are backfilled to that user_id.
 
-**Later accounts** get an **empty** ledger (no rows with their `user_id`). They choose asset-class toggles on signup and may **Skip / do later** on Akahu Connect. APIs always filter by session `user_id`.
+**Later accounts** get an **empty** ledger (no holdings/txns/accounts with their `user_id`) plus a **fresh copy** of default budget categories. They choose asset-class toggles on signup and may **Skip / do later** on Akahu Connect. APIs always filter by session `user_id`. Per-user Akahu OAuth tokens live in `akahu_connections` (Full App); the Personal App `AKAHU_USER_TOKEN` is data-owner only.
 
 ## How-to (Nathan)
 
@@ -55,7 +55,7 @@ Bank / investment linking is separate from local email/password auth. See [AKAHU
 
 - **Header avatar** — click the profile picture (or initials) for account owner name/email, **Settings**, and **Sign out**.
 - **Settings → Account** — display name, upload/remove profile picture (stored under `data/uploads/avatars/` or as a data URL on `users.avatar_url`), change email / password (current password required), **delete account**.
-- **Settings → Categories / assets** — asset-class toggles (`users.preferences_json`), add/remove transaction categories (`budget_categories`), plus Akahu connect.
+- **Settings → Categories / assets** — asset-class toggles (`users.preferences_json`), add/remove **your** transaction categories (`budget_categories.user_id`), plus Akahu connect.
 
 ## Delete account
 
@@ -68,16 +68,17 @@ Bank / investment linking is separate from local email/password auth. See [AKAHU
 3. Clears the session cookie. Does **not** wipe other users’ `user_id` rows.
 4. If the deleted user was `data_owner_user_id`, ownership is reassigned to the oldest remaining user (or cleared if none left).
 
-### Shared data that remains (until further isolation)
+### Shared data that remains
 
-These are still **global** on this machine — account delete does not remove them:
+These stay **global** on this machine — account delete does not remove them:
 
 | Shared | Notes |
 |--------|--------|
-| `budget_categories` | Seeded + any custom categories (not yet per-user) |
 | `app_settings` | GoMining params, collectable types, locale/currency |
 | `price_quotes` | Shared quote cache |
 | `meta` | `schema_version` etc.; `data_owner_user_id` cleared/reassigned as above |
 | `.env` Akahu Personal App token | Server env — not stored per user |
+
+`budget_categories` are **per-user** (own seed copy + customs). Deleted with the account.
 
 Hard-refresh (Ctrl+Shift+R / Cmd+Shift+R) after pulling so the Delete account UI loads.

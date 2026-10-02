@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { requireUserId } from '../lib/userScope.ts';
+import { seedCategoriesForUser } from '../lib/categories.ts';
 import { getDb, queryAll, queryOne, run, newId } from '../db/index.ts';
 import {
   categoryTypeIsIncome,
@@ -54,7 +55,13 @@ function parseYearMonth(input: unknown): { year: number; month: number; start: s
 
 router.get('/categories', async (req, res) => {
   const db = await getDb();
-  const rows = queryAll(db, 'SELECT * FROM budget_categories ORDER BY sort_order, name');
+  const userId = uid(req);
+  seedCategoriesForUser(db, userId);
+  const rows = queryAll(
+    db,
+    'SELECT * FROM budget_categories WHERE user_id = ? ORDER BY sort_order, name',
+    [userId],
+  );
   res.json(rows.map(mapCategory));
 });
 
@@ -62,6 +69,7 @@ function mapCategory(r: Record<string, unknown>) {
   const type = normalizeCategoryType(r.type, r.is_income as number | boolean | null);
   return {
     id: r.id,
+    slug: r.slug != null ? String(r.slug) : String(r.id),
     name: r.name,
     parentId: r.parent_id,
     colour: r.colour,
@@ -101,13 +109,14 @@ router.post('/categories', async (req, res) => {
   const isIncome = categoryTypeIsIncome(type);
   const colour = typeof b.colour === 'string' && b.colour.trim() ? b.colour.trim().slice(0, 32) : null;
   const sortOrder = Number.isFinite(Number(b.sortOrder)) ? Number(b.sortOrder) : (isIncome ? 5 : type.startsWith('transfer') ? 95 : 100);
+  const userId = uid(req);
   let id = typeof b.id === 'string' && b.id.trim() ? b.id.trim().slice(0, 64) : slugCategoryId(name);
-  // Ensure unique id
-  let attempt = id;
+  // Ensure globally unique id (ids are PK); prefer user-suffixed custom ids
+  let attempt = id.includes(userId) ? id : `${id}__${userId}`;
   let n = 0;
   while (queryOne(db, 'SELECT id FROM budget_categories WHERE id=?', [attempt])) {
     n += 1;
-    attempt = `${id}-${n}`;
+    attempt = `${id}-${n}__${userId}`;
     if (n > 50) {
       attempt = newId('cat');
       break;
@@ -117,26 +126,35 @@ router.post('/categories', async (req, res) => {
   const parentId =
     typeof b.parentId === 'string' && b.parentId.trim() ? b.parentId.trim() : null;
   if (parentId) {
-    const parent = queryOne(db, 'SELECT id FROM budget_categories WHERE id=?', [parentId]);
+    const parent = queryOne(
+      db,
+      'SELECT id FROM budget_categories WHERE id=? AND user_id=?',
+      [parentId, userId],
+    );
     if (!parent) {
       res.status(400).json({ error: `Unknown parent category: ${parentId}` });
       return;
     }
   }
+  const slug =
+    typeof b.slug === 'string' && b.slug.trim()
+      ? b.slug.trim().slice(0, 64)
+      : id;
   run(
     db,
-    `INSERT INTO budget_categories (id, name, parent_id, colour, type, is_income, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [id, name, parentId, colour, type, isIncome ? 1 : 0, sortOrder],
+    `INSERT INTO budget_categories (id, user_id, slug, name, parent_id, colour, type, is_income, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, userId, slug, name, parentId, colour, type, isIncome ? 1 : 0, sortOrder],
   );
-  const row = queryOne(db, 'SELECT * FROM budget_categories WHERE id=?', [id])!;
+  const row = queryOne(db, 'SELECT * FROM budget_categories WHERE id=? AND user_id=?', [id, userId])!;
   res.status(201).json(mapCategory(row));
 });
 
 router.patch('/categories/:id', async (req, res) => {
   const db = await getDb();
   const id = String(req.params.id ?? '');
-  const existing = queryOne(db, 'SELECT * FROM budget_categories WHERE id=?', [id]);
+  const userId = uid(req);
+  const existing = queryOne(db, 'SELECT * FROM budget_categories WHERE id=? AND user_id=?', [id, userId]);
   if (!existing) {
     res.status(404).json({ error: 'Category not found' });
     return;
@@ -165,29 +183,30 @@ router.patch('/categories/:id', async (req, res) => {
       : Number(existing.sort_order ?? 0);
   run(
     db,
-    `UPDATE budget_categories SET name=?, colour=?, type=?, is_income=?, sort_order=? WHERE id=?`,
-    [name, colour, type, isIncome, sortOrder, id],
+    `UPDATE budget_categories SET name=?, colour=?, type=?, is_income=?, sort_order=? WHERE id=? AND user_id=?`,
+    [name, colour, type, isIncome, sortOrder, id, userId],
   );
-  const row = queryOne(db, 'SELECT * FROM budget_categories WHERE id=?', [id])!;
+  const row = queryOne(db, 'SELECT * FROM budget_categories WHERE id=? AND user_id=?', [id, userId])!;
   res.json(mapCategory(row));
 });
 
-/** Remove a category. Nulls txn/income refs and deletes related budget/income plans. */
+/** Remove a category. Nulls txn/income refs and deletes related budget/income plans (this user only). */
 router.delete('/categories/:id', async (req, res) => {
   const db = await getDb();
   const id = String(req.params.id ?? '');
-  const existing = queryOne(db, 'SELECT * FROM budget_categories WHERE id=?', [id]);
+  const userId = uid(req);
+  const existing = queryOne(db, 'SELECT * FROM budget_categories WHERE id=? AND user_id=?', [id, userId]);
   if (!existing) {
     res.status(404).json({ error: 'Category not found' });
     return;
   }
-  // Re-parent children to null
-  run(db, `UPDATE budget_categories SET parent_id = NULL WHERE parent_id = ?`, [id]);
-  run(db, `UPDATE transactions SET category_id = NULL WHERE category_id = ?`, [id]);
-  run(db, `UPDATE income_records SET category_id = NULL WHERE category_id = ?`, [id]);
-  run(db, `DELETE FROM budgets WHERE category_id = ?`, [id]);
-  run(db, `DELETE FROM income_plans WHERE category_id = ?`, [id]);
-  run(db, `DELETE FROM budget_categories WHERE id = ?`, [id]);
+  // Re-parent children to null (same user)
+  run(db, `UPDATE budget_categories SET parent_id = NULL WHERE parent_id = ? AND user_id = ?`, [id, userId]);
+  run(db, `UPDATE transactions SET category_id = NULL WHERE category_id = ? AND user_id = ?`, [id, userId]);
+  run(db, `UPDATE income_records SET category_id = NULL WHERE category_id = ? AND user_id = ?`, [id, userId]);
+  run(db, `DELETE FROM budgets WHERE category_id = ? AND user_id = ?`, [id, userId]);
+  run(db, `DELETE FROM income_plans WHERE category_id = ? AND user_id = ?`, [id, userId]);
+  run(db, `DELETE FROM budget_categories WHERE id = ? AND user_id = ?`, [id, userId]);
   res.json({ ok: true, id });
 });
 
@@ -201,9 +220,9 @@ router.get('/', async (req, res) => {
     rows = queryAll(
       db,
       `SELECT * FROM budgets
-       WHERE period_start <= ? AND period_end >= ?
+       WHERE user_id = ? AND period_start <= ? AND period_end >= ?
        ORDER BY period_start DESC, category_id`,
-      [month.end, month.start],
+      [uid(req), month.end, month.start],
     );
   } else {
     rows = queryAll(db, 'SELECT * FROM budgets WHERE user_id = ? ORDER BY period_start DESC', [uid(req)]);
@@ -237,7 +256,11 @@ router.put('/plan', async (req, res) => {
     res.status(400).json({ error: 'categoryId is required' });
     return;
   }
-  const cat = queryOne(db, 'SELECT id FROM budget_categories WHERE id=?', [categoryId]);
+  const cat = queryOne(
+    db,
+    'SELECT id FROM budget_categories WHERE id=? AND user_id=?',
+    [categoryId, uid(req)],
+  );
   if (!cat) {
     res.status(400).json({ error: `Unknown category: ${categoryId}` });
     return;
@@ -263,17 +286,17 @@ router.put('/plan', async (req, res) => {
     existing = queryOne(
       db,
       `SELECT * FROM budgets
-       WHERE category_id=? AND period_start <= ? AND period_end >= ?
+       WHERE user_id=? AND category_id=? AND period_start <= ? AND period_end >= ?
        ORDER BY period_start DESC LIMIT 1`,
-      [categoryId, month.end, month.start],
+      [uid(req), categoryId, month.end, month.start],
     );
   }
 
   if (existing) {
     run(
       db,
-      `UPDATE budgets SET period_start=?, period_end=?, amount_nzd=?, notes=? WHERE id=?`,
-      [month.start, month.end, amount, b.notes ?? existing.notes ?? null, existing.id],
+      `UPDATE budgets SET period_start=?, period_end=?, amount_nzd=?, notes=? WHERE id=? AND user_id=?`,
+      [month.start, month.end, amount, b.notes ?? existing.notes ?? null, existing.id, uid(req)],
     );
     const row = queryOne(db, 'SELECT * FROM budgets WHERE id=? AND user_id=?', [existing.id, uid(req)])!;
     res.json(mapBudget(row));
