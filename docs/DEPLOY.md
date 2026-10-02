@@ -70,6 +70,8 @@ Still on the static site: health body starts with `<!doctype html>`, or POST is 
 
 ## Local production smoke
 
+`npm run start` is `node --import tsx server/index.ts`. **`tsx` is a production dependency** so the image install `npm ci --omit=dev` still includes it. A follow-up `npm install tsx --no-save` while `NODE_ENV=production` does not: npm prunes that package, and the container exits with `ERR_MODULE_NOT_FOUND` for `tsx`.
+
 ```bash
 npm ci
 npm run build
@@ -80,7 +82,15 @@ set NODE_ENV=production
 npm run start
 ```
 
-Open `http://127.0.0.1:8080` — API and UI from one process.
+Same start after a production-only install (what the Dockerfile runs):
+
+```bash
+npm ci --omit=dev
+set NODE_ENV=production
+npm run start
+```
+
+Open `http://127.0.0.1:8080` — API and UI from one process. `GET /api/health` is JSON.
 
 ## Backup story (SQLite)
 
