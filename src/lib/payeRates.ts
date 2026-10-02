@@ -1,0 +1,232 @@
+/**
+ * NZ PAYE / ACC / KiwiSaver / student loan / IETC / payroll-giving rates.
+ *
+ * NEVER invent rates. All figures below are copied from IRD (or ACC via IRD)
+ * sources listed in docs/PAYE_RATES.md. Update that doc when IRD publishes
+ * new tax-year tables.
+ *
+ * Applied period for this build: pay dates 1 April 2026 – 31 March 2027
+ * (current as of Oct 2026 / Pacific/Auckland).
+ */
+
+/** Tax year label shown in UI */
+export const PAYE_TAX_YEAR_LABEL = '1 April 2026 – 31 March 2027';
+
+export const PAYE_WEEKS_PER_YEAR = 52;
+export const PAYE_FORTNIGHTS_PER_YEAR = 26;
+export const PAYE_MONTHS_PER_YEAR = 12;
+export const PAYE_DEFAULT_HOURS_PER_WEEK = 40;
+
+/** Progressive income-tax brackets (income tax only — ACC is separate). */
+export type TaxBracket = {
+  /** Inclusive upper bound of this band; Infinity for top band */
+  upTo: number;
+  /** Marginal rate as a fraction (e.g. 0.105) */
+  rate: number;
+};
+
+/**
+ * Individual income-tax rates from 1 April 2025 (still current for 2026/27).
+ * Source: https://www.ird.govt.nz/income-tax/income-tax-for-individuals/tax-codes-and-tax-rates-for-individuals/tax-rates-for-individuals
+ */
+export const INCOME_TAX_BRACKETS: readonly TaxBracket[] = [
+  { upTo: 15_600, rate: 0.105 },
+  { upTo: 53_500, rate: 0.175 },
+  { upTo: 78_100, rate: 0.3 },
+  { upTo: 180_000, rate: 0.33 },
+  { upTo: Number.POSITIVE_INFINITY, rate: 0.39 },
+] as const;
+
+/**
+ * Secondary tax codes & rates (before ACC).
+ * Source: same IRD tax-rates-for-individuals page.
+ */
+export const SECONDARY_TAX_CODES = [
+  { code: 'SB', upTo: 15_600, rate: 0.105 },
+  { code: 'S', upTo: 53_500, rate: 0.175 },
+  { code: 'SH', upTo: 78_100, rate: 0.3 },
+  { code: 'ST', upTo: 180_000, rate: 0.33 },
+  { code: 'SA', upTo: Number.POSITIVE_INFINITY, rate: 0.39 },
+] as const;
+
+/**
+ * ACC earners' levy — 1 April 2026 to 31 March 2027.
+ * Source: https://www.ird.govt.nz/income-tax/income-tax-for-individuals/acc-clients-and-carers/acc-earners-levy-rates
+ */
+export const ACC_RATE = 0.0175; // $1.75 per $100
+export const ACC_MAX_EARNINGS = 156_641;
+export const ACC_MAX_LEVY = 2_741.22; // published max; equals ACC_MAX_EARNINGS * ACC_RATE
+
+/**
+ * KiwiSaver employee deduction rates from pay dates on/after 1 April 2026.
+ * Default / minimum employee rate is 3.5%. Employer minimum also 3.5%.
+ * Sources: IR340 Apr 2026; IRD "Taxation bill now in effect" (31 Mar 2026);
+ * Payroll Calculations & Business Rules Spec 2026.
+ */
+export const KIWISAVER_EMPLOYEE_RATES = [3.5, 4, 6, 8, 10] as const;
+export const KIWISAVER_DEFAULT_EMPLOYEE_RATE = 3.5;
+export const KIWISAVER_EMPLOYER_MIN_RATE = 3.5;
+
+/**
+ * Student loan — NZ-based borrowers.
+ * Annual threshold frozen at $24,128; repayment rate 12%.
+ * IRD labels “2026 tax year” as 1 Apr 2025 – 31 Mar 2026; payroll spec keeps
+ * the same threshold for subsequent years while the freeze applies.
+ * Sources:
+ * https://www.ird.govt.nz/student-loans/living-in-new-zealand-with-a-student-loan/repaying-my-student-loan-when-i-earn-salary-or-wages
+ * IRD Payroll Calculations & Business Rules Spec 2026
+ */
+export const STUDENT_LOAN_RATE = 0.12;
+export const STUDENT_LOAN_ANNUAL_THRESHOLD = 24_128;
+export const STUDENT_LOAN_WEEKLY_THRESHOLD = 464;
+export const STUDENT_LOAN_FORTNIGHTLY_THRESHOLD = 928;
+export const STUDENT_LOAN_FOUR_WEEKLY_THRESHOLD = 1_856;
+export const STUDENT_LOAN_MONTHLY_THRESHOLD = 2_010.66;
+
+/**
+ * Independent Earner Tax Credit (IETC) — thresholds from 31 July 2024.
+ * Max $520/year ($10/week); abates 13c per $1 over $66,000; $0 at $70,000+.
+ * Source: https://www.ird.govt.nz/income-tax/income-tax-for-individuals/individual-tax-credits/independent-earner-tax-credit-ietc
+ */
+export const IETC_MIN_INCOME = 24_000;
+export const IETC_FULL_MAX_INCOME = 66_000;
+export const IETC_ABATE_END = 70_000;
+export const IETC_FULL_ANNUAL = 520;
+export const IETC_ABATE_RATE = 0.13;
+
+/**
+ * Payroll giving donation tax credit = 33.33 cents per dollar donated.
+ * Credit may not exceed the tax portion of PAYE for the period.
+ * Source: https://www.ird.govt.nz/roles/employees/payroll-giving-as-an-employee
+ * IR617 Payroll giving guide
+ */
+export const PAYROLL_GIVING_CREDIT_RATE = 1 / 3;
+
+/**
+ * Donation tax credit (charity / donee orgs) claimed via IR526 — NOT payroll giving.
+ * 33.33c per $1 of eligible donations ($5+), capped at 1/3 of taxable income.
+ * Do not double-claim payroll-giving donations. Source: IRD donation tax credits.
+ */
+export const DONATION_TAX_CREDIT_RATE = 1 / 3;
+
+/** Non-declaration / no-notification rate (not used in UI by default). */
+export const NON_DECLARATION_RATE = 0.45;
+
+export const RATE_SOURCES = [
+  {
+    label: 'IRD — Tax rates for individuals',
+    url: 'https://www.ird.govt.nz/income-tax/income-tax-for-individuals/tax-codes-and-tax-rates-for-individuals/tax-rates-for-individuals',
+  },
+  {
+    label: 'IRD — About tax codes (PAYE incl. ACC table)',
+    url: 'https://www.ird.govt.nz/income-tax/income-tax-for-individuals/tax-codes-and-tax-rates-for-individuals/about-tax-codes',
+  },
+  {
+    label: 'IRD — ACC earners’ levy rates',
+    url: 'https://www.ird.govt.nz/income-tax/income-tax-for-individuals/acc-clients-and-carers/acc-earners-levy-rates',
+  },
+  {
+    label: 'IRD — Student loan repayments (salary/wages)',
+    url: 'https://www.ird.govt.nz/student-loans/living-in-new-zealand-with-a-student-loan/repaying-my-student-loan-when-i-earn-salary-or-wages',
+  },
+  {
+    label: 'IRD — Independent earner tax credit (IETC)',
+    url: 'https://www.ird.govt.nz/income-tax/income-tax-for-individuals/individual-tax-credits/independent-earner-tax-credit-ietc',
+  },
+  {
+    label: 'IRD — Payroll giving as an employee',
+    url: 'https://www.ird.govt.nz/roles/employees/payroll-giving-as-an-employee',
+  },
+  {
+    label: 'IRD — About donation tax credits (charity / IR526)',
+    url: 'https://www.ird.govt.nz/income-tax/income-tax-for-individuals/individual-tax-credits/donation-tax-credits/about-donation-tax-credits',
+  },
+  {
+    label: 'IRD — IR340 weekly/fortnightly tax tables Apr 2026',
+    url: 'https://www.ird.govt.nz/-/media/project/ir/home/documents/forms-and-guides/ir300---ir399/ir340/ir340-apr-2026.pdf',
+  },
+  {
+    label: 'IRD — Payroll Calculations & Business Rules Spec 2026',
+    url: 'https://www.ird.govt.nz/-/media/project/ir/home/documents/digital-service-providers/software-providers/payroll-calculations-business-rules-specifications/payroll-calculations-and-business-rules-specification.pdf',
+  },
+  {
+    label: 'IRD — Using the right RWT rate',
+    url: 'https://www.ird.govt.nz/income-tax/withholding-taxes/resident-withholding-tax-rwt/using-the-right-rwt-tax-rate',
+  },
+  {
+    label: 'IRD — End-of-year PIE calculation',
+    url: 'https://www.ird.govt.nz/income-tax/income-tax-for-individuals/types-of-individual-income/portfolio-investment-entity-income-for-individuals/end-of-year-pie-calculation',
+  },
+  {
+    label: 'IRD — Tax for NZ residents (foreign tax credits)',
+    url: 'https://www.ird.govt.nz/international-tax/individuals/tax-for-new-zealand-tax-residents',
+  },
+] as const;
+
+/**
+ * Investing-related tax credits (annual assessment — NOT a payday PAYE field).
+ *
+ * IRD employer PAYE tables / tax codes have no "investing credit" deduction.
+ * Credits from investments (imputation, RWT, PIE, foreign tax) appear on the
+ * income-tax assessment and can reduce tax to pay or increase a refund.
+ * The PAYE tab lets you enter annual NZD amounts from statements so estimated
+ * take-home reflects those credits. Do not invent amounts.
+ *
+ * RWT rate bands (interest) from 31 July 2024 — reference only; credit = tax
+ * already withheld (enter NZD from bank/broker statements):
+ *   ≤$15,600 → 10.5%; $15,601–$53,500 → 17.5%; $53,501–$78,100 → 30%;
+ *   $78,101–$180,000 → 33%; $180,001+ → 39%. Default without chosen rate: 33%.
+ *   No IRD number: 45%. Dividend RWT rate: 33% (offset by imputation credits).
+ * Source: https://www.ird.govt.nz/income-tax/withholding-taxes/resident-withholding-tax-rwt/using-the-right-rwt-tax-rate
+ */
+export const RWT_INTEREST_RATES = [
+  { upTo: 15_600, rate: 0.105 },
+  { upTo: 53_500, rate: 0.175 },
+  { upTo: 78_100, rate: 0.3 },
+  { upTo: 180_000, rate: 0.33 },
+  { upTo: Number.POSITIVE_INFINITY, rate: 0.39 },
+] as const;
+export const RWT_DIVIDEND_RATE = 0.33;
+export const RWT_NO_IRD_RATE = 0.45;
+export const RWT_DEFAULT_INTEREST_RATE = 0.33;
+
+/** PIR options for multi-rate PIEs (reference; PIE credit amount is user-entered). */
+export const PIE_PIR_RATES = [0, 0.105, 0.175, 0.28] as const;
+
+/**
+ * Kinds of investing credits the PAYE tab can model.
+ * All amounts are user-entered NZD from IRD/broker/bank statements — no invented formulas.
+ */
+export const INVESTING_CREDIT_KIND_OPTIONS = [
+  {
+    kind: 'imputation',
+    label: 'Imputation credits (NZ dividends)',
+    hint: 'Credits attached to NZ company/unit-trust dividends for tax the company already paid. Enter the annual total from dividend statements. Offsets tax on assessment; may also reduce RWT withheld on the dividend. Not a payday PAYE field.',
+  },
+  {
+    kind: 'rwt',
+    label: 'RWT credits (interest / dividends)',
+    hint: 'Resident withholding tax already deducted by your bank or fund. Enter annual RWT from statements / myIR investment income. Credits offset income tax on assessment. Not deducted again from salary PAYE.',
+  },
+  {
+    kind: 'pie',
+    label: 'PIE tax credit (year-end)',
+    hint: 'If your multi-rate PIE used a PIR higher than correct, IRD’s year-end PIE calculation can create a PIE credit (offsets income tax / refund). Enter the credit NZD from your assessment or estimate — not auto-calculated here.',
+  },
+  {
+    kind: 'foreign',
+    label: 'Foreign tax credit (overseas investing)',
+    hint: 'Tax paid overseas on foreign investment income may qualify for a foreign tax credit (capped at NZ tax on that income). Enter claimable NZD from IR3 / IR1261 workings. Not a payday PAYE field.',
+  },
+  {
+    kind: 'other_investing',
+    label: 'Other investing credit',
+    hint: 'Any other investment-related tax credit (NZD). Label it; amount is yours — not an IRD published payroll rate.',
+  },
+] as const;
+
+export type InvestingCreditKind = (typeof INVESTING_CREDIT_KIND_OPTIONS)[number]['kind'];
+
+/** @deprecated alias — same catalog as INVESTING_CREDIT_KIND_OPTIONS */
+export const TAX_CREDIT_KIND_OPTIONS = INVESTING_CREDIT_KIND_OPTIONS;
+export type TaxCreditKind = InvestingCreditKind;

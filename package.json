@@ -1,0 +1,39 @@
+{
+  "name": "portfolio-tracker",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c green,cyan \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:web": "vite",
+    "dev:api": "node --import tsx server/index.ts",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "lint": "oxlint",
+    "db:init": "node --import tsx server/db/init-cli.ts",
+    "db:backfill-mtg-meta": "node --import tsx scripts/backfill-mtg-meta.ts",
+    "test:cash-sync": "node --import tsx server/akahu/sync.cash.test.ts"
+  },
+  "dependencies": {
+    "concurrently": "^8.2.2",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.18.4",
+    "sql.js": "^1.14.2"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.19.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "oxlint": "^1.81.0",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0"
+  },
+  "description": "Local-first NZD budgeting + portfolio tracker (NZ / Pacific/Auckland)"
+}
