@@ -25,10 +25,14 @@ import { loadDotEnv } from './akahu/loadEnv.ts';
 import { ensureUploadDirs } from './lib/uploads.ts';
 import { attachUser, requireAuth, isPublicApiPath } from './middleware/requireAuth.ts';
 import { logger } from './lib/logger.ts';
+import { apiNotFound, mountSpa, staticGetHead } from './lib/spaHost.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
-const DIST_DIR = path.join(ROOT, 'dist');
+/** Optional absolute override for routing tests. The image uses ./dist. */
+const DIST_DIR = process.env.SPA_DIST_DIR?.trim()
+  ? path.resolve(process.env.SPA_DIST_DIR.trim())
+  : path.join(ROOT, 'dist');
 const isProd = process.env.NODE_ENV === 'production';
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -98,7 +102,8 @@ async function main() {
   });
 
   app.use('/api/auth', authRouter);
-  app.use('/api/uploads', express.static(path.join(DATA_DIR, 'uploads')));
+  // Uploads are files under /api. GET/HEAD only so a POST cannot 405 here.
+  app.use('/api/uploads', staticGetHead(path.join(DATA_DIR, 'uploads'), { maxAge: '1h' }));
 
   app.use('/api/holdings', holdingsRouter);
   app.use('/api/accounts', accountsRouter);
@@ -111,12 +116,12 @@ async function main() {
   app.use('/api/debts', debtsRouter);
   app.use('/api/income', incomeRouter);
 
-  // Production: serve Vite build; SPA fallback for client routes.
+  // Unmatched /api stops here (JSON). It must not fall through to the SPA.
+  app.use('/api', apiNotFound);
+
+  // Production: Vite build from this same process. Static is GET/HEAD only.
   if (isProd && fs.existsSync(DIST_DIR)) {
-    app.use(express.static(DIST_DIR, { index: false, maxAge: '1h' }));
-    app.get(/^(?!\/api(?:\/|$)).*/, (_req, res) => {
-      res.sendFile(path.join(DIST_DIR, 'index.html'));
-    });
+    mountSpa(app, DIST_DIR);
   }
 
   // Express 5: the listen callback is also wired to server 'error' (via once).
