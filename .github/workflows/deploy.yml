@@ -35,5 +35,5 @@ jobs:
       - name: Deploy stub
         run: |
           echo "Deploy from main is gated."
-          echo "No host secrets configured yet — skipping real deploy."
+          echo "No host secrets configured yet - skipping real deploy."
           echo "Artifact build succeeded; wire hosting secrets to enable deploy."
