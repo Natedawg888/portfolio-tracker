@@ -16,9 +16,11 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV PORT=8080
-# sql.js WASM + tsx for TypeScript server entry
+# sql.js WASM + tsx (runtime dependency; NODE_ENV=production omits devDependencies).
+# Do not `npm install tsx --no-save` here: with NODE_ENV=production npm prunes it
+# and `node --import tsx` fails with ERR_MODULE_NOT_FOUND.
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm install tsx@4.23.15 --no-save
+RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server ./server
 COPY --from=build /app/src ./src
