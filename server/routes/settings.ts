@@ -19,6 +19,7 @@ import {
 import {
   mergeOnboardingIntoPreferencesJson,
   parseOnboardingFromPreferencesJson,
+  preferencesWithAkahuSkippedUnlessRequired,
 } from '../../src/lib/onboardingPrefs.ts';
 import {
   defaultValueSearchPrefs,
@@ -455,9 +456,9 @@ async function saveUserAssetClassPrefs(
   valueSearch?: ValueSearchPrefs,
 ): Promise<{ prefs: AssetClassPrefs; valueSearch: ValueSearchPrefs }> {
   const db = await getDb();
-  const row = queryOne<{ preferences_json: string | null }>(
+  const row = queryOne<{ preferences_json: string | null; email: string }>(
     db,
-    `SELECT preferences_json FROM users WHERE id = ?`,
+    `SELECT preferences_json, email FROM users WHERE id = ?`,
     [userId],
   );
   let existing: Record<string, unknown> = {};
@@ -473,10 +474,13 @@ async function saveUserAssetClassPrefs(
     valueSearch ?? existing.valueSearch ?? defaultValueSearchPrefs(),
   );
   // Persist asset toggles + Value Search tool prefs; mark signup asset step done.
+  // Non-Nathan accounts keep Akahu marked skipped (same as "Skip / do later").
   const withAssets = { ...existing, assetClasses: prefs, valueSearch: nextValueSearch };
-  const nextJson = mergeOnboardingIntoPreferencesJson(JSON.stringify(withAssets), {
+  const merged = mergeOnboardingIntoPreferencesJson(JSON.stringify(withAssets), {
     assetClassesDone: true,
   });
+  const applied = preferencesWithAkahuSkippedUnlessRequired(merged, row?.email);
+  const nextJson = applied.json ?? merged;
   const now = new Date().toISOString();
   run(
     db,
@@ -525,12 +529,23 @@ router.get('/onboarding', async (req: AuthedRequest, res) => {
     return;
   }
   const db = await getDb();
-  const row = queryOne<{ preferences_json: string | null }>(
+  const row = queryOne<{ preferences_json: string | null; email: string }>(
     db,
-    `SELECT preferences_json FROM users WHERE id = ?`,
+    `SELECT preferences_json, email FROM users WHERE id = ?`,
     [req.user.id],
   );
-  const parsed = parseOnboardingFromPreferencesJson(row?.preferences_json);
+  const applied = preferencesWithAkahuSkippedUnlessRequired(row?.preferences_json, row?.email);
+  let preferencesJson = row?.preferences_json ?? null;
+  if (applied.changed && applied.json != null) {
+    preferencesJson = applied.json;
+    const now = new Date().toISOString();
+    run(
+      db,
+      `UPDATE users SET preferences_json = ?, updated_at = ? WHERE id = ?`,
+      [applied.json, now, req.user.id],
+    );
+  }
+  const parsed = parseOnboardingFromPreferencesJson(preferencesJson);
   res.json({
     onboardingComplete: parsed.complete,
     onboarding: parsed.flags ?? {
@@ -564,12 +579,14 @@ router.put('/onboarding', async (req: AuthedRequest, res) => {
     return;
   }
   const db = await getDb();
-  const row = queryOne<{ preferences_json: string | null }>(
+  const row = queryOne<{ preferences_json: string | null; email: string }>(
     db,
-    `SELECT preferences_json FROM users WHERE id = ?`,
+    `SELECT preferences_json, email FROM users WHERE id = ?`,
     [req.user.id],
   );
-  const nextJson = mergeOnboardingIntoPreferencesJson(row?.preferences_json, patch);
+  const merged = mergeOnboardingIntoPreferencesJson(row?.preferences_json, patch);
+  const applied = preferencesWithAkahuSkippedUnlessRequired(merged, row?.email);
+  const nextJson = applied.json ?? merged;
   const now = new Date().toISOString();
   run(
     db,

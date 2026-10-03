@@ -23,6 +23,7 @@ import {
   type CategoryType,
 } from '../lib/categoryTypes';
 import { CategoryTypeToggle } from '../components/CategoryTypeToggle';
+import { akahuOnboardingRequiredForEmail } from '../lib/onboardingPrefs';
 
 type Step = 'credentials' | 'assets' | 'budgets' | 'connect';
 
@@ -38,6 +39,7 @@ type TxCategory = {
 };
 
 function stepFromOnboarding(user: {
+  email?: string | null;
   onboardingComplete: boolean;
   onboarding: {
     assetClassesDone: boolean;
@@ -48,8 +50,9 @@ function stepFromOnboarding(user: {
   if (user.onboardingComplete) return 'done';
   if (!user.onboarding.assetClassesDone) return 'assets';
   if (!user.onboarding.budgetCategoriesDone) return 'budgets';
-  if (!user.onboarding.akahuStepDone) return 'connect';
-  return 'done';
+  // Only Nathan is offered the Akahu checkpoint. Everyone else is already skipped.
+  if (!akahuOnboardingRequiredForEmail(user.email) || user.onboarding.akahuStepDone) return 'done';
+  return 'connect';
 }
 
 export function Register() {
@@ -122,11 +125,74 @@ export function Register() {
     if (step === 'connect' && user) void loadAkahu();
   }, [step, user, loadAkahu]);
 
+  // Everyone except Nathan: record the same skip the "Skip / do later" button writes,
+  // so signup and later sign-in never stop on the Akahu checkpoint.
+  useEffect(() => {
+    if (loading || !user) return;
+    if (akahuOnboardingRequiredForEmail(user.email)) return;
+    if (user.onboarding.akahuStepDone) return;
+    let active = true;
+    void (async () => {
+      try {
+        const r = await api.settings.setOnboarding({ akahuStepDone: true });
+        if (!active) return;
+        if (!r.onboarding.akahuStepDone) {
+          setError('Could not skip bank setup');
+          return;
+        }
+        setUser({
+          ...user,
+          onboardingComplete: r.onboardingComplete,
+          onboarding: r.onboarding,
+        });
+        if (r.onboardingComplete) {
+          midSignupRef.current = false;
+          navigate('/', { replace: true });
+        }
+      } catch (err) {
+        if (active) {
+          setError(err instanceof ApiError ? err.message : 'Could not skip bank setup');
+        }
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [loading, user, setUser, navigate]);
+
+  // Signup decides from the address on this form. Resume uses the signed-in account.
+  // That keeps the Akahu step out of create-account for every email except Nathan's.
+  const accountEmail = user?.email || email;
+  const offerAkahu = akahuOnboardingRequiredForEmail(accountEmail);
+  const blockingAkahuSkip = Boolean(
+    user &&
+      !offerAkahu &&
+      !user.onboarding.akahuStepDone &&
+      user.onboarding.assetClassesDone &&
+      user.onboarding.budgetCategoriesDone,
+  );
+
   // Finished onboarding and not mid Akahu step → home.
   // Incomplete users stay on /register (RequireAuth also redirects here).
   // midSignupRef prevents bouncing home just because user was set after credentials.
-  if (!loading && resumed && user?.onboardingComplete && step !== 'connect') {
+  // Non-Nathan accounts never stay on the connect step, even if it was opened.
+  if (
+    !loading &&
+    resumed &&
+    user?.onboardingComplete &&
+    (step !== 'connect' || !offerAkahu)
+  ) {
     return <Navigate to="/" replace />;
+  }
+
+  if (!loading && resumed && blockingAkahuSkip) {
+    return (
+      <div className="auth-page">
+        <div className="auth-card panel">
+          <p className="muted">Loading…</p>
+        </div>
+      </div>
+    );
   }
 
   const firstUser = Boolean(status?.needsSetup);
@@ -225,7 +291,11 @@ export function Register() {
     setBusy(true);
     midSignupRef.current = true;
     try {
-      const r = await api.settings.setOnboarding({ budgetCategoriesDone: true });
+      const r = await api.settings.setOnboarding(
+        offerAkahu
+          ? { budgetCategoriesDone: true }
+          : { budgetCategoriesDone: true, akahuStepDone: true },
+      );
       setUser(
         user
           ? {
@@ -236,6 +306,13 @@ export function Register() {
           : user,
       );
       await refresh();
+      if (r.onboardingComplete) {
+        midSignupRef.current = false;
+        navigate('/', { replace: true });
+        return;
+      }
+      // Create-account for anyone except Nathan never opens the Akahu step.
+      if (!offerAkahu) return;
       setStep('connect');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not save budget categories setup');
@@ -532,7 +609,7 @@ export function Register() {
               </button>
             </form>
           </>
-        ) : (
+        ) : step === 'connect' && offerAkahu ? (
           <>
             <h2>Connect banks & investments</h2>
             <p className="page-lead">
@@ -573,6 +650,8 @@ export function Register() {
               </button>
             </div>
           </>
+        ) : (
+          <p className="muted">Loading…</p>
         )}
       </div>
     </div>

@@ -39,6 +39,7 @@ import {
 import {
   initialPreferencesJsonForNewUser,
   parseOnboardingFromPreferencesJson,
+  preferencesWithAkahuSkippedUnlessRequired,
   type OnboardingFlags,
 } from '../../src/lib/onboardingPrefs.ts';
 
@@ -113,6 +114,53 @@ function publicUser(u: {
   };
 }
 
+/**
+ * Record Akahu setup as skipped for every account except Nathan's email.
+ * No-op for Nathan, for legacy complete accounts, and when the step is already done.
+ */
+function preferencesForUser(
+  db: Awaited<ReturnType<typeof getDb>>,
+  userId: string,
+  email: string,
+  preferencesJson: string | null | undefined,
+): string | null {
+  const applied = preferencesWithAkahuSkippedUnlessRequired(preferencesJson, email);
+  if (applied.changed && applied.json != null) {
+    const now = new Date().toISOString();
+    run(
+      db,
+      `UPDATE users SET preferences_json = ?, updated_at = ? WHERE id = ?`,
+      [applied.json, now, userId],
+    );
+    return applied.json;
+  }
+  return applied.json;
+}
+
+function toPublicUser(
+  db: Awaited<ReturnType<typeof getDb>>,
+  u: {
+    id: string;
+    email: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    displayName?: string | null;
+    avatarUrl?: string | null;
+    createdAt?: string;
+    created_at?: string;
+    preferences_json?: string | null;
+    preferencesJson?: string | null;
+  },
+) {
+  const preferences_json = preferencesForUser(
+    db,
+    u.id,
+    u.email,
+    u.preferencesJson ?? u.preferences_json ?? null,
+  );
+  return publicUser({ ...u, preferences_json });
+}
+
 function loadUserRow(db: Awaited<ReturnType<typeof getDb>>, userId: string) {
   return queryOne<{
     id: string;
@@ -161,7 +209,7 @@ router.get('/me', async (req: AuthedRequest, res) => {
     return;
   }
   res.json({
-    user: publicUser({
+    user: toPublicUser(db, {
       id: row.id,
       email: row.email,
       firstName: row.first_name,
@@ -219,7 +267,7 @@ router.post('/register', async (req, res) => {
   const passwordHash = await hashPassword(password);
   const displayName = composeDisplayName(firstName, lastName);
 
-  const prefsJson = initialPreferencesJsonForNewUser();
+  const prefsJson = initialPreferencesJsonForNewUser(email);
   run(
     db,
     `INSERT INTO users (id, email, password_hash, first_name, last_name, display_name, avatar_url, preferences_json, created_at, updated_at)
@@ -241,7 +289,7 @@ router.post('/register', async (req, res) => {
   const { rawToken, expiresAt } = await createSession(id);
   res.setHeader('Set-Cookie', sessionCookieHeader(rawToken, expiresAt));
   res.status(201).json({
-    user: publicUser({
+    user: toPublicUser(db, {
       id,
       email,
       firstName,
@@ -280,7 +328,7 @@ router.post('/login', async (req, res) => {
   const { rawToken, expiresAt } = await createSession(user.id);
   res.setHeader('Set-Cookie', sessionCookieHeader(rawToken, expiresAt));
   res.json({
-    user: publicUser({
+    user: toPublicUser(db, {
       id: user.id,
       email: user.email,
       firstName: row?.first_name ?? null,
@@ -361,7 +409,7 @@ router.patch('/profile', async (req: AuthedRequest, res) => {
   );
 
   res.json({
-    user: publicUser({
+    user: toPublicUser(db, {
       id: row.id,
       email: row.email,
       firstName,
@@ -432,7 +480,7 @@ router.post('/avatar', async (req: AuthedRequest, res) => {
   ]);
 
   res.json({
-    user: publicUser({
+    user: toPublicUser(db, {
       id: row.id,
       email: row.email,
       firstName: row.first_name,
@@ -462,7 +510,7 @@ router.delete('/avatar', async (req: AuthedRequest, res) => {
   const now = new Date().toISOString();
   run(db, `UPDATE users SET avatar_url = NULL, updated_at = ? WHERE id = ?`, [now, req.user.id]);
   res.json({
-    user: publicUser({
+    user: toPublicUser(db, {
       id: row.id,
       email: row.email,
       firstName: row.first_name,
@@ -549,7 +597,7 @@ router.post('/change-email', async (req: AuthedRequest, res) => {
   }
   if (email === row.email) {
     res.json({
-      user: publicUser({
+      user: toPublicUser(db, {
         id: row.id,
         email: row.email,
         firstName: row.first_name,
@@ -557,7 +605,7 @@ router.post('/change-email', async (req: AuthedRequest, res) => {
         displayName: row.display_name,
         avatarUrl: row.avatar_url,
         createdAt: row.created_at,
-      preferences_json: row.preferences_json,
+        preferences_json: row.preferences_json,
       }),
       message: 'Email unchanged.',
     });
@@ -572,7 +620,7 @@ router.post('/change-email', async (req: AuthedRequest, res) => {
   const now = new Date().toISOString();
   run(db, `UPDATE users SET email = ?, updated_at = ? WHERE id = ?`, [email, now, req.user.id]);
   res.json({
-    user: publicUser({
+    user: toPublicUser(db, {
       id: row.id,
       email,
       firstName: row.first_name,
