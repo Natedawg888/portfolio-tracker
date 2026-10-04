@@ -17,6 +17,7 @@ export const SCOPED_TABLES = [
   'debt_people',
   'income_records',
   'income_plans',
+  'dividend_events',
   'budgets',
   'valuation_snapshots',
   'budget_categories',
@@ -115,6 +116,7 @@ export function deleteScopedDataForUser(
   const deleteOrder: ScopedTable[] = [
     'income_records',
     'income_plans',
+    'dividend_events',
     'budgets',
     'debt_people',
     'transactions',

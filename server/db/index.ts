@@ -432,6 +432,7 @@ function migrateSchema(database: Database) {
     { table: 'debt_people', index: 'idx_debt_people_user' },
     { table: 'income_records', index: 'idx_income_records_user' },
     { table: 'income_plans', index: 'idx_income_plans_user' },
+    { table: 'dividend_events', index: 'idx_dividend_events_user' },
     { table: 'budgets', index: 'idx_budgets_user' },
     { table: 'valuation_snapshots', index: 'idx_valuation_snapshots_user' },
     { table: 'budget_categories', index: 'idx_budget_categories_user' },

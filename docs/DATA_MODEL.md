@@ -13,6 +13,7 @@ bank_accounts 1──* transactions *──? budget_categories
 budget_categories 1──* budgets
 income_records ?──? transactions   (optional link; cat-income credits also feed received)
 income_plans                       (planned NZD per YYYY-MM)
+dividend_events *──? holdings      (stock/ETF only; user_id on both)
 
 holdings  (polymorphic by asset_class)
   ├── stock
@@ -94,6 +95,22 @@ Valuation refresh: `POST /api/holdings/:id/refresh-value` or `POST /api/holdings
 **Dedupe (no double-count):** When Add income (cash + account) creates a credit, `income_records.transaction_id` points at that txn. The summary skips any income-category credit whose `id` is already linked from an income record, so the dollars appear once (via the record). Crypto records never create a bank txn; they still count fully. Akahu soft-merge keeps the same txn `id` when a placeholder matches — the link still holds, still one count. Leave `external_id` null on Add-income credits so soft-merge can attach the bank id later.
 
 APIs: `GET /api/income?month=`, `GET /api/income/summary?month=` (`actualNzd`, `categories[]` with per-line planned/actual, `plans[]`), `PUT /api/income/plan` `{ yearMonth, categoryId, amountNzd }`.
+
+## Dividends (personal record)
+
+Table: `dividend_events`. One row per payment the signed-in user records against **their** stock or ETF holding (`holding_id` must match `holdings.user_id` and `asset_class = stock`). Company/ETF name and symbol are copied from that holding.
+
+| Field | Notes |
+|-------|--------|
+| `shares_held`, `dividend_per_share` | Snapshot at payment. Gross = shares × dividend per share |
+| `tax_withholding` | Deducted from gross |
+| `imputation_credits` | NZ imputation credits. Recorded beside the cash figures; **not** subtracted from net |
+| `net_dividend` | Gross − tax/withholding, in the payment currency |
+| `payment_date` | `YYYY-MM-DD`. On or before today (Pacific/Auckland) counts as paid; later dates are upcoming amounts the user stated |
+| `currency`, `fx_rate_to_nzd` | NZD stores rate `1`. Any other currency converts to NZD only when the user recorded a rate. A blank rate is left blank |
+| `reinvested`, `reinvested_amount` | Yes/no and the amount reinvested in the payment currency. Does not change `holdings.shares` |
+
+Dashboard totals (monthly, annual, year income, growth, yield, forecast, upcoming, history) are computed from these rows. Yield uses a saved `price_quotes` row with `status = ok` when one exists, otherwise the holding’s recorded cost basis, and is omitted when that value is missing. The forecast repeats the user’s last 12 months or sums upcoming rows they entered. It is not a market forecast. The same API is shown under Portfolio and Budget. `GET/POST /api/dividends`, `PATCH/DELETE /api/dividends/:id`.
 
 ## KiwiSaver (NZ)
 
