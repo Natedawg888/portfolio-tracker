@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, formatAuckland } from '../api/client';
+import { PhaseNews } from '../components/PhaseNews';
 import type { EconomicCycleResponse, EconomicIndicatorCard } from '../types/economy';
 
 function formatSourceDate(iso: string | null | undefined): string {
@@ -143,6 +144,8 @@ export function EconomicCycle() {
           <IndicatorCardView key={card.type} card={card} />
         ))}
       </section>
+
+      <PhaseNews key={phase?.id ?? 'none'} phase={phase?.id ?? null} />
 
       <section className="panel">
         <div className="panel-heading">

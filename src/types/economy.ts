@@ -70,3 +70,30 @@ export type EconomicCycleResponse = {
   assetClasses: Array<{ id: string; label: string; tendency: string; explanation: string }>;
   assetNote: string | null;
 };
+
+export type PhaseNewsItem = {
+  headline: string;
+  publication: string;
+  publishedAt: string | null;
+  summary: string | null;
+  url: string;
+  sourceName: string;
+  topic: string;
+};
+
+export type PhaseNewsGroup = {
+  id: string;
+  title: string;
+  sourceName: string;
+  status: 'ok' | 'empty' | 'error';
+  message: string | null;
+  items: PhaseNewsItem[];
+};
+
+export type PhaseNewsResponse = {
+  phase: EconomicPhase | null;
+  phaseLabel: string | null;
+  note: string;
+  fetchedAt: string;
+  groups: PhaseNewsGroup[];
+};

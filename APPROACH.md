@@ -90,6 +90,10 @@ The history chart replays the latest vintage of each series (revisions included)
 
 Static copy per phase for equities, property, bonds, cash / term deposits, and commodities. Each row is a historical tendency (positive, neutral, or negative) plus a neutral explanation. Tests reject advice wording such as buy, sell, hold, or "move your money".
 
+## Related news
+
+Under the indicator cards, the page loads headlines with the same RSS client as the holdings news module (`server/news`): Google News searches for central-bank rates, GDP, inflation, unemployment, housing, and the global economy, plus BBC world and politics. The calculated phase adds one New Zealand search using the phase name. Items keep the feed’s headline, publication, date, description, and link. A failed feed is an error with no articles. Portfolio exposure and the scenario simulator are still not built.
+
 ## Tests
 
 `npm run test:economy` runs the scoring tests, period alignment, the advice-language check, and the sample-provider label. Scoring tests were written against the public function before the calculation was filled in. They cover the five canonical stories, confidence under thin data, deterministic repeats, weight overrides, tie-break, and quarter-to-quarter previous phase.
