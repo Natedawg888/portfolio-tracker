@@ -413,7 +413,7 @@ export function Register() {
   }
 
   return (
-    <div className="auth-page">
+    <div className={`auth-page${step === 'credentials' ? ' register-page' : ''}`}>
       <div className={`auth-card panel${wide ? ' auth-card-wide' : ''}`}>
         <p className="eyebrow">Portfolio Tracker</p>
         {step === 'credentials' ? (

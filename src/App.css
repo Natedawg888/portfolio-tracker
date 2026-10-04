@@ -3387,15 +3387,15 @@ body.nav-drawer-open {
   .news-grid { grid-template-columns: 1fr; }
 }
 
-/* Sign-in screen only (/login). Register and other auth shells keep shared styles. */
-.auth-page.login-page {
+/* Sign-in and create-account credentials follow the saved theme (data-theme).
+   Later register steps and other screens keep their own styles. */
+.auth-page.login-page,
+.auth-page.register-page {
   min-height: 100vh;
-  color-scheme: light;
-  color: #1a1a1a;
-  background: #e7e0d4;
   position: relative;
 }
-.auth-page.login-page::before {
+.auth-page.login-page::before,
+.auth-page.register-page::before {
   content: "";
   position: absolute;
   z-index: 1;
@@ -3406,53 +3406,165 @@ body.nav-drawer-open {
   background: #1b4332;
   pointer-events: none;
 }
-.login-page .auth-card {
+.login-page .auth-card,
+.register-page .auth-card {
   position: relative;
   z-index: 0;
-  background: #f7f3ec;
   border: none;
   border-radius: 16px;
   padding: 2rem 2rem 1.75rem;
-  box-shadow: 0 16px 40px rgba(48, 36, 22, 0.1);
-  color: #1a1a1a;
 }
-.login-page .eyebrow {
-  color: #1b4332;
+.login-page .eyebrow,
+.register-page .eyebrow {
   font-variant-caps: all-small-caps;
   text-transform: none;
   letter-spacing: 0.12em;
   font-size: 0.78rem;
   font-weight: 600;
 }
-.login-page .auth-card h2 {
+.login-page .auth-card h2,
+.register-page .auth-card h2 {
   font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
   font-weight: 500;
-  color: #1a1a1a;
   letter-spacing: -0.015em;
 }
-.login-page .auth-form label {
+.login-page .auth-form .btn.primary,
+.register-page .auth-form .btn.primary {
+  width: 100%;
+  color: #fff;
+}
+.login-page .auth-form .btn.primary:focus-visible,
+.register-page .auth-form .btn.primary:focus-visible {
+  outline-style: solid;
+  outline-width: 2px;
+  outline-offset: 3px;
+}
+
+html[data-theme="light"] .auth-page.login-page,
+html[data-theme="light"] .auth-page.register-page {
+  color-scheme: light;
+  color: #1a1a1a;
+  background: #e7e0d4;
+}
+html[data-theme="light"] .login-page .auth-card,
+html[data-theme="light"] .register-page .auth-card {
+  background: #f7f3ec;
+  box-shadow: 0 16px 40px rgba(48, 36, 22, 0.1);
+  color: #1a1a1a;
+}
+html[data-theme="light"] .login-page .eyebrow,
+html[data-theme="light"] .register-page .eyebrow {
+  color: #1b4332;
+}
+html[data-theme="light"] .login-page .auth-card h2,
+html[data-theme="light"] .register-page .auth-card h2 {
+  color: #1a1a1a;
+}
+html[data-theme="light"] .register-page .page-lead,
+html[data-theme="light"] .register-page .auth-hint,
+html[data-theme="light"] .register-page .auth-switch,
+html[data-theme="light"] .login-page .auth-form label,
+html[data-theme="light"] .register-page .auth-form label {
   color: #3f3832;
 }
-.login-page .auth-form input {
+html[data-theme="light"] .login-page .auth-form input,
+html[data-theme="light"] .register-page .auth-form input {
   background: #fbf8f3;
   color: #1a1a1a;
   border: 1px solid #c8bba8;
 }
-.login-page .auth-error {
+html[data-theme="light"] .login-page .auth-error,
+html[data-theme="light"] .register-page .auth-error {
   color: #6e1b1b;
   background: #f8e4e0;
   border-color: #e4c2bb;
 }
-.login-page .auth-form .btn.primary {
-  width: 100%;
+html[data-theme="light"] .login-page .auth-form .btn.primary,
+html[data-theme="light"] .register-page .auth-form .btn.primary {
   background: #1b4332;
   border-color: #1b4332;
-  color: #fff;
 }
-.login-page .auth-form .btn.primary:focus-visible {
-  outline: 2px solid #1b4332;
-  outline-offset: 3px;
+html[data-theme="light"] .login-page .auth-form .btn.primary:focus-visible,
+html[data-theme="light"] .register-page .auth-form .btn.primary:focus-visible {
+  outline-color: #1b4332;
 }
-.login-page .auth-switch a {
+html[data-theme="light"] .login-page .auth-switch a,
+html[data-theme="light"] .register-page .auth-switch a {
   color: #6e6278;
+}
+
+html[data-theme="dark"] .auth-page.login-page,
+html[data-theme="dark"] .auth-page.register-page,
+html:not([data-theme]) .auth-page.login-page,
+html:not([data-theme]) .auth-page.register-page {
+  color-scheme: dark;
+  color: #f3eee4;
+  background: #121a16;
+}
+html[data-theme="dark"] .login-page .auth-card,
+html[data-theme="dark"] .register-page .auth-card,
+html:not([data-theme]) .login-page .auth-card,
+html:not([data-theme]) .register-page .auth-card {
+  background: #1c2822;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  color: #f3eee4;
+}
+html[data-theme="dark"] .login-page .eyebrow,
+html[data-theme="dark"] .register-page .eyebrow,
+html:not([data-theme]) .login-page .eyebrow,
+html:not([data-theme]) .register-page .eyebrow,
+html[data-theme="dark"] .login-page .auth-form label,
+html[data-theme="dark"] .register-page .auth-form label,
+html:not([data-theme]) .login-page .auth-form label,
+html:not([data-theme]) .register-page .auth-form label,
+html[data-theme="dark"] .register-page .page-lead,
+html[data-theme="dark"] .register-page .auth-hint,
+html[data-theme="dark"] .login-page .auth-switch,
+html[data-theme="dark"] .register-page .auth-switch,
+html:not([data-theme]) .register-page .page-lead,
+html:not([data-theme]) .register-page .auth-hint,
+html:not([data-theme]) .login-page .auth-switch,
+html:not([data-theme]) .register-page .auth-switch {
+  color: #c5d5c8;
+}
+html[data-theme="dark"] .login-page .auth-card h2,
+html[data-theme="dark"] .register-page .auth-card h2,
+html:not([data-theme]) .login-page .auth-card h2,
+html:not([data-theme]) .register-page .auth-card h2 {
+  color: #f3eee4;
+}
+html[data-theme="dark"] .login-page .auth-form input,
+html[data-theme="dark"] .register-page .auth-form input,
+html:not([data-theme]) .login-page .auth-form input,
+html:not([data-theme]) .register-page .auth-form input {
+  background: #24302a;
+  color: #f3eee4;
+  border: 1px solid #6f6254;
+}
+html[data-theme="dark"] .login-page .auth-error,
+html[data-theme="dark"] .register-page .auth-error,
+html:not([data-theme]) .login-page .auth-error,
+html:not([data-theme]) .register-page .auth-error {
+  color: #f3eee4;
+  background: #4a2422;
+  border-color: #7a4038;
+}
+html[data-theme="dark"] .login-page .auth-form .btn.primary,
+html[data-theme="dark"] .register-page .auth-form .btn.primary,
+html:not([data-theme]) .login-page .auth-form .btn.primary,
+html:not([data-theme]) .register-page .auth-form .btn.primary {
+  background: #2f6b4f;
+  border-color: #2f6b4f;
+}
+html[data-theme="dark"] .login-page .auth-form .btn.primary:focus-visible,
+html[data-theme="dark"] .register-page .auth-form .btn.primary:focus-visible,
+html:not([data-theme]) .login-page .auth-form .btn.primary:focus-visible,
+html:not([data-theme]) .register-page .auth-form .btn.primary:focus-visible {
+  outline-color: #c5d5c8;
+}
+html[data-theme="dark"] .login-page .auth-switch a,
+html[data-theme="dark"] .register-page .auth-switch a,
+html:not([data-theme]) .login-page .auth-switch a,
+html:not([data-theme]) .register-page .auth-switch a {
+  color: #b7a8c4;
 }
