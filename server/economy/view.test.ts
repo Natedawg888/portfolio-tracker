@@ -74,6 +74,13 @@ const old = isStale('gdp_growth', '2019-12-31', new Date('2026-10-04T00:00:00.00
 assert(old === true, 'a 2019 print is stale in 2026');
 const recent = isStale('gdp_growth', '2026-06-30', new Date('2026-10-04T00:00:00.000Z'));
 assert(recent === false, 'June 2026 GDP is still inside the quarterly lag in October 2026');
+const june = '2026-06-30';
+const october = new Date('2026-10-04T00:00:00.000Z');
+assert(isStale('business_activity_pmi', june, october, 'monthly') === true, 'June is stale on a monthly window in October');
+assert(
+  isStale('business_activity_pmi', june, october, 'quarterly') === false,
+  'June is still current on a quarterly window in October',
+);
 
 const blank = buildCycleView({
   observations: [],

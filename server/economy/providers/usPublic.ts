@@ -6,6 +6,8 @@
 import type { EconomicObservation, IndicatorType } from '../types.ts';
 import { attachPrevious, changeOverMonths, subtractSeries, type WithPrevious } from './derive.ts';
 import { toObservations } from './observe.ts';
+import { BUSINESS_ACTIVITY_NOTE, businessActivitySourceUrl, loadUsBusinessActivity, US_BUSINESS_KEY } from './businessActivity.ts';
+import { loadUsCreditConditions, SLOOS_CI_TIGHTENING, SLOOS_URL } from './creditConditions.ts';
 import { loadUsHousingGrowth } from './housingStarts.ts';
 import { loadOecdMeasure, loadShareIndexChange, oecdKeiUrl } from './oecd.ts';
 import type { ProviderFetchResult } from './types.ts';
@@ -43,7 +45,8 @@ export async function fetchUsPublic(): Promise<ProviderFetchResult> {
   const warnings: string[] = [];
   const observations: EconomicObservation[] = [];
 
-  const [gdp, cpi, unemployment, rates, jobs, spending, longRate, shortRate, shares, housing] = await Promise.all([
+  const [gdp, cpi, unemployment, rates, jobs, spending, longRate, shortRate, shares, housing, business, credit] =
+    await Promise.all([
     safe('OECD US GDP', warnings, () => loadKei(SERIES.gdp, 'B1GQ_Q')),
     safe('OECD US CPI', warnings, () => loadKei(SERIES.cpi, 'CP')),
     safe('OECD US unemployment', warnings, () => loadKei(SERIES.unemployment, 'UNEMP')),
@@ -54,6 +57,8 @@ export async function fetchUsPublic(): Promise<ProviderFetchResult> {
     safe('OECD US short rate', warnings, () => loadKei(SERIES.shortRate, 'IR3TIB')),
     safe('OECD US share prices', warnings, () => loadShareIndexChange(REF)),
     safe('Census housing starts', warnings, loadUsHousingGrowth),
+    safe('OECD US business activity', warnings, loadUsBusinessActivity),
+    safe('Federal Reserve credit standards', warnings, loadUsCreditConditions),
   ]);
 
   const base = {
@@ -187,6 +192,39 @@ export async function fetchUsPublic(): Promise<ProviderFetchResult> {
       }),
     );
   }
+  if (business && business.length > 0) {
+    push(
+      business,
+      'business_activity_pmi',
+      'index',
+      'OECD — production tendency, percentage balance, calendar and seasonally adjusted',
+      'PR',
+      businessActivitySourceUrl(US_BUSINESS_KEY),
+      BUSINESS_ACTIVITY_NOTE,
+      'monthly',
+    );
+  }
+  if (credit && credit.rates.length > 0) {
+    const publishedAt = credit.publishedAt ?? credit.rates.at(-1)?.periodEnd ?? retrievedAt.slice(0, 10);
+    observations.push(
+      ...toObservations({
+        ...base,
+        points: credit.rates,
+        indicatorType: 'credit_conditions',
+        unit: 'percent',
+        source:
+          'Federal Reserve — Senior Loan Officer Opinion Survey, net percentage of domestic banks tightening standards for commercial and industrial loans to large and middle-market firms',
+        sourceUrl: SLOOS_URL,
+        publishedAt,
+        publishedAtPrecision: credit.publishedAt ? 'release' : 'period_end',
+        frequency: 'quarterly',
+        seriesId: SLOOS_CI_TIGHTENING,
+        notes: credit.publishedAt
+          ? 'Net percentage easing, calculated in this app as the negative of the published net-tightening figure, so a higher number means easier credit. published_at is the file Last-Modified date.'
+          : 'Net percentage easing, calculated in this app as the negative of the published net-tightening figure, so a higher number means easier credit. The file has no Last-Modified date, so published_at is the period end.',
+      }),
+    );
+  }
   if (shares && shares.length > 0) {
     observations.push(
       ...toObservations({
@@ -205,13 +243,9 @@ export async function fetchUsPublic(): Promise<ProviderFetchResult> {
     );
   }
 
-  warnings.push(
-    'Business activity and credit conditions have no United States feed connected in this version.',
-  );
-
   return {
     providerId: PROVIDER_ID,
-    providerLabel: 'United States public extracts (OECD)',
+    providerLabel: 'United States public extracts (OECD, Census Bureau, and the Federal Reserve)',
     kind: 'live',
     country: COUNTRY,
     retrievedAt,

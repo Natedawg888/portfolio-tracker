@@ -97,9 +97,9 @@ export const ECONOMY_COUNTRIES: EconomyCountry[] = [
       consumer_spending:
         'Quarterly percent change in real household consumption. It is a national-accounts series, not a retail-sales release.',
       business_activity_pmi:
-        'No United States business-activity feed is connected in this version, so the card stays blank.',
+        'Diffusion index of the production tendency. Calculated in this app as 50 plus half the OECD percentage balance, so 50 is the published neutral point. It is not a branded purchasing managers’ index.',
       credit_conditions:
-        'No United States credit-conditions feed is connected in this version, so the card stays blank.',
+        'Net percentage of domestic banks easing standards on commercial and industrial loans to large and middle-market firms. Calculated as the negative of the Federal Reserve net-tightening figure, so a higher number means easier credit.',
       housing_activity:
         'Annual percent change in new privately owned housing units started, seasonally adjusted annual rate. The growth rate is calculated in this app from the Census Bureau count. It is not a house-price index.',
       share_market:

@@ -75,6 +75,11 @@ export function oecdKeiUrl(key: string): string {
   return url(`OECD.SDD.STES,DSD_KEI@DF_KEI,4.0/${key}`);
 }
 
+/** Business tendency surveys. The key is the nine-part dimension path. */
+export function oecdBtsUrl(key: string): string {
+  return url(`OECD.SDD.STES,DSD_STES@DF_BTS,4.0/${key}`);
+}
+
 export async function loadOecdMeasure(endpoint: string, measure: string): Promise<WithPrevious[]> {
   return attachPrevious(await loadMeasure(endpoint, measure));
 }

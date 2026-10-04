@@ -13,6 +13,7 @@ import {
   loadOecdYieldSpread,
   OECD_URLS,
 } from './oecd.ts';
+import { BUSINESS_ACTIVITY_NOTE, businessActivitySourceUrl, loadNzBusinessActivity, NZ_BUSINESS_KEY } from './businessActivity.ts';
 import { loadNzHousingGrowth } from './consents.ts';
 import {
   fetchCatalog,
@@ -51,7 +52,7 @@ export async function fetchNzPublic(): Promise<ProviderFetchResult> {
   const catalog = await safe('Stats NZ catalogue', warnings, fetchCatalog);
   const docs = catalog ? selectStatsDocs(catalog) : null;
 
-  const [gdp, cpiFile, retail, jobs, housing, oecdCpi, unemployment, callRate, yieldSpread, shares, releaseDates] =
+  const [gdp, cpiFile, retail, jobs, housing, business, oecdCpi, unemployment, callRate, yieldSpread, shares, releaseDates] =
     await Promise.all([
       docs?.gdp
         ? safe('Stats NZ GDP', warnings, () => loadStatsSeries(docs.gdp!, STATS_SERIES.gdp, 'quarterly'))
@@ -68,6 +69,7 @@ export async function fetchNzPublic(): Promise<ProviderFetchResult> {
       docs?.consents
         ? safe('Stats NZ building consents', warnings, () => loadNzHousingGrowth(docs.consents!))
         : Promise.resolve(null),
+      safe('OECD business activity', warnings, loadNzBusinessActivity),
       safe('OECD CPI', warnings, loadOecdCpi),
       safe('OECD unemployment', warnings, loadOecdUnemployment),
       safe('OECD interest rates', warnings, loadOecdCallRate),
@@ -226,6 +228,24 @@ export async function fetchNzPublic(): Promise<ProviderFetchResult> {
     );
   }
 
+  if (business && business.length > 0) {
+    observations.push(
+      ...toObservations({
+        ...base,
+        points: business,
+        indicatorType: 'business_activity_pmi',
+        unit: 'index',
+        source: 'OECD — production tendency, percentage balance, calendar and seasonally adjusted',
+        sourceUrl: businessActivitySourceUrl(NZ_BUSINESS_KEY),
+        publishedAt: business.at(-1)?.periodEnd ?? retrievedAt.slice(0, 10),
+        publishedAtPrecision: 'period_end',
+        frequency: 'quarterly',
+        seriesId: 'PR',
+        notes: BUSINESS_ACTIVITY_NOTE,
+      }),
+    );
+  }
+
   if (shares) {
     observations.push(
       ...toObservations({
@@ -245,7 +265,7 @@ export async function fetchNzPublic(): Promise<ProviderFetchResult> {
   }
 
   warnings.push(
-    'Business activity and credit conditions have no feed connected in this version.',
+    'Credit conditions have no New Zealand feed connected. The Reserve Bank credit conditions survey is the official series, and rbnz.govt.nz returns HTTP 403, so the card stays blank instead of using a stand-in.',
   );
 
   return {

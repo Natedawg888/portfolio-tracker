@@ -12,6 +12,7 @@ import {
   type CycleAssessment,
   type DirectionName,
   type EconomicObservation,
+  type Frequency,
   type IndicatorType,
   type MomentumName,
   type Phase,
@@ -65,8 +66,15 @@ function statusFor(fit: number | null, available: boolean, phase: Phase | null):
   return 'Diverges from this phase';
 }
 
-export function isStale(indicator: IndicatorType, periodEndDate: string, now: Date): boolean {
-  return daysAfter(periodEndDate, now) > INDICATOR_CATALOG[indicator].staleAfterDays;
+export function isStale(
+  indicator: IndicatorType,
+  periodEndDate: string,
+  now: Date,
+  frequency?: Frequency,
+): boolean {
+  const allowance =
+    frequency === 'monthly' ? 75 : frequency === 'quarterly' ? 200 : frequency === 'annual' ? 400 : INDICATOR_CATALOG[indicator].staleAfterDays;
+  return daysAfter(periodEndDate, now) > allowance;
 }
 
 export type CycleResponse = {
@@ -176,7 +184,7 @@ export function buildCycleView(args: {
       .sort((a, b) => (a.periodEnd < b.periodEnd ? -1 : 1))
       .slice(-16)
       .map((point) => ({ period: point.period, value: point.value }));
-    const stale = row ? isStale(indicator, row.periodEnd, args.now) : false;
+    const stale = row ? isStale(indicator, row.periodEnd, args.now, row.frequency) : false;
     return {
       type: indicator,
       label: meta.label,

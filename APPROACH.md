@@ -72,11 +72,11 @@ Wired feeds (no API key, no secrets):
 | Yield curve | OECD financial markets | Long-term rate minus short-term rate, percentage points, calculated here |
 | Share market | OECD share-price index | Percent change over three months, calculated here |
 | Housing activity | Stats NZ building consents, monthly workbook (about 180 KB), not the regional CSV | Number of new dwellings consented, all dwellings, seasonally adjusted (`BLDM.SFTZ1100A1S`). This app calculates the annual percent change from the count and says so |
+| Business activity | OECD business tendency surveys | Production tendency, percentage balance. This app shows 50 plus half that balance, so 50 is the published neutral point. It is not a branded PMI |
 
 Not wired, and left blank rather than filled in:
 
-- Business activity / PMI — no practical public bulk feed in this version
-- Credit conditions — same
+- Credit conditions — the Reserve Bank credit conditions survey is the official New Zealand series. `rbnz.govt.nz` returns HTTP 403, so the card stays blank instead of using a stand-in
 
 `ECONOMY_PROVIDER=sample` switches to a fixture provider. Those rows are labelled sample, use old periods, and are marked stale. The default path never substitutes them when a live fetch fails.
 
@@ -94,7 +94,7 @@ Static copy per phase for equities, property, bonds, cash / term deposits, and c
 
 New Zealand is the default. The United States is the second connected country. The list lives in `server/economy/countries.ts`. A further country needs a registry row and a provider that returns observations for that code; the page renders whatever the API lists.
 
-US figures come from OECD SDMX (key economic indicators and the share-price index), which republishes national series, and from the Census Bureau housing-starts workbook. Housing activity is the annual percent change in the national seasonally adjusted annual rate of new privately owned housing units started, calculated here. Business activity and credit conditions have no US feed, so those cards stay blank. Related news for the US searches Federal Reserve rates, GDP, inflation, unemployment, housing, and markets, and still includes BBC world and politics. The New Zealand news searches are unchanged.
+US figures come from OECD SDMX (key economic indicators, the share-price index, and the production tendency), which republishes national series, from the Census Bureau housing-starts workbook, and from the Federal Reserve Senior Loan Officer Opinion Survey. Housing activity is the annual percent change in housing starts, calculated here. Business activity uses the same diffusion index as New Zealand. Credit conditions are the net percentage of banks easing standards, calculated as the negative of the published net-tightening figure. Related news for the US searches Federal Reserve rates, GDP, inflation, unemployment, housing, and markets, and still includes BBC world and politics. The New Zealand news searches are unchanged.
 
 ## Related news
 
