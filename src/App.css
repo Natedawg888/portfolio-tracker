@@ -3387,7 +3387,7 @@ body.nav-drawer-open {
   .news-grid { grid-template-columns: 1fr; }
 }
 
-/* Sign-in screen only (/login). Register and other auth shells keep shared styles. */
+/* Sign-in screen only (/login). Later register steps and other auth shells keep shared styles. */
 .auth-page.login-page {
   min-height: 100vh;
   color-scheme: light;
@@ -3454,5 +3454,80 @@ body.nav-drawer-open {
   outline-offset: 3px;
 }
 .login-page .auth-switch a {
+  color: #6e6278;
+}
+
+/* Create-account credentials only (/register). Onboarding steps keep shared auth styles. */
+.auth-page.register-page {
+  min-height: 100vh;
+  color-scheme: light;
+  color: #1a1a1a;
+  background: #e7e0d4;
+  position: relative;
+}
+.auth-page.register-page::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 12px;
+  background: #1b4332;
+  pointer-events: none;
+}
+.register-page .auth-card {
+  position: relative;
+  z-index: 0;
+  background: #f7f3ec;
+  border: none;
+  border-radius: 16px;
+  padding: 2rem 2rem 1.75rem;
+  box-shadow: 0 16px 40px rgba(48, 36, 22, 0.1);
+  color: #1a1a1a;
+}
+.register-page .eyebrow {
+  color: #1b4332;
+  font-variant-caps: all-small-caps;
+  text-transform: none;
+  letter-spacing: 0.12em;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.register-page .auth-card h2 {
+  font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
+  font-weight: 500;
+  color: #1a1a1a;
+  letter-spacing: -0.015em;
+}
+.register-page .page-lead,
+.register-page .auth-hint,
+.register-page .auth-switch {
+  color: #3f3832;
+}
+.register-page .auth-form label {
+  color: #3f3832;
+}
+.register-page .auth-form input {
+  background: #fbf8f3;
+  color: #1a1a1a;
+  border: 1px solid #c8bba8;
+}
+.register-page .auth-error {
+  color: #6e1b1b;
+  background: #f8e4e0;
+  border-color: #e4c2bb;
+}
+.register-page .auth-form .btn.primary {
+  width: 100%;
+  background: #1b4332;
+  border-color: #1b4332;
+  color: #fff;
+}
+.register-page .auth-form .btn.primary:focus-visible {
+  outline: 2px solid #1b4332;
+  outline-offset: 3px;
+}
+.register-page .auth-switch a {
   color: #6e6278;
 }
