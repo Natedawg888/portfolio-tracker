@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, formatAuckland } from '../api/client';
 import { PhaseNews } from '../components/PhaseNews';
 import type { EconomicCycleResponse, EconomicIndicatorCard } from '../types/economy';
+import { isCurrentCycleRequest, nextCycleLoad, shouldApplyCyclePayload } from './cycleLoad';
 
 function formatSourceDate(iso: string | null | undefined): string {
   if (!iso) return '—';
@@ -61,22 +62,41 @@ export function EconomicCycle() {
   const [data, setData] = useState<EconomicCycleResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const requestSeq = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   const load = useCallback((refresh = false) => {
+    const ticket = nextCycleLoad(requestSeq.current, country);
+    requestSeq.current = ticket.requestId;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     return api.economy
-      .cycle({ refresh, country })
+      .cycle({ refresh, country: ticket.country, signal: controller.signal })
       .then((payload) => {
+        if (!isCurrentCycleRequest(ticket, requestSeq.current)) return;
+        if (!shouldApplyCyclePayload(ticket, requestSeq.current, payload.country)) {
+          setError('The extract was for a different country, so it was not shown.');
+          return;
+        }
         setData(payload);
         setError(null);
       })
       .catch((err: Error) => {
+        if (!isCurrentCycleRequest(ticket, requestSeq.current) || controller.signal.aborted) return;
         setError(err.message);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (isCurrentCycleRequest(ticket, requestSeq.current)) setLoading(false);
+      });
   }, [country]);
 
   useEffect(() => {
     void load(false);
+    return () => {
+      requestSeq.current += 1;
+      abortRef.current?.abort();
+    };
   }, [load]);
 
   if (error && !data) {
@@ -110,7 +130,13 @@ export function EconomicCycle() {
           }}
         />
         <h2>Economic cycle</h2>
-        {error ? <p>{error}</p> : <p className="muted">Loading {selectedName} indicator extracts. The first load can take a minute.</p>}
+        {error ? (
+          <p>{error}</p>
+        ) : loading ? (
+          <p className="muted">Loading {selectedName} indicator extracts. The first load can take a minute.</p>
+        ) : (
+          <p className="muted">No {selectedName} extract is on screen.</p>
+        )}
       </div>
     );
   }
