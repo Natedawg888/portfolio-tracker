@@ -45,6 +45,46 @@ function CountryControl({
   );
 }
 
+function rangeSentence(level: string): string {
+  if (level === 'low') return 'This reading is in the low range.';
+  if (level === 'high') return 'This reading is in the high range.';
+  if (level === 'moderate') return 'This reading is in the middle range.';
+  return `This reading is ${level}.`;
+}
+
+function changeSentence(change: string): string | null {
+  if (change === 'rising') return 'It is higher than the previous reading.';
+  if (change === 'falling') return 'It is lower than the previous reading.';
+  if (change === 'stable') return 'It is close to the previous reading.';
+  if (change === 'unknown') return null;
+  return `Compared with the previous reading, it is ${change}.`;
+}
+
+function indicatorReading(card: EconomicIndicatorCard): string | null {
+  const sentences: string[] = [];
+  if (card.level) sentences.push(rangeSentence(card.level));
+  if (card.change) {
+    const sentence = changeSentence(card.change);
+    if (sentence) sentences.push(sentence);
+  }
+  // Not scored means there is no phase. The server still sends score 0 and contribution 0.
+  if (card.status !== 'Not scored') {
+    if (card.score != null) sentences.push(`The match with this phase is ${card.score} out of 100.`);
+    if (card.contribution != null) {
+      sentences.push(`It adds ${card.contribution} weighted points toward this phase.`);
+    }
+  }
+  return sentences.length > 0 ? sentences.join(' ') : null;
+}
+
+function indicatorStatus(status: string): string {
+  if (status === 'Diverges from this phase') {
+    return 'This reading does not line up with the current phase.';
+  }
+  if (status === 'Not available') return 'Not enough data yet';
+  return status;
+}
+
 function nextQuarter(period: string): string | null {
   const match = period.match(/^(\d{4})-Q([1-4])$/);
   if (!match) return null;
@@ -101,8 +141,8 @@ export function EconomicCycle() {
 
   if (error && !data) {
     return (
-      <div className="panel warn">
-        <h2>Economic cycle</h2>
+      <div className="panel warn econ-page">
+        <h2 className="page-title">Economic cycle</h2>
         <p>{error}</p>
       </div>
     );
@@ -119,7 +159,7 @@ export function EconomicCycle() {
 
   if (!showing) {
     return (
-      <div className="panel">
+      <div className="panel econ-page">
         <CountryControl
           country={country}
           options={options}
@@ -129,7 +169,7 @@ export function EconomicCycle() {
             setCountry(next);
           }}
         />
-        <h2>Economic cycle</h2>
+        <h2 className="page-title">Economic cycle</h2>
         {error ? (
           <p>{error}</p>
         ) : loading ? (
@@ -169,6 +209,7 @@ export function EconomicCycle() {
             setCountry(next);
           }}
         />
+        <h2 className="page-title">Economic cycle</h2>
         <p className="eyebrow">Current economic phase</p>
         <p className="hero-value">{phase ? phase.label : 'Not available'}</p>
         <p className="stat-value">
@@ -264,22 +305,26 @@ export function EconomicCycle() {
 }
 
 function IndicatorCardView({ card }: { card: EconomicIndicatorCard }) {
+  if (!card.available || card.valueLabel == null) {
+    return (
+      <article className="card econ-indicator">
+        <h3>{card.label}</h3>
+        <p className="card-value">Not enough data yet</p>
+        {card.description ? <p className="muted small">{card.description}</p> : null}
+      </article>
+    );
+  }
+
+  const reading = indicatorReading(card);
   return (
     <article className={`card econ-indicator${card.stale ? ' is-stale' : ''}`}>
       <h3>{card.label}</h3>
-      <p className="card-value">{card.available ? card.valueLabel : 'Not available'}</p>
+      <p className="card-value">{card.valueLabel}</p>
       <p className="muted small">
         Previous {card.previousLabel ?? '—'} · {card.directionLabel}
       </p>
-      <p className="muted small">{card.status}</p>
-      {card.available && card.level ? (
-        <p className="muted small">
-          Bucket {card.level}
-          {card.change ? ` · change ${card.change}` : ''}
-          {card.score != null ? ` · fit ${card.score}` : ''}
-          {card.contribution != null ? ` · contribution ${card.contribution}` : ''}
-        </p>
-      ) : null}
+      <p className="muted small">{indicatorStatus(card.status)}</p>
+      {reading ? <p className="muted small">{reading}</p> : null}
       <p className="muted small">
         {card.periodLabel ? `Period ${card.periodLabel}` : 'No period'}
         {card.stale ? ' · Not current' : ''}
