@@ -15,7 +15,7 @@
     "test:cash-sync": "node --import tsx server/akahu/sync.cash.test.ts",
     "test:prod-routing": "node --import tsx scripts/verify-prod-routing.ts",
     "test:user-isolation": "node --import tsx scripts/verify-user-isolation.ts",
-    "test:economy": "node --import tsx server/economy/scoring.test.ts && node --import tsx server/economy/periods.test.ts && node --import tsx server/economy/assetContext.test.ts && node --import tsx server/economy/providers/derive.test.ts && node --import tsx server/economy/providers/parse.test.ts && node --import tsx server/economy/providers/sample.test.ts && node --import tsx server/economy/view.test.ts",
+    "test:economy": "node --import tsx server/economy/scoring.test.ts && node --import tsx server/economy/periods.test.ts && node --import tsx server/economy/assetContext.test.ts && node --import tsx server/economy/providers/derive.test.ts && node --import tsx server/economy/providers/parse.test.ts && node --import tsx server/economy/providers/http.test.ts && node --import tsx server/economy/providers/sample.test.ts && node --import tsx server/economy/view.test.ts",
     "start": "node --import tsx server/index.ts",
     "db:backup": "node scripts/backup-db.mjs",
     "db:restore": "node scripts/restore-db.mjs"

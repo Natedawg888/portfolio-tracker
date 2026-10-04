@@ -35,6 +35,7 @@ export async function getEconomicCycle(
   let observations = await readObservations(country, provider.id);
   const age = log ? now.getTime() - Date.parse(log.fetchedAt) : Number.POSITIVE_INFINITY;
   const fresh = Boolean(log?.ok) && age >= 0 && age < cacheMs() && observations.length > 0;
+  if (fresh && log?.note) warnings = [log.note];
 
   if (options.refresh || !fresh) {
     try {

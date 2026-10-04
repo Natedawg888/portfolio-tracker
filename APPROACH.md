@@ -97,7 +97,7 @@ Static copy per phase for equities, property, bonds, cash / term deposits, and c
 ## Risks and limits
 
 - Stats NZ catalogue HTML and series ids can change. A missed series becomes a blank card and a lower confidence, not a made-up number.
-- OECD republishes national data and can lag or revise. The card names OECD when that is the source.
+- OECD republishes national data and can lag or revise. The card names OECD when that is the source. Downloads use Node's `https` client: the global `fetch` implementation receives HTTP 500 from `sdmx.oecd.org` for the same CSV URLs.
 - The interbank rate is not the OCR. An RBNZ table provider can replace that series later without a scoring change.
 - Derived percent changes (employment, shares, yield spread) are arithmetic on official levels, labelled as calculated here.
 - Latest-vintage history overstates how obvious a phase was at the time.
