@@ -61,6 +61,10 @@ export interface DividendDashboard {
     available: boolean;
     fromYear: number;
     toYear: number;
+    /** Inclusive end of the prior-year window (1 Jan through this date). */
+    previousThrough: string | null;
+    /** Inclusive end of the selected-year window (1 Jan through this date). */
+    currentThrough: string | null;
     previousNzd: number | null;
     currentNzd: number | null;
     changePct: number | null;

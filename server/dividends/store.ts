@@ -252,6 +252,30 @@ export function deleteDividend(db: Database, userId: string, id: string): boolea
   return true;
 }
 
+/**
+ * Keep the personal payment record when its holding is removed.
+ * Only this user's rows for this holding are unlinked. Amounts stay as recorded.
+ * Returns how many rows were unlinked.
+ */
+export function unlinkDividendsForHolding(db: Database, userId: string, holdingId: string): number {
+  if (!userId || !holdingId) return 0;
+  const before = queryOne<{ c: number }>(
+    db,
+    `SELECT COUNT(*) AS c FROM dividend_events WHERE user_id = ? AND holding_id = ?`,
+    [userId, holdingId],
+  );
+  const count = Number(before?.c ?? 0);
+  if (count <= 0) return 0;
+  run(
+    db,
+    `UPDATE dividend_events
+     SET holding_id = NULL, updated_at = ?
+     WHERE user_id = ? AND holding_id = ?`,
+    [new Date().toISOString(), userId, holdingId],
+  );
+  return count;
+}
+
 export function dashboardForUser(
   db: Database,
   userId: string,

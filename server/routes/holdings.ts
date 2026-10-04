@@ -2,6 +2,7 @@
 import { Router } from 'express';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { requireUserId } from '../lib/userScope.ts';
+import { unlinkDividendsForHolding } from '../dividends/store.ts';
 import { getDb, queryAll, queryOne, run, newId, persist } from '../db/index.ts';
 import { providerForAssetKey } from '../quotes/providers.ts';
 import {
@@ -1557,9 +1558,20 @@ router.patch('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   const db = await getDb();
-  const row = queryOne(db, 'SELECT photo_path FROM holdings WHERE id = ? AND user_id = ?', [req.params.id, uid(req)]);
-  if (row?.photo_path) deletePropertyPhoto(row.photo_path as string);
-  run(db, 'DELETE FROM holdings WHERE id = ? AND user_id = ?', [req.params.id, uid(req)]);
+  const userId = uid(req);
+  const holdingId = String(req.params.id);
+  const row = queryOne<{ photo_path?: string | null }>(
+    db,
+    'SELECT photo_path FROM holdings WHERE id = ? AND user_id = ?',
+    [holdingId, userId],
+  );
+  if (!row) {
+    res.status(204).end();
+    return;
+  }
+  if (row.photo_path) deletePropertyPhoto(row.photo_path);
+  unlinkDividendsForHolding(db, userId, holdingId);
+  run(db, 'DELETE FROM holdings WHERE id = ? AND user_id = ?', [holdingId, userId]);
   res.status(204).end();
 });
 
