@@ -424,4 +424,32 @@ CREATE TABLE IF NOT EXISTS economic_fetch_log (
   PRIMARY KEY (provider_id, country)
 );
 
+-- Dividend events recorded by the signed-in user against their own stock/ETF holding.
+-- Amounts and FX rates are whatever the user entered. Imputation credits are not cash.
+-- fx_rate_to_nzd is NULL when the user did not record a rate (NZD rows store 1).
+CREATE TABLE IF NOT EXISTS dividend_events (
+  id                   TEXT PRIMARY KEY,
+  user_id              TEXT NOT NULL,
+  holding_id           TEXT,
+  company_name         TEXT NOT NULL,
+  symbol               TEXT,
+  shares_held          REAL NOT NULL,
+  dividend_per_share   REAL NOT NULL,
+  gross_dividend       REAL NOT NULL,
+  tax_withholding      REAL NOT NULL DEFAULT 0,
+  imputation_credits   REAL NOT NULL DEFAULT 0,
+  net_dividend         REAL NOT NULL,
+  payment_date         TEXT NOT NULL,
+  currency             TEXT NOT NULL DEFAULT 'NZD',
+  fx_rate_to_nzd       REAL,
+  reinvested           INTEGER NOT NULL DEFAULT 0,
+  reinvested_amount    REAL,
+  notes                TEXT,
+  created_at           TEXT NOT NULL,
+  updated_at           TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_dividend_events_user_date
+  ON dividend_events(user_id, payment_date);
+
 -- per-user indexes created in migrateSchema after user_id columns exist

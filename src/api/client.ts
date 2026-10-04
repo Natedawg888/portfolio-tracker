@@ -1,5 +1,6 @@
 import { isMoneyHidden, MONEY_MASK } from '../lib/privacy';
 import type { EconomicCycleResponse, PhaseNewsResponse } from '../types/economy.ts';
+import type { DividendDashboard, DividendEvent, DividendWriteBody } from '../types/dividends.ts';
 
 const BASE = '/api';
 
@@ -1131,6 +1132,19 @@ export const api = {
         asOf: string | null;
       }>(`/quotes/history?${q}`);
     },
+  },
+  dividends: {
+    dashboard: (year: number) =>
+      req<DividendDashboard>(`/dividends?year=${encodeURIComponent(String(year))}`),
+    create: (body: DividendWriteBody) =>
+      req<DividendEvent>('/dividends', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: DividendWriteBody) =>
+      req<DividendEvent>(`/dividends/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+    remove: (id: string) =>
+      req<{ ok: boolean; id: string }>(`/dividends/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
   economy: {
     cycle: (opts?: { refresh?: boolean; country?: string }) => {

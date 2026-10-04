@@ -34,6 +34,7 @@ import {
   linkCharityDonationToPaye,
   unlinkCharityDonationFromPaye,
 } from '../lib/charityPayeLink';
+import { DividendTracker } from '../components/DividendTracker';
 import {
   categoryTypeShortTag,
   categoryTypeCountsAsSpend,
@@ -1851,6 +1852,8 @@ export function Spending() {
           </div>
         )}
       </section>
+
+      <DividendTracker placement="budget" />
 
       <section className="panel">
         <h3>Spend by category · {monthLabel}</h3>

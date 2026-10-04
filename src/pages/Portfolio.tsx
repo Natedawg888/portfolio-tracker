@@ -23,6 +23,7 @@ import {
 import { CollectablesPanel } from '../components/CollectablesPanel';
 import { isApiCardGame, isManualCollectableGame } from '../lib/collectables';
 import type { MtgColour } from '../types';
+import { DividendTracker } from '../components/DividendTracker';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
 
@@ -2872,6 +2873,8 @@ export function Portfolio() {
         </InlineAddDetails>
       </section>
       ) : null}
+
+      <DividendTracker placement="portfolio" />
 
 {assetEnabled('crypto') ? (
       <Section
