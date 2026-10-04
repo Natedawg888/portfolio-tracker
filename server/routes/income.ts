@@ -90,7 +90,8 @@ function mapRecord(r: Record<string, unknown>) {
     transactionId: (r.transaction_id as string | null) ?? null,
     notes: (r.notes as string | null) ?? null,
     createdAt: r.created_at as string,
-    /** Explicit income_records row (Add income / crypto). */
+    dividendEventId: (r.dividend_event_id as string | null) ?? null,
+    /** Explicit income_records row (Add income / crypto / mirrored dividend). */
     origin: 'record' as const,
     txnSource: null as string | null,
   };
@@ -117,6 +118,7 @@ function mapCategoryTxnAsIncome(r: Record<string, unknown>) {
     transactionId: txnId,
     notes: (r.notes as string | null) ?? null,
     createdAt: r.created_at as string,
+    dividendEventId: null as string | null,
     origin: 'category_txn' as const,
     txnSource: (r.source as string | null) ?? null,
   };
@@ -406,9 +408,9 @@ router.get('/summary', async (req, res) => {
             COALESCE(SUM(amount_nzd), 0) AS total,
             COUNT(*) AS cnt
      FROM income_records
-     WHERE date >= ? AND date <= ?
+     WHERE user_id = ? AND date >= ? AND date <= ?
      GROUP BY COALESCE(category_id, ?)`,
-    [resolveIncomeCategoryId(db, uid(req), 'cash'), start, end, resolveIncomeCategoryId(db, uid(req), 'cash')],
+    [resolveIncomeCategoryId(db, uid(req), 'cash'), uid(req), start, end, resolveIncomeCategoryId(db, uid(req), 'cash')],
   );
 
   const linked = linkedIncomeTransactionIds(db, uid(req));

@@ -10,7 +10,7 @@ import {
   maybeAutoSyncPortfolio,
 } from '../lib/akahuTxnAutoSync';
 import { showQuietToast } from '../lib/quietToast';
-import type { DebtCreditorKind, DebtPerson, DebtRepayment, IncomeKind, IncomeMonthSummary, IncomeRecord, Transaction, TransactionSource } from '../types';
+import type { DebtCreditorKind, DebtPerson, DebtRepayment, IncomeKind, IncomeMonthSummary, IncomeRecord, PayeeSetting, Transaction, TransactionSource } from '../types';
 import {
   CategorySpendChart,
   aggregateCategorySpend,
@@ -34,7 +34,6 @@ import {
   linkCharityDonationToPaye,
   unlinkCharityDonationFromPaye,
 } from '../lib/charityPayeLink';
-import { DividendTracker } from '../components/DividendTracker';
 import {
   categoryTypeShortTag,
   categoryTypeCountsAsSpend,
@@ -163,6 +162,9 @@ export function Spending() {
   const [incCryptoAmount, setIncCryptoAmount] = useState('');
   const [incNotes, setIncNotes] = useState('');
   const [incCategoryId, setIncCategoryId] = useState('cat-income');
+  const [payees, setPayees] = useState<PayeeSetting[]>([]);
+  const [payeeCategoryDraft, setPayeeCategoryDraft] = useState<Record<string, string>>({});
+  const [payeeSavingName, setPayeeSavingName] = useState<string | null>(null);
   const [planIncomeCategoryId, setPlanIncomeCategoryId] = useState('');
   const [planIncomeAmount, setPlanIncomeAmount] = useState('');
   const [planIncomeSaving, setPlanIncomeSaving] = useState(false);
@@ -261,7 +263,7 @@ export function Spending() {
 
   const load = useCallback(async () => {
     const todayYmd = todayAucklandYmd();
-    const [cats, buds, list, accts, btc, people, repayments, incomeList, incomeSum] = await Promise.all([
+    const [cats, buds, list, accts, btc, people, repayments, incomeList, incomeSum, payeeList] = await Promise.all([
       api.budgets.categories(),
       api.budgets.list(),
       api.accounts.transactions(periodFrom, periodTo),
@@ -271,6 +273,7 @@ export function Spending() {
       api.debts.repayments({ from: '2026-10-01' }).catch(() => []),
       api.income.list({ month: yearMonthKey(selectedMonth) }).catch(() => []),
       api.income.summary(yearMonthKey(selectedMonth)).catch(() => null),
+      api.payees.list().catch(() => []),
     ]);
     setCategories(cats as Category[]);
     setBudgets(buds as Budget[]);
@@ -279,6 +282,15 @@ export function Spending() {
     setDebtRepayments(repayments as DebtRepayment[]);
     setIncomeRecords(incomeList as IncomeRecord[]);
     setIncomeSummary(incomeSum as IncomeMonthSummary | null);
+    const nextPayees = payeeList as PayeeSetting[];
+    setPayees(nextPayees);
+    setPayeeCategoryDraft((prev) => {
+      const next = { ...prev };
+      for (const payee of nextPayees) {
+        if (!(payee.name in next)) next[payee.name] = payee.categoryId ?? '';
+      }
+      return next;
+    });
     const cash = (accts as CashAccount[]).slice().sort((a, b) => a.name.localeCompare(b.name));
     setAccounts(cash);
     // Start-of-month cash = current liquid − net liquid flows from month start through today.
@@ -906,6 +918,40 @@ export function Spending() {
     }
   }
 
+  function incomeCategoryForPayeeName(name: string): string | null {
+    const key = name.trim().toLowerCase();
+    if (!key) return null;
+    const match = payees.find((payee) => payee.name.trim().toLowerCase() === key);
+    if (!match?.categoryId) return null;
+    const category = categories.find((item) => item.id === match.categoryId);
+    if (!category || !categoryTypeIsIncome(normalizeCategoryType(category.type, category.isIncome))) {
+      return null;
+    }
+    return category.id;
+  }
+
+  async function onSavePayee(name: string) {
+    setMsg(null);
+    setPayeeSavingName(name);
+    try {
+      const saved = await api.payees.save({
+        name,
+        categoryId: payeeCategoryDraft[name] ? payeeCategoryDraft[name] : null,
+      });
+      setPayees((prev) => {
+        const key = saved.name.trim().toLowerCase();
+        const rest = prev.filter((payee) => payee.name.trim().toLowerCase() !== key);
+        return [...rest, saved].sort((a, b) => a.name.localeCompare(b.name, 'en-NZ'));
+      });
+      setPayeeCategoryDraft((prev) => ({ ...prev, [saved.name]: saved.categoryId ?? '' }));
+      setMsg(`Saved payee settings · ${saved.name}`);
+    } catch (err) {
+      setMsg((err as Error).message);
+    } finally {
+      setPayeeSavingName(null);
+    }
+  }
+
   async function onAddIncome(e: FormEvent) {
     e.preventDefault();
     setMsg(null);
@@ -1263,10 +1309,19 @@ export function Spending() {
               Description
               <input
                 type="text"
+                list="txn-payee-names"
                 placeholder="Merchant / note"
                 value={formDesc}
                 onChange={(e) => setFormDesc(e.target.value)}
               />
+              <datalist id="txn-payee-names">
+                {payees.map((payee) => (
+                  <option key={payee.name} value={payee.name} />
+                ))}
+              </datalist>
+              <span className="muted small">
+                A saved category for this payee is applied when you save.
+              </span>
             </label>
             <label>
               Card
@@ -1390,7 +1445,8 @@ export function Spending() {
         <p className="section-desc">
           Plan by category (Salary, Mining, …). Received = income records + bank-sync / tagged
           income-category credits, matched to those categories (linked Add-income txns are not
-          double-counted). See <strong>Income received</strong> below.
+          double-counted). Paid dividends recorded on Portfolio are included once, in NZD, when
+          you have an FX rate. See <strong>Income received</strong> below.
         </p>
         <div className="grid cards budget-compare-summary" style={{ marginBottom: '0.75rem' }}>
           <div className="card">
@@ -1774,9 +1830,10 @@ export function Spending() {
           </button>
         </div>
         <p className="section-desc">
-          Money in this month: <strong>Add income</strong> (cash/crypto) plus bank-sync or manually
-          tagged income-category credits (Salary, Mining, …). Linked Add-income bank rows are shown
-          once. Matched to planned income categories above.
+          Money in this month: <strong>Add income</strong> (cash/crypto), bank-sync or manually
+          tagged income-category credits (Salary, Mining, …), and paid dividends from Portfolio.
+          A foreign dividend stays out of this NZD total until you record an FX rate. Linked
+          Add-income bank rows are shown once. This is a personal record, not advice.
         </p>
         {incomeRecords.length === 0 ? (
           <p className="muted">
@@ -1788,7 +1845,7 @@ export function Spending() {
               <thead>
                 <tr>
                   <th>Date</th>
-                  <th>Description</th>
+                  <th>Payee</th>
                   <th>Category</th>
                   <th>Type</th>
                   <th>Amount</th>
@@ -1799,9 +1856,17 @@ export function Spending() {
               <tbody>
                 {incomeRecords.map((r) => {
                   const fromTxn = r.origin === 'category_txn';
-                  const typeLabel = r.kind === 'crypto' ? 'Crypto' : fromTxn ? 'Income txn' : 'Cash';
-                  const badgeSource =
-                    r.kind === 'crypto'
+                  const fromDividend = Boolean(r.dividendEventId);
+                  const typeLabel = fromDividend
+                    ? 'Dividend'
+                    : r.kind === 'crypto'
+                      ? 'Crypto'
+                      : fromTxn
+                        ? 'Income txn'
+                        : 'Cash';
+                  const badgeSource = fromDividend
+                    ? 'manual'
+                    : r.kind === 'crypto'
                       ? 'manual'
                       : fromTxn
                         ? (r.txnSource === 'akahu' ? 'akahu' : r.txnSource === 'bank' ? 'bank' : 'manual')
@@ -1826,12 +1891,18 @@ export function Spending() {
                           ? `${r.accountName || r.accountId || '—'}${
                               r.txnSource ? ` · ${r.txnSource}` : ''
                             }`
+                          : r.dividendEventId
+                          ? 'Dividend · personal record, not advice'
                           : r.accountName || r.accountId || '—'}
                     </td>
                     <td>
                       {fromTxn ? (
                         <span className="muted small" title="Recategorise on the transaction to remove from income">
                           via txn
+                        </span>
+                      ) : r.dividendEventId ? (
+                        <span className="muted small" title="Update or delete the dividend on Portfolio">
+                          From dividend
                         </span>
                       ) : (
                         <button
@@ -1853,7 +1924,69 @@ export function Spending() {
         )}
       </section>
 
-      <DividendTracker placement="budget" />
+      <section className="panel">
+        <h3>Payee settings</h3>
+        <p className="section-desc">
+          A payee you have used, including a dividend payer, can keep a category you already have.
+          That category is filled in the next time you use the payee. Income uses it when the
+          category is an income category. Transactions use it when the payee is the description.
+          This is a personal record, not advice.
+        </p>
+        {payees.length === 0 ? (
+          <p className="muted">
+            No payees yet. Record income, a transaction, or a dividend and the name is listed here.
+          </p>
+        ) : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Payee</th>
+                  <th>Category</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {payees.map((payee) => (
+                  <tr key={payee.name}>
+                    <td>{payee.name}</td>
+                    <td>
+                      <select
+                        aria-label={`Category for ${payee.name}`}
+                        value={payeeCategoryDraft[payee.name] ?? payee.categoryId ?? ''}
+                        onChange={(e) =>
+                          setPayeeCategoryDraft((prev) => ({ ...prev, [payee.name]: e.target.value }))
+                        }
+                      >
+                        <option value="">No saved category</option>
+                        {categories.map((c) => {
+                          const tag = categoryTypeShortTag(normalizeCategoryType(c.type, c.isIncome));
+                          return (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                              {tag ? ` (${tag})` : ''}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn small"
+                        disabled={payeeSavingName === payee.name}
+                        onClick={() => onSavePayee(payee.name)}
+                      >
+                        {payeeSavingName === payee.name ? 'Saving…' : 'Save'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       <section className="panel">
         <h3>Spend by category · {monthLabel}</h3>
@@ -2461,13 +2594,24 @@ export function Spending() {
                 </label>
               )}
               <label className="span-2">
-                Description
+                Payee
                 <input
                   type="text"
-                  placeholder="Pay / transfer / mining reward…"
+                  list="income-payee-names"
+                  placeholder="Employer, holding, or other payer"
                   value={incDesc}
-                  onChange={(e) => setIncDesc(e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setIncDesc(next);
+                    const categoryId = incomeCategoryForPayeeName(next);
+                    if (categoryId) setIncCategoryId(categoryId);
+                  }}
                 />
+                <datalist id="income-payee-names">
+                  {payees.map((payee) => (
+                    <option key={payee.name} value={payee.name} />
+                  ))}
+                </datalist>
               </label>
               {incKind === 'cash' ? (
                 <label className="span-2">

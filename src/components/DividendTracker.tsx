@@ -1,6 +1,7 @@
 /**
- * Dividend dashboard and entry. Same records on Portfolio and Budget.
+ * Dividend dashboard and entry on the Portfolio page.
  * Totals are calculated from the signed-in user's rows. Empty when they have none.
+ * Paid net NZD is also mirrored into Budgeting income for that user.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';

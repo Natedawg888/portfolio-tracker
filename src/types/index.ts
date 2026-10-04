@@ -182,13 +182,22 @@ export interface IncomeRecord {
   transactionId?: string | null;
   notes?: string | null;
   createdAt: string;
+  /** Set when this income row mirrors one dividend the same user recorded. */
+  dividendEventId?: string | null;
   /**
-   * `record` = income_records row (Add income / crypto).
+   * `record` = income_records row (Add income / crypto / mirrored dividend).
    * `category_txn` = bank sync / tagged income-category credit not linked from a record.
    */
   origin?: 'record' | 'category_txn';
   /** transactions.source when origin is category_txn (akahu | bank | manual | …). */
   txnSource?: string | null;
+}
+
+/** Category remembered for a payee this user has used. */
+export interface PayeeSetting {
+  name: string;
+  categoryId: string | null;
+  categoryName: string | null;
 }
 
 /** Planned income line for one income category in a month (YYYY-MM). */

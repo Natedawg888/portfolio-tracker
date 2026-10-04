@@ -1,6 +1,7 @@
 import { isMoneyHidden, MONEY_MASK } from '../lib/privacy';
 import type { EconomicCycleResponse, PhaseNewsResponse } from '../types/economy.ts';
 import type { DividendDashboard, DividendEvent, DividendWriteBody } from '../types/dividends.ts';
+import type { PayeeSetting } from '../types/index.ts';
 
 const BASE = '/api';
 
@@ -532,6 +533,7 @@ export const api = {
           transactionId: string | null;
           notes: string | null;
           createdAt: string;
+          dividendEventId?: string | null;
           categoryId?: string | null;
           categoryName?: string | null;
           origin?: 'record' | 'category_txn';
@@ -631,6 +633,11 @@ export const api = {
       req<{ ok: boolean; id: string }>(`/income/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       }),
+  },
+  payees: {
+    list: () => req<PayeeSetting[]>('/payees'),
+    save: (body: { name: string; categoryId: string | null }) =>
+      req<PayeeSetting>('/payees', { method: 'PUT', body: JSON.stringify(body) }),
   },
     kiwisaver: {
     list: () => req<unknown[]>('/kiwisaver'),
@@ -874,6 +881,23 @@ export const api = {
       }>('/settings/asset-classes', {
         method: 'PUT',
         body: JSON.stringify({ enabled, valueSearch }),
+      }),
+    getKiwiSaverEmployeeRate: () =>
+      req<{
+        employeeRatePct: number;
+        saved: boolean;
+        offeredRates: number[];
+        statutoryDefaultPct: number;
+      }>('/settings/kiwisaver-employee-rate'),
+    setKiwiSaverEmployeeRate: (employeeRatePct: number) =>
+      req<{
+        employeeRatePct: number;
+        saved: boolean;
+        offeredRates: number[];
+        statutoryDefaultPct: number;
+      }>('/settings/kiwisaver-employee-rate', {
+        method: 'PUT',
+        body: JSON.stringify({ employeeRatePct }),
       }),
     getOnboarding: () =>
       req<{

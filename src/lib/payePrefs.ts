@@ -8,7 +8,7 @@
 
 import type { EmploymentKind, PayFrequency } from './payeCalc';
 import {
-  KIWISAVER_DEFAULT_EMPLOYEE_RATE,
+  KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE,
   KIWISAVER_EMPLOYER_MIN_RATE,
   PAYE_DEFAULT_HOURS_PER_WEEK,
   type InvestingCreditKind,
@@ -80,7 +80,7 @@ export function defaultPayePrefs(): PayePrefs {
     secondaryTotal: '90000',
     otherAnnual: '70000',
     kiwiSaverOptIn: true,
-    ksRate: String(KIWISAVER_DEFAULT_EMPLOYEE_RATE),
+    ksRate: String(KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE),
     ksCustom: false,
     ksEmployerRate: String(KIWISAVER_EMPLOYER_MIN_RATE),
     salarySacrifice: false,

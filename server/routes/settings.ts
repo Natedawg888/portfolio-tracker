@@ -31,6 +31,11 @@ import {
   BTC_DAILY_ISSUANCE_DEFAULT,
   clampDiscountPct,
 } from '../../src/lib/gominingEarnings.ts';
+import {
+  employeeRateView,
+  readKiwiSaverEmployeeRate,
+  saveKiwiSaverEmployeeRate,
+} from '../kiwisaver/employeeRate.ts';
 import { fetchBtcFx } from '../quotes/btc.ts';
 import { fetchGoMiningIncome } from '../quotes/gominingIncome.ts';
 import { fetchNetworkHashrate } from '../quotes/hashrate.ts';
@@ -489,6 +494,31 @@ async function saveUserAssetClassPrefs(
   );
   return { prefs, valueSearch: nextValueSearch };
 }
+
+router.get('/kiwisaver-employee-rate', async (req: AuthedRequest, res) => {
+  if (!req.user) {
+    res.status(401).json({ error: 'Authentication required', code: 'UNAUTHORIZED' });
+    return;
+  }
+  const db = await getDb();
+  const rate = readKiwiSaverEmployeeRate(db, req.user.id);
+  res.json(employeeRateView(rate.employeeRatePct, rate.saved));
+});
+
+router.put('/kiwisaver-employee-rate', async (req: AuthedRequest, res) => {
+  if (!req.user) {
+    res.status(401).json({ error: 'Authentication required', code: 'UNAUTHORIZED' });
+    return;
+  }
+  const db = await getDb();
+  const body = req.body ?? {};
+  const saved = saveKiwiSaverEmployeeRate(db, req.user.id, body.employeeRatePct ?? body.rate);
+  if (!saved.ok) {
+    res.status(saved.status).json({ error: saved.error });
+    return;
+  }
+  res.json(employeeRateView(saved.employeeRatePct, true));
+});
 
 router.get('/asset-classes', async (req: AuthedRequest, res) => {
   if (!req.user) {

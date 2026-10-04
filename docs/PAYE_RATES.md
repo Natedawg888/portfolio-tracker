@@ -47,8 +47,11 @@ IRD payroll tables include ACC inside "PAYE"; this calculator **splits** income 
 | Item | Value |
 | --- | --- |
 | Employee rates | **3.5%**, 4%, 6%, 8%, 10% |
-| Default employee rate | **3.5%** |
+| IRD default / minimum employee rate | **3.5%** |
 | Employer minimum | **3.5%** |
+| Account starting rate (saved per user) | **3%** |
+
+The PAYE page offers **3%** as the starting employee contribution rate for this account and saves the rate the user chooses (`users.preferences_json.kiwiSaverEmployeeRatePct`). 3% is Nathan’s rate, not a change to the IRD minimum. The contribution shown is still gross pay times the saved rate. The page does not invent a contribution dollar amount.
 
 Sources:
 - IR340 Apr 2026: https://www.ird.govt.nz/-/media/project/ir/home/documents/forms-and-guides/ir300---ir399/ir340/ir340-apr-2026.pdf

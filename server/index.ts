@@ -21,6 +21,7 @@ import settingsRouter from './routes/settings.ts';
 import debtsRouter from './routes/debts.ts';
 import incomeRouter from './routes/income.ts';
 import dividendsRouter from './routes/dividends.ts';
+import payeesRouter from './routes/payees.ts';
 import authRouter from './routes/auth.ts';
 import economyRouter from './routes/economy.ts';
 import { loadDotEnv } from './akahu/loadEnv.ts';
@@ -118,6 +119,7 @@ async function main() {
   app.use('/api/debts', debtsRouter);
   app.use('/api/income', incomeRouter);
   app.use('/api/dividends', dividendsRouter);
+  app.use('/api/payees', payeesRouter);
   app.use('/api/economy', economyRouter);
 
   // Unmatched /api stops here (JSON). It must not fall through to the SPA.
