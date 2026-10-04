@@ -4638,3 +4638,321 @@ html:not([data-theme]) .budget-page .chart-toggle .btn.primary {
   border-color: transparent;
   color: #f3eee4;
 }
+
+/* Portfolio page only. Header and other screens stay as they are. */
+html[data-theme="light"]:has(.portfolio-page),
+html[data-theme="light"]:has(.portfolio-page) body {
+  background: #e7e0d4;
+}
+html[data-theme="dark"]:has(.portfolio-page),
+html[data-theme="dark"]:has(.portfolio-page) body,
+html:not([data-theme]):has(.portfolio-page),
+html:not([data-theme]):has(.portfolio-page) body {
+  background: #121a16;
+}
+html[data-theme="light"]:has(.portfolio-page) .app-footer {
+  color: #5c564e;
+  border-top-color: rgba(26, 26, 26, 0.12);
+}
+html[data-theme="dark"]:has(.portfolio-page) .app-footer,
+html:not([data-theme]):has(.portfolio-page) .app-footer {
+  color: #c5d5c8;
+  border-top-color: rgba(197, 213, 200, 0.22);
+}
+
+html[data-theme="light"] .portfolio-page {
+  --bg: #e7e0d4;
+  --surface: #f7f3ec;
+  --surface-2: #f7f3ec;
+  --surface-3: #efe8dc;
+  --text: #1a1a1a;
+  --muted: #5c564e;
+  --border: #8c7b66;
+  --border-soft: #8c7b66;
+  --accent: #1b4332;
+  --accent-2: #6e6278;
+  --accent-deep: #143528;
+  --btn-primary-text: #f7f3ec;
+  --hero-grad: #f7f3ec;
+  --hover-row: rgba(27, 67, 50, 0.05);
+  --shadow-card: 0 8px 24px rgba(48, 36, 22, 0.06);
+  --return-neg: #6e1b1b;
+  --amt-in: #1b4332;
+  color: #1a1a1a;
+}
+html[data-theme="dark"] .portfolio-page,
+html:not([data-theme]) .portfolio-page {
+  --bg: #121a16;
+  --surface: #1c2822;
+  --surface-2: #1c2822;
+  --surface-3: #24352c;
+  --text: #f3eee4;
+  --muted: #c5d5c8;
+  --border: #6f8276;
+  --border-soft: #6f8276;
+  --accent: #2f6b4f;
+  --accent-2: #b7a8c4;
+  --accent-deep: #1b4332;
+  --btn-primary-text: #f3eee4;
+  --hero-grad: #1c2822;
+  --hover-row: rgba(243, 238, 228, 0.04);
+  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --return-neg: #f6d5ce;
+  --amt-in: #c5d5c8;
+  color: #f3eee4;
+}
+
+.portfolio-page .page-title {
+  font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  font-size: 1.35rem;
+  text-transform: none;
+  font-variant-caps: normal;
+  margin: 0 0 0.35rem;
+}
+
+html[data-theme="light"] .portfolio-page h2,
+html[data-theme="light"] .portfolio-page h3,
+html[data-theme="light"] .portfolio-page h4,
+html[data-theme="light"] .portfolio-page .page-title,
+html[data-theme="light"] .portfolio-page .hero-value,
+html[data-theme="light"] .portfolio-page .stat-value {
+  color: #1a1a1a;
+}
+html[data-theme="light"] .portfolio-page .panel,
+html[data-theme="light"] .portfolio-page .card,
+html[data-theme="light"] .portfolio-page .hero-card,
+html[data-theme="light"] .portfolio-page .holding-card,
+html[data-theme="light"] .portfolio-page .gomining-discount-bar,
+html[data-theme="light"] .portfolio-page .period-pager,
+html[data-theme="light"] .portfolio-page.panel {
+  background: #f7f3ec;
+  color: #1a1a1a;
+  border-color: #8c7b66;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset, 0 8px 24px rgba(48, 36, 22, 0.06);
+}
+html[data-theme="light"] .portfolio-page.panel.warn,
+html[data-theme="light"] .portfolio-page .panel.warn {
+  color: #6e1b1b;
+  background: #f8e4e0;
+  border-color: #8a4a42;
+  box-shadow: none;
+}
+html[data-theme="light"] .portfolio-page.panel.warn .page-title,
+html[data-theme="light"] .portfolio-page .panel.warn .page-title,
+html[data-theme="light"] .portfolio-page.panel.warn h3,
+html[data-theme="light"] .portfolio-page .panel.warn h3 {
+  color: #1a1a1a;
+}
+html[data-theme="light"] .portfolio-page.panel.warn p,
+html[data-theme="light"] .portfolio-page .panel.warn p,
+html[data-theme="light"] .portfolio-page.panel.warn .muted,
+html[data-theme="light"] .portfolio-page .panel.warn .muted {
+  color: #6e1b1b;
+}
+html[data-theme="light"] .portfolio-page a,
+html[data-theme="light"] .portfolio-page a:visited {
+  color: #6e6278;
+}
+html[data-theme="light"] .portfolio-page .btn.primary {
+  background: #1b4332;
+  border-color: #1b4332;
+  color: #f7f3ec;
+}
+html[data-theme="light"] .portfolio-page .btn.primary:hover:not(:disabled) {
+  color: #f7f3ec;
+}
+html[data-theme="light"] .portfolio-page .btn:not(.primary):not(.danger):not(.ghost) {
+  background: #efe8dc;
+  border-color: #8c7b66;
+  color: #1a1a1a;
+}
+html[data-theme="light"] .portfolio-page .btn.ghost {
+  background: transparent;
+  border-color: #8c7b66;
+  color: #1a1a1a;
+}
+html[data-theme="light"] .portfolio-page .period-pager .btn:not(.primary):not(.danger):not(.ghost) {
+  background: transparent;
+  border-color: #8c7b66;
+  color: #1a1a1a;
+}
+html[data-theme="light"] .portfolio-page .btn.danger {
+  background: #f8e4e0;
+  border-color: #8a4a42;
+  color: #6e1b1b;
+}
+html[data-theme="light"] .portfolio-page .banner {
+  background: #efe8dc;
+  color: #1a1a1a;
+  border-left-color: #6e6278;
+}
+html[data-theme="light"] .portfolio-page input,
+html[data-theme="light"] .portfolio-page select,
+html[data-theme="light"] .portfolio-page textarea {
+  background: #e7e0d4;
+  color: #1a1a1a;
+  border-color: #8c7b66;
+}
+html[data-theme="light"] .portfolio-page input::placeholder,
+html[data-theme="light"] .portfolio-page textarea::placeholder {
+  color: #5c564e;
+  opacity: 1;
+}
+html[data-theme="light"] .portfolio-page .holding-quantity-error,
+html[data-theme="light"] .portfolio-page .miner-edit-error {
+  color: #6e1b1b;
+}
+html[data-theme="light"] .portfolio-page code {
+  background: #efe8dc;
+  color: #1a1a1a;
+}
+html[data-theme="light"] .portfolio-page :focus-visible {
+  outline: 2px solid #1b4332;
+  outline-offset: 2px;
+}
+
+html[data-theme="dark"] .portfolio-page h2,
+html[data-theme="dark"] .portfolio-page h3,
+html[data-theme="dark"] .portfolio-page h4,
+html[data-theme="dark"] .portfolio-page .page-title,
+html[data-theme="dark"] .portfolio-page .hero-value,
+html[data-theme="dark"] .portfolio-page .stat-value,
+html:not([data-theme]) .portfolio-page h2,
+html:not([data-theme]) .portfolio-page h3,
+html:not([data-theme]) .portfolio-page h4,
+html:not([data-theme]) .portfolio-page .page-title,
+html:not([data-theme]) .portfolio-page .hero-value,
+html:not([data-theme]) .portfolio-page .stat-value {
+  color: #f3eee4;
+}
+html[data-theme="dark"] .portfolio-page .panel,
+html[data-theme="dark"] .portfolio-page .card,
+html[data-theme="dark"] .portfolio-page .hero-card,
+html[data-theme="dark"] .portfolio-page .holding-card,
+html[data-theme="dark"] .portfolio-page .gomining-discount-bar,
+html[data-theme="dark"] .portfolio-page .period-pager,
+html[data-theme="dark"] .portfolio-page.panel,
+html:not([data-theme]) .portfolio-page .panel,
+html:not([data-theme]) .portfolio-page .card,
+html:not([data-theme]) .portfolio-page .hero-card,
+html:not([data-theme]) .portfolio-page .holding-card,
+html:not([data-theme]) .portfolio-page .gomining-discount-bar,
+html:not([data-theme]) .portfolio-page .period-pager,
+html:not([data-theme]) .portfolio-page.panel {
+  background: #1c2822;
+  color: #f3eee4;
+  border-color: #6f8276;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+html[data-theme="dark"] .portfolio-page.panel.warn,
+html[data-theme="dark"] .portfolio-page .panel.warn,
+html:not([data-theme]) .portfolio-page.panel.warn,
+html:not([data-theme]) .portfolio-page .panel.warn {
+  color: #f3eee4;
+  background: #4a2422;
+  border-color: #e0b2aa;
+  box-shadow: none;
+}
+html[data-theme="dark"] .portfolio-page.panel.warn .page-title,
+html[data-theme="dark"] .portfolio-page .panel.warn .page-title,
+html[data-theme="dark"] .portfolio-page.panel.warn h3,
+html[data-theme="dark"] .portfolio-page .panel.warn h3,
+html[data-theme="dark"] .portfolio-page.panel.warn p,
+html[data-theme="dark"] .portfolio-page .panel.warn p,
+html[data-theme="dark"] .portfolio-page.panel.warn .muted,
+html[data-theme="dark"] .portfolio-page .panel.warn .muted,
+html:not([data-theme]) .portfolio-page.panel.warn .page-title,
+html:not([data-theme]) .portfolio-page .panel.warn .page-title,
+html:not([data-theme]) .portfolio-page.panel.warn h3,
+html:not([data-theme]) .portfolio-page .panel.warn h3,
+html:not([data-theme]) .portfolio-page.panel.warn p,
+html:not([data-theme]) .portfolio-page .panel.warn p,
+html:not([data-theme]) .portfolio-page.panel.warn .muted,
+html:not([data-theme]) .portfolio-page .panel.warn .muted {
+  color: #f3eee4;
+}
+html[data-theme="dark"] .portfolio-page a,
+html[data-theme="dark"] .portfolio-page a:visited,
+html:not([data-theme]) .portfolio-page a,
+html:not([data-theme]) .portfolio-page a:visited {
+  color: #b7a8c4;
+}
+html[data-theme="dark"] .portfolio-page .btn.primary,
+html:not([data-theme]) .portfolio-page .btn.primary {
+  background: #2f6b4f;
+  border-color: #2f6b4f;
+  color: #f3eee4;
+}
+html[data-theme="dark"] .portfolio-page .btn.primary:hover:not(:disabled),
+html:not([data-theme]) .portfolio-page .btn.primary:hover:not(:disabled) {
+  color: #f3eee4;
+}
+html[data-theme="dark"] .portfolio-page .btn:not(.primary):not(.danger):not(.ghost),
+html:not([data-theme]) .portfolio-page .btn:not(.primary):not(.danger):not(.ghost) {
+  background: #24352c;
+  border-color: #6f8276;
+  color: #f3eee4;
+}
+html[data-theme="dark"] .portfolio-page .btn.ghost,
+html:not([data-theme]) .portfolio-page .btn.ghost {
+  background: transparent;
+  border-color: #6f8276;
+  color: #f3eee4;
+}
+html[data-theme="dark"] .portfolio-page .period-pager .btn:not(.primary):not(.danger):not(.ghost),
+html:not([data-theme]) .portfolio-page .period-pager .btn:not(.primary):not(.danger):not(.ghost) {
+  background: transparent;
+  border-color: #6f8276;
+  color: #f3eee4;
+}
+html[data-theme="dark"] .portfolio-page .btn.danger,
+html:not([data-theme]) .portfolio-page .btn.danger {
+  background: #4a2422;
+  border-color: #e0b2aa;
+  color: #f3eee4;
+}
+html[data-theme="dark"] .portfolio-page .banner,
+html:not([data-theme]) .portfolio-page .banner {
+  background: #24352c;
+  color: #f3eee4;
+  border-left-color: #b7a8c4;
+}
+html[data-theme="dark"] .portfolio-page input,
+html[data-theme="dark"] .portfolio-page select,
+html[data-theme="dark"] .portfolio-page textarea,
+html:not([data-theme]) .portfolio-page input,
+html:not([data-theme]) .portfolio-page select,
+html:not([data-theme]) .portfolio-page textarea {
+  background: #121a16;
+  color: #f3eee4;
+  border-color: #6f8276;
+}
+html[data-theme="dark"] .portfolio-page input::placeholder,
+html[data-theme="dark"] .portfolio-page textarea::placeholder,
+html:not([data-theme]) .portfolio-page input::placeholder,
+html:not([data-theme]) .portfolio-page textarea::placeholder {
+  color: #c5d5c8;
+  opacity: 1;
+}
+html[data-theme="dark"] .portfolio-page .holding-quantity-error,
+html[data-theme="dark"] .portfolio-page .miner-edit-error,
+html:not([data-theme]) .portfolio-page .holding-quantity-error,
+html:not([data-theme]) .portfolio-page .miner-edit-error {
+  color: #f6d5ce;
+}
+html[data-theme="dark"] .portfolio-page .return-pos,
+html:not([data-theme]) .portfolio-page .return-pos {
+  color: #c5d5c8;
+}
+html[data-theme="dark"] .portfolio-page code,
+html:not([data-theme]) .portfolio-page code {
+  background: #24352c;
+  color: #f3eee4;
+}
+html[data-theme="dark"] .portfolio-page :focus-visible,
+html:not([data-theme]) .portfolio-page :focus-visible {
+  outline: 2px solid #c5d5c8;
+  outline-offset: 2px;
+}
