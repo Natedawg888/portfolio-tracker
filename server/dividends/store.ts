@@ -4,6 +4,7 @@
  */
 import type { Database } from 'sql.js';
 import { newId, queryAll, queryOne, run } from '../db/index.ts';
+import { removeDividendIncome, syncDividendIncome } from './incomeSync.ts';
 import {
   buildDividendDashboard,
   computeDividend,
@@ -188,6 +189,7 @@ export function insertDividend(db: Database, userId: string, body: DividendWrite
   );
   const saved = listDividendEvents(db, userId).find((event) => event.id === id);
   if (!saved) return { ok: false, status: 500, error: 'Dividend was not saved.' };
+  syncDividendIncome(db, userId, saved);
   return { ok: true, event: saved };
 }
 
@@ -238,6 +240,7 @@ export function updateDividend(
   );
   const saved = listDividendEvents(db, userId).find((event) => event.id === id);
   if (!saved) return { ok: false, status: 500, error: 'Dividend was not updated.' };
+  syncDividendIncome(db, userId, saved);
   return { ok: true, event: saved };
 }
 
@@ -249,6 +252,7 @@ export function deleteDividend(db: Database, userId: string, id: string): boolea
   );
   if (!existing) return false;
   run(db, `DELETE FROM dividend_events WHERE id = ? AND user_id = ?`, [id, userId]);
+  removeDividendIncome(db, userId, id);
   return true;
 }
 

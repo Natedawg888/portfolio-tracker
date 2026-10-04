@@ -85,7 +85,8 @@ Valuation refresh: `POST /api/holdings/:id/refresh-value` or `POST /api/holdings
 | Entity | Purpose |
 |--------|---------|
 | `budget_categories` (`type=income` / `is_income=1`) | Income categories: **Income**, **Salary**, **Mining**, **Dividends & interest**, **Other income** (seeded). Used for plans, Add income, and tagging bank inflows. **Transfer in** categories are excluded (not income). |
-| `income_records` | Explicit inflows from **Add income**: cash (optional linked `transactions` credit on the chosen income category) or crypto (qty × live quote → NZD; merge/create holdings by ticker). Optional `category_id`. Date ≥ 2026-10-01. |
+| `income_records` | Explicit inflows from **Add income**: cash (optional linked `transactions` credit on the chosen income category) or crypto (qty × live quote → NZD; merge/create holdings by ticker). Optional `category_id`. Date ≥ 2026-10-01. A paid dividend also inserts one row for that user (`dividend_event_id`), payee = the holding/company name, amount = net cash in NZD using the FX rate they recorded. Foreign payments with no rate are omitted. Updating or deleting the dividend updates or removes that user’s row only. |
+| `payee_settings` | Category remembered for a payee this user has used (income description, transaction description/merchant, or dividend company). `category_id` must already belong to that user. Applied the next time that payee is used. |
 | `income_plans` | **One planned NZD line per income category per month** (`year_month` + `category_id`). Compared to category-matched **received** on the Spending Income cards. |
 
 **Received for a month** = `SUM(income_records in month)` **∪** inflows (`amount > 0`) on `transactions` whose `category_id` is an `is_income` category.
@@ -110,7 +111,7 @@ Table: `dividend_events`. One row per payment the signed-in user records against
 | `currency`, `fx_rate_to_nzd` | NZD stores rate `1`. Any other currency converts to NZD only when the user recorded a rate. A blank rate is left blank |
 | `reinvested`, `reinvested_amount` | Yes/no and the amount reinvested in the payment currency. Does not change `holdings.shares` |
 
-Dashboard totals (monthly, annual, year income, growth, yield, forecast, upcoming, history) are computed from these rows. Growth compares the same dates in each year: 1 January through the same month and day when the selected year is still open (29 February compares with 28 February), or the full calendar year when that year is already complete. Payments outside the window stay in the annual totals. No missing months are filled in. `growth.previousThrough` and `growth.currentThrough` are the inclusive ends of those windows. Yield uses a saved `price_quotes` row with `status = ok` when one exists, otherwise the holding’s recorded cost basis, and is omitted when that value is missing. Rows with a null or unknown `holding_id` are left out of yield and do not block yield on holdings that remain. The forecast repeats the user’s last 12 months or sums upcoming rows they entered. It is not a market forecast. The same API is shown under Portfolio and Budget. `GET/POST /api/dividends`, `PATCH/DELETE /api/dividends/:id`.
+Dashboard totals (monthly, annual, year income, growth, yield, forecast, upcoming, history) are computed from these rows. Growth compares the same dates in each year: 1 January through the same month and day when the selected year is still open (29 February compares with 28 February), or the full calendar year when that year is already complete. Payments outside the window stay in the annual totals. No missing months are filled in. `growth.previousThrough` and `growth.currentThrough` are the inclusive ends of those windows. Yield uses a saved `price_quotes` row with `status = ok` when one exists, otherwise the holding’s recorded cost basis, and is omitted when that value is missing. Rows with a null or unknown `holding_id` are left out of yield and do not block yield on holdings that remain. The forecast repeats the user’s last 12 months or sums upcoming rows they entered. It is not a market forecast. The dividend cards are on the Portfolio page only. A paid row with an NZD amount (NZD, or another currency with an FX rate the user recorded) is also one Budgeting income row for that user. The payee is the holding or company name. `GET/POST /api/dividends`, `PATCH/DELETE /api/dividends/:id`. Payee categories: `GET/PUT /api/payees`.
 
 ## KiwiSaver (NZ)
 
@@ -131,6 +132,8 @@ Table: `kiwisaver_accounts` (+ `kiwisaver_balance_history`).
 
 - **Sharesies:** Akahu sync (`connection_status=akahu`). `POST /api/kiwisaver/import-sharesies-csv` remains a stub.
 - **Bank-held:** IRD/Akahu bank KS not available → KiwiSaver tab **manual form** + `POST /api/kiwisaver/import-bank-csv`. Honest UI labels: Manual / Manual (CSV) vs Akahu (Sharesies). History point on each save.
+
+Employee contribution **rate** (not a dollar amount) is stored per user at `users.preferences_json.kiwiSaverEmployeeRatePct`. When none is saved, the PAYE page offers **3%**. The calculator multiplies the gross pay the user enters by that rate. `GET/PUT /api/settings/kiwisaver-employee-rate`.
 
 ## Quotes & snapshots
 

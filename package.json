@@ -17,7 +17,7 @@
     "test:prod-routing": "node --import tsx scripts/verify-prod-routing.ts",
     "test:user-isolation": "node --import tsx scripts/verify-user-isolation.ts",
     "test:news": "node --import tsx server/news/sections.test.ts",
-    "test:dividends": "node --import tsx server/dividends/model.test.ts && node --import tsx server/dividends/store.test.ts",
+    "test:dividends": "node --import tsx server/dividends/model.test.ts && node --import tsx server/dividends/store.test.ts && node --import tsx server/dividends/incomeSync.test.ts && node --import tsx server/payees/store.test.ts && node --import tsx server/kiwisaver/employeeRate.test.ts",
     "test:economy": "node --import tsx server/economy/scoring.test.ts && node --import tsx server/economy/periods.test.ts && node --import tsx server/economy/assetContext.test.ts && node --import tsx server/economy/providers/derive.test.ts && node --import tsx server/economy/providers/parse.test.ts && node --import tsx server/economy/providers/consents.test.ts && node --import tsx server/economy/providers/housingStarts.test.ts && node --import tsx server/economy/providers/businessActivity.test.ts && node --import tsx server/economy/providers/creditConditions.test.ts && node --import tsx server/economy/providers/http.test.ts && node --import tsx server/economy/providers/sample.test.ts && node --import tsx server/economy/view.test.ts && node --import tsx server/economy/cycleLoad.test.ts && node --import tsx server/economy/phaseNews.test.ts && node --import tsx server/economy/countries.test.ts && node --import tsx server/economy/service.test.ts && node --import tsx server/news/sections.test.ts",
     "start": "node --import tsx server/index.ts",
     "db:backup": "node scripts/backup-db.mjs",

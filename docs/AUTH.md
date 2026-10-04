@@ -63,7 +63,7 @@ Bank / investment linking is separate from local email/password auth. See [AKAHU
 
 `POST /api/auth/delete-account` `{ password, confirm: "DELETE" }` then:
 
-1. Deletes **this user’s** scoped finance rows only (`holdings`, `bank_accounts`, `transactions`, `kiwisaver_accounts` + cascaded history/activity, `debt_people` + cascaded repayments, `income_records`, `income_plans`, `dividend_events`, `budgets`, `valuation_snapshots`) and their holding photos under `data/uploads/`.
+1. Deletes **this user’s** scoped finance rows only (`holdings`, `bank_accounts`, `transactions`, `kiwisaver_accounts` + cascaded history/activity, `debt_people` + cascaded repayments, `income_records`, `income_plans`, `dividend_events`, `payee_settings`, `budgets`, `valuation_snapshots`) and their holding photos under `data/uploads/`. The user’s KiwiSaver employee rate is removed with `preferences_json`.
 2. Deletes avatar file, all `sessions` for the user, `akahu_connections` for the user, and the `users` row (including `preferences_json`).
 3. Clears the session cookie. Does **not** wipe other users’ `user_id` rows.
 4. If the deleted user was `data_owner_user_id`, ownership is reassigned to the oldest remaining user (or cleared if none left).

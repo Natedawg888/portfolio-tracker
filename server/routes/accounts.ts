@@ -5,6 +5,7 @@ import { Router } from 'express';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { requireUserId } from '../lib/userScope.ts';
 import { CHARITY_SLUG, resolveCategoryIdOrSlug } from '../lib/categories.ts';
+import { categoryForPayee } from '../payees/store.ts';
 import { getDb, queryAll, queryOne, run, newId } from '../db/index.ts';
 import { coerceAkahuBalance } from '../akahu/sync.ts';
 import { TXN_SYNC_FROM_DATE } from '../akahu/syncTransactions.ts';
@@ -229,8 +230,18 @@ router.post('/transactions', async (req: AuthedRequest, res) => {
   const merchant =
     typeof b.merchant === 'string' && b.merchant.trim() ? b.merchant.trim() : null;
   const currency = typeof b.currency === 'string' ? b.currency : 'NZD';
-  const categoryId =
-    typeof b.categoryId === 'string' && b.categoryId ? b.categoryId : null;
+  const categoryProvided = typeof b.categoryId === 'string' && b.categoryId.trim() !== '';
+  let categoryId = categoryProvided ? b.categoryId.trim() : null;
+  if (!categoryProvided) {
+    const names = [merchant, description].filter((name): name is string => Boolean(name && name.trim()));
+    for (const name of names) {
+      const saved = categoryForPayee(db, userId, name);
+      if (saved) {
+        categoryId = saved;
+        break;
+      }
+    }
+  }
   const externalId =
     typeof b.externalId === 'string' && b.externalId.trim()
       ? b.externalId.trim()

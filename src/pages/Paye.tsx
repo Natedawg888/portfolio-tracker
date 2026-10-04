@@ -26,7 +26,9 @@ import {
   ACC_RATE,
   DONATION_TAX_CREDIT_RATE,
   INCOME_TAX_BRACKETS,
+  KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE,
   KIWISAVER_DEFAULT_EMPLOYEE_RATE,
+  KIWISAVER_EMPLOYEE_RATE_CHOICES,
   KIWISAVER_EMPLOYEE_RATES,
   KIWISAVER_EMPLOYER_MIN_RATE,
   PAYE_DEFAULT_HOURS_PER_WEEK,
@@ -184,6 +186,7 @@ export function Paye() {
   const [kiwiSaverOptIn, setKiwiSaverOptIn] = useState(initial.kiwiSaverOptIn);
   const [ksRate, setKsRate] = useState(initial.ksRate);
   const [ksCustom, setKsCustom] = useState(initial.ksCustom);
+  const [ksRateReady, setKsRateReady] = useState(false);
   const [ksEmployerRate, setKsEmployerRate] = useState(initial.ksEmployerRate);
   const [salarySacrifice, setSalarySacrifice] = useState(initial.salarySacrifice);
 
@@ -244,6 +247,39 @@ export function Paye() {
     extraCreditDrafts,
   ]);
 
+  // Saved employee rate for this account. 3% is the starting choice when none is saved.
+  useEffect(() => {
+    let cancelled = false;
+    api.settings
+      .getKiwiSaverEmployeeRate()
+      .then((row) => {
+        if (cancelled) return;
+        const rate = row.employeeRatePct;
+        const offered = KIWISAVER_EMPLOYEE_RATE_CHOICES.some((choice) => choice === rate);
+        setKsRate(String(rate));
+        setKsCustom(!offered);
+        setKsRateReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setKsRateReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!ksRateReady) return;
+    const rate = Number(ksRate);
+    if (!Number.isFinite(rate) || rate <= 0 || rate > 100) return;
+    const handle = window.setTimeout(() => {
+      void api.settings.setKiwiSaverEmployeeRate(rate).catch(() => {
+        /* keep the rate on screen; the next change tries again */
+      });
+    }, 300);
+    return () => window.clearTimeout(handle);
+  }, [ksRate, ksRateReady]);
+
   // Auto-fill only from real savings-interest/dividend income records or transactions.
   // Plain income without explicit credit wording → add nothing (never invent RWT).
   useEffect(() => {
@@ -269,7 +305,7 @@ export function Paye() {
 
   const employeeRatePct = ksCustom
     ? Number(ksRate) || 0
-    : Number(ksRate) || KIWISAVER_DEFAULT_EMPLOYEE_RATE;
+    : Number(ksRate) || KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE;
 
   const result = useMemo(() => {
     if (!hasIncome) return null;
@@ -428,7 +464,7 @@ export function Paye() {
             <label className="span-2">
               Employee contribution
               <div className="row gap" style={{ marginTop: 0 }}>
-                {KIWISAVER_EMPLOYEE_RATES.map((r) => (
+                {KIWISAVER_EMPLOYEE_RATE_CHOICES.map((r) => (
                   <button
                     key={r}
                     type="button"
@@ -477,7 +513,9 @@ export function Paye() {
               />
               <span className="muted small">
                 Statutory minimum {KIWISAVER_EMPLOYER_MIN_RATE}% from 1 Apr 2026 (not deducted from
-                take-home unless salary sacrifice).
+                take-home unless salary sacrifice). Your employee rate is saved for this account.
+                {KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE}% is the starting choice. The contribution
+                is the gross pay you enter times that rate. Not advice.
               </span>
             </label>
             <label className="field checkbox-field span-2">
@@ -863,8 +901,9 @@ export function Paye() {
         </div>
         <p className="muted small" style={{ marginTop: '0.75rem' }}>
           ACC {(ACC_RATE * 100).toFixed(2)}% on liable earnings up to {money(ACC_MAX_EARNINGS)}{' '}
-          (max levy {money(ACC_MAX_LEVY)}). KiwiSaver employee rates{' '}
-          {KIWISAVER_EMPLOYEE_RATES.map((r) => `${r}%`).join(', ')} (default{' '}
+          (max levy {money(ACC_MAX_LEVY)}). KiwiSaver employee rate saved for this account
+          (starting choice {KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE}%). Statutory rates from 1 April
+          2026: {KIWISAVER_EMPLOYEE_RATES.map((r) => `${r}%`).join(', ')} (IRD minimum{' '}
           {KIWISAVER_DEFAULT_EMPLOYEE_RATE}%). Full notes in{' '}
           <code>docs/PAYE_RATES.md</code>.
         </p>

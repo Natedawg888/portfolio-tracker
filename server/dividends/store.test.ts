@@ -25,7 +25,10 @@ const holdingB = 'divtest_h_b';
 async function main() {
   const db = await getDb();
   const now = new Date().toISOString();
+  run(db, `DELETE FROM income_records WHERE user_id IN (?, ?)`, [userA, userB]);
+  run(db, `DELETE FROM payee_settings WHERE user_id IN (?, ?)`, [userA, userB]);
   run(db, `DELETE FROM dividend_events WHERE user_id IN (?, ?)`, [userA, userB]);
+  run(db, `DELETE FROM budget_categories WHERE user_id IN (?, ?)`, [userA, userB]);
   run(db, `DELETE FROM holdings WHERE id IN (?, ?, ?)`, [holdingA, holdingA2, holdingB]);
   run(
     db,
@@ -151,7 +154,10 @@ async function main() {
 
     console.log('dividend store isolation tests passed');
   } finally {
+    run(db, `DELETE FROM income_records WHERE user_id IN (?, ?)`, [userA, userB]);
+    run(db, `DELETE FROM payee_settings WHERE user_id IN (?, ?)`, [userA, userB]);
     run(db, `DELETE FROM dividend_events WHERE user_id IN (?, ?)`, [userA, userB]);
+    run(db, `DELETE FROM budget_categories WHERE user_id IN (?, ?)`, [userA, userB]);
     run(db, `DELETE FROM holdings WHERE id IN (?, ?, ?)`, [holdingA, holdingA2, holdingB]);
   }
 }

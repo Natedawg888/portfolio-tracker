@@ -290,6 +290,15 @@ function migrateSchema(database: Database) {
   database.run(
     `CREATE INDEX IF NOT EXISTS idx_income_records_category ON income_records(category_id)`,
   );
+  const incRecColsNow = tableColumns(database, 'income_records');
+  if (incRecColsNow.size > 0 && !incRecColsNow.has('dividend_event_id')) {
+    database.run('ALTER TABLE income_records ADD COLUMN dividend_event_id TEXT');
+  }
+  // SQLite treats NULL as distinct, so manual income rows (null dividend id) stay unlimited.
+  database.run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_income_records_user_dividend
+     ON income_records(user_id, dividend_event_id)`,
+  );
 
   // KiwiSaver: returns / external_id / pir / activity probe + history tables
   const ksCols = tableColumns(database, 'kiwisaver_accounts');
@@ -436,6 +445,7 @@ function migrateSchema(database: Database) {
     { table: 'budgets', index: 'idx_budgets_user' },
     { table: 'valuation_snapshots', index: 'idx_valuation_snapshots_user' },
     { table: 'budget_categories', index: 'idx_budget_categories_user' },
+    { table: 'payee_settings', index: 'idx_payee_settings_user' },
   ];
   for (const { table, index } of scopedTables) {
     const cols = tableColumns(database, table);

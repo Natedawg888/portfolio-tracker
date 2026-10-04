@@ -296,7 +296,9 @@ CREATE TABLE IF NOT EXISTS income_records (
   holding_id       TEXT,
   transaction_id   TEXT REFERENCES transactions(id) ON DELETE SET NULL,
   notes            TEXT,
-  created_at       TEXT NOT NULL
+  created_at       TEXT NOT NULL,
+  -- Set when this row mirrors one paid dividend. One income row per dividend per user.
+  dividend_event_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_income_records_date ON income_records(date);
@@ -453,5 +455,20 @@ CREATE TABLE IF NOT EXISTS dividend_events (
 
 CREATE INDEX IF NOT EXISTS idx_dividend_events_user_date
   ON dividend_events(user_id, payment_date);
+
+-- Category remembered for a payee this user has used (income description, transaction
+-- description/merchant, or dividend company). Category must already exist for that user.
+CREATE TABLE IF NOT EXISTS payee_settings (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL,
+  name         TEXT NOT NULL,
+  name_key     TEXT NOT NULL,
+  category_id  TEXT,
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payee_settings_user_key
+  ON payee_settings(user_id, name_key);
 
 -- per-user indexes created in migrateSchema after user_id columns exist
