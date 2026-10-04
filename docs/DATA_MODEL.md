@@ -139,5 +139,17 @@ Cash + stocks (cost) + crypto (cost) + **GoMining miners** (est. value or cost) 
 
 Timezone for display: **Pacific/Auckland**. Currency default: **NZD**.
 
+## Economic cycle (country macro, not per-user)
+
+Educational phase classification for New Zealand. These tables have no `user_id`. The phase is calculated from indicators; it is not stored as a manual setting.
+
+| Entity | Purpose |
+|--------|---------|
+| `economic_indicators` | One observation per country, indicator, period, and provider. Includes value, previous value, source, source URL, published date, period, and retrieved date. |
+| `economic_cycle_assessments` | Calculated phase, score, confidence, momentum, and previous phase for a quarter. `is_current` marks the latest quarter. |
+| `economic_indicator_scores` | Per-indicator score, direction, and contribution for the current assessment. |
+| `economic_fetch_log` | Last fetch time and outcome for a provider and country, so a cached extract is not described as a fresh download. |
+
+The default provider reads public Stats NZ and OECD extracts. `ECONOMY_PROVIDER=sample` switches to a labelled fixture that is not presented as official current data. Scoring weights live in `server/economy/weights.ts`. See [APPROACH.md](../APPROACH.md).
 
 See also: [METALS.md](./METALS.md), [GOMINING.md](./GOMINING.md), [SHARESIES_KIWISAVER.md](./SHARESIES_KIWISAVER.md), [IMPORT_FORMATS.md](./IMPORT_FORMATS.md).

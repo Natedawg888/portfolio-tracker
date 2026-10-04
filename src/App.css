@@ -3266,3 +3266,65 @@ body.nav-drawer-open {
   padding: 0 0.15rem;
 }
 .quiet-toast-dismiss:hover { color: var(--text); }
+
+.econ-page .page-lead { margin-left: auto; margin-right: auto; }
+.cycle-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.15rem;
+  align-items: center;
+  justify-content: center;
+  list-style: none;
+  margin: 0.2rem 0 0.6rem;
+  padding: 0;
+}
+.cycle-step { display: inline-flex; align-items: center; gap: 0.35rem; }
+.cycle-node {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.38rem 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 650;
+  background: var(--surface-2);
+}
+.cycle-node.active {
+  border-color: var(--phase, var(--accent));
+  box-shadow: inset 0 0 0 1px var(--phase, var(--accent));
+  background: var(--surface);
+}
+.cycle-arrow { color: var(--muted); font-size: 0.9rem; }
+.phase-recovery { --phase: var(--accent-2); color: var(--accent-2); }
+.phase-expansion { --phase: var(--accent); color: var(--accent); }
+.phase-late_expansion { --phase: var(--warn); color: var(--warn); }
+.phase-slowdown { --phase: #9a6ad4; color: #9a6ad4; }
+.phase-recession { --phase: var(--danger); color: var(--danger); }
+.cycle-node.phase-recovery,
+.cycle-node.phase-expansion,
+.cycle-node.phase-late_expansion,
+.cycle-node.phase-slowdown,
+.cycle-node.phase-recession { color: var(--text); }
+.econ-indicator.is-stale { border-color: var(--warn); }
+.econ-spark { width: 100%; height: 36px; margin-top: 0.45rem; color: var(--accent-2); }
+.phase-chart-wrap { overflow-x: auto; }
+.phase-chart { width: 100%; min-width: 640px; height: auto; color: var(--muted); }
+.phase-chart-label { fill: var(--muted); font-size: 11px; }
+.phase-dot { fill: var(--phase, var(--accent)); }
+.econ-phase-table { margin-top: 0.8rem; }
+.tendency {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 0.12rem 0.45rem;
+  border: 1px solid var(--border);
+}
+.tendency-positive { color: var(--accent); }
+.tendency-neutral { color: var(--muted); }
+.tendency-negative { color: var(--danger); }
+@media (max-width: 700px) {
+  .cycle-rail { flex-direction: column; align-items: stretch; }
+  .cycle-step { flex-direction: column; }
+  .cycle-arrow { transform: rotate(90deg); }
+}
