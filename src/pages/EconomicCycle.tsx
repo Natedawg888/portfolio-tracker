@@ -67,8 +67,13 @@ function indicatorReading(card: EconomicIndicatorCard): string | null {
     const sentence = changeSentence(card.change);
     if (sentence) sentences.push(sentence);
   }
-  if (card.score != null) sentences.push(`The match with this phase is ${card.score} out of 100.`);
-  if (card.contribution != null) sentences.push(`Its share of this phase result is ${card.contribution}.`);
+  // Not scored means there is no phase. The server still sends score 0 and contribution 0.
+  if (card.status !== 'Not scored') {
+    if (card.score != null) sentences.push(`The match with this phase is ${card.score} out of 100.`);
+    if (card.contribution != null) {
+      sentences.push(`It adds ${card.contribution} weighted points toward this phase.`);
+    }
+  }
   return sentences.length > 0 ? sentences.join(' ') : null;
 }
 
