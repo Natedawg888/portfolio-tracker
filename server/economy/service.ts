@@ -10,10 +10,28 @@ import { buildCycleView, type CycleResponse } from './view.ts';
 
 export { EconomyCountryError } from './countries.ts';
 
+/** Bump when a provider starts returning a series the previous extract did not store. */
+export const EXTRACT_REVISION = 'housing-1';
+
 function cacheMs(): number {
   const hours = Number(process.env.ECONOMY_CACHE_HOURS ?? '12');
   if (!Number.isFinite(hours) || hours < 0) return 12 * 60 * 60 * 1000;
   return hours * 60 * 60 * 1000;
+}
+
+export function cacheNote(warnings: string[]): string | null {
+  const text = [`rev:${EXTRACT_REVISION}`, ...warnings].join(' ').trim();
+  return text.slice(0, 500) || null;
+}
+
+export function cacheIsCurrent(note: string | null | undefined): boolean {
+  return Boolean(note?.includes(`rev:${EXTRACT_REVISION}`));
+}
+
+export function visibleCacheNote(note: string | null | undefined): string | null {
+  if (!note) return null;
+  const cleaned = note.replaceAll(`rev:${EXTRACT_REVISION}`, '').trim();
+  return cleaned || null;
 }
 
 export async function getEconomicCycle(
@@ -30,8 +48,10 @@ export async function getEconomicCycle(
   const log = await readFetchLog(country, provider.id);
   let observations = await readObservations(country, provider.id);
   const age = log ? now.getTime() - Date.parse(log.fetchedAt) : Number.POSITIVE_INFINITY;
-  const fresh = Boolean(log?.ok) && age >= 0 && age < cacheMs() && observations.length > 0;
-  if (fresh && log?.note) warnings = [log.note];
+  const fresh =
+    Boolean(log?.ok) && age >= 0 && age < cacheMs() && observations.length > 0 && cacheIsCurrent(log?.note);
+  const cachedNote = visibleCacheNote(log?.note);
+  if (fresh && cachedNote) warnings = [cachedNote];
 
   if (options.refresh || !fresh) {
     try {
@@ -45,7 +65,7 @@ export async function getEconomicCycle(
           providerId: provider.id,
           observations: result.observations,
           fetchedAt: result.retrievedAt,
-          note: result.warnings.join(' ').slice(0, 500) || null,
+          note: cacheNote(result.warnings),
           ok: result.observations.length > 0,
         });
         observations = result.observations;
