@@ -33,13 +33,11 @@ export function Login() {
   };
 
   return (
-    <div className="auth-page">
+    <div className="auth-page login-page">
       <div className="auth-card panel">
         <p className="eyebrow">Portfolio Tracker</p>
         <h2>Sign in</h2>
-        <p className="page-lead">
-          Local account on this machine. Session cookie stays in the browser (httpOnly).
-        </p>
+        <p className="page-lead">Your accounts stay on this device.</p>
         <form className="auth-form" onSubmit={onSubmit}>
           <label>
             Email

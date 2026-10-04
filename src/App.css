@@ -3370,3 +3370,67 @@ body.nav-drawer-open {
 @media (max-width: 768px) {
   .news-grid { grid-template-columns: 1fr; }
 }
+
+/* Sign-in screen only (/login). Register and other auth shells keep shared styles. */
+.auth-page.login-page {
+  min-height: 100vh;
+  color-scheme: light;
+  color: #1a1a1a;
+  background: #e7e0d4;
+  position: relative;
+}
+.auth-page.login-page::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 12px;
+  background: #1b4332;
+  pointer-events: none;
+}
+.login-page .auth-card {
+  position: relative;
+  z-index: 0;
+  background: #f7f3ec;
+  border: none;
+  border-radius: 16px;
+  padding: 2rem 2rem 1.75rem;
+  box-shadow: 0 16px 40px rgba(48, 36, 22, 0.1);
+  color: #1a1a1a;
+}
+.login-page .eyebrow {
+  color: #1b4332;
+  font-variant-caps: all-small-caps;
+  text-transform: none;
+  letter-spacing: 0.12em;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.login-page .auth-card h2 {
+  font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
+  font-weight: 500;
+  color: #1a1a1a;
+  letter-spacing: -0.015em;
+}
+.login-page .page-lead {
+  color: #5c564c;
+}
+.login-page .auth-form label {
+  color: #3f3832;
+}
+.login-page .auth-form input {
+  background: #fbf8f3;
+  color: #1a1a1a;
+  border: 1px solid #c8bba8;
+}
+.login-page .auth-form .btn.primary {
+  width: 100%;
+  background: #1b4332;
+  border-color: #1b4332;
+  color: #fff;
+}
+.login-page .auth-switch a {
+  color: #6e6278;
+}
