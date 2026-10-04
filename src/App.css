@@ -3414,9 +3414,6 @@ body.nav-drawer-open {
   color: #1a1a1a;
   letter-spacing: -0.015em;
 }
-.login-page .page-lead {
-  color: #5c564c;
-}
 .login-page .auth-form label {
   color: #3f3832;
 }
@@ -3425,11 +3422,20 @@ body.nav-drawer-open {
   color: #1a1a1a;
   border: 1px solid #c8bba8;
 }
+.login-page .auth-error {
+  color: #6e1b1b;
+  background: #f8e4e0;
+  border-color: #e4c2bb;
+}
 .login-page .auth-form .btn.primary {
   width: 100%;
   background: #1b4332;
   border-color: #1b4332;
   color: #fff;
+}
+.login-page .auth-form .btn.primary:focus-visible {
+  outline: 2px solid #1b4332;
+  outline-offset: 3px;
 }
 .login-page .auth-switch a {
   color: #6e6278;

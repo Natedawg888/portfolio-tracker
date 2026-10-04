@@ -37,7 +37,6 @@ export function Login() {
       <div className="auth-card panel">
         <p className="eyebrow">Portfolio Tracker</p>
         <h2>Sign in</h2>
-        <p className="page-lead">Your accounts stay on this device.</p>
         <form className="auth-form" onSubmit={onSubmit}>
           <label>
             Email
