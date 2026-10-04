@@ -51,6 +51,22 @@ function balanceNumber(raw: unknown): number {
   return coerceBalance(raw) ?? 0;
 }
 
+/** Drop env key names from copy shown on the dashboard. */
+function dashboardQuoteNote(note: string | undefined): string | undefined {
+  if (!note) return note;
+  if (/api[_-]?key|\b[A-Za-z0-9]+_KEY\b/i.test(note)) {
+    return 'Live marks use cost or recorded values. Metals are not connected.';
+  }
+  return note;
+}
+
+function dashboardErrorText(message: string): string {
+  if (/api[_-]?key|\b[A-Za-z0-9]+_KEY\b/i.test(message)) {
+    return 'Could not load the dashboard.';
+  }
+  return message;
+}
+
 export function Dashboard() {
   const { enabled: assetEnabled } = useAssetClassPrefs();
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -107,15 +123,15 @@ export function Dashboard() {
 
   if (error) {
     return (
-      <div className="panel warn">
-        <h2>Dashboard</h2>
-        <p>API unreachable: {error}</p>
+      <div className="panel warn dashboard-page">
+        <h2 className="page-title">Dashboard</h2>
+        <p>API unreachable: {dashboardErrorText(error)}</p>
         <p className="muted">Start with <code>npm run dev</code> (Vite + API on :8787).</p>
       </div>
     );
   }
 
-  if (!summary) return <div className="panel">Loading net worth…</div>;
+  if (!summary) return <div className="panel dashboard-page">Loading net worth…</div>;
 
   // NZD rows feed cashNzd; non-NZD shown separately (no FX invented)
   const nzdAccounts = accounts
@@ -166,9 +182,9 @@ export function Dashboard() {
     }));
 
   return (
-    <div className="stack">
+    <div className="stack dashboard-page">
       <section className="hero-card">
-        <p className="eyebrow">Net worth · assets − debt outstanding</p>
+        <p className="eyebrow page-title">Net worth · assets − debt outstanding</p>
         <p className="hero-value">{formatNzd(summary.totalKnownNzd)}</p>
         <p className="muted small">
           As of {formatAuckland(summary.asOf)} NZT
@@ -179,7 +195,7 @@ export function Dashboard() {
             ? ` − Debt ${formatNzd(summary.debtOutstandingNzd)}`
             : ''}
           {' · '}
-          {summary.quoteNote}
+          {dashboardQuoteNote(summary.quoteNote)}
         </p>
       </section>
 
@@ -187,7 +203,7 @@ export function Dashboard() {
         {assetEnabled('cash') ? (
           <Bucket title="Cash" value={summary.cashNzd} hint="NZD liquid (cheque/savings/wallet/term)" />
         ) : null}
-        {assetEnabled('stock') ? <Bucket title="Stocks (cost)" value={summary.stocksNzd} /> : null}
+        {assetEnabled('stock') ? <Bucket title="Shares, at cost" value={summary.stocksNzd} /> : null}
         {assetEnabled('crypto') ? <Bucket title="Crypto" value={summary.cryptoNzd} /> : null}
         {assetEnabled('gomining') ? (
           <Bucket title="GoMining miners" value={summary.gominingMinersNzd} />
@@ -201,12 +217,14 @@ export function Dashboard() {
               summary.metalsUseSpot
                 ? 'Metals.Dev spot NZD (stale OK if quota exhausted)'
                 : summary.metalsConfigured
-                  ? 'Key set — refresh on Portfolio / Value search (last-good kept on quota miss)'
-                  : 'Cost only until METALS_API_KEY (free: metals.dev)'
+                  ? 'Refresh on Portfolio or Value search for a spot. The last good value stays if the quota is used up.'
+                  : 'not connected'
             }
           />
         ) : null}
-        {assetEnabled('stone') ? <Bucket title="Stones (known only)" value={summary.stonesNzd} /> : null}
+        {assetEnabled('stone') ? (
+          <Bucket title="Stones, recorded value only" value={summary.stonesNzd} />
+        ) : null}
         {assetEnabled('forex') ? (
           <Bucket
             title="Forex"
