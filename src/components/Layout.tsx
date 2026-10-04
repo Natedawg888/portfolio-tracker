@@ -8,7 +8,6 @@ import {
   useMoneyHidden,
 } from '../lib/privacy';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
-import { useAuth } from '../auth/AuthContext';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
 import { ProfileMenu } from './ProfileMenu';
 import { QuietToast } from './QuietToast';
@@ -87,29 +86,9 @@ function MenuIcon() {
   );
 }
 
-function headerAccountLabel(user: {
-  displayName?: string | null;
-  firstName?: string | null;
-  lastName?: string | null;
-  email?: string | null;
-} | null): string {
-  if (!user) return 'Account';
-  const composed = [user.firstName, user.lastName]
-    .map((p) => (p || '').trim())
-    .filter(Boolean)
-    .join(' ');
-  const name = (user.displayName || '').trim() || composed;
-  if (name) return name;
-  const local = (user.email || '').split('@')[0]?.trim();
-  if (local) return local;
-  return 'Account';
-}
-
 export function Layout() {
-  const { user } = useAuth();
   const { enabled } = useAssetClassPrefs();
   const location = useLocation();
-  const accountLabel = headerAccountLabel(user);
   const [theme, setThemeState] = useState<Theme>(() => resolveTheme());
   const [navOpen, setNavOpen] = useState(false);
   const moneyHidden = useMoneyHidden();
@@ -228,7 +207,7 @@ export function Layout() {
           <ProfileMenu triggerClassName="brand-mark" />
           <div>
             <h1>Portfolio Tracker</h1>
-            <p className="sub">{accountLabel} · NZD · Pacific/Auckland</p>
+            <p className="sub">NZD · Auckland</p>
           </div>
         </div>
         {/* Mobile: fixed overlay drawer (CSS). Desktop: in-flow pill. Never inside .header-actions. */}
