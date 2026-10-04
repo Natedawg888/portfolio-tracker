@@ -427,6 +427,8 @@ CREATE TABLE IF NOT EXISTS economic_fetch_log (
 -- Dividend events recorded by the signed-in user against their own stock/ETF holding.
 -- Amounts and FX rates are whatever the user entered. Imputation credits are not cash.
 -- fx_rate_to_nzd is NULL when the user did not record a rate (NZD rows store 1).
+-- holding_id is cleared when that user's holding is deleted. The payment row stays.
+-- Yield ignores rows with no current holding. Account deletion removes the user's rows.
 CREATE TABLE IF NOT EXISTS dividend_events (
   id                   TEXT PRIMARY KEY,
   user_id              TEXT NOT NULL,

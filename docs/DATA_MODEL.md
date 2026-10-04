@@ -98,7 +98,7 @@ APIs: `GET /api/income?month=`, `GET /api/income/summary?month=` (`actualNzd`, `
 
 ## Dividends (personal record)
 
-Table: `dividend_events`. One row per payment the signed-in user records against **their** stock or ETF holding (`holding_id` must match `holdings.user_id` and `asset_class = stock`). Company/ETF name and symbol are copied from that holding.
+Table: `dividend_events`. One row per payment the signed-in user records against **their** stock or ETF holding (`holding_id` must match `holdings.user_id` and `asset_class = stock`). Company/ETF name and symbol are copied from that holding. Deleting that holding sets `holding_id` to null on that user's rows only; the recorded amounts stay. Another user's holdings are not readable or writable from this user's dividend routes. Deleting the account still deletes that user's `dividend_events`.
 
 | Field | Notes |
 |-------|--------|
@@ -110,7 +110,7 @@ Table: `dividend_events`. One row per payment the signed-in user records against
 | `currency`, `fx_rate_to_nzd` | NZD stores rate `1`. Any other currency converts to NZD only when the user recorded a rate. A blank rate is left blank |
 | `reinvested`, `reinvested_amount` | Yes/no and the amount reinvested in the payment currency. Does not change `holdings.shares` |
 
-Dashboard totals (monthly, annual, year income, growth, yield, forecast, upcoming, history) are computed from these rows. Yield uses a saved `price_quotes` row with `status = ok` when one exists, otherwise the holding’s recorded cost basis, and is omitted when that value is missing. The forecast repeats the user’s last 12 months or sums upcoming rows they entered. It is not a market forecast. The same API is shown under Portfolio and Budget. `GET/POST /api/dividends`, `PATCH/DELETE /api/dividends/:id`.
+Dashboard totals (monthly, annual, year income, growth, yield, forecast, upcoming, history) are computed from these rows. Growth compares the same dates in each year: 1 January through the same month and day when the selected year is still open (29 February compares with 28 February), or the full calendar year when that year is already complete. Payments outside the window stay in the annual totals. No missing months are filled in. `growth.previousThrough` and `growth.currentThrough` are the inclusive ends of those windows. Yield uses a saved `price_quotes` row with `status = ok` when one exists, otherwise the holding’s recorded cost basis, and is omitted when that value is missing. Rows with a null or unknown `holding_id` are left out of yield and do not block yield on holdings that remain. The forecast repeats the user’s last 12 months or sums upcoming rows they entered. It is not a market forecast. The same API is shown under Portfolio and Budget. `GET/POST /api/dividends`, `PATCH/DELETE /api/dividends/:id`.
 
 ## KiwiSaver (NZ)
 

@@ -151,9 +151,14 @@ eq(dash.forecast.historyRunRateNzd, 40, 'history projection is the trailing reco
 assert(!dash.forecast.note.toLowerCase().includes('market forecast') || dash.forecast.note.includes('not a market forecast'), 'forecast is labelled');
 assert(dash.forecast.note.includes('not a market forecast'), 'forecast says it is not a market forecast');
 assert(dash.growth.available, 'two years of NZD rows can show growth');
-eq(dash.growth.previousNzd, 100, '2025 base');
+assert(dash.growth.currentThrough === '2026-10-04', 'open year ends on today');
+assert(dash.growth.previousThrough === '2025-10-04', 'prior year uses the same month and day');
+eq(dash.growth.previousNzd, 100, '2025 base inside the same dates');
 eq(dash.growth.currentNzd, 40, '2026 paid');
-eq(dash.growth.changePct, -60, 'growth is the change between recorded years');
+eq(dash.growth.changePct, -60, 'growth compares the same dates, not a full prior year');
+assert(dash.growth.note.includes('Not a full-year change'), 'open-year growth is not labelled as a full-year change');
+assert(dash.growth.note.includes('1 Jan 2025'), 'note names the prior window');
+assert(dash.growth.note.includes('4 Oct 2026'), 'note names the current window');
 assert(dash.yield.available, 'cost basis can denominate yield');
 eq(dash.yield.trailingNetNzd, 40, 'yield numerator is trailing recorded net');
 eq(dash.yield.denominatorNzd, 1000, 'yield denominator is recorded cost');
@@ -194,5 +199,126 @@ assert(otherUser.history.every((item) => item.companyName === 'Mine Co'), 'dashb
 assert(!otherUser.history.some((item) => item.companyName === 'Example ETF' && item.id !== 'mine'), 'no extra company is added');
 
 assert(shiftMonths('2026-10-04', -12) === '2025-10-04', 'trailing window is twelve calendar months');
+
+const sameDates = buildDividendDashboard({
+  events: [
+    row({ id: 'early', paymentDate: '2025-03-01', netDividend: 10, grossDividend: 10, dividendPerShare: 0.1 }),
+    row({ id: 'cutoff', paymentDate: '2025-10-04', netDividend: 10, grossDividend: 10, dividendPerShare: 0.1 }),
+    row({ id: 'after', paymentDate: '2025-10-05', netDividend: 80, grossDividend: 80, dividendPerShare: 0.8 }),
+    row({ id: 'now', paymentDate: '2026-03-01', netDividend: 40, grossDividend: 40, dividendPerShare: 0.4 }),
+  ],
+  holdings: [holding],
+  year: 2026,
+  today: '2026-10-04',
+});
+eq(sameDates.growth.previousNzd, 20, 'prior-year payments after the same day stay out of growth');
+eq(sameDates.growth.currentNzd, 40, 'current window uses recorded rows only');
+eq(sameDates.growth.changePct, 100, 'change uses the matching windows');
+const year2025 = sameDates.annual.find((item) => item.year === 2025);
+eq(year2025?.netNzd ?? null, 100, 'annual total still keeps the later prior-year payment');
+assert(sameDates.growth.note.includes('Not a full-year change'), 'partial comparison says it is not a full year');
+
+const closed = buildDividendDashboard({
+  events: [
+    row({ id: 'prior-dec', paymentDate: '2024-12-15', netDividend: 50, grossDividend: 50, dividendPerShare: 0.5 }),
+    row({ id: 'this-dec', paymentDate: '2025-12-15', netDividend: 80, grossDividend: 80, dividendPerShare: 0.8 }),
+  ],
+  holdings: [holding],
+  year: 2025,
+  today: '2026-10-04',
+});
+assert(closed.growth.previousThrough === '2024-12-31', 'completed prior year runs through 31 Dec');
+assert(closed.growth.currentThrough === '2025-12-31', 'completed selected year runs through 31 Dec');
+eq(closed.growth.previousNzd, 50, 'completed years include December of the prior year');
+eq(closed.growth.currentNzd, 80, 'completed years include December of the selected year');
+eq(closed.growth.changePct, 60, 'full recorded years can be compared');
+assert(!closed.growth.note.includes('Not a full-year change'), 'a finished year is a full-year comparison');
+
+const leap = buildDividendDashboard({
+  events: [
+    row({ id: 'ly', paymentDate: '2023-02-28', netDividend: 5, grossDividend: 5, dividendPerShare: 0.05 }),
+    row({ id: 'march', paymentDate: '2023-03-01', netDividend: 100, grossDividend: 100, dividendPerShare: 1 }),
+    row({ id: 'leap-day', paymentDate: '2024-02-29', netDividend: 8, grossDividend: 8, dividendPerShare: 0.08 }),
+  ],
+  holdings: [holding],
+  year: 2024,
+  today: '2024-02-29',
+});
+assert(leap.growth.previousThrough === '2023-02-28', '29 February compares with 28 February');
+eq(leap.growth.previousNzd, 5, 'March of the prior year stays outside the leap-day window');
+eq(leap.growth.currentNzd, 8, 'the leap-day payment is inside the window');
+
+const missingPriorFx = buildDividendDashboard({
+  events: [
+    row({
+      id: 'no-fx',
+      paymentDate: '2025-05-01',
+      netDividend: 10,
+      grossDividend: 10,
+      dividendPerShare: 0.1,
+      currency: 'USD',
+      fxRateToNzd: null,
+    }),
+    row({ id: 'this-nzd', paymentDate: '2026-05-01', netDividend: 10, grossDividend: 10, dividendPerShare: 0.1 }),
+  ],
+  holdings: [holding],
+  year: 2026,
+  today: '2026-10-04',
+});
+assert(!missingPriorFx.growth.available, 'a missing FX rate does not become an NZD growth base');
+assert(missingPriorFx.growth.changePct == null, 'no growth percent is invented without both NZD amounts');
+
+const mixedYield = buildDividendDashboard({
+  events: [
+    row({ id: 'linked', paymentDate: '2026-05-01', netDividend: 40, grossDividend: 40, dividendPerShare: 0.4 }),
+    row({
+      id: 'gone',
+      holdingId: null,
+      paymentDate: '2026-06-01',
+      netDividend: 999,
+      grossDividend: 999,
+      dividendPerShare: 9.99,
+      companyName: 'Sold Co',
+    }),
+    row({
+      id: 'dangling',
+      holdingId: 'missing',
+      paymentDate: '2026-07-01',
+      netDividend: 50,
+      grossDividend: 50,
+      dividendPerShare: 0.5,
+    }),
+  ],
+  holdings: [holding],
+  year: 2026,
+  today: '2026-10-04',
+});
+assert(mixedYield.yield.available, 'a linked holding still has a yield');
+eq(mixedYield.yield.trailingNetNzd, 40, 'unlinked rows are left out of the yield numerator');
+eq(mixedYield.yield.denominatorNzd, 1000, 'yield denominator is the remaining holding');
+eq(mixedYield.yield.yieldPct, 4, 'yield uses the linked holding only');
+assert(mixedYield.yield.note.includes('left out'), 'yield says unlinked payments are left out');
+eq(mixedYield.yearIncomeNzd, 1089, 'year income still records every paid amount');
+assert(mixedYield.history.some((item) => item.id === 'gone'), 'an unlinked payment stays in the personal record');
+
+const onlyUnlinked = buildDividendDashboard({
+  events: [
+    row({
+      id: 'only-gone',
+      holdingId: null,
+      paymentDate: '2026-06-01',
+      netDividend: 15,
+      grossDividend: 15,
+      dividendPerShare: 0.15,
+    }),
+  ],
+  holdings: [holding],
+  year: 2026,
+  today: '2026-10-04',
+});
+assert(!onlyUnlinked.yield.available, 'yield needs a linked holding');
+assert(onlyUnlinked.yield.yieldPct == null, 'no yield percent is invented for an unlinked payment');
+assert(onlyUnlinked.yield.trailingNetNzd == null, 'the ignored amount is not reported as the yield numerator');
+eq(onlyUnlinked.yearIncomeNzd, 15, 'the unlinked payment is still income');
 
 console.log('dividend model tests passed');

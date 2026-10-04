@@ -79,6 +79,10 @@ export type DividendDashboard = {
     available: boolean;
     fromYear: number;
     toYear: number;
+    /** Inclusive end of the prior-year window (1 Jan through this date). */
+    previousThrough: string | null;
+    /** Inclusive end of the selected-year window (1 Jan through this date). */
+    currentThrough: string | null;
     previousNzd: number | null;
     currentNzd: number | null;
     changePct: number | null;
@@ -270,18 +274,80 @@ function paidInYear(row: DividendRecord & { netNzd: number | null }, year: numbe
   return row.paymentDate <= today && row.paymentDate.startsWith(`${year}-`);
 }
 
-function yearFigures(
-  rows: Array<DividendRecord & { netNzd: number | null }>,
-  year: number,
-  today: string,
-): { netNzd: number | null; paidCount: number; unconvertedCount: number } {
-  const paid = rows.filter((row) => paidInYear(row, year, today));
+type MoneyFigures = { netNzd: number | null; paidCount: number; unconvertedCount: number };
+
+function figuresFor(paid: Array<DividendRecord & { netNzd: number | null }>): MoneyFigures {
   const converted = paid.filter((row) => row.netNzd != null);
   const unconvertedCount = paid.length - converted.length;
   if (paid.length === 0) return { netNzd: null, paidCount: 0, unconvertedCount: 0 };
   if (converted.length === 0) return { netNzd: null, paidCount: paid.length, unconvertedCount };
   const netNzd = converted.reduce((sum, row) => sum + (row.netNzd ?? 0), 0);
   return { netNzd, paidCount: paid.length, unconvertedCount };
+}
+
+function yearFigures(
+  rows: Array<DividendRecord & { netNzd: number | null }>,
+  year: number,
+  today: string,
+): MoneyFigures {
+  return figuresFor(rows.filter((row) => paidInYear(row, year, today)));
+}
+
+function rangeFigures(
+  rows: Array<DividendRecord & { netNzd: number | null }>,
+  start: string,
+  end: string,
+): MoneyFigures {
+  return figuresFor(rows.filter((row) => row.paymentDate >= start && row.paymentDate <= end));
+}
+
+const EMPTY_FIGURES: MoneyFigures = { netNzd: null, paidCount: 0, unconvertedCount: 0 };
+
+/** Last calendar day that still falls in `year` and on or before `today`. */
+function windowEnd(year: number, today: string): string | null {
+  const start = `${year}-01-01`;
+  const end = `${year}-12-31`;
+  if (today < start) return null;
+  return today < end ? today : end;
+}
+
+/** Same month and day in another year. 29 February lands on 28 February when the target year is not a leap year. */
+function shiftYears(ymd: string, delta: number): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const year = (y ?? 1970) + delta;
+  const month = m ?? 1;
+  const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const day = Math.min(d ?? 1, last);
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+
+function dayLabel(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return `${d} ${MONTH_SHORT[(m ?? 1) - 1]} ${y}`;
+}
+
+function growthNote(input: {
+  available: boolean;
+  fromYear: number;
+  toYear: number;
+  previousThrough: string | null;
+  currentThrough: string | null;
+}): string {
+  const partial = input.currentThrough != null && !input.currentThrough.endsWith('-12-31');
+  if (partial && input.previousThrough && input.currentThrough) {
+    const previousLabel = `1 Jan ${input.fromYear}–${dayLabel(input.previousThrough)}`;
+    const currentLabel = `1 Jan ${input.toYear}–${dayLabel(input.currentThrough)}`;
+    if (input.available) {
+      return `Recorded net dividends for ${previousLabel} compared with ${currentLabel}. Same dates in each year, using rows with an FX rate. Not a full-year change and not a forecast.`;
+    }
+    return `Dividend growth needs paid dividends with an NZD amount for both ${previousLabel} and ${currentLabel}. Payments outside those dates are not included.`;
+  }
+  if (input.available) {
+    return `Change in recorded net dividends, ${input.fromYear} to ${input.toYear}, using rows with an FX rate. Not a forecast.`;
+  }
+  return `Dividend growth needs paid dividends with an NZD amount in both ${input.fromYear} and ${input.toYear}.`;
 }
 
 function holdingDenominator(holding: HoldingValueInput): { value: number; basis: 'quote' | 'cost' } | null {
@@ -348,75 +414,90 @@ export function buildDividendDashboard(input: {
     .map((itemYear) => ({ year: itemYear, ...yearFigures(rows, itemYear, today) }));
 
   const previousYear = year - 1;
-  const previous = yearFigures(rows, previousYear, today);
-  const growthAvailable = previous.netNzd != null && yearFiguresNow.netNzd != null && previous.netNzd > 0;
+  const currentThrough = windowEnd(year, today);
+  const previousThrough = currentThrough ? shiftYears(currentThrough, -1) : null;
+  const currentWindow = currentThrough
+    ? rangeFigures(rows, `${year}-01-01`, currentThrough)
+    : EMPTY_FIGURES;
+  const previousWindow = previousThrough
+    ? rangeFigures(rows, `${previousYear}-01-01`, previousThrough)
+    : EMPTY_FIGURES;
+  const growthAvailable = previousWindow.netNzd != null && currentWindow.netNzd != null && previousWindow.netNzd > 0;
   const growth = {
     available: growthAvailable,
     fromYear: previousYear,
     toYear: year,
-    previousNzd: previous.netNzd,
-    currentNzd: yearFiguresNow.netNzd,
+    previousThrough,
+    currentThrough,
+    previousNzd: previousWindow.netNzd,
+    currentNzd: currentWindow.netNzd,
     changePct: growthAvailable
-      ? ((yearFiguresNow.netNzd! - previous.netNzd!) / previous.netNzd!) * 100
+      ? ((currentWindow.netNzd! - previousWindow.netNzd!) / previousWindow.netNzd!) * 100
       : null,
-    note: growthAvailable
-      ? `Change in recorded net dividends, ${previousYear} to ${year}, using rows with an FX rate. Not a forecast.`
-      : `Dividend growth needs paid dividends with an NZD amount in both ${previousYear} and ${year}.`,
+    note: growthNote({
+      available: growthAvailable,
+      fromYear: previousYear,
+      toYear: year,
+      previousThrough,
+      currentThrough,
+    }),
   };
 
   const windowStart = shiftMonths(today, -12);
   const trailing = paid.filter(
     (row) => row.paymentDate >= windowStart && row.paymentDate <= today && row.netNzd != null,
   );
-  const trailingIds = [...new Set(trailing.map((row) => row.holdingId))];
   const holdingById = new Map(input.holdings.map((holding) => [holding.id, holding]));
+  const linkedTrailing = trailing.filter(
+    (row) => row.holdingId != null && row.holdingId !== '' && holdingById.has(row.holdingId),
+  );
+  const omittedUnlinked = trailing.length - linkedTrailing.length;
   let yieldResult: DividendDashboard['yield'];
-  if (trailing.length === 0) {
+  if (linkedTrailing.length === 0) {
     yieldResult = {
       available: false,
       trailingNetNzd: null,
       denominatorNzd: null,
       yieldPct: null,
       basis: null,
-      note: 'Yield needs paid dividends with an NZD amount in the last 12 months, and a cost basis or saved quote on those holdings.',
-    };
-  } else if (trailingIds.some((id) => !id || !holdingById.has(id))) {
-    yieldResult = {
-      available: false,
-      trailingNetNzd: trailing.reduce((sum, row) => sum + (row.netNzd ?? 0), 0),
-      denominatorNzd: null,
-      yieldPct: null,
-      basis: null,
-      note: 'Yield is not calculated while a recorded dividend is no longer linked to one of your holdings.',
+      note: trailing.length === 0
+        ? 'Yield needs paid dividends with an NZD amount in the last 12 months, and a cost basis or saved quote on those holdings.'
+        : 'Yield leaves out dividends that are no longer linked to one of your holdings. Nothing in the last 12 months is still linked, so yield is not calculated.',
     };
   } else {
-    const parts = trailingIds.map((id) => holdingDenominator(holdingById.get(id!)!));
+    const trailingIds = [...new Set(linkedTrailing.map((row) => row.holdingId as string))];
+    const parts = trailingIds.map((id) => holdingDenominator(holdingById.get(id)!));
+    const trailingNetNzd = linkedTrailing.reduce((sum, row) => sum + (row.netNzd ?? 0), 0);
     if (parts.some((part) => part == null)) {
       yieldResult = {
         available: false,
-        trailingNetNzd: trailing.reduce((sum, row) => sum + (row.netNzd ?? 0), 0),
+        trailingNetNzd,
         denominatorNzd: null,
         yieldPct: null,
         basis: null,
-        note: 'Yield needs a cost basis or a saved NZD quote on every holding that paid a dividend in the last 12 months.',
+        note: omittedUnlinked > 0
+          ? 'Yield needs a cost basis or a saved NZD quote on every holding that paid a linked dividend in the last 12 months. Dividends no longer linked to a holding are left out.'
+          : 'Yield needs a cost basis or a saved NZD quote on every holding that paid a dividend in the last 12 months.',
       };
     } else {
       const known = parts as Array<{ value: number; basis: 'quote' | 'cost' }>;
       const denominatorNzd = known.reduce((sum, part) => sum + part.value, 0);
-      const trailingNetNzd = trailing.reduce((sum, row) => sum + (row.netNzd ?? 0), 0);
       const bases = new Set(known.map((part) => part.basis));
       const basis = bases.size === 1 ? [...bases][0]! : 'mixed';
+      const basisNote = basis === 'quote'
+        ? 'Trailing 12-month recorded net dividends divided by saved NZD quotes on those holdings. Not a live market yield.'
+        : basis === 'cost'
+          ? 'Trailing 12-month recorded net dividends divided by your recorded cost basis. Not a live market yield.'
+          : 'Trailing 12-month recorded net dividends divided by saved quotes where you have them, otherwise cost basis.';
       yieldResult = {
         available: denominatorNzd > 0,
         trailingNetNzd,
         denominatorNzd,
         yieldPct: denominatorNzd > 0 ? (trailingNetNzd / denominatorNzd) * 100 : null,
         basis,
-        note: basis === 'quote'
-          ? 'Trailing 12-month recorded net dividends divided by saved NZD quotes on those holdings. Not a live market yield.'
-          : basis === 'cost'
-            ? 'Trailing 12-month recorded net dividends divided by your recorded cost basis. Not a live market yield.'
-            : 'Trailing 12-month recorded net dividends divided by saved quotes where you have them, otherwise cost basis.',
+        note: omittedUnlinked > 0
+          ? `${basisNote} Dividends no longer linked to a holding are left out.`
+          : basisNote,
       };
     }
   }

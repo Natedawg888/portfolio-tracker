@@ -3,7 +3,14 @@
  * Run: npm run test:dividends
  */
 import { getDb, queryOne, run } from '../db/index.ts';
-import { dashboardForUser, deleteDividend, insertDividend, listDividendEvents } from './store.ts';
+import { deleteScopedDataForUser } from '../lib/userScope.ts';
+import {
+  dashboardForUser,
+  deleteDividend,
+  insertDividend,
+  listDividendEvents,
+  unlinkDividendsForHolding,
+} from './store.ts';
 
 function assert(cond: unknown, msg: string): void {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -12,13 +19,14 @@ function assert(cond: unknown, msg: string): void {
 const userA = 'divtest_user_a';
 const userB = 'divtest_user_b';
 const holdingA = 'divtest_h_a';
+const holdingA2 = 'divtest_h_a2';
 const holdingB = 'divtest_h_b';
 
 async function main() {
   const db = await getDb();
   const now = new Date().toISOString();
   run(db, `DELETE FROM dividend_events WHERE user_id IN (?, ?)`, [userA, userB]);
-  run(db, `DELETE FROM holdings WHERE id IN (?, ?)`, [holdingA, holdingB]);
+  run(db, `DELETE FROM holdings WHERE id IN (?, ?, ?)`, [holdingA, holdingA2, holdingB]);
   run(
     db,
     `INSERT INTO holdings (id, user_id, asset_class, name, symbol, shares, cost_basis_nzd, created_at, updated_at)
@@ -85,10 +93,66 @@ async function main() {
       [created.event.id, userA],
     );
     assert(stillThere?.id === created.event.id, 'user A row remains after the other user delete');
+
+    run(
+      db,
+      `INSERT INTO holdings (id, user_id, asset_class, name, symbol, shares, cost_basis_nzd, created_at, updated_at)
+       VALUES (?, ?, 'stock', 'Alpha Two', 'ALF2', 10, 200, ?, ?)`,
+      [holdingA2, userA, now, now],
+    );
+    const second = insertDividend(db, userA, {
+      holdingId: holdingA2,
+      sharesHeld: 10,
+      dividendPerShare: 1,
+      paymentDate: '2026-04-01',
+      currency: 'NZD',
+      reinvested: false,
+    });
+    assert(second.ok, 'user A can record a second holding');
+    if (!second.ok) return;
+
+    const crossed = unlinkDividendsForHolding(db, userB, holdingA);
+    assert(crossed === 0, 'another user cannot unlink these dividend rows');
+    assert(
+      listDividendEvents(db, userA).some((row) => row.id === created.event.id && row.holdingId === holdingA),
+      'user A link stays when the other user tries to clear it',
+    );
+
+    const unlinked = unlinkDividendsForHolding(db, userA, holdingA);
+    assert(unlinked === 1, 'deleting a holding unlinks that user\'s dividend row');
+    const kept = listDividendEvents(db, userA).find((row) => row.id === created.event.id);
+    assert(kept?.holdingId == null, 'the payment is kept with no holding link');
+    assert(kept?.companyName === 'Alpha ETF', 'company name stays on the personal record');
+    assert(Math.abs((kept?.netDividend ?? 0) - 17) < 1e-6, 'unlinking does not change the recorded net amount');
+    assert(
+      listDividendEvents(db, userB).every((row) => row.holdingId === holdingB),
+      'user B rows stay linked to their own holding',
+    );
+
+    const afterUnlink = dashboardForUser(db, userA, 2026, '2026-10-04');
+    assert(afterUnlink.yield.available, 'yield still uses the holding that remains');
+    assert(Math.abs((afterUnlink.yield.trailingNetNzd ?? 0) - 10) < 1e-6, 'unlinked dividend is ignored in yield');
+    assert(Math.abs((afterUnlink.yield.denominatorNzd ?? 0) - 200) < 1e-6, 'yield denominator is the remaining holding');
+    assert(Math.abs((afterUnlink.yearIncomeNzd ?? 0) - 27) < 1e-6, 'both recorded payments still count as income');
+    assert(afterUnlink.holdings.every((holding) => holding.id !== holdingB), 'user B holding stays unreachable');
+
+    const scoped = deleteScopedDataForUser(db, userA);
+    assert((scoped.tables.dividend_events ?? 0) >= 2, 'account deletion counts this user\'s dividend rows');
+    assert(listDividendEvents(db, userA).length === 0, 'account deletion removes that user\'s dividend data');
+    assert(listDividendEvents(db, userB).length === 1, 'the other user\'s dividend data remains');
+    const holdingBLeft = queryOne<{ id: string }>(
+      db,
+      `SELECT id FROM holdings WHERE id = ? AND user_id = ?`,
+      [holdingB, userB],
+    );
+    assert(holdingBLeft?.id === holdingB, 'the other user\'s holding remains');
+    const dashBAfter = dashboardForUser(db, userB, 2026, '2026-10-04');
+    assert(dashBAfter.history.every((row) => row.companyName === 'Bravo Ltd'), 'user B dashboard is unchanged');
+
     console.log('dividend store isolation tests passed');
   } finally {
     run(db, `DELETE FROM dividend_events WHERE user_id IN (?, ?)`, [userA, userB]);
-    run(db, `DELETE FROM holdings WHERE id IN (?, ?)`, [holdingA, holdingB]);
+    run(db, `DELETE FROM holdings WHERE id IN (?, ?, ?)`, [holdingA, holdingA2, holdingB]);
   }
 }
 

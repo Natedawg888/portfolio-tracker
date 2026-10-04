@@ -10,6 +10,7 @@
  */
 import type { Database } from 'sql.js';
 import { queryAll, queryOne, run, newId } from '../db/index.ts';
+import { unlinkDividendsForHolding } from '../dividends/store.ts';
 import {
   akahuGetAccounts,
   akahuGetAccountTransactions,
@@ -909,7 +910,8 @@ export async function syncAkahuPortfolio(db: Database, userId: string): Promise<
   let cryptoDeleted = 0;
   for (const row of prior) {
     if (seenExternalIds.has(row.external_id)) continue;
-    run(db, 'DELETE FROM holdings WHERE id = ?', [row.id]);
+    unlinkDividendsForHolding(db, userId, row.id);
+    run(db, 'DELETE FROM holdings WHERE id = ? AND user_id = ?', [row.id, userId]);
     if (row.asset_class === 'crypto') cryptoDeleted += 1;
     else stocksDeleted += 1;
   }
