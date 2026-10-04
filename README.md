@@ -75,6 +75,7 @@ Production: `npm run build && npm run start` (serves `dist/` + API; `HOST=0.0.0.
 - **Akahu sync** for Sharesies/Hatch stocks, Sharesies crypto, KiwiSaver fund mix  
 - **Equity live quotes** (Yahoo Finance × Frankfurter/BTC FX → NZD) for Value Search + manual Portfolio stocks  
 - Docs: this README + `docs/DATA_MODEL.md`
+- **Economic cycle** (educational): calculated NZ phase from public Stats NZ and OECD extracts, with indicator cards and historical asset-class context. `npm run test:economy`
 
 ### Stubbed (clear interfaces — never invent prices)
 

@@ -38,6 +38,7 @@ const links: Array<{
   { to: '/kiwisaver', label: 'KiwiSaver', requirePref: 'kiwisaver' },
   { to: '/paye', label: 'PAYE' },
   { to: '/yearly', label: 'History' },
+  { to: '/economic-cycle', label: 'Economic cycle' },
   { to: '/value-search', label: 'Value search', requireAnyPref: VALUE_SEARCH_NAV_PREFS },
 ];
 

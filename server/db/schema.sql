@@ -357,4 +357,71 @@ CREATE TABLE IF NOT EXISTS akahu_connections (
 );
 CREATE INDEX IF NOT EXISTS idx_akahu_connections_user ON akahu_connections(user_id);
 
+-- Economic cycle (country macro data, not per-user). Phase is calculated, never assigned by hand.
+-- published_at_precision: release | period_end. provider_kind: live | sample.
+CREATE TABLE IF NOT EXISTS economic_indicators (
+  id                      TEXT PRIMARY KEY,
+  country                 TEXT NOT NULL,
+  indicator_type          TEXT NOT NULL,
+  value                   REAL NOT NULL,
+  unit                    TEXT NOT NULL,
+  period                  TEXT NOT NULL,
+  period_start            TEXT,
+  period_end              TEXT,
+  previous_value          REAL,
+  previous_period         TEXT,
+  source                  TEXT NOT NULL,
+  source_url              TEXT,
+  published_at            TEXT NOT NULL,
+  published_at_precision  TEXT NOT NULL DEFAULT 'period_end',
+  retrieved_at            TEXT NOT NULL,
+  provider_id             TEXT NOT NULL,
+  provider_kind           TEXT NOT NULL,
+  frequency               TEXT NOT NULL,
+  series_id               TEXT,
+  notes                   TEXT,
+  UNIQUE (country, indicator_type, period, provider_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_econ_ind_country
+  ON economic_indicators(country, provider_id, indicator_type, period_end);
+
+CREATE TABLE IF NOT EXISTS economic_cycle_assessments (
+  id              TEXT PRIMARY KEY,
+  country         TEXT NOT NULL,
+  phase           TEXT NOT NULL,
+  score           REAL NOT NULL,
+  confidence      REAL NOT NULL,
+  calculated_at   TEXT NOT NULL,
+  as_of_period    TEXT,
+  previous_phase  TEXT,
+  momentum        TEXT NOT NULL,
+  provider_id     TEXT NOT NULL,
+  provider_kind   TEXT NOT NULL,
+  is_current      INTEGER NOT NULL DEFAULT 0,
+  coverage_note   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_econ_assess_country
+  ON economic_cycle_assessments(country, provider_id, is_current);
+
+CREATE TABLE IF NOT EXISTS economic_indicator_scores (
+  id              TEXT PRIMARY KEY,
+  assessment_id   TEXT NOT NULL REFERENCES economic_cycle_assessments(id) ON DELETE CASCADE,
+  indicator_type  TEXT NOT NULL,
+  score           REAL NOT NULL,
+  direction       TEXT NOT NULL,
+  contribution    REAL NOT NULL,
+  UNIQUE (assessment_id, indicator_type)
+);
+
+CREATE TABLE IF NOT EXISTS economic_fetch_log (
+  provider_id  TEXT NOT NULL,
+  country      TEXT NOT NULL,
+  fetched_at   TEXT NOT NULL,
+  ok           INTEGER NOT NULL,
+  note         TEXT,
+  PRIMARY KEY (provider_id, country)
+);
+
 -- per-user indexes created in migrateSchema after user_id columns exist

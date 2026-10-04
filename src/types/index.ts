@@ -659,3 +659,36 @@ export interface GoMiningSettings {
     note: string;
   };
 }
+
+/** Public-feed headline. Never synthesized by the app. */
+export interface NewsStory {
+  title: string;
+  url: string;
+  publisher: string | null;
+  publishedAt: string | null;
+  /** Feed the story was read from (Google News, BBC News). */
+  sourceName: string;
+  /** World-section label, otherwise null. */
+  topic: string | null;
+}
+
+export type NewsSectionStatus = 'ok' | 'empty' | 'error';
+export type NewsSectionKind = 'holdings' | 'world';
+
+export interface NewsSection {
+  id: string;
+  title: string;
+  kind: NewsSectionKind;
+  /** Labels for this user's own holdings that opened the section. */
+  matched: string[];
+  matchedCount: number;
+  status: NewsSectionStatus;
+  message: string | null;
+  sources: string[];
+  items: NewsStory[];
+}
+
+export interface NewsFeedResponse {
+  fetchedAt: string;
+  sections: NewsSection[];
+}

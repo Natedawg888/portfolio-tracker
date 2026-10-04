@@ -11,6 +11,7 @@ import { ValueSearch } from './pages/ValueSearch';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Settings } from './pages/Settings';
+import { EconomicCycle } from './pages/EconomicCycle';
 import { AuthProvider } from './auth/AuthContext';
 import { AssetClassPrefsProvider } from './auth/AssetClassPrefsContext';
 import { RequireAuth } from './auth/RequireAuth';
@@ -29,6 +30,7 @@ export default function App() {
                 <Route index element={<Dashboard />} />
                 <Route path="spending" element={<Spending />} />
                 <Route path="yearly" element={<YearlyReport />} />
+                <Route path="economic-cycle" element={<EconomicCycle />} />
                 <Route path="portfolio" element={<Portfolio />} />
                 <Route path="kiwisaver" element={<KiwiSaver />} />
                 <Route path="paye" element={<Paye />} />

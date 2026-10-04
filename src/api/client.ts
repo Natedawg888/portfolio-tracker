@@ -1,4 +1,5 @@
 import { isMoneyHidden, MONEY_MASK } from '../lib/privacy';
+import type { EconomicCycleResponse, PhaseNewsResponse } from '../types/economy.ts';
 
 const BASE = '/api';
 
@@ -1129,6 +1130,22 @@ export const api = {
         message: string | null;
         asOf: string | null;
       }>(`/quotes/history?${q}`);
+    },
+  },
+  economy: {
+    cycle: (opts?: { refresh?: boolean; country?: string }) => {
+      const q = new URLSearchParams();
+      if (opts?.refresh) q.set('refresh', '1');
+      if (opts?.country) q.set('country', opts.country);
+      const search = q.toString();
+      return req<EconomicCycleResponse>(`/economy/cycle${search ? `?${search}` : ''}`);
+    },
+    news: (opts?: { phase?: string | null; refresh?: boolean }) => {
+      const q = new URLSearchParams();
+      if (opts?.phase) q.set('phase', opts.phase);
+      if (opts?.refresh) q.set('refresh', '1');
+      const search = q.toString();
+      return req<PhaseNewsResponse>(`/economy/news${search ? `?${search}` : ''}`);
     },
   },
 };
