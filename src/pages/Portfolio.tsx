@@ -2743,7 +2743,12 @@ export function Portfolio() {
   );
 
   if (error && holdings.length === 0) {
-    return <div className="panel warn">Portfolio API error: {error}</div>;
+    return (
+      <div className="panel warn portfolio-page">
+        <h2 className="page-title">Portfolio</h2>
+        <p>Portfolio API error: {error}</p>
+      </div>
+    );
   }
 
   return (
@@ -2751,6 +2756,7 @@ export function Portfolio() {
       {summary ? (
         <>
           <section className="hero-card hero-card--centered">
+            <h2 className="page-title">Portfolio</h2>
             <p className="eyebrow">Total asset value · NZD</p>
             <p className="hero-value">{formatNzd(totalAssetValueNzd)}</p>
             <p className="muted small">
@@ -2774,7 +2780,10 @@ export function Portfolio() {
           />
         </>
       ) : (
-        <div className="panel">Loading total asset value…</div>
+        <div className="panel">
+          <h2 className="page-title">Portfolio</h2>
+          Loading total asset value…
+        </div>
       )}
       {msg && <p className="banner">{msg}</p>}
 
