@@ -1,5 +1,5 @@
 /**
- * Spending & budgets — transactions from 1 Oct 2026 (Pacific/Auckland).
+ * Budget — transactions from 1 Oct 2026 (Pacific/Auckland).
  * Bank: Akahu sync. Cards not on Akahu (Nexo, GoMining, etc.): first-class manual entry.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -699,6 +699,11 @@ export function Spending() {
   const actualIncomeNzd = incomeSummary?.actualNzd ?? 0;
   const incomeRemainingNzd = plannedIncomeNzd - actualIncomeNzd;
   const incomeOverPlan = actualIncomeNzd > plannedIncomeNzd && plannedIncomeNzd > 0;
+  /** True when this month has received income (records or category credits). */
+  const hasReceivedIncome =
+    incomeRecords.length > 0 ||
+    actualIncomeNzd > 0 ||
+    incomeCompareRows.some((r) => r.actualNzd > 0);
 
   /** Liquid NZD bank/cash total — same basis as Dashboard Cash. */
   const cashBalanceNzd = useMemo(
@@ -1148,12 +1153,19 @@ export function Spending() {
     }
   }
 
-  if (error && (!txns || txns.length === 0)) return <div className="panel warn">Spending: {error}</div>;
+  if (error && (!txns || txns.length === 0)) {
+    return (
+      <div className="panel warn budget-page">
+        <h2 className="page-title">Budget</h2>
+        <p>{error}</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="stack">
+    <div className="stack budget-page">
       <section className="panel">
-        <h2>Spending & budgets</h2>
+        <h2 className="page-title">Budget</h2>
         <p className="page-lead">
           Browse by calendar month (Pacific/Auckland). Import/sync floor stays{' '}
           <strong>1 Oct 2026</strong>. Sync Kiwibank via Akahu; off-Akahu cards (Nexo, GoMining, …)
@@ -1443,7 +1455,7 @@ export function Spending() {
 
         <h4 className="section-subtitle">Planned income</h4>
         <p className="section-desc">
-          Plan by category (Salary, Mining, …). Received = income records + bank-sync / tagged
+          Plan by income category. Received = income records + bank-sync / tagged
           income-category credits, matched to those categories (linked Add-income txns are not
           double-counted). Paid dividends recorded on Portfolio are included once, in NZD, when
           you have an FX rate. See <strong>Income received</strong> below.
@@ -1478,10 +1490,11 @@ export function Spending() {
         </div>
 
         {incomeCompareRows.length === 0 ? (
-          <p className="muted small" style={{ marginBottom: '0.75rem' }}>
-            No income plans or received income for {monthLong} yet. Use the form below to plan
-            Salary, Mining, etc.
-          </p>
+          hasReceivedIncome ? (
+            <p className="muted small" style={{ marginBottom: '0.75rem' }}>
+              No income plans for {monthLong} yet.
+            </p>
+          ) : null
         ) : (
           <div className="grid cards budget-compare-grid" style={{ marginBottom: '1rem' }}>
             {incomeCompareRows.map((row) => {
@@ -1830,16 +1843,12 @@ export function Spending() {
           </button>
         </div>
         <p className="section-desc">
-          Money in this month: <strong>Add income</strong> (cash/crypto), bank-sync or manually
-          tagged income-category credits (Salary, Mining, …), and paid dividends from Portfolio.
+          Money in this month: <strong>Add income</strong> (cash or crypto), bank-sync or manually
+          tagged income-category credits, and paid dividends from Portfolio.
           A foreign dividend stays out of this NZD total until you record an FX rate. Linked
           Add-income bank rows are shown once. This is a personal record, not advice.
         </p>
-        {incomeRecords.length === 0 ? (
-          <p className="muted">
-            No income in {monthLong}. Use Add income, or tag an inflow as Income after bank sync.
-          </p>
-        ) : (
+        {incomeRecords.length > 0 ? (
           <div className="table-wrap">
             <table className="data-table">
               <thead>
@@ -1921,6 +1930,8 @@ export function Spending() {
               </tbody>
             </table>
           </div>
+        ) : hasReceivedIncome ? null : (
+          <p className="muted">No income in {monthLong}.</p>
         )}
       </section>
 
