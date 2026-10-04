@@ -3656,7 +3656,7 @@ html[data-theme="light"] .assets-page .asset-toggle:hover:not(:disabled) {
   border-color: #b5a48e;
 }
 html[data-theme="light"] .assets-page .asset-toggle-track {
-  background: #c8bba8;
+  background: #5c4e42;
 }
 html[data-theme="light"] .assets-page .asset-toggle.on .asset-toggle-track {
   background: #1b4332;
