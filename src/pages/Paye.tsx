@@ -350,10 +350,10 @@ export function Paye() {
   const periods = result ? periodiseBreakdown(result, hours) : null;
 
   return (
-    <div className="stack">
+    <div className="stack paye-page">
       <section className="panel">
         <div className="panel-heading">
-          <h2>PAYE calculator</h2>
+          <h2 className="page-title">PAYE</h2>
           <span className="muted small">{PAYE_TAX_YEAR_LABEL}</span>
         </div>
         <p className="page-lead">
@@ -758,7 +758,7 @@ export function Paye() {
       </section>
 
       {!hasIncome && (
-        <section className="panel warn">
+        <section className="panel">
           <p className="muted" style={{ margin: 0 }}>
             Enter a gross income above to calculate take-home pay.
           </p>
