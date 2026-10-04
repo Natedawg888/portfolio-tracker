@@ -4373,3 +4373,268 @@ html:not([data-theme]) .econ-page .cycle-node.active {
   border-color: rgba(110, 98, 120, 0.45);
   background: transparent;
 }
+
+/* Budget page only. Header and other screens stay as they are. */
+html[data-theme="light"]:has(.budget-page),
+html[data-theme="light"]:has(.budget-page) body {
+  background: #e7e0d4;
+}
+html[data-theme="dark"]:has(.budget-page),
+html[data-theme="dark"]:has(.budget-page) body,
+html:not([data-theme]):has(.budget-page),
+html:not([data-theme]):has(.budget-page) body {
+  background: #121a16;
+}
+html[data-theme="light"]:has(.budget-page) .app-footer {
+  color: #5c564e;
+  border-top-color: rgba(26, 26, 26, 0.12);
+}
+html[data-theme="dark"]:has(.budget-page) .app-footer,
+html:not([data-theme]):has(.budget-page) .app-footer {
+  color: #c5d5c8;
+  border-top-color: rgba(197, 213, 200, 0.22);
+}
+
+html[data-theme="light"] .budget-page {
+  --bg: #e7e0d4;
+  --surface: #f7f3ec;
+  --surface-2: #f7f3ec;
+  --surface-3: #efe8dc;
+  --text: #1a1a1a;
+  --muted: #5c564e;
+  --border: #d4c8b6;
+  --border-soft: rgba(26, 26, 26, 0.1);
+  --accent: #1b4332;
+  --accent-2: #6e6278;
+  --accent-deep: #143528;
+  --btn-primary-text: #f7f3ec;
+  --hero-grad: #f7f3ec;
+  --hover-row: rgba(27, 67, 50, 0.05);
+  --shadow-card: 0 8px 24px rgba(48, 36, 22, 0.06);
+  --progress-start: #1b4332;
+  --amt-in: #1b4332;
+  --source-akahu: #1b4332;
+  --source-akahu-border: #1b4332;
+  --source-bank: #1b4332;
+  --source-bank-border: #6e6278;
+  color: #1a1a1a;
+}
+html[data-theme="dark"] .budget-page,
+html:not([data-theme]) .budget-page {
+  --bg: #121a16;
+  --surface: #1c2822;
+  --surface-2: #1c2822;
+  --surface-3: #24352c;
+  --text: #f3eee4;
+  --muted: #c5d5c8;
+  --border: #31443a;
+  --border-soft: rgba(197, 213, 200, 0.14);
+  --accent: #2f6b4f;
+  --accent-2: #b7a8c4;
+  --accent-deep: #1b4332;
+  --btn-primary-text: #f3eee4;
+  --hero-grad: #1c2822;
+  --hover-row: rgba(243, 238, 228, 0.04);
+  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --progress-start: #2f6b4f;
+  --amt-in: #c5d5c8;
+  --source-akahu: #c5d5c8;
+  --source-akahu-border: #2f6b4f;
+  --source-bank: #c5d5c8;
+  --source-bank-border: #2f6b4f;
+  color: #f3eee4;
+}
+
+.budget-page .page-title {
+  font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  font-size: 1.35rem;
+  text-transform: none;
+  font-variant-caps: normal;
+}
+
+html[data-theme="light"] .budget-page h2,
+html[data-theme="light"] .budget-page h3,
+html[data-theme="light"] .budget-page h4,
+html[data-theme="light"] .budget-page .page-title {
+  color: #1a1a1a;
+}
+html[data-theme="light"] .budget-page .panel,
+html[data-theme="light"] .budget-page .card,
+html[data-theme="light"] .budget-page .modal-dialog,
+html[data-theme="light"] .budget-page.panel {
+  background: #f7f3ec;
+  color: #1a1a1a;
+  border-color: #d4c8b6;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset, 0 8px 24px rgba(48, 36, 22, 0.06);
+}
+html[data-theme="light"] .budget-page.panel.warn,
+html[data-theme="light"] .budget-page .panel.warn {
+  color: #6e1b1b;
+  background: #f8e4e0;
+  border-color: #e4c2bb;
+  box-shadow: none;
+}
+html[data-theme="light"] .budget-page.panel.warn .page-title,
+html[data-theme="light"] .budget-page .panel.warn .page-title,
+html[data-theme="light"] .budget-page.panel.warn p,
+html[data-theme="light"] .budget-page .panel.warn p {
+  color: #6e1b1b;
+}
+html[data-theme="light"] .budget-page.panel.warn .page-title {
+  color: #1a1a1a;
+}
+html[data-theme="light"] .budget-page a {
+  color: #6e6278;
+}
+html[data-theme="light"] .budget-page .btn.primary {
+  background: #1b4332;
+  border-color: #1b4332;
+  color: #f7f3ec;
+}
+html[data-theme="light"] .budget-page .btn:not(.primary):not(.danger) {
+  background: #efe8dc;
+  border-color: #d4c8b6;
+  color: #1a1a1a;
+}
+html[data-theme="light"] .budget-page .btn.danger {
+  background: #f8e4e0;
+  border-color: #e4c2bb;
+  color: #6e1b1b;
+}
+html[data-theme="light"] .budget-page .banner {
+  background: #efe8dc;
+  color: #1a1a1a;
+  border-left-color: #6e6278;
+}
+html[data-theme="light"] .budget-page input,
+html[data-theme="light"] .budget-page select,
+html[data-theme="light"] .budget-page textarea {
+  background: #e7e0d4;
+  color: #1a1a1a;
+  border-color: #d4c8b6;
+}
+html[data-theme="light"] .budget-page code {
+  background: #efe8dc;
+  color: #1a1a1a;
+}
+html[data-theme="light"] .budget-page :focus-visible {
+  outline: 2px solid #1b4332;
+  outline-offset: 2px;
+}
+
+html[data-theme="dark"] .budget-page h2,
+html[data-theme="dark"] .budget-page h3,
+html[data-theme="dark"] .budget-page h4,
+html[data-theme="dark"] .budget-page .page-title,
+html:not([data-theme]) .budget-page h2,
+html:not([data-theme]) .budget-page h3,
+html:not([data-theme]) .budget-page h4,
+html:not([data-theme]) .budget-page .page-title {
+  color: #f3eee4;
+}
+html[data-theme="dark"] .budget-page .panel,
+html[data-theme="dark"] .budget-page .card,
+html[data-theme="dark"] .budget-page .modal-dialog,
+html[data-theme="dark"] .budget-page.panel,
+html:not([data-theme]) .budget-page .panel,
+html:not([data-theme]) .budget-page .card,
+html:not([data-theme]) .budget-page .modal-dialog,
+html:not([data-theme]) .budget-page.panel {
+  background: #1c2822;
+  color: #f3eee4;
+  border-color: #31443a;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+html[data-theme="dark"] .budget-page.panel.warn,
+html[data-theme="dark"] .budget-page .panel.warn,
+html:not([data-theme]) .budget-page.panel.warn,
+html:not([data-theme]) .budget-page .panel.warn {
+  color: #f3eee4;
+  background: #4a2422;
+  border-color: #7a4038;
+  box-shadow: none;
+}
+html[data-theme="dark"] .budget-page.panel.warn .page-title,
+html[data-theme="dark"] .budget-page .panel.warn .page-title,
+html[data-theme="dark"] .budget-page.panel.warn p,
+html[data-theme="dark"] .budget-page .panel.warn p,
+html:not([data-theme]) .budget-page.panel.warn .page-title,
+html:not([data-theme]) .budget-page .panel.warn .page-title,
+html:not([data-theme]) .budget-page.panel.warn p,
+html:not([data-theme]) .budget-page .panel.warn p {
+  color: #f3eee4;
+}
+html[data-theme="dark"] .budget-page a,
+html:not([data-theme]) .budget-page a {
+  color: #b7a8c4;
+}
+html[data-theme="dark"] .budget-page .btn.primary,
+html:not([data-theme]) .budget-page .btn.primary {
+  background: #2f6b4f;
+  border-color: #2f6b4f;
+  color: #f3eee4;
+}
+html[data-theme="dark"] .budget-page .btn:not(.primary):not(.danger),
+html:not([data-theme]) .budget-page .btn:not(.primary):not(.danger) {
+  background: #24352c;
+  border-color: #31443a;
+  color: #f3eee4;
+}
+html[data-theme="dark"] .budget-page .btn.danger,
+html:not([data-theme]) .budget-page .btn.danger {
+  background: #4a2422;
+  border-color: #7a4038;
+  color: #f3eee4;
+}
+html[data-theme="dark"] .budget-page .banner,
+html:not([data-theme]) .budget-page .banner {
+  background: #24352c;
+  color: #f3eee4;
+  border-left-color: #b7a8c4;
+}
+html[data-theme="dark"] .budget-page input,
+html[data-theme="dark"] .budget-page select,
+html[data-theme="dark"] .budget-page textarea,
+html:not([data-theme]) .budget-page input,
+html:not([data-theme]) .budget-page select,
+html:not([data-theme]) .budget-page textarea {
+  background: #121a16;
+  color: #f3eee4;
+  border-color: #31443a;
+}
+html[data-theme="dark"] .budget-page code,
+html:not([data-theme]) .budget-page code {
+  background: #24352c;
+  color: #f3eee4;
+}
+html[data-theme="dark"] .budget-page :focus-visible,
+html:not([data-theme]) .budget-page :focus-visible {
+  outline: 2px solid #c5d5c8;
+  outline-offset: 2px;
+}
+
+/* Keep bar/pie and creditor toggles as a pill. Selected state uses the page button colour. */
+html[data-theme="light"] .budget-page .chart-toggle .btn:not(.primary) {
+  background: transparent;
+  border-color: transparent;
+  color: #1a1a1a;
+}
+html[data-theme="light"] .budget-page .chart-toggle .btn.primary {
+  background: #1b4332;
+  border-color: transparent;
+  color: #f7f3ec;
+}
+html[data-theme="dark"] .budget-page .chart-toggle .btn:not(.primary),
+html:not([data-theme]) .budget-page .chart-toggle .btn:not(.primary) {
+  background: transparent;
+  border-color: transparent;
+  color: #f3eee4;
+}
+html[data-theme="dark"] .budget-page .chart-toggle .btn.primary,
+html:not([data-theme]) .budget-page .chart-toggle .btn.primary {
+  background: #2f6b4f;
+  border-color: transparent;
+  color: #f3eee4;
+}
