@@ -1147,16 +1147,19 @@ export const api = {
       req<{ ok: boolean; id: string }>(`/dividends/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
   economy: {
-    cycle: (opts?: { refresh?: boolean; country?: string }) => {
+    cycle: (opts?: { refresh?: boolean; country?: string; signal?: AbortSignal }) => {
       const q = new URLSearchParams();
       if (opts?.refresh) q.set('refresh', '1');
       if (opts?.country) q.set('country', opts.country);
       const search = q.toString();
-      return req<EconomicCycleResponse>(`/economy/cycle${search ? `?${search}` : ''}`);
+      return req<EconomicCycleResponse>(`/economy/cycle${search ? `?${search}` : ''}`, {
+        signal: opts?.signal,
+      });
     },
-    news: (opts?: { phase?: string | null; refresh?: boolean }) => {
+    news: (opts?: { phase?: string | null; refresh?: boolean; country?: string | null }) => {
       const q = new URLSearchParams();
       if (opts?.phase) q.set('phase', opts.phase);
+      if (opts?.country) q.set('country', opts.country);
       if (opts?.refresh) q.set('refresh', '1');
       const search = q.toString();
       return req<PhaseNewsResponse>(`/economy/news${search ? `?${search}` : ''}`);

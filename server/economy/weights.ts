@@ -66,9 +66,10 @@ export const DEFAULT_PHASE_MODEL: PhaseModel = {
     consumer_spending: { lowBelow: 0, highAbove: 0.6, flatBand: 0.1 },
     // PMI-style index, 50 as the centre of the moderate band.
     business_activity_pmi: { lowBelow: 48, highAbove: 52, flatBand: 0.5 },
-    // Higher means easier credit. Unused until a series is connected.
-    credit_conditions: { lowBelow: 0, highAbove: 1, flatBand: 0.1 },
-    // Annual percent change in housing activity. Unused until a series is connected.
+    // Net percentage of banks easing standards. Below zero is net tightening.
+    // Above 10 is a clear easing. Moves of 5 points or less are stable.
+    credit_conditions: { lowBelow: 0, highAbove: 10, flatBand: 5 },
+    // Annual percent change in housing activity (consents or housing starts).
     housing_activity: { lowBelow: 0, highAbove: 5, flatBand: 1 },
     // Three-month percent change in a share-price index.
     share_market: { lowBelow: -2, highAbove: 3, flatBand: 0.5 },

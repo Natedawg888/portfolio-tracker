@@ -15,5 +15,6 @@ export interface EconomicDataProvider {
   label: string;
   kind: ProviderKind;
   country: string;
-  fetch(): Promise<ProviderFetchResult>;
+  /** `country` is the requested code. A single-country provider may ignore it. */
+  fetch(country?: string): Promise<ProviderFetchResult>;
 }

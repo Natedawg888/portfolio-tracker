@@ -58,21 +58,21 @@ export const INDICATOR_CATALOG: Record<IndicatorType, IndicatorMeta> = {
   business_activity_pmi: {
     label: 'Business activity',
     description:
-      'A business-activity or PMI-style reading. No New Zealand feed is connected in this version, so the card stays blank.',
-    frequency: 'monthly',
-    staleAfterDays: 75,
+      'Diffusion index of the production tendency. Calculated in this app as 50 plus half the OECD percentage balance, so 50 is the published neutral point. It is not a branded purchasing managers’ index.',
+    frequency: 'quarterly',
+    staleAfterDays: 200,
   },
   credit_conditions: {
     label: 'Credit conditions',
     description:
-      'Whether credit is loosening or tightening. No New Zealand feed is connected in this version, so the card stays blank.',
+      'Whether credit is loosening or tightening. The Reserve Bank of New Zealand credit conditions survey is the official series, and rbnz.govt.nz returns HTTP 403 to this app, so the card stays blank instead of using a stand-in.',
     frequency: 'quarterly',
     staleAfterDays: 200,
   },
   housing_activity: {
     label: 'Housing activity',
     description:
-      'Housing turnover or building consents. The public consents extract is too large to pull in this version, so the card stays blank until a smaller official series is connected.',
+      'Annual percent change in the seasonally adjusted number of new dwellings consented. The growth rate is calculated in this app from the official count in the monthly workbook. The full consents CSV is not downloaded.',
     frequency: 'monthly',
     staleAfterDays: 75,
   },

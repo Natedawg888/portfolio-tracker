@@ -5,12 +5,14 @@
 import { analyseObservations } from './analyse.ts';
 import { assetClassContext } from './assetContext.ts';
 import { INDICATOR_CATALOG } from './catalog.ts';
+import { economyCountry, listEconomyCountries } from './countries.ts';
 import { daysAfter, periodEnd } from './periods.ts';
 import {
   INDICATOR_TYPES,
   type CycleAssessment,
   type DirectionName,
   type EconomicObservation,
+  type Frequency,
   type IndicatorType,
   type MomentumName,
   type Phase,
@@ -64,13 +66,21 @@ function statusFor(fit: number | null, available: boolean, phase: Phase | null):
   return 'Diverges from this phase';
 }
 
-export function isStale(indicator: IndicatorType, periodEndDate: string, now: Date): boolean {
-  return daysAfter(periodEndDate, now) > INDICATOR_CATALOG[indicator].staleAfterDays;
+export function isStale(
+  indicator: IndicatorType,
+  periodEndDate: string,
+  now: Date,
+  frequency?: Frequency,
+): boolean {
+  const allowance =
+    frequency === 'monthly' ? 75 : frequency === 'quarterly' ? 200 : frequency === 'annual' ? 400 : INDICATOR_CATALOG[indicator].staleAfterDays;
+  return daysAfter(periodEndDate, now) > allowance;
 }
 
 export type CycleResponse = {
   country: string;
   countryName: string;
+  countries: Array<{ code: string; name: string }>;
   modelVersion: number;
   disclaimer: string;
   provider: { id: string; label: string; kind: ProviderKind };
@@ -151,11 +161,13 @@ function explain(assessment: CycleAssessment, available: number): string {
 
 export function buildCycleView(args: {
   observations: EconomicObservation[];
+  country?: string;
   provider: { id: string; label: string; kind: ProviderKind };
   warnings: string[];
   refreshError: string | null;
   now: Date;
 }): CycleResponse {
+  const profile = economyCountry(args.country) ?? economyCountry('NZ');
   const analysis = analyseObservations(args.observations, args.now);
   const current = analysis.current;
   const phase = current?.phase ?? null;
@@ -172,11 +184,11 @@ export function buildCycleView(args: {
       .sort((a, b) => (a.periodEnd < b.periodEnd ? -1 : 1))
       .slice(-16)
       .map((point) => ({ period: point.period, value: point.value }));
-    const stale = row ? isStale(indicator, row.periodEnd, args.now) : false;
+    const stale = row ? isStale(indicator, row.periodEnd, args.now, row.frequency) : false;
     return {
       type: indicator,
       label: meta.label,
-      description: meta.description,
+      description: profile?.descriptions[indicator] ?? meta.description,
       available: row != null,
       value: row?.value ?? null,
       valueLabel: row ? formatIndicatorNumber(row.value, row.unit) : null,
@@ -214,8 +226,9 @@ export function buildCycleView(args: {
   ].filter(Boolean);
 
   return {
-    country: 'NZ',
-    countryName: 'New Zealand',
+    country: profile?.code ?? 'NZ',
+    countryName: profile?.name ?? 'New Zealand',
+    countries: listEconomyCountries(),
     modelVersion: PHASE_MODEL_VERSION,
     disclaimer: DISCLAIMER,
     provider: args.provider,

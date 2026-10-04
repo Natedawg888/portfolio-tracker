@@ -92,4 +92,19 @@ assert.equal(world?.status, 'error');
 assert.deepEqual(world?.items, []);
 assert.match(world?.message ?? '', /did not return a feed/);
 
+const usFeeds = planPhaseNewsFeeds('expansion', 'US');
+assert.deepEqual(
+  usFeeds.map((feed) => feed.id),
+  ['phase', 'rates', 'gdp', 'inflation', 'unemployment', 'housing', 'markets', 'world', 'politics'],
+);
+const usQuery = usFeeds.map((feed) => new URL(feed.url).searchParams.get('q') ?? feed.url).join('\n');
+assert.match(usQuery, /Federal Reserve/);
+assert.match(usQuery, /United States/);
+assert.match(usQuery, /housing starts/);
+assert.match(usQuery, /S&P 500/);
+assert.doesNotMatch(usQuery, /Reserve Bank of New Zealand/);
+assert.equal(usFeeds.some((feed) => feed.id === 'global'), false);
+assert.ok(usFeeds.some((feed) => feed.url.includes('bbci.co.uk/news/world')));
+assert.throws(() => planPhaseNewsFeeds('expansion', 'FR'), /connected for NZ, US/);
+
 console.log('phase news tests passed');

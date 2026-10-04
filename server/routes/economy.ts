@@ -32,10 +32,15 @@ router.get('/news', async (req, res) => {
     phase = raw as Phase;
   }
   const refresh = req.query.refresh === '1' || req.query.refresh === 'true';
+  const country = typeof req.query.country === 'string' ? req.query.country : 'NZ';
   try {
-    const payload = await loadPhaseNews(phase, { refresh });
+    const payload = await loadPhaseNews(phase, { refresh }, country);
     res.json(payload);
   } catch (err) {
+    if (err instanceof EconomyCountryError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
     const message = err instanceof Error ? err.message : 'News feeds could not be loaded';
     res.status(502).json({ error: message });
   }

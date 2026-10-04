@@ -8,16 +8,29 @@ import https from 'node:https';
 
 const USER_AGENT = 'portfolio-tracker/economic-cycle (educational; local)';
 
+export type Download = {
+  body: Buffer;
+  /** HTTP Last-Modified, when the server sends one. */
+  lastModified: string | null;
+};
+
 export async function fetchBuffer(
   url: string,
   options: { timeoutMs?: number; maxBytes?: number } = {},
 ): Promise<Buffer> {
+  return (await fetchDownload(url, options)).body;
+}
+
+export async function fetchDownload(
+  url: string,
+  options: { timeoutMs?: number; maxBytes?: number } = {},
+): Promise<Download> {
   const timeoutMs = options.timeoutMs ?? 45_000;
   const maxBytes = options.maxBytes ?? 40_000_000;
   return requestBuffer(url, timeoutMs, maxBytes, 0);
 }
 
-function requestBuffer(url: string, timeoutMs: number, maxBytes: number, redirects: number): Promise<Buffer> {
+function requestBuffer(url: string, timeoutMs: number, maxBytes: number, redirects: number): Promise<Download> {
   return new Promise((resolve, reject) => {
     let settled = false;
     const fail = (err: Error) => {
@@ -25,10 +38,10 @@ function requestBuffer(url: string, timeoutMs: number, maxBytes: number, redirec
       settled = true;
       reject(err);
     };
-    const succeed = (body: Buffer) => {
+    const succeed = (download: Download) => {
       if (settled) return;
       settled = true;
-      resolve(body);
+      resolve(download);
     };
 
     let parsed: URL;
@@ -85,7 +98,11 @@ function requestBuffer(url: string, timeoutMs: number, maxBytes: number, redirec
           }
           chunks.push(chunk);
         });
-        res.on('end', () => succeed(Buffer.concat(chunks)));
+        res.on('end', () => {
+          const header = res.headers['last-modified'];
+          const lastModified = Array.isArray(header) ? (header[0] ?? null) : (header ?? null);
+          succeed({ body: Buffer.concat(chunks), lastModified });
+        });
         res.on('error', (err) => fail(err));
       },
     );

@@ -67,6 +67,28 @@ export async function loadOecdYieldSpread(): Promise<WithPrevious[]> {
 }
 
 export async function loadOecdShareChange(): Promise<WithPrevious[]> {
-  const index = await loadMeasure(OECD_URLS.shares, 'SHARE');
+  return loadShareIndexChange('NZL');
+}
+
+/** OECD key economic indicators. The key is the dimension path after the dataflow. */
+export function oecdKeiUrl(key: string): string {
+  return url(`OECD.SDD.STES,DSD_KEI@DF_KEI,4.0/${key}`);
+}
+
+/** Business tendency surveys. The key is the nine-part dimension path. */
+export function oecdBtsUrl(key: string): string {
+  return url(`OECD.SDD.STES,DSD_STES@DF_BTS,4.0/${key}`);
+}
+
+export async function loadOecdMeasure(endpoint: string, measure: string): Promise<WithPrevious[]> {
+  return attachPrevious(await loadMeasure(endpoint, measure));
+}
+
+/** Three-month percent change in the OECD share-price index for a reference area. */
+export async function loadShareIndexChange(refArea: string): Promise<WithPrevious[]> {
+  const index = await loadMeasure(
+    url(`OECD.SDD.STES,DSD_STES@DF_FINMARK,4.0/${refArea}.M.SHARE.IX._Z._Z._Z._Z.N`),
+    'SHARE',
+  );
   return attachPrevious(changeOverMonths(index, 3));
 }
