@@ -3331,6 +3331,44 @@ body.nav-drawer-open {
 
 .phase-news-group { margin-top: 1.1rem; }
 .phase-news-group h3 { margin-bottom: 0.2rem; }
+
+/* News — wide two-column cards on desktop; one column on phone. */
+.news-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.85rem;
+}
+.news-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2rem;
+  padding: 0.2rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.news-filter-chip:hover {
+  color: var(--text);
+  background: var(--surface-3);
+}
+.news-filter-chip.active {
+  color: var(--text);
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 1px var(--accent-2);
+  background: var(--surface-3);
+}
+.news-filter-chip:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
 .news-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3362,6 +3400,7 @@ body.nav-drawer-open {
   text-transform: none;
   overflow-wrap: break-word;
 }
+.card.news-card .eyebrow { margin: 0; }
 .card.news-card .muted.small { margin: 0; }
 .news-status {
   margin: 0.75rem 0 0;
@@ -3369,4 +3408,5 @@ body.nav-drawer-open {
 }
 @media (max-width: 768px) {
   .news-grid { grid-template-columns: 1fr; }
+  .news-filter-chip { min-height: 2.75rem; }
 }

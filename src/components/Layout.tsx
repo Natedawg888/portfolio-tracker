@@ -35,6 +35,7 @@ const links: Array<{
   { to: '/', label: 'Dashboard', end: true },
   { to: '/spending', label: 'Budget' },
   { to: '/portfolio', label: 'Portfolio' },
+  { to: '/news', label: 'News' },
   { to: '/kiwisaver', label: 'KiwiSaver', requirePref: 'kiwisaver' },
   { to: '/paye', label: 'PAYE' },
   { to: '/yearly', label: 'History' },

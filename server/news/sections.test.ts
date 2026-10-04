@@ -9,6 +9,7 @@ import type { NewsHoldingRow } from './sections.ts';
 import {
   HOLDINGS_FOR_NEWS_SQL,
   planNewsSections,
+  worldPoliticsFeeds,
 } from './sections.ts';
 import { clearRssCache, fetchRss, parseRssFeed } from './rss.ts';
 import { loadNewsSections } from './load.ts';
@@ -109,6 +110,14 @@ await check('empty holdings are world news only', () => {
   assert.deepEqual(plans.map((s) => s.id), ['world']);
   assert.equal(plans[0]?.kind, 'world');
   assert.ok(plans[0]?.feeds.every((feed) => feed.url.includes('bbci.co.uk')));
+});
+
+await check('worldPoliticsFeeds stays exported for the economy page', () => {
+  const feeds = worldPoliticsFeeds();
+  assert.equal(feeds.length, 2);
+  assert.ok(feeds.some((feed) => feed.url.includes('/news/world/')));
+  assert.ok(feeds.some((feed) => feed.url.includes('/news/politics/')));
+  assert.deepEqual(planNewsSections([])[0]?.feeds, feeds);
 });
 
 await check('two users do not share section plans', () => {

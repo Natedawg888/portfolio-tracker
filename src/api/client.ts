@@ -1,4 +1,5 @@
 import { isMoneyHidden, MONEY_MASK } from '../lib/privacy';
+import type { NewsFeedResponse } from '../types';
 import type { EconomicCycleResponse, PhaseNewsResponse } from '../types/economy.ts';
 
 const BASE = '/api';
@@ -124,6 +125,10 @@ export const api = {
       }),
   },
   health: () => req<{ ok: boolean }>('/health'),
+  news: {
+    feed: (refresh = false) =>
+      req<NewsFeedResponse>(`/news${refresh ? '?refresh=1' : ''}`),
+  },
   netWorth: () => req<Record<string, unknown>>('/net-worth'),
   snapshots: {
     list: (year?: number) =>

@@ -8,6 +8,7 @@ import { Portfolio } from './pages/Portfolio';
 import { KiwiSaver } from './pages/KiwiSaver';
 import { Paye } from './pages/Paye';
 import { ValueSearch } from './pages/ValueSearch';
+import { News } from './pages/News';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Settings } from './pages/Settings';
@@ -32,6 +33,7 @@ export default function App() {
                 <Route path="yearly" element={<YearlyReport />} />
                 <Route path="economic-cycle" element={<EconomicCycle />} />
                 <Route path="portfolio" element={<Portfolio />} />
+                <Route path="news" element={<News />} />
                 <Route path="kiwisaver" element={<KiwiSaver />} />
                 <Route path="paye" element={<Paye />} />
                 <Route path="value-search" element={<ValueSearch />} />

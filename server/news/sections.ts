@@ -432,7 +432,7 @@ function queryForClass(assetClass: string, rows: NewsHoldingRow[]): { labels: st
   }
 }
 
-/** BBC world and politics feeds used by the holdings news page. */
+/** BBC world and politics feeds. Shared by the holdings news page and the economic cycle page. */
 export function worldPoliticsFeeds(): NewsFeedSpec[] {
   return [
     { sourceName: BBC_NEWS, url: BBC_WORLD, topic: 'World' },
