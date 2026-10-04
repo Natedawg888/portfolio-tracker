@@ -4956,3 +4956,343 @@ html:not([data-theme]) .portfolio-page :focus-visible {
   outline: 2px solid #c5d5c8;
   outline-offset: 2px;
 }
+
+/* KiwiSaver page only. Header and other screens stay as they are. */
+html[data-theme="light"]:has(.kiwisaver-page),
+html[data-theme="light"]:has(.kiwisaver-page) body {
+  background: #e7e0d4;
+}
+html[data-theme="dark"]:has(.kiwisaver-page),
+html[data-theme="dark"]:has(.kiwisaver-page) body,
+html:not([data-theme]):has(.kiwisaver-page),
+html:not([data-theme]):has(.kiwisaver-page) body {
+  background: #121a16;
+}
+html[data-theme="light"]:has(.kiwisaver-page) .app-footer {
+  color: #5c564e;
+  border-top-color: rgba(26, 26, 26, 0.12);
+}
+html[data-theme="dark"]:has(.kiwisaver-page) .app-footer,
+html:not([data-theme]):has(.kiwisaver-page) .app-footer {
+  color: #c5d5c8;
+  border-top-color: rgba(197, 213, 200, 0.22);
+}
+
+html[data-theme="light"] .kiwisaver-page {
+  --bg: #e7e0d4;
+  --surface: #f7f3ec;
+  --surface-2: #f7f3ec;
+  --surface-3: #efe8dc;
+  --text: #1a1a1a;
+  --muted: #5c564e;
+  --border: #8c7b66;
+  --border-soft: #8c7b66;
+  --accent: #1b4332;
+  --accent-2: #6e6278;
+  --accent-deep: #143528;
+  --btn-primary-text: #f7f3ec;
+  --hero-grad: #f7f3ec;
+  --hover-row: rgba(27, 67, 50, 0.05);
+  --shadow-card: 0 8px 24px rgba(48, 36, 22, 0.06);
+  --return-neg: #6e1b1b;
+  --ks-chart: #1b4332;
+  accent-color: #1b4332;
+  color: #1a1a1a;
+}
+html[data-theme="dark"] .kiwisaver-page,
+html:not([data-theme]) .kiwisaver-page {
+  --bg: #121a16;
+  --surface: #1c2822;
+  --surface-2: #1c2822;
+  --surface-3: #24352c;
+  --text: #f3eee4;
+  --muted: #c5d5c8;
+  --border: #6f8276;
+  --border-soft: #6f8276;
+  --accent: #2f6b4f;
+  --accent-2: #b7a8c4;
+  --accent-deep: #1b4332;
+  --btn-primary-text: #f3eee4;
+  --hero-grad: #1c2822;
+  --hover-row: rgba(243, 238, 228, 0.04);
+  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --return-neg: #e89284;
+  --ks-chart: #8fcb9a;
+  accent-color: #2f6b4f;
+  color: #f3eee4;
+}
+
+.kiwisaver-page .page-title {
+  font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  font-size: 1.35rem;
+  text-transform: none;
+  font-variant-caps: normal;
+  margin: 0 0 0.25rem;
+}
+
+html[data-theme="light"] .kiwisaver-page h2,
+html[data-theme="light"] .kiwisaver-page h3,
+html[data-theme="light"] .kiwisaver-page h4,
+html[data-theme="light"] .kiwisaver-page .page-title,
+html[data-theme="light"] .kiwisaver-page .hero-value {
+  color: #1a1a1a;
+}
+html[data-theme="light"] .kiwisaver-page .panel,
+html[data-theme="light"] .kiwisaver-page .card,
+html[data-theme="light"] .kiwisaver-page .holding-card,
+html[data-theme="light"] .kiwisaver-page .ks-metric,
+html[data-theme="light"] .kiwisaver-page.panel {
+  background: #f7f3ec;
+  color: #1a1a1a;
+  border-color: #8c7b66;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset, 0 8px 24px rgba(48, 36, 22, 0.06);
+}
+html[data-theme="light"] .kiwisaver-page .holding-card-selected {
+  outline: 2px solid #1b4332;
+  outline-offset: 2px;
+}
+html[data-theme="light"] .kiwisaver-page.panel.warn,
+html[data-theme="light"] .kiwisaver-page .panel.warn {
+  color: #6e1b1b;
+  background: #f8e4e0;
+  border-color: #8a4a42;
+  box-shadow: none;
+}
+html[data-theme="light"] .kiwisaver-page.panel.warn .page-title,
+html[data-theme="light"] .kiwisaver-page .panel.warn .page-title,
+html[data-theme="light"] .kiwisaver-page.panel.warn h3,
+html[data-theme="light"] .kiwisaver-page .panel.warn h3 {
+  color: #1a1a1a;
+}
+html[data-theme="light"] .kiwisaver-page.panel.warn p,
+html[data-theme="light"] .kiwisaver-page .panel.warn p,
+html[data-theme="light"] .kiwisaver-page.panel.warn .muted,
+html[data-theme="light"] .kiwisaver-page .panel.warn .muted {
+  color: #6e1b1b;
+}
+html[data-theme="light"] .kiwisaver-page a,
+html[data-theme="light"] .kiwisaver-page a:visited {
+  color: #6e6278;
+}
+html[data-theme="light"] .kiwisaver-page .btn.primary,
+html[data-theme="light"] .kiwisaver-page input[type="file"]::file-selector-button {
+  background: #1b4332;
+  border-color: #1b4332;
+  color: #f7f3ec;
+}
+html[data-theme="light"] .kiwisaver-page .btn.primary:hover:not(:disabled) {
+  color: #f7f3ec;
+}
+html[data-theme="light"] .kiwisaver-page .btn.ghost {
+  background: transparent;
+  border-color: #8c7b66;
+  color: #1a1a1a;
+}
+html[data-theme="light"] .kiwisaver-page .btn.danger {
+  background: #f8e4e0;
+  border-color: #8a4a42;
+  color: #6e1b1b;
+}
+html[data-theme="light"] .kiwisaver-page .banner {
+  background: #efe8dc;
+  color: #1a1a1a;
+  border-left-color: #6e6278;
+}
+html[data-theme="light"] .kiwisaver-page input,
+html[data-theme="light"] .kiwisaver-page select,
+html[data-theme="light"] .kiwisaver-page textarea {
+  background: #e7e0d4;
+  color: #1a1a1a;
+  border-color: #8c7b66;
+}
+html[data-theme="light"] .kiwisaver-page input::placeholder,
+html[data-theme="light"] .kiwisaver-page textarea::placeholder {
+  color: #5c564e;
+  opacity: 1;
+}
+html[data-theme="light"] .kiwisaver-page input[type="file"]::file-selector-button {
+  border-radius: 8px;
+  padding: 0.35rem 0.7rem;
+  margin-right: 0.65rem;
+  font: inherit;
+}
+html[data-theme="light"] .kiwisaver-page code {
+  background: #efe8dc;
+  color: #1a1a1a;
+}
+html[data-theme="light"] .kiwisaver-page .return-pos {
+  color: #1b4332;
+}
+html[data-theme="light"] .kiwisaver-page .return-neg {
+  color: #6e1b1b;
+}
+html[data-theme="light"] .kiwisaver-page :focus-visible {
+  outline: 2px solid #1b4332;
+  outline-offset: 2px;
+}
+
+html[data-theme="dark"] .kiwisaver-page h2,
+html[data-theme="dark"] .kiwisaver-page h3,
+html[data-theme="dark"] .kiwisaver-page h4,
+html[data-theme="dark"] .kiwisaver-page .page-title,
+html[data-theme="dark"] .kiwisaver-page .hero-value,
+html:not([data-theme]) .kiwisaver-page h2,
+html:not([data-theme]) .kiwisaver-page h3,
+html:not([data-theme]) .kiwisaver-page h4,
+html:not([data-theme]) .kiwisaver-page .page-title,
+html:not([data-theme]) .kiwisaver-page .hero-value {
+  color: #f3eee4;
+}
+html[data-theme="dark"] .kiwisaver-page .panel,
+html[data-theme="dark"] .kiwisaver-page .card,
+html[data-theme="dark"] .kiwisaver-page .holding-card,
+html[data-theme="dark"] .kiwisaver-page .ks-metric,
+html[data-theme="dark"] .kiwisaver-page.panel,
+html:not([data-theme]) .kiwisaver-page .panel,
+html:not([data-theme]) .kiwisaver-page .card,
+html:not([data-theme]) .kiwisaver-page .holding-card,
+html:not([data-theme]) .kiwisaver-page .ks-metric,
+html:not([data-theme]) .kiwisaver-page.panel {
+  background: #1c2822;
+  color: #f3eee4;
+  border-color: #6f8276;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+html[data-theme="dark"] .kiwisaver-page .holding-card-selected,
+html:not([data-theme]) .kiwisaver-page .holding-card-selected {
+  outline: 2px solid #c5d5c8;
+  outline-offset: 2px;
+}
+html[data-theme="dark"] .kiwisaver-page.panel.warn,
+html[data-theme="dark"] .kiwisaver-page .panel.warn,
+html:not([data-theme]) .kiwisaver-page.panel.warn,
+html:not([data-theme]) .kiwisaver-page .panel.warn {
+  color: #f3eee4;
+  background: #4a2422;
+  border-color: #e0b2aa;
+  box-shadow: none;
+}
+html[data-theme="dark"] .kiwisaver-page.panel.warn .page-title,
+html[data-theme="dark"] .kiwisaver-page .panel.warn .page-title,
+html[data-theme="dark"] .kiwisaver-page.panel.warn h3,
+html[data-theme="dark"] .kiwisaver-page .panel.warn h3,
+html[data-theme="dark"] .kiwisaver-page.panel.warn p,
+html[data-theme="dark"] .kiwisaver-page .panel.warn p,
+html[data-theme="dark"] .kiwisaver-page.panel.warn .muted,
+html[data-theme="dark"] .kiwisaver-page .panel.warn .muted,
+html:not([data-theme]) .kiwisaver-page.panel.warn .page-title,
+html:not([data-theme]) .kiwisaver-page .panel.warn .page-title,
+html:not([data-theme]) .kiwisaver-page.panel.warn h3,
+html:not([data-theme]) .kiwisaver-page .panel.warn h3,
+html:not([data-theme]) .kiwisaver-page.panel.warn p,
+html:not([data-theme]) .kiwisaver-page .panel.warn p,
+html:not([data-theme]) .kiwisaver-page.panel.warn .muted,
+html:not([data-theme]) .kiwisaver-page .panel.warn .muted {
+  color: #f3eee4;
+}
+html[data-theme="dark"] .kiwisaver-page a,
+html[data-theme="dark"] .kiwisaver-page a:visited,
+html:not([data-theme]) .kiwisaver-page a,
+html:not([data-theme]) .kiwisaver-page a:visited {
+  color: #b7a8c4;
+}
+html[data-theme="dark"] .kiwisaver-page .btn.primary,
+html[data-theme="dark"] .kiwisaver-page input[type="file"]::file-selector-button,
+html:not([data-theme]) .kiwisaver-page .btn.primary,
+html:not([data-theme]) .kiwisaver-page input[type="file"]::file-selector-button {
+  background: #2f6b4f;
+  border-color: #2f6b4f;
+  color: #f3eee4;
+}
+html[data-theme="dark"] .kiwisaver-page .btn.primary:hover:not(:disabled),
+html:not([data-theme]) .kiwisaver-page .btn.primary:hover:not(:disabled) {
+  color: #f3eee4;
+}
+html[data-theme="dark"] .kiwisaver-page .btn.ghost,
+html:not([data-theme]) .kiwisaver-page .btn.ghost {
+  background: transparent;
+  border-color: #6f8276;
+  color: #f3eee4;
+}
+html[data-theme="dark"] .kiwisaver-page .btn.danger,
+html:not([data-theme]) .kiwisaver-page .btn.danger {
+  background: #4a2422;
+  border-color: #e0b2aa;
+  color: #f3eee4;
+}
+html[data-theme="dark"] .kiwisaver-page .banner,
+html:not([data-theme]) .kiwisaver-page .banner {
+  background: #24352c;
+  color: #f3eee4;
+  border-left-color: #b7a8c4;
+}
+html[data-theme="dark"] .kiwisaver-page input,
+html[data-theme="dark"] .kiwisaver-page select,
+html[data-theme="dark"] .kiwisaver-page textarea,
+html:not([data-theme]) .kiwisaver-page input,
+html:not([data-theme]) .kiwisaver-page select,
+html:not([data-theme]) .kiwisaver-page textarea {
+  background: #121a16;
+  color: #f3eee4;
+  border-color: #6f8276;
+}
+html[data-theme="dark"] .kiwisaver-page input::placeholder,
+html[data-theme="dark"] .kiwisaver-page textarea::placeholder,
+html:not([data-theme]) .kiwisaver-page input::placeholder,
+html:not([data-theme]) .kiwisaver-page textarea::placeholder {
+  color: #c5d5c8;
+  opacity: 1;
+}
+html[data-theme="dark"] .kiwisaver-page input[type="file"]::file-selector-button,
+html:not([data-theme]) .kiwisaver-page input[type="file"]::file-selector-button {
+  border-radius: 8px;
+  padding: 0.35rem 0.7rem;
+  margin-right: 0.65rem;
+  font: inherit;
+}
+html[data-theme="dark"] .kiwisaver-page code,
+html:not([data-theme]) .kiwisaver-page code {
+  background: #24352c;
+  color: #f3eee4;
+}
+html[data-theme="dark"] .kiwisaver-page .return-pos,
+html:not([data-theme]) .kiwisaver-page .return-pos {
+  color: #8fcb9a;
+}
+html[data-theme="dark"] .kiwisaver-page .return-neg,
+html:not([data-theme]) .kiwisaver-page .return-neg {
+  color: #e89284;
+}
+html[data-theme="dark"] .kiwisaver-page :focus-visible,
+html:not([data-theme]) .kiwisaver-page :focus-visible {
+  outline: 2px solid #c5d5c8;
+  outline-offset: 2px;
+}
+
+html[data-theme="light"]:has(.kiwisaver-page) .quiet-toast {
+  background: #f7f3ec;
+  color: #1a1a1a;
+  border-color: #8c7b66;
+}
+html[data-theme="light"]:has(.kiwisaver-page) .quiet-toast--warn {
+  border-left-color: #8a4a42;
+}
+html[data-theme="light"]:has(.kiwisaver-page) .quiet-toast-dismiss {
+  color: #5c564e;
+}
+html[data-theme="dark"]:has(.kiwisaver-page) .quiet-toast,
+html:not([data-theme]):has(.kiwisaver-page) .quiet-toast {
+  background: #1c2822;
+  color: #f3eee4;
+  border-color: #6f8276;
+}
+html[data-theme="dark"]:has(.kiwisaver-page) .quiet-toast--warn,
+html:not([data-theme]):has(.kiwisaver-page) .quiet-toast--warn {
+  border-left-color: #e89284;
+}
+html[data-theme="dark"]:has(.kiwisaver-page) .quiet-toast-dismiss,
+html:not([data-theme]):has(.kiwisaver-page) .quiet-toast-dismiss {
+  color: #c5d5c8;
+}

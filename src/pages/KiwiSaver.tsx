@@ -166,10 +166,7 @@ function AccountSummaryCard({
 }) {
   const akahu = isAkahuAccount(account);
   return (
-    <article
-      className={'holding-card' + (selected ? ' holding-card-selected' : '')}
-      style={selected ? { outline: '2px solid var(--accent, #6a8fd4)' } : undefined}
-    >
+    <article className={'holding-card' + (selected ? ' holding-card-selected' : '')}>
       <header className="holding-card-head">
         <div className="holding-card-titles" style={{ flex: 1 }}>
           <h4 className="holding-card-name">{account.name}</h4>
@@ -449,7 +446,7 @@ export function KiwiSaver() {
       {
         key: 'kiwisaver',
         label: selected ? selected.name : 'KiwiSaver',
-        colour: '#6a8fd4',
+        colour: 'var(--ks-chart, #1b4332)',
         points,
       },
     ];
@@ -457,14 +454,21 @@ export function KiwiSaver() {
 
   const totalBalance = accounts.reduce((s, a) => s + (Number(a.balanceNzd) || 0), 0);
 
-  if (error) return <div className="panel warn">KiwiSaver: {error}</div>;
+  if (error) {
+    return (
+      <div className="panel warn kiwisaver-page">
+        <h2 className="page-title">KiwiSaver</h2>
+        <p>KiwiSaver: {error}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="stack kiwisaver-page">
       <section className="panel">
         <div className="row gap" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
           <div>
-            <h2 style={{ marginBottom: '0.25rem' }}>KiwiSaver</h2>
+            <h2 className="page-title">KiwiSaver</h2>
             <p className="page-lead" style={{ margin: 0 }}>
               {hasAkahuAccount ? (
                 <>
