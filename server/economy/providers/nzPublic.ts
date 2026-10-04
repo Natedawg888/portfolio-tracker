@@ -13,6 +13,7 @@ import {
   loadOecdYieldSpread,
   OECD_URLS,
 } from './oecd.ts';
+import { loadNzHousingGrowth } from './consents.ts';
 import {
   fetchCatalog,
   fetchReleaseDate,
@@ -50,7 +51,7 @@ export async function fetchNzPublic(): Promise<ProviderFetchResult> {
   const catalog = await safe('Stats NZ catalogue', warnings, fetchCatalog);
   const docs = catalog ? selectStatsDocs(catalog) : null;
 
-  const [gdp, cpiFile, retail, jobs, oecdCpi, unemployment, callRate, yieldSpread, shares, releaseDates] =
+  const [gdp, cpiFile, retail, jobs, housing, oecdCpi, unemployment, callRate, yieldSpread, shares, releaseDates] =
     await Promise.all([
       docs?.gdp
         ? safe('Stats NZ GDP', warnings, () => loadStatsSeries(docs.gdp!, STATS_SERIES.gdp, 'quarterly'))
@@ -64,6 +65,9 @@ export async function fetchNzPublic(): Promise<ProviderFetchResult> {
       docs?.employment
         ? safe('Stats NZ employment', warnings, () => loadEmploymentGrowth(docs.employment!))
         : Promise.resolve(null),
+      docs?.consents
+        ? safe('Stats NZ building consents', warnings, () => loadNzHousingGrowth(docs.consents!))
+        : Promise.resolve(null),
       safe('OECD CPI', warnings, loadOecdCpi),
       safe('OECD unemployment', warnings, loadOecdUnemployment),
       safe('OECD interest rates', warnings, loadOecdCallRate),
@@ -76,6 +80,7 @@ export async function fetchNzPublic(): Promise<ProviderFetchResult> {
   if (!docs?.cpi) warnings.push('Stats NZ CPI file was not found in the catalogue.');
   if (!docs?.retail) warnings.push('Stats NZ retail trade file was not found in the catalogue.');
   if (!docs?.employment) warnings.push('Stats NZ employment indicators file was not found in the catalogue.');
+  if (!docs?.consents) warnings.push('Stats NZ building-consents workbook was not found in the catalogue.');
 
   const base = {
     country: COUNTRY,
@@ -201,6 +206,26 @@ export async function fetchNzPublic(): Promise<ProviderFetchResult> {
     );
   }
 
+  if (housing && docs?.consents) {
+    const pub = published(releaseDates.consents, housing.at(-1)?.periodEnd ?? retrievedAt.slice(0, 10));
+    observations.push(
+      ...toObservations({
+        ...base,
+        points: housing,
+        indicatorType: 'housing_activity',
+        unit: 'percent',
+        source: 'Stats NZ — number of new dwellings consented, all dwellings, seasonally adjusted',
+        sourceUrl: releasePageUrl(docs.consents.title),
+        publishedAt: pub.at,
+        publishedAtPrecision: pub.precision,
+        frequency: 'monthly',
+        seriesId: 'BLDM.SFTZ1100A1S',
+        notes:
+          'Annual percent change calculated in this app from the official seasonally adjusted count in the monthly workbook. The full building-consents CSV is not downloaded.',
+      }),
+    );
+  }
+
   if (shares) {
     observations.push(
       ...toObservations({
@@ -220,7 +245,7 @@ export async function fetchNzPublic(): Promise<ProviderFetchResult> {
   }
 
   warnings.push(
-    'Business activity, credit conditions, and housing activity have no feed connected in this version.',
+    'Business activity and credit conditions have no feed connected in this version.',
   );
 
   return {
@@ -294,9 +319,9 @@ function mergeCpi(
 async function releaseDatesFor(
   docs: ReturnType<typeof selectStatsDocs> | null,
   warnings: string[],
-): Promise<{ gdp: string | null; cpi: string | null; retail: string | null; employment: string | null }> {
-  if (!docs) return { gdp: null, cpi: null, retail: null, employment: null };
-  const [gdp, cpi, retail, employment] = await Promise.all([
+): Promise<{ gdp: string | null; cpi: string | null; retail: string | null; employment: string | null; consents: string | null }> {
+  if (!docs) return { gdp: null, cpi: null, retail: null, employment: null, consents: null };
+  const [gdp, cpi, retail, employment, consents] = await Promise.all([
     docs.gdp ? safe('Stats NZ GDP release date', warnings, () => fetchReleaseDate(docs.gdp!.title)) : Promise.resolve(null),
     docs.cpi ? safe('Stats NZ CPI release date', warnings, () => fetchReleaseDate(docs.cpi!.title)) : Promise.resolve(null),
     docs.retail
@@ -305,6 +330,9 @@ async function releaseDatesFor(
     docs.employment
       ? safe('Stats NZ employment release date', warnings, () => fetchReleaseDate(docs.employment!.title))
       : Promise.resolve(null),
+    docs.consents
+      ? safe('Stats NZ consents release date', warnings, () => fetchReleaseDate(docs.consents!.title))
+      : Promise.resolve(null),
   ]);
-  return { gdp, cpi, retail, employment };
+  return { gdp, cpi, retail, employment, consents };
 }

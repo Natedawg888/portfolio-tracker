@@ -72,7 +72,7 @@ export const INDICATOR_CATALOG: Record<IndicatorType, IndicatorMeta> = {
   housing_activity: {
     label: 'Housing activity',
     description:
-      'Housing turnover or building consents. The public consents extract is too large to pull in this version, so the card stays blank until a smaller official series is connected.',
+      'Annual percent change in the seasonally adjusted number of new dwellings consented. The growth rate is calculated in this app from the official count in the monthly workbook. The full consents CSV is not downloaded.',
     frequency: 'monthly',
     staleAfterDays: 75,
   },

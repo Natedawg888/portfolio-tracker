@@ -1154,9 +1154,10 @@ export const api = {
       const search = q.toString();
       return req<EconomicCycleResponse>(`/economy/cycle${search ? `?${search}` : ''}`);
     },
-    news: (opts?: { phase?: string | null; refresh?: boolean }) => {
+    news: (opts?: { phase?: string | null; refresh?: boolean; country?: string | null }) => {
       const q = new URLSearchParams();
       if (opts?.phase) q.set('phase', opts.phase);
+      if (opts?.country) q.set('country', opts.country);
       if (opts?.refresh) q.set('refresh', '1');
       const search = q.toString();
       return req<PhaseNewsResponse>(`/economy/news${search ? `?${search}` : ''}`);

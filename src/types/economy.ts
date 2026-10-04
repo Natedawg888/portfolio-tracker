@@ -36,6 +36,7 @@ export type EconomicIndicatorCard = {
 export type EconomicCycleResponse = {
   country: string;
   countryName: string;
+  countries: Array<{ code: string; name: string }>;
   modelVersion: number;
   disclaimer: string;
   provider: { id: string; label: string; kind: 'live' | 'sample' };
@@ -91,6 +92,8 @@ export type PhaseNewsGroup = {
 };
 
 export type PhaseNewsResponse = {
+  country: string;
+  countryName: string;
   phase: EconomicPhase | null;
   phaseLabel: string | null;
   note: string;

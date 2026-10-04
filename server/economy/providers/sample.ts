@@ -28,7 +28,7 @@ const SEEDS: Seed[] = [
 const PERIODS = ['2019-Q1', '2019-Q2', '2019-Q3', '2019-Q4'];
 const MONTHS = ['2019-03', '2019-06', '2019-09', '2019-12'];
 
-export function buildSampleObservations(retrievedAt: string): EconomicObservation[] {
+export function buildSampleObservations(retrievedAt: string, country = 'NZ'): EconomicObservation[] {
   const rows: EconomicObservation[] = [];
   for (const seed of SEEDS) {
     const periods = seed.frequency === 'monthly' ? MONTHS : PERIODS;
@@ -37,7 +37,7 @@ export function buildSampleObservations(retrievedAt: string): EconomicObservatio
       if (!range) return;
       const previousPeriod = index > 0 ? periods[index - 1]! : null;
       rows.push({
-        country: 'NZ',
+        country,
         indicatorType: seed.indicator,
         value: seed.values[index] ?? seed.values[0]!,
         unit: seed.unit,
@@ -67,15 +67,16 @@ export const sampleProvider: EconomicDataProvider = {
   label: 'Sample fixture (not live)',
   kind: 'sample',
   country: 'NZ',
-  async fetch(): Promise<ProviderFetchResult> {
+  async fetch(country = 'NZ'): Promise<ProviderFetchResult> {
     const retrievedAt = new Date().toISOString();
+    const code = country === 'US' ? 'US' : 'NZ';
     return {
       providerId: PROVIDER_ID,
       providerLabel: this.label,
       kind: 'sample',
-      country: 'NZ',
+      country: code,
       retrievedAt,
-      observations: buildSampleObservations(retrievedAt),
+      observations: buildSampleObservations(retrievedAt, code),
       warnings: ['Sample fixture is not a live official source. Do not treat these figures as current statistics.'],
     };
   },

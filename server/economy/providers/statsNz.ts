@@ -147,6 +147,7 @@ export function selectStatsDocs(docs: CatalogDoc[]): {
   cpi: CatalogDoc | null;
   retail: CatalogDoc | null;
   employment: CatalogDoc | null;
+  consents: CatalogDoc | null;
 } {
   return {
     gdp: pickLatest(
@@ -169,6 +170,13 @@ export function selectStatsDocs(docs: CatalogDoc[]): {
     employment: pickLatest(
       docs,
       (doc) => /employment indicators:/i.test(doc.title) && /csv/i.test(doc.title) && doc.extension === 'zip',
+    ),
+    consents: pickLatest(
+      docs,
+      (doc) =>
+        /^building consents issued:/i.test(doc.title) &&
+        /csv/i.test(doc.title) &&
+        doc.extension.toLowerCase() === 'zip',
     ),
   };
 }

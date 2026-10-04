@@ -15,6 +15,35 @@ function formatSourceDate(iso: string | null | undefined): string {
   return formatAuckland(iso);
 }
 
+function CountryControl({
+  country,
+  options,
+  disabled,
+  onChange,
+}: {
+  country: string;
+  options: Array<{ code: string; name: string }>;
+  disabled: boolean;
+  onChange: (code: string) => void;
+}) {
+  return (
+    <label className="country-control">
+      <span>Country</span>
+      <select
+        value={country}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {options.map((option) => (
+          <option key={option.code} value={option.code}>
+            {option.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function nextQuarter(period: string): string | null {
   const match = period.match(/^(\d{4})-Q([1-4])$/);
   if (!match) return null;
@@ -28,13 +57,14 @@ function nextQuarter(period: string): string | null {
 }
 
 export function EconomicCycle() {
+  const [country, setCountry] = useState('NZ');
   const [data, setData] = useState<EconomicCycleResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback((refresh = false) => {
     return api.economy
-      .cycle({ refresh })
+      .cycle({ refresh, country })
       .then((payload) => {
         setData(payload);
         setError(null);
@@ -43,7 +73,7 @@ export function EconomicCycle() {
         setError(err.message);
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [country]);
 
   useEffect(() => {
     void load(false);
@@ -58,20 +88,38 @@ export function EconomicCycle() {
     );
   }
 
-  if (!data) {
+  const options = data?.countries?.length
+    ? data.countries
+    : [
+        { code: 'NZ', name: 'New Zealand' },
+        { code: 'US', name: 'United States' },
+      ];
+  const selectedName = options.find((option) => option.code === country)?.name ?? country;
+  const showing = data && data.country === country ? data : null;
+
+  if (!showing) {
     return (
       <div className="panel">
+        <CountryControl
+          country={country}
+          options={options}
+          disabled={loading}
+          onChange={(next) => {
+            setLoading(true);
+            setCountry(next);
+          }}
+        />
         <h2>Economic cycle</h2>
-        <p className="muted">Loading New Zealand indicator extracts. The first load can take a minute.</p>
+        {error ? <p>{error}</p> : <p className="muted">Loading {selectedName} indicator extracts. The first load can take a minute.</p>}
       </div>
     );
   }
 
-  const phase = data.phase;
+  const phase = showing.phase;
 
   return (
     <div className="stack econ-page">
-      {data.provider.kind === 'sample' ? (
+      {showing.provider.kind === 'sample' ? (
         <div className="panel warn">
           <h2>Sample data — not live</h2>
           <p>
@@ -79,13 +127,22 @@ export function EconomicCycle() {
           </p>
         </div>
       ) : null}
-      {data.refreshError ? (
+      {showing.refreshError ? (
         <div className="panel warn">
-          <p>{data.refreshError}</p>
+          <p>{showing.refreshError}</p>
         </div>
       ) : null}
 
       <section className="hero-card hero-card--centered">
+        <CountryControl
+          country={country}
+          options={options}
+          disabled={loading}
+          onChange={(next) => {
+            setLoading(true);
+            setCountry(next);
+          }}
+        />
         <p className="eyebrow">Current economic phase</p>
         <p className="hero-value">{phase ? phase.label : 'Not available'}</p>
         <p className="stat-value">
@@ -101,12 +158,12 @@ export function EconomicCycle() {
           </p>
         ) : null}
         <p className="muted small">
-          {data.countryName}
-          {data.asOfLabel ? ` · As of ${data.asOfLabel}` : ''}
+          {showing.countryName}
+          {showing.asOfLabel ? ` · As of ${showing.asOfLabel}` : ''}
           {' · Last updated '}
-          {data.lastUpdated ? formatAuckland(data.lastUpdated) : '—'}
+          {showing.lastUpdated ? formatAuckland(showing.lastUpdated) : '—'}
         </p>
-        <p className="muted small">{data.provider.label}</p>
+        <p className="muted small">{showing.provider.label}</p>
         {phase ? <p className="page-lead">{phase.explanation}</p> : (
           <p className="page-lead">No phase was calculated. Missing series are left blank rather than filled in.</p>
         )}
@@ -125,12 +182,12 @@ export function EconomicCycle() {
 
       <section className="panel" aria-label="Economic cycle">
         <ol className="cycle-rail">
-          {data.cycle.map((step, index) => (
+          {showing.cycle.map((step, index) => (
             <li key={step.id} className="cycle-step">
               <span className={`cycle-node phase-${step.id}${step.active ? ' active' : ''}`} aria-current={step.active ? 'true' : undefined}>
                 {step.label}
               </span>
-              {index < data.cycle.length - 1 ? <span className="cycle-arrow" aria-hidden="true">→</span> : null}
+              {index < showing.cycle.length - 1 ? <span className="cycle-arrow" aria-hidden="true">→</span> : null}
             </li>
           ))}
         </ol>
@@ -140,29 +197,29 @@ export function EconomicCycle() {
       </section>
 
       <section className="grid cards dashboard-cards" aria-label="Economic indicators">
-        {data.indicators.map((card) => (
+        {showing.indicators.map((card) => (
           <IndicatorCardView key={card.type} card={card} />
         ))}
       </section>
 
-      <PhaseNews key={phase?.id ?? 'none'} phase={phase?.id ?? null} />
+      <PhaseNews key={`${country}:${phase?.id ?? 'none'}`} phase={phase?.id ?? null} country={country} />
 
       <section className="panel">
         <div className="panel-heading">
           <h2>How the phase changed</h2>
         </div>
-        <p className="section-desc">{data.vintageNote}</p>
-        <PhaseChart points={data.timeline} />
+        <p className="section-desc">{showing.vintageNote}</p>
+        <PhaseChart points={showing.timeline} />
       </section>
 
       <section className="panel">
         <div className="panel-heading">
           <h2>Historical asset-class context</h2>
         </div>
-        <p className="section-desc">{data.assetNote}</p>
-        {data.assetClasses.length > 0 ? (
+        <p className="section-desc">{showing.assetNote}</p>
+        {showing.assetClasses.length > 0 ? (
           <div className="grid cards dashboard-cards">
-            {data.assetClasses.map((row) => (
+            {showing.assetClasses.map((row) => (
               <article key={row.id} className="card">
                 <h3>{row.label}</h3>
                 <p>
@@ -173,8 +230,8 @@ export function EconomicCycle() {
             ))}
           </div>
         ) : null}
-        {data.coverageNote ? <p className="muted small">{data.coverageNote}</p> : null}
-        <p className="muted small">{data.disclaimer}</p>
+        {showing.coverageNote ? <p className="muted small">{showing.coverageNote}</p> : null}
+        <p className="muted small">{showing.disclaimer}</p>
       </section>
     </div>
   );

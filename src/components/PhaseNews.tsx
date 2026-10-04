@@ -16,7 +16,7 @@ function groupIntro(group: PhaseNewsGroup): string {
   return 'Google News search results. Each headline and summary is taken from the feed.';
 }
 
-export function PhaseNews({ phase }: { phase: string | null }) {
+export function PhaseNews({ phase, country }: { phase: string | null; country: string }) {
   const [data, setData] = useState<PhaseNewsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -24,7 +24,7 @@ export function PhaseNews({ phase }: { phase: string | null }) {
   const load = useCallback(
     (refresh = false) => {
       return api.economy
-        .news({ phase, refresh })
+        .news({ phase, country, refresh })
         .then((payload) => {
           setData(payload);
           setError(null);
@@ -34,7 +34,7 @@ export function PhaseNews({ phase }: { phase: string | null }) {
         })
         .finally(() => setLoading(false));
     },
-    [phase],
+    [phase, country],
   );
 
   useEffect(() => {
@@ -59,9 +59,9 @@ export function PhaseNews({ phase }: { phase: string | null }) {
       </div>
       <p className="section-desc">
         {data?.phaseLabel
-          ? `Headlines while the calculated phase is ${data.phaseLabel}.`
-          : 'Headlines for the same topics used to read the phase.'}{' '}
-        Central-bank rates, GDP, inflation, unemployment, housing, and global developments.
+          ? `Headlines while the calculated phase is ${data.phaseLabel} in ${data.countryName}.`
+          : `Headlines for ${data?.countryName ?? 'the selected country'}.`}{' '}
+        Central-bank rates, GDP, inflation, unemployment, housing, and the country’s other listed topics.
       </p>
       {data ? <p className="muted small">{data.note}</p> : null}
       {error ? (

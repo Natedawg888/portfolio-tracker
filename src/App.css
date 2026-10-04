@@ -3268,6 +3268,22 @@ body.nav-drawer-open {
 .quiet-toast-dismiss:hover { color: var(--text); }
 
 .econ-page .page-lead { margin-left: auto; margin-right: auto; }
+.country-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 auto 0.8rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.country-control select {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+}
 .cycle-rail {
   display: flex;
   flex-wrap: wrap;

@@ -1,18 +1,14 @@
 /**
- * Load or refresh New Zealand observations, score them, and return the dashboard payload.
+ * Load or refresh observations for a connected country, score them, and return the dashboard payload.
  */
 import { logger } from '../lib/logger.ts';
 import { analyseObservations } from './analyse.ts';
+import { requireEconomyCountry } from './countries.ts';
 import { getEconomicProvider } from './providers/index.ts';
 import { readFetchLog, readObservations, writeAssessments, writeObservations } from './store.ts';
 import { buildCycleView, type CycleResponse } from './view.ts';
 
-export class EconomyCountryError extends Error {
-  constructor(country: string) {
-    super(`Economic cycle data is only connected for New Zealand (NZ). Received ${country}.`);
-    this.name = 'EconomyCountryError';
-  }
-}
+export { EconomyCountryError } from './countries.ts';
 
 function cacheMs(): number {
   const hours = Number(process.env.ECONOMY_CACHE_HOURS ?? '12');
@@ -24,10 +20,10 @@ export async function getEconomicCycle(
   countryRaw: string | undefined,
   options: { refresh?: boolean; now?: Date } = {},
 ): Promise<CycleResponse> {
-  const country = (countryRaw ?? 'NZ').trim().toUpperCase() || 'NZ';
-  if (country !== 'NZ') throw new EconomyCountryError(country);
+  const countryProfile = requireEconomyCountry(countryRaw);
+  const country = countryProfile.code;
   const now = options.now ?? new Date();
-  const provider = getEconomicProvider();
+  const provider = getEconomicProvider(country);
   let refreshError: string | null = null;
   let warnings: string[] = [];
 
@@ -39,7 +35,7 @@ export async function getEconomicCycle(
 
   if (options.refresh || !fresh) {
     try {
-      const result = await provider.fetch();
+      const result = await provider.fetch(country);
       warnings = result.warnings;
       if (result.observations.length === 0 && observations.length > 0) {
         refreshError = 'The provider returned no observations. Showing the stored extract.';
@@ -65,6 +61,7 @@ export async function getEconomicCycle(
       if (observations.length === 0) {
         return buildCycleView({
           observations: [],
+          country,
           provider: { id: provider.id, label: provider.label, kind: provider.kind },
           warnings: [refreshError],
           refreshError,
@@ -76,6 +73,7 @@ export async function getEconomicCycle(
 
   const view = buildCycleView({
     observations,
+    country,
     provider: { id: provider.id, label: provider.label, kind: provider.kind },
     warnings,
     refreshError,

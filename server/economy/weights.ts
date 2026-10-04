@@ -68,7 +68,7 @@ export const DEFAULT_PHASE_MODEL: PhaseModel = {
     business_activity_pmi: { lowBelow: 48, highAbove: 52, flatBand: 0.5 },
     // Higher means easier credit. Unused until a series is connected.
     credit_conditions: { lowBelow: 0, highAbove: 1, flatBand: 0.1 },
-    // Annual percent change in housing activity. Unused until a series is connected.
+    // Annual percent change in housing activity (consents or housing starts).
     housing_activity: { lowBelow: 0, highAbove: 5, flatBand: 1 },
     // Three-month percent change in a share-price index.
     share_market: { lowBelow: -2, highAbove: 3, flatBand: 0.5 },

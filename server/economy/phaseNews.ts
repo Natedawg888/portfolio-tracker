@@ -5,6 +5,7 @@
  */
 import { fetchRss, type FetchRssOptions, type RssItem } from '../news/rss.ts';
 import { googleNewsSearchUrl, worldPoliticsFeeds } from '../news/sections.ts';
+import { requireEconomyCountry } from './countries.ts';
 import type { Phase } from './types.ts';
 import { PHASE_LABEL } from './weights.ts';
 
@@ -34,6 +35,8 @@ export type PhaseNewsGroup = {
 };
 
 export type PhaseNewsResponse = {
+  country: string;
+  countryName: string;
   phase: Phase | null;
   phaseLabel: string | null;
   note: string;
@@ -60,29 +63,17 @@ function googleFeed(id: string, title: string, query: string): FeedPlan {
   };
 }
 
-/** Feed list for a calculated phase. The phase only adds a search; it does not write headlines. */
-export function planPhaseNewsFeeds(phase: Phase | null): FeedPlan[] {
+/** Feed list for a calculated phase in one country. The phase only adds a search; it does not write headlines. */
+export function planPhaseNewsFeeds(phase: Phase | null, countryCode = 'NZ'): FeedPlan[] {
+  const country = requireEconomyCountry(countryCode);
   const feeds: FeedPlan[] = [];
   if (phase) {
     const label = PHASE_LABEL[phase];
-    feeds.push(googleFeed('phase', label, `"New Zealand" "${label}"`));
+    feeds.push(googleFeed('phase', label, `"${country.searchName}" "${label}"`));
   }
-  feeds.push(
-    googleFeed(
-      'rates',
-      'Central-bank rates',
-      '("Reserve Bank of New Zealand" OR RBNZ) (OCR OR "official cash rate" OR "interest rate")',
-    ),
-    googleFeed('gdp', 'GDP', '"New Zealand" (GDP OR "gross domestic product")'),
-    googleFeed('inflation', 'Inflation', '"New Zealand" (inflation OR CPI OR "consumers price index")'),
-    googleFeed('unemployment', 'Unemployment', '"New Zealand" (unemployment OR "jobless rate" OR "unemployment rate")'),
-    googleFeed('housing', 'Housing', '"New Zealand" (housing OR "house prices" OR "building consents")'),
-    googleFeed(
-      'global',
-      'Global economy',
-      '("world economy" OR "global economy" OR IMF OR "Federal Reserve" OR "European Central Bank")',
-    ),
-  );
+  for (const topic of country.topics) {
+    feeds.push(googleFeed(topic.id, topic.title, topic.query));
+  }
   for (const feed of worldPoliticsFeeds()) {
     const topic = feed.topic ?? 'World';
     feeds.push({
@@ -159,12 +150,19 @@ function toGroup(plan: FeedPlan, result: Awaited<ReturnType<typeof fetchRss>>): 
   };
 }
 
-export async function loadPhaseNews(phase: Phase | null, opts?: FetchRssOptions): Promise<PhaseNewsResponse> {
-  const plans = planPhaseNewsFeeds(phase);
+export async function loadPhaseNews(
+  phase: Phase | null,
+  opts?: FetchRssOptions,
+  countryCode = 'NZ',
+): Promise<PhaseNewsResponse> {
+  const country = requireEconomyCountry(countryCode);
+  const plans = planPhaseNewsFeeds(phase, country.code);
   const fetched = await Promise.all(
     plans.map(async (plan) => ({ plan, result: await fetchRss(plan.url, opts) })),
   );
   return {
+    country: country.code,
+    countryName: country.name,
     phase,
     phaseLabel: phase ? PHASE_LABEL[phase] : null,
     note: PHASE_NEWS_NOTE,
