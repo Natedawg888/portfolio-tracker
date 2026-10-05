@@ -23,5 +23,6 @@ jobs:
       - run: npm run test:metals
       - run: npm run test:cash-sync
       - run: npm run test:prod-routing
+      - run: npm run test:isolation
       - run: npm run test:dividends
       - run: npm run build

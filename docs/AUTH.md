@@ -11,14 +11,16 @@ Portfolio Tracker uses **local accounts** on the machine running the API. No thi
 - **API gate** — all `/api/*` routes except `/api/auth/*` and `/api/health` require a valid session.
 - **UI gate** — unauthenticated users only see `/login` or `/register`.
 
-## First signup claims existing data; later users start empty
+## First signup on an empty database; existing finance is not claimed
 
 Finance rows are scoped by `user_id` in `data/portfolio.db`.
 
-When the **first** account is created:
+When the **first** account is created on a database with **no** holdings, bank accounts, transactions, or other finance/bank rows:
 
 1. `meta.data_owner_user_id` is set to that user.
-2. All existing holdings, accounts, transactions, etc. are backfilled to that user_id.
+2. Unscoped budget-category seeds are backfilled to that user_id.
+
+A database that **already has** finance or bank rows (for example a hosted volume with Kiwibank/Akahu data and zero users) does **not** hand those rows to whoever registers first. The account is created with an empty ledger and is not the data owner. To claim those rows on purpose, set the server environment variable `ALLOW_EXISTING_DATA_CLAIM=1` before that first signup (not a field on the register request). Leave it unset after.
 
 **Later accounts** get an **empty** ledger (no holdings/txns/accounts with their `user_id`) plus a **fresh copy** of default budget categories. They choose asset-class toggles on signup and may **Skip / do later** on Akahu Connect. APIs always filter by session `user_id`. Per-user Akahu OAuth tokens live in `akahu_connections` (Full App); the Personal App `AKAHU_USER_TOKEN` is data-owner only.
 
@@ -74,7 +76,7 @@ These stay **global** on this machine — account delete does not remove them:
 
 | Shared | Notes |
 |--------|--------|
-| `app_settings` | GoMining params, collectable types, locale/currency |
+| `app_settings` | Locale, currency, timezone. Legacy GoMining / collectable values stay here only as a fallback for the data owner until they save their own. |
 | `price_quotes` | Shared quote cache |
 | `meta` | `schema_version` etc.; `data_owner_user_id` cleared/reassigned as above |
 | `.env` Akahu Personal App token | Server env — not stored per user |

@@ -4,7 +4,9 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { DATA_DIR } from '../db/index.ts';
+import type { NextFunction, Request, Response } from 'express';
+import { DATA_DIR, getDb, queryAll, queryOne } from '../db/index.ts';
+import type { AuthedRequest } from '../middleware/requireAuth.ts';
 
 export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 export const PROPERTIES_DIR = path.join(UPLOADS_DIR, 'properties');
@@ -220,6 +222,123 @@ export function saveCharityReceipt(txnId: string, dataUrlOrBase64: string): stri
   const rel = `receipts/${safeId}${decoded.ext}`;
   fs.writeFileSync(path.join(UPLOADS_DIR, rel), decoded.buffer);
   return rel;
+}
+
+const UPLOAD_FOLDERS = new Set(['properties', 'collectables', 'art', 'avatars', 'receipts']);
+
+/** Relative path `folder/file` under data/uploads, or null if it is not a single file there. */
+export function normalizeUploadRel(rawPath: string): string | null {
+  let decoded = rawPath.split('?')[0] ?? '';
+  try {
+    decoded = decodeURIComponent(decoded);
+  } catch {
+    return null;
+  }
+  let rel = decoded.replace(/\\/g, '/');
+  const marker = '/api/uploads/';
+  const at = rel.indexOf(marker);
+  if (at >= 0) rel = rel.slice(at + marker.length);
+  rel = rel.replace(/^\/+/, '');
+  if (!rel || rel.includes('\0')) return null;
+  const parts = rel.split('/');
+  if (parts.length !== 2) return null;
+  if (parts.some((p) => p === '' || p === '.' || p === '..')) return null;
+  const [folder, file] = parts;
+  if (!UPLOAD_FOLDERS.has(folder)) return null;
+  if (!/^[\w.-]+$/.test(file)) return null;
+  return `${folder}/${file}`;
+}
+
+function storedPathMatches(stored: string | null | undefined, rel: string): boolean {
+  if (!stored) return false;
+  const s = stored.trim();
+  if (!s || s.startsWith('data:') || s.startsWith('http://') || s.startsWith('https://')) return false;
+  const normalized = s.replace(/\\/g, '/').replace(/^\/+/, '').replace(/^api\/uploads\//, '');
+  return normalized === rel;
+}
+
+/** True when this user owns the receipt, photo, or avatar stored at `rel`. */
+export function userOwnsUpload(
+  db: Awaited<ReturnType<typeof getDb>>,
+  userId: string,
+  rel: string,
+): boolean {
+  const folder = rel.split('/')[0];
+  if (folder === 'avatars') {
+    const row = queryOne<{ avatar_url: string | null }>(
+      db,
+      `SELECT avatar_url FROM users WHERE id = ?`,
+      [userId],
+    );
+    return storedPathMatches(row?.avatar_url, rel);
+  }
+  if (folder === 'receipts') {
+    const rows = queryAll<{ p: string | null }>(
+      db,
+      `SELECT receipt_path AS p FROM transactions WHERE user_id = ? AND receipt_path IS NOT NULL`,
+      [userId],
+    );
+    return rows.some((r) => storedPathMatches(r.p, rel));
+  }
+  if (folder === 'properties' || folder === 'collectables' || folder === 'art') {
+    const rows = queryAll<{ p: string | null }>(
+      db,
+      `SELECT photo_path AS p FROM holdings WHERE user_id = ? AND photo_path IS NOT NULL`,
+      [userId],
+    );
+    return rows.some((r) => storedPathMatches(r.p, rel));
+  }
+  return false;
+}
+
+function requestUploadRel(req: Request): string | null {
+  const candidates = [req.path, req.url, req.originalUrl];
+  for (const c of candidates) {
+    if (typeof c !== 'string' || !c) continue;
+    const rel = normalizeUploadRel(c);
+    if (rel) return rel;
+  }
+  return null;
+}
+
+/**
+ * GET/HEAD for files the signed-in user owns. Other methods fall through.
+ * Missing and not-owned paths are the same 404. Not world-readable.
+ */
+export function uploadsGate() {
+  return async function ownedUploads(req: Request, res: Response, next: NextFunction) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      next();
+      return;
+    }
+    const userId = (req as AuthedRequest).user?.id ?? null;
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication required', code: 'UNAUTHORIZED' });
+      return;
+    }
+    const rel = requestUploadRel(req);
+    if (!rel) {
+      res.status(404).json({ error: 'Not found', code: 'NOT_FOUND' });
+      return;
+    }
+    const db = await getDb();
+    if (!userOwnsUpload(db, userId, rel)) {
+      res.status(404).json({ error: 'Not found', code: 'NOT_FOUND' });
+      return;
+    }
+    const root = path.resolve(UPLOADS_DIR);
+    const abs = path.resolve(root, rel);
+    if (!abs.startsWith(root + path.sep) || !fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
+      res.status(404).json({ error: 'Not found', code: 'NOT_FOUND' });
+      return;
+    }
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.sendFile(rel, { root, dotfiles: 'deny' }, (err) => {
+      if (err && !res.headersSent) {
+        res.status(404).json({ error: 'Not found', code: 'NOT_FOUND' });
+      }
+    });
+  };
 }
 
 export function deleteCharityReceipt(receiptPath: string | null | undefined) {

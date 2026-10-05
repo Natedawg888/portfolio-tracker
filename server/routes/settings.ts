@@ -10,6 +10,7 @@
 import { Router } from 'express';
 import { getDb, queryAll, queryOne, run } from '../db/index.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
+import { isDataOwner } from '../lib/userScope.ts';
 import {
   ASSET_CLASS_PREF_OPTIONS,
   defaultAssetClassPrefs,
@@ -41,6 +42,49 @@ import { fetchGoMiningIncome } from '../quotes/gominingIncome.ts';
 import { fetchNetworkHashrate } from '../quotes/hashrate.ts';
 
 const router = Router();
+
+type AppDb = Awaited<ReturnType<typeof getDb>>;
+
+function readUserPrefs(db: AppDb, userId: string): Record<string, unknown> | null {
+  const row = queryOne<{ preferences_json: string | null }>(
+    db,
+    `SELECT preferences_json FROM users WHERE id = ?`,
+    [userId],
+  );
+  if (!row) return null;
+  if (!row.preferences_json) return {};
+  try {
+    const parsed = JSON.parse(row.preferences_json) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    return {};
+  }
+  return {};
+}
+
+function writeUserPrefs(db: AppDb, userId: string, prefs: Record<string, unknown>) {
+  run(
+    db,
+    `UPDATE users SET preferences_json = ?, updated_at = ? WHERE id = ?`,
+    [JSON.stringify(prefs), new Date().toISOString(), userId],
+  );
+}
+
+function globalSettingsMap(db: AppDb): Record<string, string> {
+  const rows = queryAll<{ key: string; value: string }>(db, 'SELECT key, value FROM app_settings');
+  return Object.fromEntries(rows.map((r) => [r.key, r.value ?? '']));
+}
+
+function settingsUserId(req: AuthedRequest, res: { status: (code: number) => { json: (body: unknown) => void } }): string | null {
+  const id = req.user?.id;
+  if (!id) {
+    res.status(401).json({ error: 'Authentication required', code: 'UNAUTHORIZED' });
+    return null;
+  }
+  return id;
+}
 
 const GOMINING_KEYS = [
   'gominingDiscountPct',
@@ -215,51 +259,77 @@ async function withLiveFeeds(
   };
 }
 
-router.get('/', async (_req, res) => {
+function gominingMapFromUnknown(raw: unknown): Record<string, string> {
+  const o = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const map: Record<string, string> = {};
+  for (const key of GOMINING_KEYS) {
+    const v = o[key];
+    map[key] = v == null ? '' : String(v);
+  }
+  return map;
+}
+
+/** Per-user GoMining inputs. Data owner with no saved prefs still sees legacy app_settings. */
+function gominingMapForUser(db: AppDb, userId: string): Record<string, string> {
+  const prefs = readUserPrefs(db, userId) ?? {};
+  if (Object.prototype.hasOwnProperty.call(prefs, 'gominingSettings')) {
+    return gominingMapFromUnknown(prefs.gominingSettings);
+  }
+  if (isDataOwner(db, userId)) {
+    const global = globalSettingsMap(db);
+    const map: Record<string, string> = {};
+    for (const key of GOMINING_KEYS) map[key] = global[key] ?? '';
+    return map;
+  }
+  return {};
+}
+
+function saveGominingMap(db: AppDb, userId: string, map: Record<string, string>): boolean {
+  const prefs = readUserPrefs(db, userId);
+  if (!prefs) return false;
+  prefs.gominingSettings = gominingMapFromUnknown(map);
+  writeUserPrefs(db, userId, prefs);
+  return true;
+}
+
+router.get('/', async (req: AuthedRequest, res) => {
+  const userId = settingsUserId(req, res);
+  if (!userId) return;
   const db = await getDb();
-  const rows = queryAll<{ key: string; value: string }>(db, 'SELECT key, value FROM app_settings');
-  const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  const map = globalSettingsMap(db);
   res.json({
     defaultCurrency: map.defaultCurrency ?? 'NZD',
     timezone: map.timezone ?? 'Pacific/Auckland',
     locale: map.locale ?? 'en-NZ',
-    gomining: readGoMiningSettings(map),
+    gomining: readGoMiningSettings(gominingMapForUser(db, userId)),
   });
 });
 
-router.get('/gomining', async (req, res) => {
+router.get('/gomining', async (req: AuthedRequest, res) => {
+  const userId = settingsUserId(req, res);
+  if (!userId) return;
   const db = await getDb();
-  const rows = queryAll<{ key: string; value: string }>(
-    db,
-    `SELECT key, value FROM app_settings WHERE key IN (${GOMINING_KEYS.map(() => '?').join(',')})`,
-    [...GOMINING_KEYS],
-  );
-  const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
   const force = req.query.refresh === '1' || req.query.refresh === 'true';
-  const base = readGoMiningSettings(map);
+  const base = readGoMiningSettings(gominingMapForUser(db, userId));
   res.json(await withLiveFeeds(base, force));
 });
 
-router.patch('/gomining', async (req, res) => {
+router.patch('/gomining', async (req: AuthedRequest, res) => {
+  const userId = settingsUserId(req, res);
+  if (!userId) return;
   const db = await getDb();
   const b = req.body ?? {};
-
-  function upsert(key: string, value: string) {
-    run(db, `INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [
-      key,
-      value,
-    ]);
-  }
+  const next = { ...gominingMapForUser(db, userId) };
 
   if (b.discountPct !== undefined) {
-    upsert('gominingDiscountPct', String(clampDiscountPct(Number(b.discountPct))));
+    next.gominingDiscountPct = String(clampDiscountPct(Number(b.discountPct)));
   }
   if (b.btcUsd !== undefined) {
     const v = b.btcUsd === null || b.btcUsd === '' ? '' : String(Number(b.btcUsd));
     if (v !== '' && !Number.isFinite(Number(v))) {
       return res.status(400).json({ error: 'btcUsd must be a number or null' });
     }
-    upsert('gominingBtcUsd', v);
+    next.gominingBtcUsd = v;
   }
   if (b.networkHashrateEhs !== undefined) {
     const v =
@@ -269,7 +339,7 @@ router.patch('/gomining', async (req, res) => {
     if (v !== '' && !Number.isFinite(Number(v))) {
       return res.status(400).json({ error: 'networkHashrateEhs must be a number or null' });
     }
-    upsert('gominingNetworkHashrateEhs', v);
+    next.gominingNetworkHashrateEhs = v;
   }
   if (b.dailyBtcIssuance !== undefined) {
     const v =
@@ -279,23 +349,20 @@ router.patch('/gomining', async (req, res) => {
     if (v !== '' && !Number.isFinite(Number(v))) {
       return res.status(400).json({ error: 'dailyBtcIssuance must be a number or null' });
     }
-    upsert('gominingDailyBtcIssuance', v);
+    next.gominingDailyBtcIssuance = v;
   }
   if (b.kWhCostUsd !== undefined) {
     const v = b.kWhCostUsd === null || b.kWhCostUsd === '' ? '' : String(Number(b.kWhCostUsd));
     if (v !== '' && !Number.isFinite(Number(v))) {
       return res.status(400).json({ error: 'kWhCostUsd must be a number or null' });
     }
-    upsert('gominingKwhCostUsd', v);
+    next.gominingKwhCostUsd = v;
   }
 
-  const rows = queryAll<{ key: string; value: string }>(
-    db,
-    `SELECT key, value FROM app_settings WHERE key IN (${GOMINING_KEYS.map(() => '?').join(',')})`,
-    [...GOMINING_KEYS],
-  );
-  const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-  const base = readGoMiningSettings(map);
+  if (!saveGominingMap(db, userId, next)) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  const base = readGoMiningSettings(gominingMapForUser(db, userId));
   res.json(await withLiveFeeds(base, false));
 });
 
@@ -390,35 +457,60 @@ function readCollectableTypes(map: Record<string, string>): CollectableTypeDef[]
   }
 }
 
-router.get('/collectable-types', async (_req, res) => {
-  const db = await getDb();
-  const rows = queryAll<{ key: string; value: string }>(db, 'SELECT key, value FROM app_settings');
-  const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-  res.json({
-    types: readCollectableTypes(map),
-    presets: Object.values(PRESET_TYPES),
-  });
-});
-
-router.put('/collectable-types', async (req, res) => {
-  const body = req.body ?? {};
-  const list = Array.isArray(body.types) ? body.types : null;
-  if (!list) {
-    return res.status(400).json({ error: 'types array required' });
-  }
+function collectableTypesFromUnknown(raw: unknown): CollectableTypeDef[] {
+  if (!Array.isArray(raw)) return [];
   const out: CollectableTypeDef[] = [];
   const seen = new Set<string>();
-  for (const item of list) {
+  for (const item of raw) {
     const def = normalizeTypeDef(item);
     if (!def || seen.has(def.id)) continue;
     seen.add(def.id);
     out.push(def);
   }
+  return out;
+}
+
+/** Per-user catalogue. Data owner with no saved list still sees legacy app_settings. */
+function collectableTypesForUser(db: AppDb, userId: string): CollectableTypeDef[] {
+  const prefs = readUserPrefs(db, userId) ?? {};
+  if (Object.prototype.hasOwnProperty.call(prefs, 'collectableTypes')) {
+    return collectableTypesFromUnknown(prefs.collectableTypes);
+  }
+  if (isDataOwner(db, userId)) return readCollectableTypes(globalSettingsMap(db));
+  return [];
+}
+
+function saveCollectableTypes(db: AppDb, userId: string, types: CollectableTypeDef[]): boolean {
+  const prefs = readUserPrefs(db, userId);
+  if (!prefs) return false;
+  prefs.collectableTypes = types;
+  writeUserPrefs(db, userId, prefs);
+  return true;
+}
+
+router.get('/collectable-types', async (req: AuthedRequest, res) => {
+  const userId = settingsUserId(req, res);
+  if (!userId) return;
   const db = await getDb();
-  run(db, `INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [
-    COLLECTABLE_TYPES_KEY,
-    JSON.stringify(out),
-  ]);
+  res.json({
+    types: collectableTypesForUser(db, userId),
+    presets: Object.values(PRESET_TYPES),
+  });
+});
+
+router.put('/collectable-types', async (req: AuthedRequest, res) => {
+  const userId = settingsUserId(req, res);
+  if (!userId) return;
+  const body = req.body ?? {};
+  const list = Array.isArray(body.types) ? body.types : null;
+  if (!list) {
+    return res.status(400).json({ error: 'types array required' });
+  }
+  const out = collectableTypesFromUnknown(list);
+  const db = await getDb();
+  if (!saveCollectableTypes(db, userId, out)) {
+    return res.status(404).json({ error: 'User not found' });
+  }
   res.json({ types: out, presets: Object.values(PRESET_TYPES) });
 });
 

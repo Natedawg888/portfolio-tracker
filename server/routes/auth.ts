@@ -1,7 +1,9 @@
 /**
  * Email/password auth — create account, login, logout, session probe,
  * profile (first/last name / avatar), change email & password.
- * First signup claims existing local finance data; later users get empty scoped ledgers.
+ * First signup on an empty database claims that install. A database that already
+ * has finance or bank rows is not handed to the first registrant unless
+ * ALLOW_EXISTING_DATA_CLAIM is set on the server.
  */
 import { Router } from 'express';
 import { getDb, queryOne, run, newId } from '../db/index.ts';
@@ -30,6 +32,7 @@ import {
   deleteScopedDataForUser,
   getDataOwnerUserId,
 } from '../lib/userScope.ts';
+import { mayClaimExistingFinance } from '../lib/dataClaim.ts';
 import { seedCategoriesForUser } from '../lib/categories.ts';
 import {
   deleteAvatarFile,
@@ -186,12 +189,13 @@ router.get('/status', async (_req, res) => {
   purgeExpiredSessions(db);
   const users = await countUsers();
   const claimed = queryOne<{ value: string }>(db, `SELECT value FROM meta WHERE key = 'data_owner_user_id'`);
+  const firstSignupClaimsData = users === 0 && mayClaimExistingFinance(db);
   res.json({
     hasUsers: users > 0,
     userCount: users,
     needsSetup: users === 0,
     dataClaimed: Boolean(claimed?.value),
-    firstSignupClaimsData: true,
+    firstSignupClaimsData,
     /** Later accounts get empty per-user ledgers (not shared household dump). */
     perUserLedgers: true,
   });
@@ -276,7 +280,10 @@ router.post('/register', async (req, res) => {
   );
 
   let claimedExistingData = false;
-  if (usersBefore === 0) {
+  // Empty install: first account becomes the data owner (claim is a no-op aside
+  // from seeded categories). Existing finance/bank rows stay unowned unless
+  // ALLOW_EXISTING_DATA_CLAIM is set in the server environment.
+  if (usersBefore === 0 && mayClaimExistingFinance(db)) {
     run(db, `INSERT OR REPLACE INTO meta (key, value) VALUES ('data_owner_user_id', ?)`, [id]);
     run(db, `INSERT OR REPLACE INTO meta (key, value) VALUES ('data_claimed_at', ?)`, [now]);
     claimUnscopedRowsForOwner(db, id);
@@ -641,7 +648,8 @@ router.post('/change-email', async (req: AuthedRequest, res) => {
  * Removes: user row, all sessions, preferences (on user), avatar file,
  * per-user akahu_connections, and this user's scoped finance rows.
  * Does NOT wipe other users' data. Shared globals left intact (see AUTH.md):
- * app_settings, price_quotes, meta keys other than data_owner.
+ * app_settings (locale/currency/timezone), price_quotes, meta keys other than data_owner.
+ * GoMining inputs and collectable types live on the user and are deleted with them.
  * (budget_categories are per-user and deleted with scoped data.)
  */
 router.post('/delete-account', async (req: AuthedRequest, res) => {
@@ -734,7 +742,7 @@ router.post('/delete-account', async (req: AuthedRequest, res) => {
     },
     sharedDataRemaining: [
       // budget_categories now per-user and removed with scoped delete
-      'app_settings (GoMining params, collectable types, locale)',
+      'app_settings (locale, currency, timezone)',
       'price_quotes (shared quote cache)',
       'meta (schema_version etc.; data_owner cleared or reassigned)',
       '.env Akahu Personal App token (server env — not per-user)',

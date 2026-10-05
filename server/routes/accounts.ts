@@ -151,14 +151,14 @@ router.get('/transactions', async (req: AuthedRequest, res) => {
       ? `SELECT t.*, a.name AS account_name, h.name AS btc_holding_name
      FROM transactions t
      LEFT JOIN bank_accounts a ON a.id = t.account_id
-     LEFT JOIN holdings h ON h.id = t.btc_holding_id
+     LEFT JOIN holdings h ON h.id = t.btc_holding_id AND h.user_id = t.user_id
      WHERE t.user_id = ? AND t.date >= ? AND t.date <= ?
      ORDER BY t.date DESC, t.created_at DESC
      LIMIT 1000`
       : `SELECT t.*, a.name AS account_name, h.name AS btc_holding_name
      FROM transactions t
      LEFT JOIN bank_accounts a ON a.id = t.account_id
-     LEFT JOIN holdings h ON h.id = t.btc_holding_id
+     LEFT JOIN holdings h ON h.id = t.btc_holding_id AND h.user_id = t.user_id
      WHERE t.user_id = ? AND t.date >= ?
      ORDER BY t.date DESC, t.created_at DESC
      LIMIT 1000`,
@@ -262,6 +262,7 @@ router.post('/transactions', async (req: AuthedRequest, res) => {
 
   // Apply BTC holding move before insert metadata (fail closed if quote missing)
   const btcResult = await applyBtcLink(db, {
+    userId,
     affectsBtc,
     amountNzd: amount,
     kind,
@@ -308,7 +309,7 @@ router.post('/transactions', async (req: AuthedRequest, res) => {
     `SELECT t.*, a.name AS account_name, h.name AS btc_holding_name
      FROM transactions t
      LEFT JOIN bank_accounts a ON a.id = t.account_id
-     LEFT JOIN holdings h ON h.id = t.btc_holding_id
+     LEFT JOIN holdings h ON h.id = t.btc_holding_id AND h.user_id = t.user_id
      WHERE t.id=?`,
     [id],
   )!;
@@ -459,8 +460,8 @@ router.patch('/transactions/:id', async (req: AuthedRequest, res) => {
   if (hasAffectsBtc || hasBtcHoldingId) {
     const fresh = queryOne(db, 'SELECT * FROM transactions WHERE id=? AND user_id=?', [id, userId])!;
     const prevMeta = readTxnBtcMeta(fresh);
-    reverseBtcDelta(db, prevMeta);
-    clearTxnBtcApplied(db, id);
+    reverseBtcDelta(db, prevMeta, userId);
+    clearTxnBtcApplied(db, id, userId);
 
     const nextAffects = hasAffectsBtc
       ? b.affectsBtc === true || b.affectsBtc === 1 || b.affectsBtc === '1'
@@ -472,6 +473,7 @@ router.patch('/transactions/:id', async (req: AuthedRequest, res) => {
       : prevMeta.btcHoldingId;
 
     const btcResult = await applyBtcLink(db, {
+      userId,
       affectsBtc: nextAffects,
       amountNzd: Number(fresh.amount),
       kind: String(fresh.kind ?? 'debit'),
@@ -479,11 +481,11 @@ router.patch('/transactions/:id', async (req: AuthedRequest, res) => {
     });
     if (!btcResult.ok) {
       // Put back the exact prior delta (do not re-quote)
-      restoreStoredBtcDelta(db, prevMeta);
-      writeTxnBtcColumns(db, id, prevMeta);
+      restoreStoredBtcDelta(db, prevMeta, userId);
+      writeTxnBtcColumns(db, id, prevMeta, userId);
       return res.status(btcResult.status).json({ ok: false, error: btcResult.error });
     }
-    writeTxnBtcColumns(db, id, btcResult.meta);
+    writeTxnBtcColumns(db, id, btcResult.meta, userId);
   }
 
   const row = queryOne(
@@ -491,7 +493,7 @@ router.patch('/transactions/:id', async (req: AuthedRequest, res) => {
     `SELECT t.*, a.name AS account_name, h.name AS btc_holding_name
      FROM transactions t
      LEFT JOIN bank_accounts a ON a.id = t.account_id
-     LEFT JOIN holdings h ON h.id = t.btc_holding_id
+     LEFT JOIN holdings h ON h.id = t.btc_holding_id AND h.user_id = t.user_id
      WHERE t.id=? AND t.user_id=?`,
     [id, userId],
   )!;
@@ -545,7 +547,7 @@ router.post('/transactions/:id/receipt', async (req: AuthedRequest, res) => {
     `SELECT t.*, a.name AS account_name, h.name AS btc_holding_name
      FROM transactions t
      LEFT JOIN bank_accounts a ON a.id = t.account_id
-     LEFT JOIN holdings h ON h.id = t.btc_holding_id
+     LEFT JOIN holdings h ON h.id = t.btc_holding_id AND h.user_id = t.user_id
      WHERE t.id=? AND t.user_id=?`,
     [id, userId],
   )!;
@@ -572,7 +574,7 @@ router.delete('/transactions/:id/receipt', async (req: AuthedRequest, res) => {
     `SELECT t.*, a.name AS account_name, h.name AS btc_holding_name
      FROM transactions t
      LEFT JOIN bank_accounts a ON a.id = t.account_id
-     LEFT JOIN holdings h ON h.id = t.btc_holding_id
+     LEFT JOIN holdings h ON h.id = t.btc_holding_id AND h.user_id = t.user_id
      WHERE t.id=? AND t.user_id=?`,
     [id, userId],
   )!;
@@ -604,7 +606,7 @@ router.delete('/transactions/:id', async (req: AuthedRequest, res) => {
   }
   const full = queryOne(db, 'SELECT * FROM transactions WHERE id=? AND user_id=?', [id, userId]);
   if (full) {
-    reverseBtcDelta(db, readTxnBtcMeta(full));
+    reverseBtcDelta(db, readTxnBtcMeta(full), userId);
     deleteCharityReceipt((full.receipt_path as string | null) ?? null);
   }
   run(db, 'DELETE FROM transactions WHERE id=? AND user_id=?', [id, userId]);

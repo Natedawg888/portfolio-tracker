@@ -17,6 +17,7 @@
     "test:onboarding": "node --import tsx server/auth/registerAkahuOnboarding.test.ts",
     "test:prod-routing": "node --import tsx scripts/verify-prod-routing.ts",
     "test:user-isolation": "node --import tsx scripts/verify-user-isolation.ts",
+    "test:isolation": "node --import tsx server/akahu/tokenCrypto.test.ts && node --import tsx server/security/dataClaim.test.ts && node --import tsx server/security/isolation.test.ts",
     "test:news": "node --import tsx server/news/sections.test.ts",
     "test:debts": "node --import tsx server/debts/model.test.ts && node --import tsx server/debts/store.test.ts",
     "test:dividends": "node --import tsx server/dividends/model.test.ts && node --import tsx server/quotes/yahooDividends.test.ts && node --import tsx server/dividends/store.test.ts && node --import tsx server/dividends/incomeSync.test.ts && node --import tsx server/payees/store.test.ts && node --import tsx server/kiwisaver/employeeRate.test.ts",
