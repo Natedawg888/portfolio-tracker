@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { Suspense, useEffect, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { applyTheme, resolveTheme, setTheme, type Theme } from '../lib/theme';
 import {
@@ -13,6 +13,7 @@ import { ProfileMenu } from './ProfileMenu';
 import { QuietToast } from './QuietToast';
 import { api } from '../api/client';
 import { metalProviderFooter } from '../lib/metalSpotCopy';
+import { prefetchNavTarget, schedulePrefetchAppRoutes } from '../lib/routePrefetch';
 
 /** Prefs that unlock at least one Value Search tool. */
 const VALUE_SEARCH_NAV_PREFS: AssetClassPrefKey[] = [
@@ -105,6 +106,8 @@ export function Layout({ children }: { children?: ReactNode }) {
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  useEffect(() => schedulePrefetchAppRoutes(), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -238,6 +241,9 @@ export function Layout({ children }: { children?: ReactNode }) {
               end={l.end}
               className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
               onClick={closeNav}
+              onMouseEnter={() => prefetchNavTarget(l.to)}
+              onFocus={() => prefetchNavTarget(l.to)}
+              onTouchStart={() => prefetchNavTarget(l.to)}
             >
               {l.label}
             </NavLink>
@@ -294,7 +300,9 @@ export function Layout({ children }: { children?: ReactNode }) {
       </header>
       <main className="app-main">
         <MoneyHiddenProvider>
-          {children ?? <Outlet />}
+          <Suspense fallback={<div className="panel"><p className="muted">Loading…</p></div>}>
+            {children ?? <Outlet />}
+          </Suspense>
         </MoneyHiddenProvider>
       </main>
       <QuietToast />

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, formatNzd } from '../api/client';
+import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import {
   calculatePaye,
   periodiseBreakdown,
@@ -12,6 +13,7 @@ import {
   mergePortfolioInvestingCredits,
   PAYE_TAX_YEAR_END,
   PAYE_TAX_YEAR_START,
+  type PortfolioIncomeLike,
 } from '../lib/payeInvestingFromPortfolio';
 import {
   loadPayePrefs,
@@ -184,9 +186,18 @@ export function Paye() {
   const [otherAnnual, setOtherAnnual] = useState(initial.otherAnnual);
 
   const [kiwiSaverOptIn, setKiwiSaverOptIn] = useState(initial.kiwiSaverOptIn);
-  const [ksRate, setKsRate] = useState(initial.ksRate);
-  const [ksCustom, setKsCustom] = useState(initial.ksCustom);
-  const [ksRateReady, setKsRateReady] = useState(false);
+  const [ksRate, setKsRate] = useState(() => {
+    const cached = readPageCache<{ employeeRatePct: number }>('paye:ks-rate');
+    return cached ? String(cached.employeeRatePct) : initial.ksRate;
+  });
+  const [ksCustom, setKsCustom] = useState(() => {
+    const cached = readPageCache<{ employeeRatePct: number }>('paye:ks-rate');
+    if (!cached) return initial.ksCustom;
+    return !KIWISAVER_EMPLOYEE_RATE_CHOICES.some((choice) => choice === cached.employeeRatePct);
+  });
+  const [ksRateReady, setKsRateReady] = useState(
+    () => readPageCache<{ employeeRatePct: number }>('paye:ks-rate') != null,
+  );
   const [ksEmployerRate, setKsEmployerRate] = useState(initial.ksEmployerRate);
   const [salarySacrifice, setSalarySacrifice] = useState(initial.salarySacrifice);
 
@@ -198,7 +209,11 @@ export function Paye() {
   const [charityDonationsAnnual, setCharityDonationsAnnual] = useState(
     initial.charityDonationsAnnual,
   );
-  const [extraCreditDrafts, setExtraCreditDrafts] = useState<CreditDraft[]>(initial.extraCredits);
+  const [extraCreditDrafts, setExtraCreditDrafts] = useState<CreditDraft[]>(() => {
+    const rows = readPageCache<PortfolioIncomeLike[]>('paye:income');
+    if (!rows) return initial.extraCredits;
+    return mergePortfolioInvestingCredits(initial.extraCredits, investingCreditsFromPortfolioIncome(rows));
+  });
   const [showSources, setShowSources] = useState(false);
 
   // Persist last inputs (incl. investing + charity credits) and re-apply on next load.
@@ -250,11 +265,13 @@ export function Paye() {
   // Saved employee rate for this account. The statutory minimum is the starting choice when none is saved.
   useEffect(() => {
     let cancelled = false;
+    const stamp = beginPageRead('paye:ks-rate');
     api.settings
       .getKiwiSaverEmployeeRate()
       .then((row) => {
         if (cancelled) return;
         const rate = row.employeeRatePct;
+        if (!commitPageRead(stamp, { employeeRatePct: rate })) return;
         const offered = KIWISAVER_EMPLOYEE_RATE_CHOICES.some((choice) => choice === rate);
         setKsRate(String(rate));
         setKsCustom(!offered);
@@ -284,10 +301,12 @@ export function Paye() {
   // Plain income without explicit credit wording → add nothing (never invent RWT).
   useEffect(() => {
     let cancelled = false;
+    const stamp = beginPageRead('paye:income');
     api.income
       .list({ from: PAYE_TAX_YEAR_START, to: PAYE_TAX_YEAR_END })
       .then((rows) => {
         if (cancelled) return;
+        if (!commitPageRead(stamp, rows)) return;
         const suggested = investingCreditsFromPortfolioIncome(rows);
         setExtraCreditDrafts((prev) => mergePortfolioInvestingCredits(prev, suggested));
       })

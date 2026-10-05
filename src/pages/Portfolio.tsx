@@ -3,6 +3,15 @@ import type { FormEvent, ReactNode } from 'react';
 import { api, formatNzd, formatAuckland } from '../api/client';
 import { maybeAutoSyncBankTransactions, maybeAutoSyncPortfolio } from '../lib/akahuTxnAutoSync';
 import { showQuietToast } from '../lib/quietToast';
+import {
+  beginPageRead,
+  commitPageRead,
+  invalidateAfterExternalSync,
+  invalidateFinancial,
+  portfolioSyncChanged,
+  readPageCache,
+  txnSyncChanged,
+} from '../lib/pageDataCache';
 import { AssetBreakdownChart, type AssetBreakdownRow } from '../components/AssetBreakdownChart';
 import { HoldingPriceChart } from '../components/HoldingPriceChart';
 import {
@@ -1929,10 +1938,18 @@ type PortfolioNetWorth = {
   metalsSpotSource?: MetalSpotSource | null;
 };
 
+type PortfolioBundle = { holdings: Holding[]; summary: PortfolioNetWorth };
+
+const PORTFOLIO_KEY = 'portfolio';
+const PORTFOLIO_GM = 'portfolio:gomining';
+const PORTFOLIO_METALS = 'portfolio:metals';
+
 export function Portfolio() {
   const { enabled: assetEnabled } = useAssetClassPrefs();
-  const [holdings, setHoldings] = useState<Holding[]>([]);
-  const [summary, setSummary] = useState<PortfolioNetWorth | null>(null);
+  const initialPortfolio = readPageCache<PortfolioBundle>(PORTFOLIO_KEY);
+  const initialGm = readPageCache<GominingUiSettings>(PORTFOLIO_GM);
+  const [holdings, setHoldings] = useState<Holding[]>(initialPortfolio?.holdings ?? []);
+  const [summary, setSummary] = useState<PortfolioNetWorth | null>(initialPortfolio?.summary ?? null);
   const [form, setForm] = useState(emptyMiner);
   const [cryptoForm, setCryptoForm] = useState(emptyCrypto);
   const [stockForm, setStockForm] = useState(emptyStock);
@@ -1966,18 +1983,28 @@ export function Portfolio() {
     note: string | null;
     failures: Array<{ minerName: string; ee: string; reason: string }>;
   } | null>(null);
-  const [metalsConfigured, setMetalsConfigured] = useState<boolean | null>(null);
+  const [metalsConfigured, setMetalsConfigured] = useState<boolean | null>(
+    () => readPageCache<boolean>(PORTFOLIO_METALS) ?? null,
+  );
   const [refreshingMetals, setRefreshingMetals] = useState(false);
   const [refreshingForex, setRefreshingForex] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [gmSettings, setGmSettings] = useState<GominingUiSettings>(emptyGmSettings);
+  const [gmSettings, setGmSettings] = useState<GominingUiSettings>(
+    initialGm ? { ...initialGm, fxLoading: false } : emptyGmSettings,
+  );
   const [savingGm, setSavingGm] = useState(false);
 
   const load = useCallback(() => {
+    const stamp = beginPageRead(PORTFOLIO_KEY);
     return Promise.all([api.holdings.list(), api.netWorth()])
       .then(([h, net]) => {
-        setHoldings(h as Holding[]);
-        setSummary(net as PortfolioNetWorth);
+        const bundle: PortfolioBundle = {
+          holdings: h as Holding[],
+          summary: net as PortfolioNetWorth,
+        };
+        if (!commitPageRead(stamp, bundle)) return;
+        setHoldings(bundle.holdings);
+        setSummary(bundle.summary);
         setError(null);
       })
       .catch((e: Error) => {
@@ -1992,8 +2019,16 @@ export function Portfolio() {
       });
   }, []);
 
+  const reloadAfterEdit = useCallback(() => {
+    invalidateFinancial('portfolio', 'dashboard', 'yearly', 'dividends');
+    return load();
+  }, [load]);
+
   const loadGmSettings = () => {
-    setGmSettings((prev) => ({ ...prev, fxLoading: true }));
+    const stamp = beginPageRead(PORTFOLIO_GM);
+    if (readPageCache<GominingUiSettings>(PORTFOLIO_GM) == null) {
+      setGmSettings((prev) => ({ ...prev, fxLoading: true }));
+    }
     return api.settings
       .getGomining()
       .then((g) => {
@@ -2010,22 +2045,27 @@ export function Portfolio() {
         const fxRaw = raw.fx ?? null;
         const incomeRaw = raw.income ?? null;
         const networkLive = raw.networkHashrate ?? null;
-        setGmSettings((prev) => ({
-          discountPct: g.discountPct ?? 0,
-          btcUsd: g.btcUsd != null ? String(g.btcUsd) : '',
-          networkHashrateEhs:
-            g.networkHashrateEhs != null ? String(g.networkHashrateEhs) : '',
-          dailyBtcIssuance:
-            g.dailyBtcIssuance != null ? String(g.dailyBtcIssuance) : '',
-          kWhCostUsd: g.kWhCostUsd != null ? String(g.kWhCostUsd) : '',
-          note: g.defaults?.note ?? '',
-          fx: fxRaw,
-          income: incomeRaw,
-          networkLive,
-          effectiveNetworkEhs: raw.effective?.networkHashrateEhs ?? null,
-          fxLoading: false,
-          displayCurrency: prev.displayCurrency ?? 'ALL',
-        }));
+        let nextSettings: GominingUiSettings | null = null;
+        setGmSettings((prev) => {
+          nextSettings = {
+            discountPct: g.discountPct ?? 0,
+            btcUsd: g.btcUsd != null ? String(g.btcUsd) : '',
+            networkHashrateEhs:
+              g.networkHashrateEhs != null ? String(g.networkHashrateEhs) : '',
+            dailyBtcIssuance:
+              g.dailyBtcIssuance != null ? String(g.dailyBtcIssuance) : '',
+            kWhCostUsd: g.kWhCostUsd != null ? String(g.kWhCostUsd) : '',
+            note: g.defaults?.note ?? '',
+            fx: fxRaw,
+            income: incomeRaw,
+            networkLive,
+            effectiveNetworkEhs: raw.effective?.networkHashrateEhs ?? null,
+            fxLoading: false,
+            displayCurrency: prev.displayCurrency ?? 'ALL',
+          };
+          return nextSettings;
+        });
+        if (nextSettings) commitPageRead(stamp, nextSettings);
       })
       .catch((e: Error) => {
         setGmSettings((prev) => ({ ...prev, fxLoading: false }));
@@ -2036,10 +2076,16 @@ export function Portfolio() {
   useEffect(() => {
     load();
     loadGmSettings();
+    const metalStamp = beginPageRead(PORTFOLIO_METALS);
     api.quotes
       .metalsStatus()
-      .then((s) => setMetalsConfigured(s.configured))
-      .catch(() => setMetalsConfigured(false));
+      .then((s) => {
+        if (!commitPageRead(metalStamp, s.configured)) return;
+        setMetalsConfigured(s.configured);
+      })
+      .catch(() => {
+        if (readPageCache<boolean>(PORTFOLIO_METALS) == null) setMetalsConfigured(false);
+      });
   }, [load]);
 
   // Silent background Akahu auto-sync on open / refresh (banks + holdings).
@@ -2051,11 +2097,17 @@ export function Portfolio() {
     let cancelled = false;
     (async () => {
       try {
-        await Promise.all([
+        const [txn, port] = await Promise.all([
           maybeAutoSyncBankTransactions(),
           maybeAutoSyncPortfolio(),
         ]);
         if (cancelled) return;
+        if (
+          (txn.ran && txn.result.ok && txnSyncChanged(txn.result)) ||
+          (port.ran && port.result.ok && portfolioSyncChanged(port.result))
+        ) {
+          invalidateAfterExternalSync();
+        }
         await portfolioLoadRef.current();
       } catch {
         showQuietToast('Sync paused — showing last holdings.', { kind: 'warn' });
@@ -2092,22 +2144,27 @@ export function Portfolio() {
         defaults?: { note?: string };
       };
       const fxRaw = raw.fx ?? null;
-      setGmSettings((prev) => ({
-        discountPct: g.discountPct ?? 0,
-        btcUsd: g.btcUsd != null ? String(g.btcUsd) : '',
-        networkHashrateEhs:
-          g.networkHashrateEhs != null ? String(g.networkHashrateEhs) : '',
-        dailyBtcIssuance:
-          g.dailyBtcIssuance != null ? String(g.dailyBtcIssuance) : '',
-        kWhCostUsd: g.kWhCostUsd != null ? String(g.kWhCostUsd) : '',
-        note: raw.defaults?.note ?? prev.note,
-        fx: fxRaw,
-        income: raw.income ?? null,
-        networkLive: raw.networkHashrate ?? null,
-        effectiveNetworkEhs: raw.effective?.networkHashrateEhs ?? null,
-        fxLoading: false,
-        displayCurrency: prev.displayCurrency,
-      }));
+      let nextSettings: GominingUiSettings | null = null;
+      setGmSettings((prev) => {
+        nextSettings = {
+          discountPct: g.discountPct ?? 0,
+          btcUsd: g.btcUsd != null ? String(g.btcUsd) : '',
+          networkHashrateEhs:
+            g.networkHashrateEhs != null ? String(g.networkHashrateEhs) : '',
+          dailyBtcIssuance:
+            g.dailyBtcIssuance != null ? String(g.dailyBtcIssuance) : '',
+          kWhCostUsd: g.kWhCostUsd != null ? String(g.kWhCostUsd) : '',
+          note: raw.defaults?.note ?? prev.note,
+          fx: fxRaw,
+          income: raw.income ?? null,
+          networkLive: raw.networkHashrate ?? null,
+          effectiveNetworkEhs: raw.effective?.networkHashrateEhs ?? null,
+          fxLoading: false,
+          displayCurrency: prev.displayCurrency,
+        };
+        return nextSettings;
+      });
+      if (nextSettings) commitPageRead(beginPageRead(PORTFOLIO_GM), nextSettings);
       setMsg('GoMining discount / network params saved.');
     } catch (err) {
       setMsg((err as Error).message);
@@ -2152,7 +2209,7 @@ export function Portfolio() {
           ? 'Forex amount updated.'
           : 'Crypto amount updated.',
     );
-    await load();
+    await reloadAfterEdit();
   }
 
   async function deleteHolding(id: string) {
@@ -2176,7 +2233,7 @@ export function Portfolio() {
     try {
       await api.holdings.remove(id);
       setMsg(`Deleted ${label}.`);
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     }
@@ -2288,7 +2345,7 @@ export function Portfolio() {
         ? 'Miner TH / EE / Est. NZD updated.'
         : 'Miner TH / EE updated.',
     );
-    await load();
+    await reloadAfterEdit();
   }
 
   async function onAddMiner(e: FormEvent) {
@@ -2312,7 +2369,7 @@ export function Portfolio() {
       });
       setForm(emptyMiner);
       setMsg('Miner added.');
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     }
@@ -2348,7 +2405,7 @@ export function Portfolio() {
           ? `Merged into existing ${name} (${ticker}): amount + cost basis updated (weighted NZD).`
           : `Added ${name} (${ticker}).`,
       );
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     }
@@ -2383,7 +2440,7 @@ export function Portfolio() {
           ? `Merged into existing ${name} (${ticker}): shares + cost basis updated (weighted NZD).`
           : `Added ${name} (${ticker}).`,
       );
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     }
@@ -2407,7 +2464,7 @@ export function Portfolio() {
       });
       setMetalForm(emptyMetal);
       setMsg(`Added ${name}.`);
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     }
@@ -2442,7 +2499,7 @@ export function Portfolio() {
       });
       setForexForm(emptyForex);
       setMsg(`Added ${currency} (${source}) · Frankfurter → NZD on create.`);
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     }
@@ -2499,7 +2556,7 @@ export function Portfolio() {
           ? `Added ${name} — OpenFacet diamond quote (or manual fallback if live failed).`
           : `Added ${name} — manual estimated NZD (no live gem API).`,
       );
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     }
@@ -2520,7 +2577,7 @@ export function Portfolio() {
             ? ` · holding ${formatNzd(r.marketValueNzd)}`
             : ''),
       );
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     }
@@ -2570,7 +2627,7 @@ export function Portfolio() {
           failSummary +
           (r.note ? ` · ${r.note}` : ''),
       );
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     } finally {
@@ -2601,7 +2658,7 @@ export function Portfolio() {
       });
       setRealEstateForm(emptyRealEstate);
       setMsg('Real estate added (manual value − mortgage = equity on Dashboard)');
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     }
@@ -2695,7 +2752,7 @@ export function Portfolio() {
         setMsg('Physical art added (appraisal + optional photo — never invent values)');
       }
       setArtForm(emptyArt);
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     }
@@ -2714,7 +2771,7 @@ export function Portfolio() {
     setMsg(null);
     await api.holdings.update(id, patch);
     setMsg('Art valuation updated (manual — never invent)');
-    await load();
+    await reloadAfterEdit();
   }
 
   async function refreshMetalsAll() {
@@ -2734,7 +2791,7 @@ export function Portfolio() {
             ? `gold-api.com: ${ok}/${r.quotes.length} NZD spots refreshed · reload holdings`
             : 'gold-api.com returned no NZD spots. Metal value stays cost / —. Not inventing prices.',
       );
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     } finally {
@@ -2751,7 +2808,7 @@ export function Portfolio() {
         `Forex FX: ${r.appliedCount}/${r.totalCurrencies} currencies refreshed via Frankfurter → NZD` +
           (r.failedCount ? ` · ${r.failedCount} unavailable (never invent)` : ''),
       );
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     } finally {
@@ -3444,7 +3501,7 @@ export function Portfolio() {
 {assetEnabled('collectable') ? (
       <CollectablesPanel
         holdings={grouped.collectables}
-        onChanged={load}
+        onChanged={reloadAfterEdit}
         onBanner={setMsg}
         renderCard={(h) => (
           <HoldingCard

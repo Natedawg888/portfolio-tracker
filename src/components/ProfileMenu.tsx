@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { prefetchNavTarget } from '../lib/routePrefetch';
 import { useAuth } from '../auth/AuthContext';
 
 function initials(email: string, displayName: string | null): string {
@@ -87,6 +88,9 @@ export function ProfileMenu({ triggerClassName }: { triggerClassName?: string })
             role="menuitem"
             className="profile-menu-item"
             onClick={() => setOpen(false)}
+            onMouseEnter={() => prefetchNavTarget('/settings')}
+            onFocus={() => prefetchNavTarget('/settings')}
+            onTouchStart={() => prefetchNavTarget('/settings')}
           >
             Settings
           </Link>

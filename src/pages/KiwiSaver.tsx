@@ -2,7 +2,7 @@
  * KiwiSaver — Sharesies via Akahu + bank-held manual/CSV.
  * Honest labels (Akahu vs Manual). Never scrape. Never invent balances.
  */
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api, formatNzd, formatAuckland } from '../api/client';
 import { akahuStatus } from '../api/akahuClient';
 import {
@@ -10,6 +10,14 @@ import {
   maybeAutoSyncPortfolio,
 } from '../lib/akahuTxnAutoSync';
 import { showQuietToast } from '../lib/quietToast';
+import {
+  beginPageRead,
+  commitPageRead,
+  invalidateAfterExternalSync,
+  invalidateFinancial,
+  portfolioSyncChanged,
+  readPageCache,
+} from '../lib/pageDataCache';
 import { AssetLineChart, type LineSeries } from '../components/AssetLineChart';
 import type {
   KiwiSaverAccount,
@@ -224,44 +232,73 @@ function AccountSummaryCard({
   );
 }
 
+type KiwiSaverBundle = {
+  accounts: KiwiSaverAccount[];
+  selectedId: string | null;
+  history: KiwiSaverHistoryResponse | null;
+  akahuConfigured: boolean | null;
+};
+
+const KIWISAVER_KEY = 'kiwisaver';
+
 export function KiwiSaver() {
-  const [accounts, setAccounts] = useState<KiwiSaverAccount[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [history, setHistory] = useState<KiwiSaverHistoryResponse | null>(null);
+  const initialKs = readPageCache<KiwiSaverBundle>(KIWISAVER_KEY);
+  const [accounts, setAccounts] = useState<KiwiSaverAccount[]>(initialKs?.accounts ?? []);
+  const [selectedId, setSelectedId] = useState<string | null>(initialKs?.selectedId ?? null);
+  const [history, setHistory] = useState<KiwiSaverHistoryResponse | null>(initialKs?.history ?? null);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [akahuConfigured, setAkahuConfigured] = useState<boolean | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [akahuConfigured, setAkahuConfigured] = useState<boolean | null>(initialKs?.akahuConfigured ?? null);
+  const [loading, setLoading] = useState(initialKs == null);
+  const akahuRef = useRef(initialKs?.akahuConfigured ?? null);
+  akahuRef.current = akahuConfigured;
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<ManualForm>(emptyForm);
   const [csvText, setCsvText] = useState('');
   const [csvFileName, setCsvFileName] = useState<string | null>(null);
 
   const load = useCallback(async (preferAccountId?: string | null) => {
+    const stamp = beginPageRead(KIWISAVER_KEY);
     const list = (await api.kiwisaver.list()) as KiwiSaverAccount[];
-    setAccounts(list);
     const pick =
       (preferAccountId && list.find((a) => a.id === preferAccountId)?.id) ||
       selectedId && list.find((a) => a.id === selectedId)?.id ||
       list.find((a) => isAkahuAccount(a))?.id ||
       list[0]?.id ||
       null;
-    setSelectedId(pick);
     const hist = (await api.kiwisaver.history(pick ?? undefined)) as KiwiSaverHistoryResponse;
+    const bundle: KiwiSaverBundle = {
+      accounts: list,
+      selectedId: pick,
+      history: hist,
+      akahuConfigured: akahuRef.current,
+    };
+    if (!commitPageRead(stamp, bundle)) return;
+    setAccounts(list);
+    setSelectedId(pick);
     setHistory(hist);
   }, [selectedId]);
+
+  const reloadAfterEdit = useCallback(async (preferAccountId?: string | null) => {
+    invalidateFinancial('kiwisaver', 'dashboard');
+    await load(preferAccountId);
+  }, [load]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      setLoading(true);
+      if (readPageCache<KiwiSaverBundle>(KIWISAVER_KEY) == null) setLoading(true);
       setError(null);
       try {
         const st = await akahuStatus().catch(() => ({ configured: false }));
+        akahuRef.current = st.configured;
         if (!cancelled) setAkahuConfigured(st.configured);
 
         try {
           const outcome = await maybeAutoSyncPortfolio();
+          if (!cancelled && outcome.ran && outcome.result.ok && portfolioSyncChanged(outcome.result)) {
+            invalidateAfterExternalSync();
+          }
           if (!cancelled && outcome.ran) {
             if (outcome.result.ok) {
               setMsg(formatPortfolioSyncMsg(outcome.result));
@@ -302,8 +339,16 @@ export function KiwiSaver() {
 
   async function selectAccount(id: string) {
     setSelectedId(id);
+    const stamp = beginPageRead(KIWISAVER_KEY);
     try {
       const hist = (await api.kiwisaver.history(id)) as KiwiSaverHistoryResponse;
+      const bundle: KiwiSaverBundle = {
+        accounts,
+        selectedId: id,
+        history: hist,
+        akahuConfigured: akahuRef.current,
+      };
+      if (!commitPageRead(stamp, bundle)) return;
       setHistory(hist);
     } catch (e) {
       setMsg((e as Error).message);
@@ -374,11 +419,11 @@ export function KiwiSaver() {
       if (form.id) {
         await api.kiwisaver.update(form.id, body);
         setMsg(`Updated manual bank KiwiSaver: ${body.name}`);
-        await load(form.id);
+        await reloadAfterEdit(form.id);
       } else {
         const created = (await api.kiwisaver.create(body)) as KiwiSaverAccount;
         setMsg(`Added manual bank KiwiSaver: ${created.name}`);
-        await load(created.id);
+        await reloadAfterEdit(created.id);
       }
       setForm(emptyForm());
     } catch (err) {
@@ -395,7 +440,7 @@ export function KiwiSaver() {
       await api.kiwisaver.remove(id);
       setMsg(`Deleted ${name}`);
       if (form.id === id) setForm(emptyForm());
-      await load(null);
+      await reloadAfterEdit(null);
     } catch (e) {
       setMsg((e as Error).message);
     }
@@ -427,7 +472,7 @@ export function KiwiSaver() {
         );
         setCsvText('');
         setCsvFileName(null);
-        await load(r.accountIds?.[0] ?? null);
+        await reloadAfterEdit(r.accountIds?.[0] ?? null);
       }
     } catch (err) {
       setMsg((err as Error).message);

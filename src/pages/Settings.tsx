@@ -30,6 +30,15 @@ import {
   type CategoryType,
 } from '../lib/categoryTypes';
 import { CategoryTypeToggle } from '../components/CategoryTypeToggle';
+import {
+  beginPageRead,
+  commitPageRead,
+  invalidateAfterExternalSync,
+  invalidateFinancial,
+  portfolioSyncChanged,
+  readPageCache,
+  txnSyncChanged,
+} from '../lib/pageDataCache';
 
 type SettingsTab = 'account' | 'categories';
 
@@ -539,13 +548,19 @@ function CategoriesPanel({
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const [akahu, setAkahu] = useState<AkahuConnectionStatus | null>(null);
+  const [akahu, setAkahu] = useState<AkahuConnectionStatus | null>(
+    () => readPageCache<AkahuConnectionStatus>('settings:akahu') ?? null,
+  );
   const [akahuBusy, setAkahuBusy] = useState(false);
   const [akahuMsg, setAkahuMsg] = useState<string | null>(null);
   const [akahuError, setAkahuError] = useState<string | null>(null);
-  const [institutions, setInstitutions] = useState<AkahuInstitution[]>([]);
+  const [institutions, setInstitutions] = useState<AkahuInstitution[]>(
+    () => readPageCache<AkahuConnectionStatus>('settings:akahu')?.institutions ?? [],
+  );
 
-  const [categories, setCategories] = useState<TxCategory[]>([]);
+  const [categories, setCategories] = useState<TxCategory[]>(
+    () => readPageCache<TxCategory[]>('categories') ?? [],
+  );
   const [catBusy, setCatBusy] = useState(false);
   const [catMsg, setCatMsg] = useState<string | null>(null);
   const [catError, setCatError] = useState<string | null>(null);
@@ -565,8 +580,10 @@ function CategoriesPanel({
   }, [refresh]);
 
   const loadCategories = useCallback(async () => {
+    const stamp = beginPageRead('categories');
     try {
       const rows = await api.budgets.categories();
+      if (!commitPageRead(stamp, rows)) return;
       setCategories(rows);
     } catch (err) {
       setCatError(err instanceof ApiError ? err.message : 'Could not load categories');
@@ -578,8 +595,10 @@ function CategoriesPanel({
   }, [loadCategories]);
 
   const loadAkahu = useCallback(async () => {
+    const stamp = beginPageRead('settings:akahu');
     try {
       const st = await akahuStatus();
+      if (!commitPageRead(stamp, st)) return;
       setAkahu(st);
       setInstitutions(st.institutions ?? []);
     } catch (err) {
@@ -656,6 +675,7 @@ function CategoriesPanel({
       setNewCatName('');
       setNewCatType('spending');
       setCatMsg(`Added “${name}” (${CATEGORY_TYPE_LABELS[createdType].toLowerCase()}).`);
+      invalidateFinancial('categories', 'spending');
       await loadCategories();
     } catch (err) {
       setCatError(err instanceof ApiError ? err.message : 'Could not add category');
@@ -678,6 +698,7 @@ function CategoriesPanel({
     try {
       await api.budgets.deleteCategory(cat.id);
       setCatMsg(`Removed “${cat.name}”.`);
+      invalidateFinancial('categories', 'spending', 'dashboard');
       await loadCategories();
     } catch (err) {
       setCatError(err instanceof ApiError ? err.message : 'Could not remove category');
@@ -744,6 +765,7 @@ function CategoriesPanel({
     try {
       const portfolio = await akahuSync();
       const txns = await akahuSyncTransactions();
+      if (portfolioSyncChanged(portfolio) || txnSyncChanged(txns)) invalidateAfterExternalSync();
       setAkahuMsg(
         `Synced: ${portfolio.cashAccountsUpserted ?? 0} cash, ` +
           `${portfolio.stocksUpserted ?? 0} stocks, ${portfolio.cryptoUpserted ?? 0} crypto, ` +

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, formatAuckland } from '../api/client';
+import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import type { PhaseNewsGroup, PhaseNewsItem, PhaseNewsResponse } from '../types/economy';
 
 function itemMeta(item: PhaseNewsItem): string {
@@ -16,16 +17,23 @@ function groupIntro(group: PhaseNewsGroup): string {
   return 'Google News search results. Each headline and summary is taken from the feed.';
 }
 
+function newsKey(phase: string | null, country: string): string {
+  return `news:${country}:${phase ?? 'none'}`;
+}
+
 export function PhaseNews({ phase, country }: { phase: string | null; country: string }) {
-  const [data, setData] = useState<PhaseNewsResponse | null>(null);
+  const initialNews = readPageCache<PhaseNewsResponse>(newsKey(phase, country));
+  const [data, setData] = useState<PhaseNewsResponse | null>(initialNews ?? null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initialNews == null);
 
   const load = useCallback(
     (refresh = false) => {
+      const stamp = beginPageRead(newsKey(phase, country));
       return api.economy
         .news({ phase, country, refresh })
         .then((payload) => {
+          if (!commitPageRead(stamp, payload)) return;
           setData(payload);
           setError(null);
         })

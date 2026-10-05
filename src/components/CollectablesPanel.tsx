@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { api, formatNzd } from '../api/client';
+import { commitPageRead, beginPageRead, readPageCache } from '../lib/pageDataCache';
 import type { MtgColour } from '../types';
 import {
   COLLECTABLE_PRESETS,
@@ -85,10 +86,15 @@ type Props = {
   onBanner?: (msg: string | null) => void;
 };
 
+const COLLECTABLE_TYPES_KEY = 'collectable-types';
+
+type CollectableTypeCache = { types: CollectableTypeDef[]; presets: CollectableTypeDef[] };
+
 export function CollectablesPanel({ holdings, onChanged, renderCard, onBanner }: Props) {
-  const [types, setTypes] = useState<CollectableTypeDef[]>([]);
-  const [presets, setPresets] = useState<CollectableTypeDef[]>(COLLECTABLE_PRESETS);
-  const [typesLoaded, setTypesLoaded] = useState(false);
+  const initialTypes = readPageCache<CollectableTypeCache>(COLLECTABLE_TYPES_KEY);
+  const [types, setTypes] = useState<CollectableTypeDef[]>(initialTypes?.types ?? []);
+  const [presets, setPresets] = useState<CollectableTypeDef[]>(initialTypes?.presets ?? COLLECTABLE_PRESETS);
+  const [typesLoaded, setTypesLoaded] = useState(initialTypes != null);
   const [openTypeId, setOpenTypeId] = useState<string | null>(null);
   const [mtgColourFilters, setMtgColourFilters] = useState<Set<MtgColourFilter>>(() => new Set());
   const [mtgRarityFilters, setMtgRarityFilters] = useState<Set<MtgRarityFilter>>(() => new Set());
@@ -131,13 +137,21 @@ export function CollectablesPanel({ holdings, onChanged, renderCard, onBanner }:
   const openItems = openDef?.kind === 'mtg' ? filteredMtg : openRawItems;
 
   useEffect(() => {
+    if (!typesLoaded) return;
+    commitPageRead(beginPageRead(COLLECTABLE_TYPES_KEY), { types, presets });
+  }, [presets, types, typesLoaded]);
+
+  useEffect(() => {
     let cancelled = false;
+    const stamp = beginPageRead(COLLECTABLE_TYPES_KEY);
     (async () => {
       try {
         const r = await api.settings.getCollectableTypes();
         if (cancelled) return;
-        setPresets(r.presets?.length ? r.presets : COLLECTABLE_PRESETS);
+        const nextPresets = r.presets?.length ? r.presets : COLLECTABLE_PRESETS;
+        setPresets(nextPresets);
         if (r.types.length > 0) {
+          commitPageRead(stamp, { types: r.types, presets: nextPresets });
           setTypes(r.types);
         } else {
           // Bootstrap from holdings only — do not force MTG/Pokémon/figurines.

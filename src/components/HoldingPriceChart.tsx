@@ -4,6 +4,7 @@
  */
 import { useEffect, useId, useState } from 'react';
 import { api, formatNzd } from '../api/client';
+import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 
 export type ChartRange = '1d' | '5d' | '1m' | '1y';
 
@@ -45,17 +46,41 @@ function compactPrice(n: number): string {
   return n.toFixed(4);
 }
 
+function chartKey(props: Props, range: ChartRange): string {
+  if (props.assetClass === 'metal') return `chart:metal:${props.metal}:${range}`;
+  if (props.assetClass === 'crypto') return `chart:crypto:${props.ticker}:${range}`;
+  return `chart:stock:${props.ticker}:${props.exchange ?? ''}:${range}`;
+}
+
 export function HoldingPriceChart(props: Props) {
   const [range, setRange] = useState<ChartRange>('1m');
-  const [data, setData] = useState<HistoryPayload | null>(null);
-  const [loading, setLoading] = useState(true);
+  const initialChart = readPageCache<HistoryPayload>(chartKey(props, '1m'));
+  const [data, setData] = useState<HistoryPayload | null>(initialChart ?? null);
+  const [loading, setLoading] = useState(initialChart == null);
   const [error, setError] = useState<string | null>(null);
   const gradId = useId().replace(/:/g, '');
+  const activeKey = chartKey(props, range);
+  const [seenKey, setSeenKey] = useState(activeKey);
+  if (seenKey !== activeKey) {
+    setSeenKey(activeKey);
+    const next = readPageCache<HistoryPayload>(activeKey);
+    if (next) {
+      setData(next);
+      setLoading(false);
+      setError(null);
+    } else {
+      setLoading(true);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
+    const stamp = beginPageRead(activeKey);
+    const cached = readPageCache<HistoryPayload>(activeKey);
+    if (!cached) {
+      setLoading(true);
+      setError(null);
+    }
     const params =
       props.assetClass === 'crypto'
         ? { assetClass: 'crypto' as const, ticker: props.ticker, range }
@@ -70,17 +95,17 @@ export function HoldingPriceChart(props: Props) {
     api.quotes
       .history(params)
       .then((r) => {
-        if (!cancelled) {
-          setData(r as HistoryPayload);
-          setLoading(false);
-        }
+        if (cancelled) return;
+        if (!commitPageRead(stamp, r as HistoryPayload)) return;
+        setData(r as HistoryPayload);
+        setLoading(false);
       })
       .catch((e: Error) => {
-        if (!cancelled) {
-          setError(e.message);
-          setData(null);
-          setLoading(false);
-        }
+        if (cancelled) return;
+        setLoading(false);
+        if (cached) return;
+        setError(e.message);
+        setData(null);
       });
     return () => {
       cancelled = true;
@@ -93,7 +118,8 @@ export function HoldingPriceChart(props: Props) {
     props.assetClass === 'stock' ? props.exchange ?? '' : '',
   ]);
 
-  const points = data?.status === 'ok' ? data.points : [];
+  const visible = data && data.range === range ? data : null;
+  const points = visible?.status === 'ok' ? visible.points : [];
   const first = points[0]?.price;
   const last = points[points.length - 1]?.price;
   const delta =
@@ -156,21 +182,21 @@ export function HoldingPriceChart(props: Props) {
         </p>
       )}
 
-      {!loading && !error && data?.status !== 'ok' && (
+      {!loading && !error && visible != null && visible.status !== 'ok' && (
         <p
           className="muted small holding-price-chart-status"
-          title={data?.message ?? 'unavailable'}
+          title={visible.message ?? 'unavailable'}
         >
-          {data?.message?.slice(0, 80) ?? 'History unavailable'}
-          {(data?.message?.length ?? 0) > 80 ? '…' : ''}
+          {visible.message?.slice(0, 80) ?? 'History unavailable'}
+          {(visible.message?.length ?? 0) > 80 ? '…' : ''}
         </p>
       )}
 
-      {!loading && !error && data?.status === 'ok' && points.length === 0 && (
+      {!loading && !error && visible?.status === 'ok' && points.length === 0 && (
         <p className="muted small holding-price-chart-status">No history points</p>
       )}
 
-      {!loading && !error && data?.status === 'ok' && points.length > 0 && (
+      {!loading && !error && visible?.status === 'ok' && points.length > 0 && (
         <>
           <svg
             className="holding-price-chart-svg"
@@ -206,11 +232,11 @@ export function HoldingPriceChart(props: Props) {
             )}
           </svg>
           <div className="holding-price-chart-footer">
-            <span className="muted small" title={data.message ?? data.source}>
+            <span className="muted small" title={visible?.message ?? visible?.source ?? ''}>
               {compactPrice(last!)} NZD
-              {data.unit === 'oz_t' ? '/oz t' : data.unit === 'share' ? '/sh' : ''}
+              {visible?.unit === 'oz_t' ? '/oz t' : visible?.unit === 'share' ? '/sh' : ''}
               {' · '}
-              {data.source.split('+')[0]}
+              {(visible?.source ?? '').split('+')[0]}
             </span>
             {delta != null && (
               <span className={up ? 'return-pos small' : 'return-neg small'}>
