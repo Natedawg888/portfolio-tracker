@@ -302,7 +302,7 @@ export function YearlyReport() {
         <h2 className="page-title">History</h2>
         <p className="page-lead">
           Net-worth growth and per-asset lines from <strong>valuation_snapshots</strong> only.
-          Toggle <strong>by day</strong> / <strong>by month</strong> — empty buckets stay empty
+          Toggle <strong>by day</strong> / <strong>by month</strong> — empty buckets stay empty{' '}
           (last real snapshot in each bucket). Never invents points. Take a snapshot to start a
           series for {year}.
         </p>
@@ -445,7 +445,7 @@ export function YearlyReport() {
         <h3>Debt · {year}</h3>
         <p className="muted small">
           Current outstanding from live debt balances (not invented). Year repaid from recorded
-          repayment history dated in {year}. New snapshots store debt outstanding in breakdown
+          repayment history dated in {year}. New snapshots store debt outstanding in breakdown{' '}
           (class key <code>debt</code>) so net worth lines already subtract liabilities; day/month
           repayment series below still use repayment dates only.
         </p>
@@ -557,7 +557,7 @@ export function YearlyReport() {
           debtSummary.personCount === 0 &&
           debtRepayments.length === 0 && (
             <p className="muted" style={{ marginTop: '0.75rem' }}>
-              No debt creditors or repayments yet. Add them under Spending → I owe.
+              No debt creditors or repayments yet. Add them under Debts.
             </p>
           )}
       </section>

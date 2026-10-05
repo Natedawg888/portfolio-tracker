@@ -247,7 +247,7 @@ export function Paye() {
     extraCreditDrafts,
   ]);
 
-  // Saved employee rate for this account. 3% is the starting choice when none is saved.
+  // Saved employee rate for this account. The statutory minimum is the starting choice when none is saved.
   useEffect(() => {
     let cancelled = false;
     api.settings
@@ -513,7 +513,7 @@ export function Paye() {
               />
               <span className="muted small">
                 Statutory minimum {KIWISAVER_EMPLOYER_MIN_RATE}% from 1 Apr 2026 (not deducted from
-                take-home unless salary sacrifice). Your employee rate is saved for this account.
+                take-home unless salary sacrifice). Your employee rate is saved for this account.{' '}
                 {KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE}% is the starting choice. The contribution
                 is the gross pay you enter times that rate. Not advice.
               </span>
@@ -648,7 +648,7 @@ export function Paye() {
         </div>
         <p className="muted small" style={{ marginTop: '0.35rem' }}>
           IRD has <strong>no payday PAYE “investing credit”</strong> field. Imputation, RWT, PIE,
-          and foreign tax credits from investments offset tax on your <em>annual assessment</em>
+          and foreign tax credits from investments offset tax on your <em>annual assessment</em>{' '}
           (refund / less tax to pay). Enter annual NZD from statements or myIR — we do not invent
           amounts. Credits you apply are <strong>persisted</strong>; portfolio/income only
           auto-fills from savings interest or dividends only when a real income/transaction record
@@ -901,7 +901,7 @@ export function Paye() {
         </div>
         <p className="muted small" style={{ marginTop: '0.75rem' }}>
           ACC {(ACC_RATE * 100).toFixed(2)}% on liable earnings up to {money(ACC_MAX_EARNINGS)}{' '}
-          (max levy {money(ACC_MAX_LEVY)}). KiwiSaver employee rate saved for this account
+          (max levy {money(ACC_MAX_LEVY)}). KiwiSaver employee rate saved for this account{' '}
           (starting choice {KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE}%). Statutory rates from 1 April
           2026: {KIWISAVER_EMPLOYEE_RATES.map((r) => `${r}%`).join(', ')} (IRD minimum{' '}
           {KIWISAVER_DEFAULT_EMPLOYEE_RATE}%). Full notes in{' '}

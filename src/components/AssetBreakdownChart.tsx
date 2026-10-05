@@ -109,14 +109,16 @@ function BarChart({ rows, chartLabel }: { rows: AssetBreakdownRow[]; chartLabel:
   const n = Math.max(rows.length, 1);
   const chartW = 560;
   const topPad = 28;
-  const bottomPad = 52;
-  const leftPad = 8;
-  const rightPad = 8;
+  const longestLabel = rows.reduce((longest, row) => Math.max(longest, row.name.length), 0);
+  // Vertical labels need room for the full name. Cap very long creditor names.
+  const bottomPad = Math.max(56, Math.min(220, Math.min(longestLabel, 28) * 7 + 18));
+  const leftPad = 16;
+  const rightPad = 16;
   const plotH = 200;
   const chartH = topPad + plotH + bottomPad;
   const plotW = chartW - leftPad - rightPad;
   const slot = plotW / n;
-  const barW = Math.min(48, Math.max(18, slot * 0.55));
+  const barW = Math.min(48, Math.max(14, slot * 0.55));
   const baseline = topPad + plotH;
 
   return (
@@ -139,7 +141,9 @@ function BarChart({ rows, chartLabel }: { rows: AssetBreakdownRow[]; chartLabel:
         const cx = leftPad + slot * index + slot / 2;
         const x = cx - barW / 2;
         const y = baseline - height;
-        const label = truncate(row.name, 12);
+        const label = row.name.length > 28 ? `${row.name.slice(0, 27)}…` : row.name;
+        const labelY = baseline + 6;
+        const showValue = slot >= 36;
         return (
           <g key={row.key}>
             <title>{`${row.name}: ${formatNzd(row.value)}`}</title>
@@ -152,19 +156,22 @@ function BarChart({ rows, chartLabel }: { rows: AssetBreakdownRow[]; chartLabel:
               fill={row.colour}
               opacity={0.9}
             />
+            {showValue ? (
+              <text
+                x={cx}
+                y={Math.min(y - 8, baseline - 8)}
+                textAnchor="middle"
+                className="spend-svg-value"
+              >
+                {formatNzd(row.value)}
+              </text>
+            ) : null}
             <text
               x={cx}
-              y={y - 8}
-              textAnchor="middle"
-              className="spend-svg-value"
-            >
-              {formatNzd(row.value)}
-            </text>
-            <text
-              x={cx}
-              y={baseline + 16}
-              textAnchor="middle"
-              className="spend-svg-label"
+              y={labelY}
+              textAnchor="end"
+              transform={`rotate(-90 ${cx} ${labelY})`}
+              className="spend-svg-label asset-bar-label"
             >
               {label}
             </text>
@@ -283,6 +290,3 @@ function round(n: number): string {
   return (Math.round(n * 100) / 100).toFixed(2);
 }
 
-function truncate(value: string, length: number): string {
-  return value.length <= length ? value : `${value.slice(0, length - 1)}…`;
-}

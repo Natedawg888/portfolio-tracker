@@ -1,5 +1,5 @@
 /**
- * KiwiSaver employee contribution rate is saved per user. 3% is the starting rate.
+ * KiwiSaver employee contribution rate is saved per user. 3.5% is the starting rate.
  * No contribution dollar amount is stored.
  * Run: npm run test:dividends
  */
@@ -37,7 +37,7 @@ async function main() {
     const initial = readKiwiSaverEmployeeRate(db, userA);
     assert(initial.found, 'user A exists');
     assert(initial.saved === false, 'nothing is saved until the user chooses a rate');
-    assert(initial.employeeRatePct === 3, 'the starting rate offered is 3%');
+    assert(initial.employeeRatePct === 3.5, 'the starting rate offered is the 3.5% minimum');
     assert(!('contributionNzd' in initial), 'the rate response does not invent a contribution amount');
 
     const saved = saveKiwiSaverEmployeeRate(db, userA, 3);
