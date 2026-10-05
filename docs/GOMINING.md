@@ -209,7 +209,7 @@ Daily estimate scaled linearly:
 
 ### Editing miners
 
-Each miner card has **Edit TH / EE** → `PATCH /api/holdings/:id` with `hashrateThs` + `energyEfficiencyWth`. Add form still creates new miners.
+Each miner card keeps its summary: TH/s, cost, value, return, earnings, the earnings-estimate block, and **Refresh value**. **Edit TH / EE / Est. NZD** opens a center-page popup. Save and Cancel (also the close control, backdrop click, or Escape) close that popup. The popup still `PATCH /api/holdings/:id` with `hashrateThs`, `energyEfficiencyWth`, and optional `estimatedValueNzd`. Blank Est. NZD clears a manual value. The earnings formula is unchanged. The add form still creates new miners.
 
 ### Stubs / unavailable
 
@@ -242,7 +242,7 @@ Editable **%** at the top of the GoMining miners section, persisted via `PATCH /
 | Extrapolation | Band **median** live `usd/TH` at extreme EE bands → `usdPerTh(ee) = usd₁₂ + (ee − 12)/(15 − 12) × (usd₁₅ − usd₁₂)`. If linear ≤ 0 (very high EE), **log-linear** from the same live medians. NZD = `TH × usdPerTh × (btcNzd/btcUsd)`. Source **`gomining_extrapolated`**; UI: “estimate extrapolated from primary 12/15 W/TH”. |
 | NZD | `hashrateThs × usdPerTh × (btcNzd / btcUsd)` using live `fetchBtcFx` |
 | Persist | `estimated_value_nzd`, `estimated_value_at`, `estimated_value_source='gomining'` or `'gomining_extrapolated'` |
-| Manual | Portfolio miner **Edit TH / EE / Est. NZD** → `estimated_value_source='manual'` override still allowed. |
+| Manual | Portfolio miner **Edit TH / EE / Est. NZD** popup → `estimated_value_source='manual'` override still allowed. |
 | UI | Portfolio cards Value + Return; “Refresh marketplace values” applies to **all** miners (exact + extrapolated). |
 | Stub | If marketplace or FX fails → leave prior value / show — · never invent FX or fake anchors |
 

@@ -627,6 +627,7 @@ function HoldingCard({
   const [editArtDate, setEditArtDate] = useState(holding.purchaseDate ?? '');
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const minerThInputRef = useRef<HTMLInputElement>(null);
 
   // Keep edit fields in sync when holding updates from parent reload.
   useEffect(() => {
@@ -666,6 +667,22 @@ function HoldingCard({
     editing,
   ]);
 
+  useEffect(() => {
+    if (!editing || holding.assetClass !== 'gomining_miner') return;
+    minerThInputRef.current?.focus();
+  }, [editing, holding.assetClass]);
+
+  useEffect(() => {
+    if (!editing || holding.assetClass !== 'gomining_miner') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || savingEdit) return;
+      setEditing(false);
+      setEditError(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [editing, holding.assetClass, savingEdit]);
+
   async function saveQuantity(e: FormEvent) {
     e.preventDefault();
     if (!onUpdateQuantity) return;
@@ -688,6 +705,25 @@ function HoldingCard({
     } finally {
       setSavingEdit(false);
     }
+  }
+
+  function openMinerEdit() {
+    if (editing) return;
+    setEditTh(String(holding.hashrateThs ?? ''));
+    setEditEe(
+      holding.energyEfficiencyWth != null ? String(holding.energyEfficiencyWth) : '',
+    );
+    setEditEst(
+      holding.estimatedValueNzd != null ? String(holding.estimatedValueNzd) : '',
+    );
+    setEditError(null);
+    setEditing(true);
+  }
+
+  function closeMinerEdit() {
+    if (savingEdit) return;
+    setEditing(false);
+    setEditError(null);
   }
 
   async function saveMinerSpecs(e: FormEvent) {
@@ -1072,33 +1108,57 @@ function HoldingCard({
           )}
           {onUpdateMiner && (
             <div className="miner-edit">
-              {!editing ? (
-                <button
-                  type="button"
-                  className="btn ghost holding-card-action"
-                  onClick={() => {
-                    setEditTh(String(holding.hashrateThs ?? ''));
-                    setEditEe(
-                      holding.energyEfficiencyWth != null
-                        ? String(holding.energyEfficiencyWth)
-                        : '',
-                    );
-                    setEditEst(
-                      holding.estimatedValueNzd != null
-                        ? String(holding.estimatedValueNzd)
-                        : '',
-                    );
-                    setEditError(null);
-                    setEditing(true);
-                  }}
-                >
-                  Edit TH / EE / Est. NZD
-                </button>
-              ) : (
+              <button
+                type="button"
+                className="btn ghost holding-card-action"
+                aria-haspopup="dialog"
+                aria-expanded={editing}
+                aria-controls={`miner-edit-dialog-${holding.id}`}
+                onClick={openMinerEdit}
+              >
+                Edit TH / EE / Est. NZD
+              </button>
+            </div>
+          )}
+          {onUpdateMiner && editing && (
+            <div
+              className="modal-overlay"
+              role="presentation"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) closeMinerEdit();
+              }}
+            >
+              <div
+                className="modal-dialog miner-edit-dialog"
+                id={`miner-edit-dialog-${holding.id}`}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={`miner-edit-title-${holding.id}`}
+                aria-describedby={`miner-edit-desc-${holding.id}`}
+              >
+                <div className="modal-header">
+                  <h3 id={`miner-edit-title-${holding.id}`}>Edit {displayName(holding)}</h3>
+                  <button
+                    type="button"
+                    className="btn small modal-close"
+                    aria-label="Close"
+                    disabled={savingEdit}
+                    onClick={closeMinerEdit}
+                  >
+                    ×
+                  </button>
+                </div>
+                <p className="section-desc" id={`miner-edit-desc-${holding.id}`}>
+                  TH/s is this miner’s computing power. EE is energy efficiency in watts per
+                  terahash; leave it blank if you don’t have it. Est. NZD is a manual value:
+                  a number stores that override, and a blank field clears it. Save writes these
+                  three fields only. The earnings estimate still uses the same formula.
+                </p>
                 <form className="miner-edit-form" onSubmit={saveMinerSpecs}>
                   <label>
                     TH/s
                     <input
+                      ref={minerThInputRef}
                       type="number"
                       step="any"
                       min={0}
@@ -1120,7 +1180,7 @@ function HoldingCard({
                       aria-label="Energy efficiency W/TH"
                     />
                   </label>
-                  <label>
+                  <label className="span-2">
                     Est. NZD
                     <input
                       type="number"
@@ -1140,17 +1200,14 @@ function HoldingCard({
                       type="button"
                       className="btn ghost"
                       disabled={savingEdit}
-                      onClick={() => {
-                        setEditing(false);
-                        setEditError(null);
-                      }}
+                      onClick={closeMinerEdit}
                     >
                       Cancel
                     </button>
                   </div>
                   {editError && <p className="muted small miner-edit-error">{editError}</p>}
                 </form>
-              )}
+              </div>
             </div>
           )}
           <EarningsPeriodsGrid estimate={earnings ?? null} displayCurrency={displayCurrency} fxNote={fxNote} />

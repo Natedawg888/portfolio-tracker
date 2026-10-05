@@ -925,18 +925,21 @@ code { background: var(--surface-2); padding: 0.1rem 0.35rem; border-radius: 4px
   margin: 0;
 }
 
-/* GoMining miner inline TH / EE edit */
+/* GoMining miner TH / EE / Est. NZD — center-page popup, not inline on the card */
 .miner-edit {
   margin: 0.35rem 0 0.5rem;
+}
+.miner-edit-dialog {
+  width: min(28rem, 100%);
 }
 .miner-edit-form {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.45rem 0.6rem;
-  padding: 0.55rem 0.65rem;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  gap: 0.65rem 0.75rem;
+  margin-top: 0.15rem;
+}
+.miner-edit-form .span-2 {
+  grid-column: 1 / -1;
 }
 .miner-edit-form label {
   display: flex;
