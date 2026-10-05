@@ -5,6 +5,7 @@
  */
 import http from 'node:http';
 import https from 'node:https';
+import type { IncomingHttpHeaders } from 'node:http';
 
 const USER_AGENT = 'portfolio-tracker/economic-cycle (educational; local)';
 
@@ -27,10 +28,32 @@ export async function fetchDownload(
 ): Promise<Download> {
   const timeoutMs = options.timeoutMs ?? 45_000;
   const maxBytes = options.maxBytes ?? 40_000_000;
-  return requestBuffer(url, timeoutMs, maxBytes, 0);
+  return requestBuffer(url, timeoutMs, maxBytes, 0, null);
 }
 
-function requestBuffer(url: string, timeoutMs: number, maxBytes: number, redirects: number): Promise<Download> {
+/**
+ * Wayback replay answers a raw-file redirect with a server cookie. The next
+ * request has to send it, or the capture can come back as an HTML error page
+ * instead of the workbook.
+ */
+function cookieHeader(headers: IncomingHttpHeaders, previous: string | null, sameHost: boolean): string | null {
+  if (!sameHost) return null;
+  const raw = headers['set-cookie'];
+  const lines = raw == null ? [] : Array.isArray(raw) ? raw : [raw];
+  const pairs = lines
+    .map((line) => line.split(';')[0]?.trim() ?? '')
+    .filter((pair) => pair.length > 0);
+  const merged = [previous, ...pairs].filter((part): part is string => Boolean(part)).join('; ');
+  return merged || null;
+}
+
+function requestBuffer(
+  url: string,
+  timeoutMs: number,
+  maxBytes: number,
+  redirects: number,
+  cookie: string | null,
+): Promise<Download> {
   return new Promise((resolve, reject) => {
     let settled = false;
     const fail = (err: Error) => {
@@ -62,6 +85,7 @@ function requestBuffer(url: string, timeoutMs: number, maxBytes: number, redirec
         headers: {
           'User-Agent': USER_AGENT,
           Accept: '*/*',
+          ...(cookie ? { Cookie: cookie } : {}),
         },
       },
       (res) => {
@@ -72,8 +96,9 @@ function requestBuffer(url: string, timeoutMs: number, maxBytes: number, redirec
             fail(new Error(`Too many redirects for ${url}`));
             return;
           }
-          const next = new URL(res.headers.location, url).toString();
-          requestBuffer(next, timeoutMs, maxBytes, redirects + 1).then(succeed, fail);
+          const nextUrl = new URL(res.headers.location, url);
+          const nextCookie = cookieHeader(res.headers, cookie, nextUrl.hostname === parsed.hostname);
+          requestBuffer(nextUrl.toString(), timeoutMs, maxBytes, redirects + 1, nextCookie).then(succeed, fail);
           return;
         }
         if (status < 200 || status >= 300) {

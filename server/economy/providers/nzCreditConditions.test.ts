@@ -3,7 +3,14 @@
  * A swapped observation field order must not show the neighbouring series.
  * Run: npm run test:economy
  */
-import { archiveCaptures, NZ_CREDIT_SERIES, parseC60PublishedDay, parseNzCreditAvailability } from './nzCreditConditions.ts';
+import {
+  archiveCaptures,
+  archiveLatestRawUrl,
+  NZ_CREDIT_SERIES,
+  parseC60PublishedDay,
+  parseNzCreditAvailability,
+  RBNZ_C60_URL,
+} from './nzCreditConditions.ts';
 import type { SheetGrid } from './xlsx.ts';
 
 function assert(cond: unknown, msg: string): void {
@@ -25,12 +32,14 @@ function grid(layout: 'series-last' | 'series-first'): SheetGrid {
     return new Map([
       [5, new Map<string, string>([['D', 'Series Id'], ['C', 'CCS.Q73_AV'], ['B', NZ_CREDIT_SERIES]])],
       [9, new Map<string, string>([['D', serial('2024-09-30')], ['C', '80'], ['B', '2.5']])],
+      [7, new Map<string, string>([['D', serial('2025-09-30')], ['C', '50'], ['B', '0']])],
       [6, new Map<string, string>([['D', serial('2026-03-31')], ['C', '999.5'], ['B', '-4.25']])],
     ]);
   }
   return new Map([
     [5, new Map<string, string>([['C', NZ_CREDIT_SERIES], ['B', 'CCS.Q73_AV'], ['A', 'Series Id']])],
     [6, new Map<string, string>([['C', '-4.25'], ['B', '999.5'], ['A', serial('2026-03-31')]])],
+    [7, new Map<string, string>([['C', '0'], ['B', '50'], ['A', serial('2025-09-30')]])],
     [9, new Map<string, string>([['C', '2.5'], ['B', '80'], ['A', serial('2024-09-30')]])],
   ]);
 }
@@ -39,10 +48,12 @@ let passed = 0;
 
 for (const layout of ['series-last', 'series-first'] as const) {
   const rows = parseNzCreditAvailability(grid(layout), NZ_CREDIT_SERIES);
-  assert(rows.length === 2, `${layout} kept both quarters, got ${rows.length}`);
+  assert(rows.length === 3, `${layout} kept three quarters, got ${rows.length}`);
   const older = rows.find((row) => row.period === '2024-Q3');
+  const zero = rows.find((row) => row.period === '2025-Q3');
   const newer = rows.find((row) => row.period === '2026-Q1');
   assert(older?.value === 2.5, `${layout} 2024-Q3 should be 2.5, not the decoy 80, got ${older?.value}`);
+  assert(zero?.value === 0, `${layout} 2025-Q3 should be 0, not the neighbouring 50, got ${zero?.value}`);
   assert(newer?.value === -4.25, `${layout} 2026-Q1 should be -4.25, not the decoy 999.5, got ${newer?.value}`);
   assert(newer?.frequency === 'quarterly' && newer.periodEnd === '2026-03-31', `${layout} quarter end`);
   passed += 1;
@@ -97,6 +108,14 @@ for (const layout of ['series-last', 'series-first'] as const) {
   assert(normal.length === 1 && normal[0]?.timestamp === '20261002043352', 'keeps the C60 capture');
   assert(reversed.length === 1 && reversed[0]?.original === original, 'column order does not pair the decoy URL');
   assert(reversed[0]?.timestamp === '20261002043352', `reversed timestamp ${reversed[0]?.timestamp}`);
+  passed += 1;
+}
+
+{
+  const latest = archiveLatestRawUrl();
+  assert(latest === `https://web.archive.org/web/2999id_/${RBNZ_C60_URL}`, `latest raw url ${latest}`);
+  assert(latest.includes('2999id_/'), 'the direct copy is a raw replay, not the HTML wrapper');
+  assert(latest.endsWith('/hc60.xlsx'), 'the direct copy is the official C60 workbook');
   passed += 1;
 }
 
