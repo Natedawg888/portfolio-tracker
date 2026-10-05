@@ -1,6 +1,7 @@
 /**
- * Persist / ensure Metals.Dev NZD spots in price_quotes.
- * Never invents prices. No-op without METALS_API_KEY.
+ * Persist / ensure NZD metal spots in price_quotes.
+ * Live source is gold-api.com when METALS_API_KEY is unset, otherwise Metals.Dev.
+ * Never invents prices.
  * Never overwrites a good (ok/stale) price with unavailable/null.
  */
 import { getDb, queryOne, run, newId } from '../db/index.ts';
@@ -134,14 +135,24 @@ export async function resolveMetalSpotNzd(
         price: dbGood[metal].price as number,
         asOf: dbGood[metal].asOf,
         message: dbGood[metal].message,
+        source: dbGood[metal].source,
       })),
     );
   }
 
-  // Non-force: serve any usable DB last-good without calling Metals.Dev (protects free quota).
-  // Force refresh (Value Search button) hits the live API; last-good still used on failure.
-  const maxAgeMs = opts?.maxAgeMs ?? 6 * 60 * 60 * 1000;
-  if (!force && dbGood) {
+  // Metals.Dev: non-force serves any usable DB row (protects the free quota).
+  // gold-api.com: refetch once the row is older than the public TTL.
+  // Force refresh hits the live API; last-good is still used if that call fails.
+  const publicSpots = !metalsConfigured();
+  const maxAgeMs =
+    opts?.maxAgeMs ?? (publicSpots ? 15 * 60 * 1000 : 6 * 60 * 60 * 1000);
+  const dbFresh =
+    !!dbGood &&
+    METAL_KINDS.every((metal) => {
+      const asOf = dbGood[metal].asOf ? Date.parse(String(dbGood[metal].asOf)) : NaN;
+      return Number.isFinite(asOf) && Date.now() - asOf < maxAgeMs;
+    });
+  if (!force && dbGood && (!publicSpots || dbFresh)) {
     return Object.fromEntries(
       METAL_KINDS.map((metal) => {
         const asOf = dbGood[metal].asOf ? Date.parse(String(dbGood[metal].asOf)) : NaN;
@@ -184,18 +195,17 @@ export async function resolveMetalSpotNzd(
 }
 
 /**
- * When METALS_API_KEY is set, fetch+persist NZD spots if missing or older than TTL.
+ * Fetch+persist NZD spots if missing or older than TTL.
+ * METALS_API_KEY selects Metals.Dev; otherwise gold-api.com (no key).
  */
 export async function ensureMetalQuotesPersisted(
   db: Awaited<ReturnType<typeof getDb>>,
   opts?: { force?: boolean; maxAgeMs?: number },
 ): Promise<{ configured: boolean; refreshed: boolean; okCount: number }> {
   const configured = metalsConfigured();
-  if (!configured) {
-    return { configured: false, refreshed: false, okCount: 0 };
-  }
   const force = opts?.force === true;
-  const maxAgeMs = opts?.maxAgeMs ?? 6 * 60 * 60 * 1000;
+  const maxAgeMs =
+    opts?.maxAgeMs ?? (configured ? 6 * 60 * 60 * 1000 : 15 * 60 * 1000);
   if (!force) {
     const rows = METAL_KINDS.map((metal) => {
       const key = metalAssetKey(metal);
@@ -210,7 +220,7 @@ export async function ensureMetalQuotesPersisted(
       return Date.now() - asOf < maxAgeMs;
     });
     if (allFreshOk) {
-      return { configured: true, refreshed: false, okCount: METAL_KINDS.length };
+      return { configured, refreshed: false, okCount: METAL_KINDS.length };
     }
   } else {
     clearMetalsCache();
@@ -224,5 +234,5 @@ export async function ensureMetalQuotesPersisted(
       okCount += 1;
     }
   }
-  return { configured: true, refreshed: true, okCount };
+  return { configured, refreshed: true, okCount };
 }

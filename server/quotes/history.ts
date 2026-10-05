@@ -560,7 +560,7 @@ export async function fetchMetalHistory(
       result = {
         ...result,
         message:
-          `${result.message} · METALS_API_KEY unset (spot still needs key; chart uses Yahoo futures)`,
+          `${result.message} · METALS_API_KEY unset (live spot uses gold-api.com; this chart is Yahoo futures)`,
       };
     } else {
       result = unavailable(

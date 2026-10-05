@@ -466,7 +466,7 @@ function mapHolding(
 
 router.get('/', async (req, res) => {
   const db = await getDb();
-  // Auto-hydrate Metals.Dev NZD spots when METALS_API_KEY present and quotes missing/stale.
+  // Auto-hydrate NZD spots (gold-api.com, or Metals.Dev when METALS_API_KEY is set).
   await ensureMetalQuotesPersisted(db);
   // Auto-hydrate Frankfurter FX→NZD for forex holdings (never invent).
   await ensureForexQuotesPersisted(db);

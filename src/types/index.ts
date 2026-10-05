@@ -46,6 +46,7 @@ export type QuoteSource =
   | 'user_valuation'
   | 'search_comp'
   | 'metals_dev'
+  | 'gold-api'
   | 'frankfurter'
   | 'btc_fx_ratio'
   | 'identity'

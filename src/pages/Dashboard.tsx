@@ -214,10 +214,12 @@ export function Dashboard() {
             value={summary.metalsNzd}
             hint={
               summary.metalsUseSpot
-                ? 'Metals.Dev spot NZD (stale OK if quota exhausted)'
+                ? summary.metalsConfigured
+                  ? 'Metals.Dev spot NZD (stale OK if quota exhausted)'
+                  : 'gold-api.com spot NZD'
                 : summary.metalsConfigured
                   ? 'Refresh on Portfolio or Value search for a spot. The last good value stays if the quota is used up.'
-                  : 'not connected'
+                  : 'No stored spot yet'
             }
           />
         ) : null}

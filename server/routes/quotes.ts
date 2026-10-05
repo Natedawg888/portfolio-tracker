@@ -1,12 +1,12 @@
 /**
- * Metal spot quotes API (Metals.Dev → NZD).
- * Never invents prices; stubs gracefully without METALS_API_KEY.
+ * Metal spot quotes API (NZD per troy ounce).
+ * gold-api.com when METALS_API_KEY is unset; Metals.Dev when it is set.
+ * Never invents prices.
  */
 import { Router } from 'express';
-import { getDb, queryOne } from '../db/index.ts';
+import { getDb } from '../db/index.ts';
 import {
   METAL_KINDS,
-  metalAssetKey,
   metalsConfigured,
   clearMetalsCache,
   metalsQuotaBlocked,
@@ -59,7 +59,7 @@ function quotesPayload(
   });
 }
 
-/** Status + whether METALS_API_KEY is present (never exposes the key). */
+/** Status. `configured` means METALS_API_KEY is set. The key is never returned. */
 router.get('/metals/status', async (_req, res) => {
   const db = await getDb();
   const dbGood = readDbMetalQuotes(db);
@@ -67,9 +67,11 @@ router.get('/metals/status', async (_req, res) => {
   const dbQuotaHint =
     typeof notes === 'string' && /quota/i.test(notes) ? notes : null;
   const memBlocked = metalsQuotaBlocked();
+  const configured = metalsConfigured();
   res.json({
-    configured: metalsConfigured(),
-    provider: 'metals.dev',
+    configured,
+    provider: configured ? 'metals.dev' : 'gold-api.com',
+    keyRequired: false,
     currency: 'NZD',
     unit: 'oz_t',
     displayUnits: ['oz_t', 'g'],
@@ -87,50 +89,11 @@ router.get('/metals/status', async (_req, res) => {
 
 /**
  * Latest cached or live metal spots (NZD / troy oz).
- * Query ?refresh=1 to force a Metals.Dev fetch (counts against free quota).
+ * Query ?refresh=1 to force a live fetch (Metals.Dev counts against its free quota).
  */
 router.get('/metals', async (req, res) => {
   const force = req.query.refresh === '1' || req.query.refresh === 'true';
   const db = await getDb();
-
-  if (!force && !metalsConfigured()) {
-    const dbGood = readDbMetalQuotes(db);
-    const quotes = METAL_KINDS.map((metal) => {
-      const key = metalAssetKey(metal);
-      if (dbGood?.[metal]) {
-        const q = dbGood[metal];
-        return {
-          metal,
-          assetKey: key,
-          currency: 'NZD',
-          price: q.price,
-          status: q.status,
-          source: q.source,
-          asOf: q.asOf,
-          message: q.message,
-        };
-      }
-      return {
-        metal,
-        assetKey: key,
-        currency: 'NZD',
-        price: null,
-        status: 'unavailable',
-        source: 'stub',
-        asOf: null,
-        message:
-          'METALS_API_KEY not set. Free key at https://metals.dev/ → set METALS_API_KEY in .env',
-      };
-    });
-    return res.json({
-      configured: false,
-      provider: 'metals.dev',
-      currency: 'NZD',
-      unit: 'oz_t',
-      displayUnits: ['oz_t', 'g'],
-      quotes,
-    });
-  }
 
   if (force) clearMetalsCache();
   const results = await resolveMetalSpotNzd(db, force);
@@ -138,7 +101,7 @@ router.get('/metals', async (req, res) => {
 
   res.json({
     configured: metalsConfigured(),
-    provider: 'metals.dev',
+    provider: metalsConfigured() ? 'metals.dev' : 'gold-api.com',
     currency: 'NZD',
     unit: 'oz_t',
     displayUnits: ['oz_t', 'g'],
@@ -152,7 +115,7 @@ router.get('/metals', async (req, res) => {
 router.post('/metals/refresh', async (_req, res) => {
   const db = await getDb();
   clearMetalsCache();
-  // Always resolve (stubs if no key); last-good DB/memory used on quota failure — never invent.
+  // Live fetch. Missing key uses gold-api.com. Quota misses keep last-good. Never invent.
   const results = await resolveMetalSpotNzd(db, true);
   const quotes = quotesPayload(db, results);
   const okCount = quotes.filter(
@@ -160,7 +123,7 @@ router.post('/metals/refresh', async (_req, res) => {
   ).length;
   res.json({
     configured: metalsConfigured(),
-    provider: 'metals.dev',
+    provider: metalsConfigured() ? 'metals.dev' : 'gold-api.com',
     currency: 'NZD',
     unit: 'oz_t',
     displayUnits: ['oz_t', 'g'],

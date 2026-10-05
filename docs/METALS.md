@@ -1,6 +1,14 @@
 # Precious metals spot → NZD
 
-## Provider: Metals.Dev
+## Default provider: gold-api.com (no key)
+
+Live gold, silver, platinum, and palladium in NZD per troy ounce:
+
+`GET https://api.gold-api.com/price/{XAU|XAG|XPT|XPD}/NZD`
+
+The `price` field is already NZD. A non-NZD body is rejected. `exchangeRate` is not applied. No API key and no hard-coded spot. A full successful set is cached for 15 minutes. If the call fails and a last good set exists, that set is served as `stale`.
+
+## Optional provider: Metals.Dev
 
 - Site: https://metals.dev/
 - Docs: https://metals.dev/docs
@@ -24,7 +32,7 @@ METALS_API_KEY=your_key_here
 4. Restart `npm run dev` (or `dev:api`).
 5. Portfolio → metal card → **Refresh value**, or Value search → **Refresh metal quotes**, or `POST /api/quotes/metals/refresh`.
 
-Without `METALS_API_KEY`, quotes are `unavailable` / stubbed: Portfolio shows **cost only / —** for metal market value; Dashboard `metalsNzd` stays on cost basis.
+Without `METALS_API_KEY`, live NZD spots come from gold-api.com. Portfolio and net worth use those prices. They stay cost-only only when that source returns no usable NZD price.
 
 ## Quota / last-good
 
@@ -51,9 +59,10 @@ Holdings in grams are valued as `amount_g / 31.1034768 × spot_nzd_per_oz_t`.
 
 | Source | Notes |
 |--------|--------|
+| gold-api.com | **Default** — public NZD spot, no key (`/price/XAU/NZD` and silver, platinum, palladium) |
 | metals-api.com | Freemium; NZD via `base` / convert; needs key |
 | goldapi.io | Freemium; NZD listed; one request per metal |
-| metals.dev | **Chosen** — free tier, one call for all metals + NZD |
+| metals.dev | Optional when `METALS_API_KEY` is set — one call for all metals + NZD |
 | RBNZ FX + LBMA | RBNZ has no public metals API; FX-only wrappers need keys |
 | NZ bullion dealer pages | Not used — avoid scraping; no passwords |
 

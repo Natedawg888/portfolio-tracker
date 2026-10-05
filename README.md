@@ -88,7 +88,7 @@ Production: `npm run build && npm run start` (serves `dist/` + API; `HOST=0.0.0.
 
 ### Live (opt-in key)
 
-- **Metal spot → NZD** via [Metals.Dev](https://metals.dev/) when `METALS_API_KEY` is set — see [docs/METALS.md](./docs/METALS.md)
+- **Metal spot → NZD** via [gold-api.com](https://api.gold-api.com/price/XAU/NZD) with no key; [Metals.Dev](https://metals.dev/) only when `METALS_API_KEY` is set — see [docs/METALS.md](./docs/METALS.md)
 
 ## Asset coverage
 
@@ -100,7 +100,7 @@ Production: `npm run build && npm run start` (serves `dist/` + API; `HOST=0.0.0.
 | Crypto | Schema; GMT token as crypto line OK |
 | **GoMining digital miners** | First-class `gomining_miner`; add form + refresh stub |
 | Art (Masterworks-style) | Schema |
-| Gold / silver / platinum / palladium | Schema + Metals.Dev NZD spot (key optional) |
+| Gold / silver / platinum / palladium | Live NZD spot via gold-api.com (no key); Metals.Dev if keyed |
 | Precious stones | Schema; **no invented vals** |
 | **Forex** (Revolut USD/EUR/GBP etc.) | Manual holdings · Frankfurter → NZD · delete supported |
 | **KiwiSaver** | Sharesies via Akahu; bank-held manual form + CSV (IRD/Akahu bank KS N/A) |
@@ -189,13 +189,11 @@ Track foreign cash held **outside** NZ bank accounts (e.g. Revolut USD/EUR/GBP).
 
 ## Metals spot (NZD)
 
-Live gold / silver / platinum / palladium via **Metals.Dev** (`METALS_API_KEY`).
+Live gold / silver / platinum / palladium in **NZD per troy ounce** from gold-api.com. No API key.
 
-1. Free signup: https://metals.dev/ (no card; free plan ~100 req/mo)
-2. Put key in `.env`: `METALS_API_KEY=…`
-3. Restart API → Portfolio metal **Refresh value**, or Value search → **Refresh metal quotes**
+Portfolio → metal card → **Refresh value**, or Value search → **Refresh metal quotes**.
 
-NZD comes from Metals.Dev `currency=NZD` (documented). Without a key, market value shows **—** / cost only — never invented.
+`METALS_API_KEY` is optional. When it is set, spots come from Metals.Dev instead. Without a usable NZD price, market value stays **—** / cost only — never invented.
 
 Details: [docs/METALS.md](./docs/METALS.md)
 

@@ -199,8 +199,12 @@ export function ValueSearch() {
           (q) => (q.status === 'ok' || q.status === 'stale') && q.price != null,
         ).length;
         const stale = data.quotes.filter((q) => q.status === 'stale').length;
-        if (!status.configured) {
-          setMsg('METALS_API_KEY missing — quotes stay unavailable (cost only).');
+        if (!status.configured && usable === data.quotes.length) {
+          setMsg(`Refreshed ${usable}/${data.quotes.length} metals from gold-api.com (NZD/oz t).`);
+        } else if (!status.configured) {
+          setMsg(
+            `gold-api.com returned ${usable}/${data.quotes.length} usable NZD spots (never invent).`,
+          );
         } else if (usable === data.quotes.length && stale > 0) {
           setMsg(
             qm ??
@@ -1030,11 +1034,11 @@ export function ValueSearch() {
         <section className="panel">
           <h2>Metal spot values</h2>
           <p className="section-desc">
-            Live precious-metal spots via{' '}
-            <a href="https://metals.dev/" target="_blank" rel="noreferrer">
-              Metals.Dev
-            </a>{' '}
-            (canonical NZD per troy ounce; display as oz t or grams).
+            Live precious-metal spots in NZD per troy ounce via{' '}
+            <a href="https://api.gold-api.com/price/XAU/NZD" target="_blank" rel="noreferrer">
+              gold-api.com
+            </a>
+            . Display as oz t or grams. Metals.Dev is used only when its key is set.
           </p>
           <div className="row gap" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
             <button
@@ -1076,7 +1080,7 @@ export function ValueSearch() {
                   ? quotaBlocked
                     ? 'METALS_API_KEY set · Metals.Dev quota blocked (using last-good if any)'
                     : 'METALS_API_KEY set · Metals.Dev'
-                  : 'Set METALS_API_KEY (free at metals.dev) for live NZD spots'}
+                  : 'Live NZD spots via gold-api.com (no key)'}
             </span>
           </div>
           {msg && <p className="banner">{msg}</p>}
@@ -1119,8 +1123,8 @@ export function ValueSearch() {
           </table>
           </div>
           <p className="muted small" style={{ marginTop: '0.75rem' }}>
-            NZD from Metals.Dev <code>currency=NZD</code> (stored as NZD/oz t; grams = ÷ 31.1034768).
-            Without a key or when quota is exhausted with no last-good, quotes stay unavailable
+            Stored as NZD/oz t (grams = ÷ 31.1034768). Default source is gold-api.com NZD.
+            Metals.Dev is used only when its key is set; a quota miss keeps the last good price
             (never invent).
           </p>
         </section>
