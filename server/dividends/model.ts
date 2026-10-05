@@ -1,7 +1,10 @@
 /**
  * Dividend record maths.
- * Totals, yield, growth, and the forecast use only amounts the user stored.
- * Missing FX rates stay missing. Imputation credits are not cash.
+ * Totals, yield, and growth use only amounts the user stored.
+ * The forecast may also repeat the next date from Yahoo Finance dividend
+ * history for a stock or ETF the same user holds. That amount is the last
+ * published cash dividend per share times their shares. Missing figures stay
+ * missing. Missing FX rates stay missing. Imputation credits are not cash.
  */
 
 export type DividendRecord = {
@@ -33,6 +36,44 @@ export type HoldingValueInput = {
   costBasisNzd: number | null;
   /** NZD per share from a saved quote with status ok. Never a guessed price. */
   quotedPriceNzd: number | null;
+};
+
+/** One cash dividend Yahoo Finance published for a symbol. Amounts are per share. */
+export type PublishedDividendPayment = {
+  date: string;
+  amountPerShare: number;
+};
+
+/** Dividend events parsed from the Yahoo chart this app already uses for equity prices. */
+export type PublishedDividendSeries = {
+  source: 'yahoo';
+  currency: string;
+  payments: PublishedDividendPayment[];
+};
+
+/**
+ * Next payment for one holding, taken from published dividend history.
+ * `projected` repeats the gap the published dates already showed.
+ * `published` uses a future date and amount the source itself listed.
+ */
+export type DetectedDividend = {
+  holdingId: string;
+  name: string;
+  symbol: string;
+  dividendPerShare: number;
+  sharesHeld: number;
+  /** Shares times the published cash dividend per share. Tax is not estimated. */
+  amount: number;
+  currency: string;
+  amountNzd: number | null;
+  fxRateToNzd: number | null;
+  lastPaidDate: string;
+  paymentDate: string;
+  /** 1, 3, 6, or 12 when the date was projected from that gap. Null when the date was published. */
+  intervalMonths: 1 | 3 | 6 | 12 | null;
+  historyCount: number;
+  basis: 'projected' | 'published';
+  source: 'yahoo';
 };
 
 export type ComputedDividend = {
@@ -104,6 +145,11 @@ export type DividendDashboard = {
     statedUpcomingNzd: number | null;
     statedUpcomingCount: number;
     statedUnconvertedCount: number;
+    /** Next payments projected from published history for this user's stock and ETF holdings. */
+    detected: DetectedDividend[];
+    detectedNzd: number | null;
+    detectedCount: number;
+    detectedUnconvertedCount: number;
     note: string;
   };
   upcoming: Array<DividendRecord & { netNzd: number | null }>;
@@ -112,8 +158,16 @@ export type DividendDashboard = {
 
 export const DIVIDEND_DISCLAIMER =
   'Personal record of dividends you enter. Totals use your amounts and the FX rates you record. ' +
-  'The forecast repeats your own history or adds up payments you stated. ' +
+  'The forecast repeats your own history, adds up payments you stated, or projects the next payment from published dividend history on stocks and ETFs you hold. ' +
   'It is not financial advice and it is not a market forecast.';
+
+export const DIVIDEND_FORECAST_NOTE =
+  'The history figure repeats net dividends you already recorded over the last 12 months. ' +
+  'Upcoming amounts are only payments you entered yourself. ' +
+  'A stock or ETF you hold is added only when Yahoo Finance has published a dividend for it. ' +
+  'The projected date repeats the gap between those published dates, and the amount is the last cash dividend per share times your shares. ' +
+  'A holding is left out when that source has no dividend figure, or when you already entered an upcoming payment for it. ' +
+  'This is not financial advice and it is not a market forecast.';
 
 const MONEY_EPS = 1e-6;
 
@@ -350,6 +404,154 @@ function growthNote(input: {
   return `Dividend growth needs paid dividends with an NZD amount in both ${input.fromYear} and ${input.toYear}.`;
 }
 
+function daysBetween(start: string, end: string): number {
+  const [ys, ms, ds] = start.split('-').map(Number);
+  const [ye, me, de] = end.split('-').map(Number);
+  const a = Date.UTC(ys ?? 1970, (ms ?? 1) - 1, ds ?? 1);
+  const b = Date.UTC(ye ?? 1970, (me ?? 1) - 1, de ?? 1);
+  return Math.round((b - a) / 86_400_000);
+}
+
+/** Map a gap between two published dates onto a cadence those dates actually support. */
+function cadenceMonths(from: string, to: string): 1 | 3 | 6 | 12 | null {
+  const days = daysBetween(from, to);
+  if (days >= 25 && days <= 40) return 1;
+  if (days >= 80 && days <= 110) return 3;
+  if (days >= 150 && days <= 210) return 6;
+  if (days >= 330 && days <= 400) return 12;
+  return null;
+}
+
+function fxForCurrency(currency: string, fxRateToNzd: number | null): number | null {
+  if (currency === 'NZD') return 1;
+  if (fxRateToNzd == null || !(fxRateToNzd > 0) || !Number.isFinite(fxRateToNzd)) return null;
+  return fxRateToNzd;
+}
+
+/**
+ * Next payment for one holding, or null when the published history does not support one.
+ * The cash amount is the last positive published dividend per share times shares held.
+ * The date is either a future date the source published, or the last published date
+ * shifted by the gap the latest dates already showed. No yield is calculated.
+ */
+export function projectDividendFromHistory(input: {
+  holdingId: string;
+  name: string;
+  symbol: string;
+  shares: number;
+  series: PublishedDividendSeries | null;
+  today: string;
+  fxRateToNzd: number | null;
+}): DetectedDividend | null {
+  const series = input.series;
+  if (!series || series.source !== 'yahoo') return null;
+  if (!Number.isFinite(input.shares) || !(input.shares > 0)) return null;
+  if (!isYmd(input.today)) return null;
+  const currency = series.currency.trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currency)) return null;
+  const symbol = input.symbol.trim();
+  if (!symbol) return null;
+
+  const byDate = new Map<string, number>();
+  for (const payment of series.payments) {
+    if (!payment || !isYmd(payment.date)) return null;
+    if (!Number.isFinite(payment.amountPerShare) || !(payment.amountPerShare > 0)) continue;
+    const existing = byDate.get(payment.date);
+    if (existing == null) {
+      byDate.set(payment.date, payment.amountPerShare);
+      continue;
+    }
+    if (Math.abs(existing - payment.amountPerShare) > MONEY_EPS) return null;
+  }
+
+  const dates = [...byDate.keys()].sort();
+  const future = dates.filter((date) => date > input.today);
+  const past = dates.filter((date) => date <= input.today);
+  const fx = fxForCurrency(currency, input.fxRateToNzd);
+
+  const finish = (args: {
+    dividendPerShare: number;
+    paymentDate: string;
+    lastPaidDate: string;
+    intervalMonths: 1 | 3 | 6 | 12 | null;
+    historyCount: number;
+    basis: 'projected' | 'published';
+  }): DetectedDividend => {
+    const amount = input.shares * args.dividendPerShare;
+    return {
+      holdingId: input.holdingId,
+      name: input.name,
+      symbol,
+      dividendPerShare: args.dividendPerShare,
+      sharesHeld: input.shares,
+      amount,
+      currency,
+      amountNzd: fx == null ? null : amount * fx,
+      fxRateToNzd: fx,
+      lastPaidDate: args.lastPaidDate,
+      paymentDate: args.paymentDate,
+      intervalMonths: args.intervalMonths,
+      historyCount: args.historyCount,
+      basis: args.basis,
+      source: 'yahoo',
+    };
+  };
+
+  if (future.length > 0) {
+    const paymentDate = future[0]!;
+    const dividendPerShare = byDate.get(paymentDate);
+    if (dividendPerShare == null || !(dividendPerShare > 0)) return null;
+    const lastPaidDate = past.length > 0 ? past[past.length - 1]! : paymentDate;
+    return finish({
+      dividendPerShare,
+      paymentDate,
+      lastPaidDate,
+      intervalMonths: null,
+      historyCount: dates.length,
+      basis: 'published',
+    });
+  }
+
+  if (past.length < 3) return null;
+  const last = past[past.length - 1]!;
+  const prev = past[past.length - 2]!;
+  const prev2 = past[past.length - 3]!;
+  const recent = cadenceMonths(prev, last);
+  const prior = cadenceMonths(prev2, prev);
+  if (recent == null || recent !== prior) return null;
+  const paymentDate = shiftMonths(last, recent);
+  if (!(paymentDate > input.today)) return null;
+  const dividendPerShare = byDate.get(last);
+  if (dividendPerShare == null || !(dividendPerShare > 0)) return null;
+  return finish({
+    dividendPerShare,
+    paymentDate,
+    lastPaidDate: last,
+    intervalMonths: recent,
+    historyCount: past.length,
+    basis: 'projected',
+  });
+}
+
+function detectedIsConsistent(row: DetectedDividend): boolean {
+  if (row.source !== 'yahoo') return false;
+  if (row.basis !== 'projected' && row.basis !== 'published') return false;
+  if (row.basis === 'projected' && row.intervalMonths !== 1 && row.intervalMonths !== 3 && row.intervalMonths !== 6 && row.intervalMonths !== 12) {
+    return false;
+  }
+  if (row.basis === 'published' && row.intervalMonths != null) return false;
+  if (!Number.isFinite(row.dividendPerShare) || !(row.dividendPerShare > 0)) return false;
+  if (!Number.isFinite(row.sharesHeld) || !(row.sharesHeld > 0)) return false;
+  if (!Number.isFinite(row.amount) || !(row.amount > 0)) return false;
+  if (Math.abs(row.amount - row.sharesHeld * row.dividendPerShare) > MONEY_EPS) return false;
+  if (!isYmd(row.paymentDate) || !isYmd(row.lastPaidDate)) return false;
+  if (!/^[A-Z]{3}$/.test(row.currency)) return false;
+  if (!Number.isInteger(row.historyCount) || row.historyCount < 1) return false;
+  if (row.amountNzd == null) return row.currency !== 'NZD' && row.fxRateToNzd == null;
+  if (row.fxRateToNzd == null || !(row.fxRateToNzd > 0) || !Number.isFinite(row.amountNzd)) return false;
+  return Math.abs(row.amountNzd - row.amount * row.fxRateToNzd) <= MONEY_EPS;
+}
+
 function holdingDenominator(holding: HoldingValueInput): { value: number; basis: 'quote' | 'cost' } | null {
   if (
     holding.quotedPriceNzd != null
@@ -370,6 +572,7 @@ export function buildDividendDashboard(input: {
   holdings: HoldingValueInput[];
   year: number;
   today?: string;
+  detected?: DetectedDividend[];
 }): DividendDashboard {
   const today = input.today && isYmd(input.today) ? input.today : todayAucklandYmd();
   const year = input.year;
@@ -504,8 +707,12 @@ export function buildDividendDashboard(input: {
 
   const stated = upcoming.filter((row) => row.netNzd != null);
   const historyCount = trailing.length;
+  const detected = (input.detected ?? [])
+    .filter(detectedIsConsistent)
+    .sort((a, b) => a.paymentDate.localeCompare(b.paymentDate) || a.name.localeCompare(b.name));
+  const detectedConverted = detected.filter((row) => row.amountNzd != null);
   const forecast: DividendDashboard['forecast'] = {
-    heading: 'Projection from your records',
+    heading: 'Projection from your records and published history',
     historyRunRateNzd: historyCount > 0
       ? trailing.reduce((sum, row) => sum + (row.netNzd ?? 0), 0)
       : null,
@@ -516,7 +723,13 @@ export function buildDividendDashboard(input: {
       : null,
     statedUpcomingCount: upcoming.length,
     statedUnconvertedCount: upcoming.length - stated.length,
-    note: 'The history figure repeats net dividends you already recorded over the last 12 months. Upcoming amounts are only payments you entered yourself. This is not a market forecast.',
+    detected,
+    detectedNzd: detectedConverted.length > 0
+      ? detectedConverted.reduce((sum, row) => sum + (row.amountNzd ?? 0), 0)
+      : null,
+    detectedCount: detected.length,
+    detectedUnconvertedCount: detected.length - detectedConverted.length,
+    note: DIVIDEND_FORECAST_NOTE,
   };
 
   return {

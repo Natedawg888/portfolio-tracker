@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api, formatMoney, formatNzd } from '../api/client';
 import { todayAucklandYmd } from '../lib/period';
-import type { DividendDashboard, DividendEvent, DividendWriteBody } from '../types/dividends';
+import type { DetectedDividend, DividendDashboard, DividendEvent, DividendWriteBody } from '../types/dividends';
 
 type Placement = 'portfolio' | 'budget';
 
@@ -35,6 +35,32 @@ function formatPct(value: number | null, signed = false): string {
 function moneyOrDash(value: number | null, currency = 'NZD'): string {
   if (value == null) return '—';
   return currency === 'NZD' ? formatNzd(value) : formatMoney(value, currency);
+}
+
+/** Published per-share cash amounts can be smaller than one cent. Keep those digits. */
+function formatPerShare(value: number, currency: string): string {
+  const code = (currency || 'NZD').trim().toUpperCase() || 'NZD';
+  const trimmed = Number(value.toFixed(6)).toString();
+  const places = trimmed.includes('.') ? trimmed.split('.')[1]!.length : 0;
+  const maximumFractionDigits = Math.max(2, Math.min(6, places));
+  try {
+    return new Intl.NumberFormat('en-NZ', {
+      style: 'currency',
+      currency: code,
+      minimumFractionDigits: 2,
+      maximumFractionDigits,
+    }).format(value);
+  } catch {
+    return `${trimmed} ${code}`;
+  }
+}
+
+function cadencePhrase(months: number | null): string {
+  if (months === 1) return 'a monthly gap';
+  if (months === 3) return 'a quarterly gap';
+  if (months === 6) return 'a twice-yearly gap';
+  if (months === 12) return 'a yearly gap';
+  return 'the published dates';
 }
 
 export function DividendTracker({ placement }: { placement: Placement }) {
@@ -308,39 +334,61 @@ export function DividendTracker({ placement }: { placement: Placement }) {
       <section className="panel">
         <h3>Dividend forecast</h3>
         <p className="section-desc">{data.forecast.heading}. {data.forecast.note}</p>
-        {data.forecast.historyRunRateNzd == null && data.forecast.statedUpcomingNzd == null ? (
+        {data.forecast.historyRunRateNzd == null
+          && data.forecast.statedUpcomingNzd == null
+          && data.forecast.detectedCount === 0 ? (
           <p className="muted">
-            No projection yet. Record a past payment, or enter an upcoming payment with the amount you expect.
+            No projection yet. Record a past payment, enter an upcoming payment, or hold a stock or ETF whose published dividend history includes a real amount. Nothing is filled in without that figure.
           </p>
         ) : (
-          <div className="grid cards budget-compare-summary">
-            <div className="card">
-              <p className="eyebrow">From your history</p>
-              <p className="stat-value">
-                {data.forecast.historyRunRateNzd == null ? '—' : formatNzd(data.forecast.historyRunRateNzd)}
-              </p>
-              <p className="muted small">
-                {data.forecast.historyCount > 0
-                  ? `Repeats ${data.forecast.historyCount} recorded payment${data.forecast.historyCount === 1 ? '' : 's'} since ${data.forecast.historyWindowStart}. Not a market forecast.`
-                  : 'No paid dividends with an NZD amount in the last 12 months.'}
-              </p>
+          <>
+            <div className="grid cards budget-compare-summary">
+              <div className="card">
+                <p className="eyebrow">From your history</p>
+                <p className="stat-value">
+                  {data.forecast.historyRunRateNzd == null ? '—' : formatNzd(data.forecast.historyRunRateNzd)}
+                </p>
+                <p className="muted small">
+                  {data.forecast.historyCount > 0
+                    ? `Repeats ${data.forecast.historyCount} recorded payment${data.forecast.historyCount === 1 ? '' : 's'} since ${data.forecast.historyWindowStart}. Not a market forecast.`
+                    : 'No paid dividends with an NZD amount in the last 12 months.'}
+                </p>
+              </div>
+              <div className="card">
+                <p className="eyebrow">Stated upcoming</p>
+                <p className="stat-value">
+                  {data.forecast.statedUpcomingNzd == null ? '—' : formatNzd(data.forecast.statedUpcomingNzd)}
+                </p>
+                <p className="muted small">
+                  {data.forecast.statedUpcomingCount === 0
+                    ? 'No upcoming payments entered.'
+                    : `${data.forecast.statedUpcomingCount} payment${data.forecast.statedUpcomingCount === 1 ? '' : 's'} you entered`}
+                  {data.forecast.statedUnconvertedCount > 0
+                    ? ` · ${data.forecast.statedUnconvertedCount} without an FX rate`
+                    : ''}
+                  . Not a market forecast.
+                </p>
+              </div>
+              <div className="card">
+                <p className="eyebrow">From published history</p>
+                <p className="stat-value">
+                  {data.forecast.detectedNzd == null ? '—' : formatNzd(data.forecast.detectedNzd)}
+                </p>
+                <p className="muted small">
+                  {data.forecast.detectedCount === 0
+                    ? 'No stock or ETF you hold has a published dividend to project.'
+                    : `${data.forecast.detectedCount} next payment${data.forecast.detectedCount === 1 ? '' : 's'} from published dividend history`}
+                  {data.forecast.detectedUnconvertedCount > 0
+                    ? ` · ${data.forecast.detectedUnconvertedCount} without an FX rate`
+                    : ''}
+                  . Not a market forecast.
+                </p>
+              </div>
             </div>
-            <div className="card">
-              <p className="eyebrow">Stated upcoming</p>
-              <p className="stat-value">
-                {data.forecast.statedUpcomingNzd == null ? '—' : formatNzd(data.forecast.statedUpcomingNzd)}
-              </p>
-              <p className="muted small">
-                {data.forecast.statedUpcomingCount === 0
-                  ? 'No upcoming payments entered.'
-                  : `${data.forecast.statedUpcomingCount} payment${data.forecast.statedUpcomingCount === 1 ? '' : 's'} you entered`}
-                {data.forecast.statedUnconvertedCount > 0
-                  ? ` · ${data.forecast.statedUnconvertedCount} without an FX rate`
-                  : ''}
-                . Not a market forecast.
-              </p>
-            </div>
-          </div>
+            {data.forecast.detected.length > 0 ? (
+              <DetectedDividendTable rows={data.forecast.detected} />
+            ) : null}
+          </>
         )}
       </section>
 
@@ -518,6 +566,46 @@ export function DividendTracker({ placement }: { placement: Placement }) {
           </form>
         ) : null}
       </section>
+    </div>
+  );
+}
+
+function DetectedDividendTable({ rows }: { rows: DetectedDividend[] }) {
+  return (
+    <div className="table-wrap">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Next date</th>
+            <th>Holding</th>
+            <th>Per share</th>
+            <th>Shares</th>
+            <th>Cash amount</th>
+            <th>NZD</th>
+            <th>Where this comes from</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.holdingId}>
+              <td className="muted small">{row.paymentDate}</td>
+              <td>
+                {row.symbol} · {row.name}
+              </td>
+              <td className="money">{formatPerShare(row.dividendPerShare, row.currency)}</td>
+              <td className="money">{row.sharesHeld}</td>
+              <td className="money">{moneyOrDash(row.amount, row.currency)}</td>
+              <td className="amt-in money">{row.amountNzd == null ? '—' : formatNzd(row.amountNzd)}</td>
+              <td className="muted small">
+                {row.basis === 'published'
+                  ? `Yahoo Finance published this date and this cash amount (${row.historyCount} published dividend${row.historyCount === 1 ? '' : 's'} on file).`
+                  : `Projected by repeating ${cadencePhrase(row.intervalMonths)} across ${row.historyCount} published dividends. Last cash dividend ${formatPerShare(row.dividendPerShare, row.currency)} on ${row.lastPaidDate}.`}
+                {' '}Tax is not estimated. Not a market forecast.
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

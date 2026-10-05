@@ -4,13 +4,21 @@
  */
 import type { Database } from 'sql.js';
 import { newId, queryAll, queryOne, run } from '../db/index.ts';
+import { logger } from '../lib/logger.ts';
+import { prefetchFxToNzd } from '../quotes/fx.ts';
+import { fetchYahooPublishedDividends } from '../quotes/yahooDividends.ts';
 import { removeDividendIncome, syncDividendIncome } from './incomeSync.ts';
 import {
   buildDividendDashboard,
   computeDividend,
+  isYmd,
+  projectDividendFromHistory,
+  todayAucklandYmd,
+  type DetectedDividend,
   type DividendDashboard,
   type DividendRecord,
   type HoldingValueInput,
+  type PublishedDividendSeries,
 } from './model.ts';
 
 export type StockHoldingOption = {
@@ -20,6 +28,22 @@ export type StockHoldingOption = {
   shares: number | null;
   costBasisNzd: number | null;
 };
+
+type OwnedStockHolding = StockHoldingOption & { exchange: string | null };
+
+export type PublishedDividendLoader = (input: {
+  symbol: string;
+  exchange: string | null;
+}) => Promise<PublishedDividendSeries | null>;
+
+async function defaultPublishedLoader(input: {
+  symbol: string;
+  exchange: string | null;
+}): Promise<PublishedDividendSeries | null> {
+  const chart = await fetchYahooPublishedDividends(input.symbol, input.exchange);
+  if (!chart) return null;
+  return { source: 'yahoo', currency: chart.currency, payments: chart.payments };
+}
 
 export type DividendWriteBody = {
   holdingId?: unknown;
@@ -66,10 +90,10 @@ function mapEvent(row: Record<string, unknown>): DividendRecord {
   };
 }
 
-export function listStockHoldings(db: Database, userId: string): StockHoldingOption[] {
+function listOwnedStocks(db: Database, userId: string): OwnedStockHolding[] {
   const rows = queryAll<Record<string, unknown>>(
     db,
-    `SELECT id, name, symbol, shares, cost_basis_nzd
+    `SELECT id, name, symbol, shares, cost_basis_nzd, exchange
      FROM holdings
      WHERE user_id = ? AND asset_class = 'stock'
      ORDER BY name COLLATE NOCASE, symbol`,
@@ -83,6 +107,17 @@ export function listStockHoldings(db: Database, userId: string): StockHoldingOpt
     costBasisNzd: row.cost_basis_nzd == null || row.cost_basis_nzd === ''
       ? null
       : Number(row.cost_basis_nzd),
+    exchange: row.exchange != null && String(row.exchange) !== '' ? String(row.exchange) : null,
+  }));
+}
+
+export function listStockHoldings(db: Database, userId: string): StockHoldingOption[] {
+  return listOwnedStocks(db, userId).map((holding) => ({
+    id: holding.id,
+    name: holding.name,
+    symbol: holding.symbol,
+    shares: holding.shares,
+    costBasisNzd: holding.costBasisNzd,
   }));
 }
 
@@ -280,20 +315,102 @@ export function unlinkDividendsForHolding(db: Database, userId: string, holdingI
   return count;
 }
 
-export function dashboardForUser(
+function usableShares(shares: number | null): number | null {
+  if (shares == null || !Number.isFinite(shares) || !(shares > 0)) return null;
+  return shares;
+}
+
+async function detectedForHoldings(
+  holdings: OwnedStockHolding[],
+  events: DividendRecord[],
+  today: string,
+  loadPublished: PublishedDividendLoader,
+): Promise<DetectedDividend[]> {
+  const statedUpcoming = new Set(
+    events
+      .filter((event) => event.holdingId && event.paymentDate > today)
+      .map((event) => event.holdingId as string),
+  );
+  const candidates = holdings.filter((holding) => {
+    if (!holding.symbol || statedUpcoming.has(holding.id)) return false;
+    return usableShares(holding.shares) != null;
+  });
+  const loaded = await Promise.all(candidates.map(async (holding) => {
+    try {
+      const series = await loadPublished({
+        symbol: holding.symbol as string,
+        exchange: holding.exchange,
+      });
+      return { holding, series };
+    } catch (err) {
+      logger.warn('Dividend history lookup failed', {
+        symbol: holding.symbol,
+        detail: (err as Error).message,
+      });
+      return { holding, series: null };
+    }
+  }));
+  const foreign = [...new Set(
+    loaded
+      .map((item) => item.series?.currency?.toUpperCase() ?? '')
+      .filter((currency) => /^[A-Z]{3}$/.test(currency) && currency !== 'NZD'),
+  )];
+  let rates = new Map<string, number>();
+  if (foreign.length > 0) {
+    try {
+      const quotes = await prefetchFxToNzd(foreign);
+      rates = new Map(
+        [...quotes.entries()]
+          .filter(([, quote]) => quote.status === 'ok' && quote.rate != null && quote.rate > 0)
+          .map(([currency, quote]) => [currency, quote.rate as number]),
+      );
+    } catch (err) {
+      logger.warn('Dividend FX lookup failed', { detail: (err as Error).message });
+    }
+  }
+  const detected: DetectedDividend[] = [];
+  for (const item of loaded) {
+    const shares = usableShares(item.holding.shares);
+    if (shares == null || !item.holding.symbol) continue;
+    const currency = item.series?.currency?.toUpperCase() ?? '';
+    const projected = projectDividendFromHistory({
+      holdingId: item.holding.id,
+      name: item.holding.name,
+      symbol: item.holding.symbol,
+      shares,
+      series: item.series,
+      today,
+      fxRateToNzd: currency === 'NZD' ? 1 : rates.get(currency) ?? null,
+    });
+    if (projected) detected.push(projected);
+  }
+  return detected;
+}
+
+export async function dashboardForUser(
   db: Database,
   userId: string,
   year: number,
   today?: string,
-): DividendDashboard & { holdings: StockHoldingOption[] } {
-  const holdings = listStockHoldings(db, userId);
+  loadPublished: PublishedDividendLoader = defaultPublishedLoader,
+): Promise<DividendDashboard & { holdings: StockHoldingOption[] }> {
+  const owned = listOwnedStocks(db, userId);
+  const holdings = owned.map((holding) => ({
+    id: holding.id,
+    name: holding.name,
+    symbol: holding.symbol,
+    shares: holding.shares,
+    costBasisNzd: holding.costBasisNzd,
+  }));
   const events = listDividendEvents(db, userId);
+  const todayYmd = today && isYmd(today) ? today : todayAucklandYmd();
+  const detected = await detectedForHoldings(owned, events, todayYmd, loadPublished);
   const valued: HoldingValueInput[] = holdings.map((holding) => ({
     ...holding,
     quotedPriceNzd: quotePriceNzd(db, holding.symbol),
   }));
   return {
-    ...buildDividendDashboard({ events, holdings: valued, year, today }),
+    ...buildDividendDashboard({ events, holdings: valued, year, today: todayYmd, detected }),
     holdings,
   };
 }
