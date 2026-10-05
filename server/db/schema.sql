@@ -499,4 +499,23 @@ CREATE TABLE IF NOT EXISTS payee_settings (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_payee_settings_user_key
   ON payee_settings(user_id, name_key);
 
+-- Savings goals. target / current / deadline are stored. Weekly and monthly
+-- saving, percent complete, and estimated completion are counted on read
+-- (server/savings/model.ts). Amounts are NZD. deadline is YYYY-MM-DD or NULL.
+-- current_amount_nzd is the user's figure for this goal. It is not a bank
+-- balance and is not added to net worth.
+CREATE TABLE IF NOT EXISTS savings_goals (
+  id                  TEXT PRIMARY KEY,
+  user_id             TEXT,
+  name                TEXT NOT NULL,
+  notes               TEXT,
+  target_nzd          REAL NOT NULL,
+  current_amount_nzd  REAL NOT NULL DEFAULT 0,
+  deadline            TEXT,
+  created_at          TEXT NOT NULL,
+  updated_at          TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_savings_goals_user ON savings_goals(user_id);
+
 -- per-user indexes created in migrateSchema after user_id columns exist

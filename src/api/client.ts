@@ -7,7 +7,15 @@ import type {
   DividendWriteBody,
   ForecastReinvestResponse,
 } from '../types/dividends.ts';
-import type { DebtPerson, DebtSummary, DebtWriteBody, HomeMonthSnapshot, PayeeSetting } from '../types/index.ts';
+import type {
+  DebtPerson,
+  DebtSummary,
+  DebtWriteBody,
+  HomeMonthSnapshot,
+  PayeeSetting,
+  SavingsGoal,
+  SavingsGoalWriteBody,
+} from '../types/index.ts';
 
 const BASE = '/api';
 
@@ -403,6 +411,21 @@ export const api = {
       }),
     deleteRepayment: (id: string) =>
       req<{ ok: boolean; id: string }>(`/debts/repayments/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      }),
+  },
+  savingsGoals: {
+    list: () => req<SavingsGoal[]>('/savings-goals'),
+    get: (id: string) => req<SavingsGoal>(`/savings-goals/${encodeURIComponent(id)}`),
+    create: (body: SavingsGoalWriteBody & { name: string; targetNzd: number }) =>
+      req<SavingsGoal>('/savings-goals', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: SavingsGoalWriteBody) =>
+      req<SavingsGoal>(`/savings-goals/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+    remove: (id: string) =>
+      req<{ ok: boolean; id: string }>(`/savings-goals/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       }),
   },
