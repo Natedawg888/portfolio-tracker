@@ -2,11 +2,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, coerceBalance, formatAuckland, formatNzd } from '../api/client';
 import { maybeAutoSyncBankTransactions, maybeAutoSyncPortfolio } from '../lib/akahuTxnAutoSync';
+import { isMoneyHidden, MONEY_MASK } from '../lib/privacy';
 import { showQuietToast } from '../lib/quietToast';
 import { AssetBreakdownChart, type AssetBreakdownRow } from '../components/AssetBreakdownChart';
 import { DebtBreakdownChart, type DebtBreakdownPerson } from '../components/DebtBreakdownChart';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
+import type { HomeMonthSnapshot } from '../types';
 
 type Summary = {
   cashNzd: number;
@@ -53,6 +55,21 @@ function balanceNumber(raw: unknown): number {
   return coerceBalance(raw) ?? 0;
 }
 
+/** savingsRate is a fraction of income. 0.6 is 60%, -1.5 is -150%. Null stays an em dash. */
+function formatSavingsRate(rate: number | null): string {
+  if (isMoneyHidden()) return MONEY_MASK;
+  if (rate == null || !Number.isFinite(rate)) return '—';
+  return new Intl.NumberFormat('en-NZ', {
+    style: 'percent',
+    maximumFractionDigits: 1,
+  }).format(rate);
+}
+
+function monthErrorMessage(err: unknown): string {
+  if (err instanceof Error && err.message.trim()) return err.message.trim();
+  return 'Could not load this month.';
+}
+
 /** Drop env key names from copy shown on the dashboard. */
 function dashboardQuoteNote(note: string | undefined): string | undefined {
   if (!note) return note;
@@ -68,6 +85,8 @@ export function Dashboard() {
   const [accounts, setAccounts] = useState<BankAccountRow[]>([]);
   const [debtPeople, setDebtPeople] = useState<DebtBreakdownPerson[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [monthSnapshot, setMonthSnapshot] = useState<HomeMonthSnapshot | null>(null);
+  const [monthError, setMonthError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     return Promise.all([api.netWorth(), api.accounts.list(), api.debts.people()])
@@ -89,9 +108,26 @@ export function Dashboard() {
       });
   }, []);
 
+  const loadMonth = useCallback(() => {
+    return api.home
+      .snapshot()
+      .then((snap) => {
+        setMonthSnapshot(snap);
+        setMonthError(null);
+      })
+      .catch((e: unknown) => {
+        setMonthSnapshot(null);
+        setMonthError(monthErrorMessage(e));
+      });
+  }, []);
+
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    void loadMonth();
+  }, [loadMonth]);
 
   // Debounced Akahu auto-sync on dashboard open (bank txns + Sharesies/stocks).
   useEffect(() => {
@@ -105,7 +141,7 @@ export function Dashboard() {
         if (cancelled) return;
         const txnInserted = txn.ran && txn.result.ok && (txn.result.inserted ?? 0) > 0;
         const portOk = port.ran && port.result.ok;
-        if (txnInserted || portOk) await load();
+        if (txnInserted || portOk) await Promise.all([load(), loadMonth()]);
       } catch {
         showQuietToast('Bank/portfolio sync paused — showing last data.', { kind: 'warn' });
       }
@@ -113,19 +149,31 @@ export function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [load]);
+  }, [load, loadMonth]);
 
+
+  const monthRow = <MonthSnapshot snapshot={monthSnapshot} error={monthError} />;
 
   if (error) {
     return (
-      <div className="panel warn dashboard-page">
-        <h2 className="page-title">Dashboard</h2>
-        <p>The figures could not be loaded. Try again.</p>
+      <div className="stack dashboard-page">
+        {monthRow}
+        <div className="panel warn">
+          <h2 className="page-title">Dashboard</h2>
+          <p>The figures could not be loaded. Try again.</p>
+        </div>
       </div>
     );
   }
 
-  if (!summary) return <div className="panel dashboard-page">Loading net worth…</div>;
+  if (!summary) {
+    return (
+      <div className="stack dashboard-page">
+        {monthRow}
+        <div className="panel">Loading net worth…</div>
+      </div>
+    );
+  }
 
   // NZD rows feed cashNzd; non-NZD shown separately (no FX invented)
   const nzdAccounts = accounts
@@ -177,6 +225,7 @@ export function Dashboard() {
 
   return (
     <div className="stack dashboard-page">
+      {monthRow}
       <section className="hero-card">
         <p className="eyebrow page-title">Net worth · assets − debt outstanding</p>
         <p className="hero-value">{formatNzd(summary.totalKnownNzd)}</p>
@@ -363,6 +412,44 @@ export function Dashboard() {
       </section>
       ) : null}
     </div>
+  );
+}
+
+function MonthSnapshot({
+  snapshot,
+  error,
+}: {
+  snapshot: HomeMonthSnapshot | null;
+  error: string | null;
+}) {
+  return (
+    <section className="card month-snapshot" aria-labelledby="this-month-heading">
+      <h2 id="this-month-heading" className="month-snapshot-period">This month</h2>
+      {error ? (
+        <p className="month-snapshot-error" role="alert">{error}</p>
+      ) : snapshot ? (
+        <dl className="month-snapshot-row">
+          <div className="month-snapshot-figure">
+            <dt>Income</dt>
+            <dd>{formatNzd(snapshot.incomeNzd)}</dd>
+          </div>
+          <div className="month-snapshot-figure">
+            <dt>Spending</dt>
+            <dd>{formatNzd(snapshot.spendingNzd)}</dd>
+          </div>
+          <div className="month-snapshot-figure">
+            <dt>Savings</dt>
+            <dd>{formatNzd(snapshot.savingsNzd)}</dd>
+          </div>
+          <div className="month-snapshot-figure">
+            <dt>Savings rate</dt>
+            <dd>{formatSavingsRate(snapshot.savingsRate)}</dd>
+          </div>
+        </dl>
+      ) : (
+        <p className="month-snapshot-status">Loading this month…</p>
+      )}
+    </section>
   );
 }
 
