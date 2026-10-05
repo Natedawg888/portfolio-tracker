@@ -66,9 +66,9 @@ export function Settings() {
   };
 
   return (
-    <div className="settings-layout">
+    <div className="settings-layout settings-page">
       <aside className="settings-side-nav" aria-label="Settings sections">
-        <h2 className="settings-side-title">Settings</h2>
+        <h2 className="settings-side-title page-title">Settings</h2>
         <nav className="settings-side-links">
           <button
             type="button"
