@@ -38,6 +38,25 @@ export interface DividendMonthTotal {
   unconvertedCount: number;
 }
 
+/** Next payment taken from Yahoo Finance dividend history for one holding this user owns. */
+export interface DetectedDividend {
+  holdingId: string;
+  name: string;
+  symbol: string;
+  dividendPerShare: number;
+  sharesHeld: number;
+  amount: number;
+  currency: string;
+  amountNzd: number | null;
+  fxRateToNzd: number | null;
+  lastPaidDate: string;
+  paymentDate: string;
+  intervalMonths: 1 | 3 | 6 | 12 | null;
+  historyCount: number;
+  basis: 'projected' | 'published';
+  source: 'yahoo';
+}
+
 export interface DividendYearTotal {
   year: number;
   netNzd: number | null;
@@ -86,6 +105,11 @@ export interface DividendDashboard {
     statedUpcomingNzd: number | null;
     statedUpcomingCount: number;
     statedUnconvertedCount: number;
+    /** Next payments for this user's stock and ETF holdings, from published dividend history. */
+    detected: DetectedDividend[];
+    detectedNzd: number | null;
+    detectedCount: number;
+    detectedUnconvertedCount: number;
     note: string;
   };
   upcoming: DividendEvent[];

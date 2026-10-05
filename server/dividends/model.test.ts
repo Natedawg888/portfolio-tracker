@@ -6,9 +6,10 @@ import {
   buildDividendDashboard,
   computeDividend,
   netInNzd,
+  projectDividendFromHistory,
   shiftMonths,
 } from './model.ts';
-import type { DividendRecord, HoldingValueInput } from './model.ts';
+import type { DetectedDividend, DividendRecord, HoldingValueInput, PublishedDividendSeries } from './model.ts';
 
 function assert(cond: unknown, msg: string): void {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -187,6 +188,10 @@ assert(empty.growth.changePct == null, 'empty growth');
 assert(empty.yield.yieldPct == null, 'empty yield');
 assert(empty.forecast.historyRunRateNzd == null, 'empty history projection');
 assert(empty.forecast.statedUpcomingNzd == null, 'empty stated upcoming');
+assert(empty.forecast.detectedCount === 0, 'empty forecast does not invent a holding payment');
+assert(empty.forecast.detectedNzd == null, 'empty detected total');
+assert(empty.forecast.note.includes('not a market forecast'), 'forecast note refuses a market forecast');
+assert(empty.forecast.note.includes('no dividend figure'), 'forecast note says missing figures are left out');
 assert(JSON.stringify(empty).includes('2438') === false, 'layout example amount is not a result');
 
 const otherUser = buildDividendDashboard({
@@ -320,5 +325,190 @@ assert(!onlyUnlinked.yield.available, 'yield needs a linked holding');
 assert(onlyUnlinked.yield.yieldPct == null, 'no yield percent is invented for an unlinked payment');
 assert(onlyUnlinked.yield.trailingNetNzd == null, 'the ignored amount is not reported as the yield numerator');
 eq(onlyUnlinked.yearIncomeNzd, 15, 'the unlinked payment is still income');
+
+function series(payments: Array<{ date: string; amountPerShare: number }>, currency = 'NZD'): PublishedDividendSeries {
+  return { source: 'yahoo', currency, payments };
+}
+
+const projected = projectDividendFromHistory({
+  holdingId: 'h1',
+  name: 'Example ETF',
+  symbol: 'ETF',
+  shares: 100,
+  today: '2026-10-04',
+  fxRateToNzd: null,
+  series: series([
+    { date: '2026-02-13', amountPerShare: 0.2 },
+    { date: '2026-05-14', amountPerShare: 0.5 },
+    { date: '2026-08-14', amountPerShare: 0.3 },
+  ]),
+});
+assert(projected, 'three published quarterly dividends can project the next date');
+if (!projected) throw new Error('unreachable');
+eq(projected.dividendPerShare, 0.3, 'projection uses the last published amount, not an average');
+eq(projected.amount, 30, 'cash amount is shares times that last amount');
+eq(projected.amountNzd, 30, 'NZD amount uses the identity rate, not a guessed FX rate');
+assert(projected.paymentDate === '2026-11-14', 'next date is the last published date plus the quarterly gap');
+assert(projected.basis === 'projected', 'the date is labelled as a projection');
+assert(projected.intervalMonths === 3, 'the gap is quarterly');
+assert(projected.lastPaidDate === '2026-08-14', 'the last published date is kept');
+assert(!projected.paymentDate.includes('yield'), 'no yield is attached');
+
+const averaged = projectDividendFromHistory({
+  holdingId: 'h1',
+  name: 'Example ETF',
+  symbol: 'ETF',
+  shares: 10,
+  today: '2026-10-04',
+  fxRateToNzd: null,
+  series: series([
+    { date: '2026-02-13', amountPerShare: 1 },
+    { date: '2026-05-14', amountPerShare: 3 },
+    { date: '2026-08-14', amountPerShare: 0.4 },
+  ]),
+});
+eq(averaged?.dividendPerShare ?? null, 0.4, 'a smaller latest dividend is not replaced with an average');
+eq(averaged?.amount ?? null, 4, 'cash follows the latest per-share figure');
+
+const usdProjected = projectDividendFromHistory({
+  holdingId: 'h1',
+  name: 'Example ETF',
+  symbol: 'ETF',
+  shares: 10,
+  today: '2026-10-04',
+  fxRateToNzd: 1.6,
+  series: series([
+    { date: '2026-02-13', amountPerShare: 0.5 },
+    { date: '2026-05-14', amountPerShare: 0.5 },
+    { date: '2026-08-14', amountPerShare: 0.5 },
+  ], 'USD'),
+});
+eq(usdProjected?.amount ?? null, 5, 'foreign cash stays in the published currency');
+eq(usdProjected?.amountNzd ?? null, 8, 'NZD uses the supplied FX rate');
+assert(usdProjected?.fxRateToNzd === 1.6, 'the FX rate is the one supplied');
+
+const missingRate = projectDividendFromHistory({
+  holdingId: 'h1',
+  name: 'Example ETF',
+  symbol: 'ETF',
+  shares: 10,
+  today: '2026-10-04',
+  fxRateToNzd: null,
+  series: series([
+    { date: '2026-02-13', amountPerShare: 0.5 },
+    { date: '2026-05-14', amountPerShare: 0.5 },
+    { date: '2026-08-14', amountPerShare: 0.5 },
+  ], 'USD'),
+});
+eq(missingRate?.amount ?? null, 5, 'native cash remains when FX is missing');
+assert(missingRate?.amountNzd == null, 'missing FX does not become an NZD amount');
+
+assert(projectDividendFromHistory({
+  holdingId: 'h1',
+  name: 'Example ETF',
+  symbol: 'ETF',
+  shares: 10,
+  today: '2026-10-04',
+  fxRateToNzd: null,
+  series: series([{ date: '2026-08-14', amountPerShare: 1 }]),
+}) == null, 'one published dividend is not enough to invent a next date');
+
+assert(projectDividendFromHistory({
+  holdingId: 'h1',
+  name: 'Example ETF',
+  symbol: 'ETF',
+  shares: 10,
+  today: '2026-10-04',
+  fxRateToNzd: null,
+  series: series([
+    { date: '2026-01-15', amountPerShare: 1 },
+    { date: '2026-03-01', amountPerShare: 1 },
+    { date: '2026-08-20', amountPerShare: 1 },
+  ]),
+}) == null, 'uneven gaps are not turned into a schedule');
+
+assert(projectDividendFromHistory({
+  holdingId: 'h1',
+  name: 'Example ETF',
+  symbol: 'ETF',
+  shares: 10,
+  today: '2026-10-04',
+  fxRateToNzd: null,
+  series: series([
+    { date: '2024-01-15', amountPerShare: 1 },
+    { date: '2024-04-15', amountPerShare: 1 },
+    { date: '2024-07-15', amountPerShare: 1 },
+  ]),
+}) == null, 'a lapsed cadence is not stepped forward again');
+
+assert(projectDividendFromHistory({
+  holdingId: 'h1',
+  name: 'Example ETF',
+  symbol: 'ETF',
+  shares: 0,
+  today: '2026-10-04',
+  fxRateToNzd: null,
+  series: series([
+    { date: '2026-02-13', amountPerShare: 0.3 },
+    { date: '2026-05-14', amountPerShare: 0.3 },
+    { date: '2026-08-14', amountPerShare: 0.3 },
+  ]),
+}) == null, 'missing shares do not invent a cash amount');
+
+assert(projectDividendFromHistory({
+  holdingId: 'h1',
+  name: 'Example ETF',
+  symbol: 'ETF',
+  shares: 10,
+  today: '2026-10-04',
+  fxRateToNzd: null,
+  series: null,
+}) == null, 'no published series means no projection');
+
+const publishedNext = projectDividendFromHistory({
+  holdingId: 'h1',
+  name: 'Example ETF',
+  symbol: 'ETF',
+  shares: 8,
+  today: '2026-10-04',
+  fxRateToNzd: null,
+  series: series([
+    { date: '2026-05-14', amountPerShare: 0.2 },
+    { date: '2026-08-14', amountPerShare: 0.2 },
+    { date: '2026-11-20', amountPerShare: 0.45 },
+  ]),
+});
+assert(publishedNext?.basis === 'published', 'a future published dividend keeps that date');
+assert(publishedNext?.paymentDate === '2026-11-20', 'the published future date is not shifted');
+eq(publishedNext?.dividendPerShare ?? null, 0.45, 'the published future amount is kept');
+eq(publishedNext?.amount ?? null, 3.6, 'cash uses the published future amount');
+
+const withDetected = buildDividendDashboard({
+  events,
+  holdings: [holding],
+  year: 2026,
+  today: '2026-10-04',
+  detected: [projected, usdProjected as DetectedDividend],
+});
+eq(withDetected.forecast.detectedNzd, 38, 'detected NZD sums only rows that have an FX rate');
+assert(withDetected.forecast.detectedCount === 2, 'both detected rows are listed');
+eq(withDetected.forecast.statedUpcomingNzd, 33, 'detected rows are not added to stated upcoming');
+eq(withDetected.forecast.historyRunRateNzd, 40, 'detected rows are not added to recorded history');
+assert(withDetected.upcoming.every((item) => item.id === 'c' || item.id === 'd'), 'detected rows are not stored as entered payments');
+
+const inconsistent: DetectedDividend = {
+  ...projected,
+  amount: 999,
+  amountNzd: 999,
+};
+const dropped = buildDividendDashboard({
+  events: [],
+  holdings: [holding],
+  year: 2026,
+  today: '2026-10-04',
+  detected: [inconsistent],
+});
+assert(dropped.forecast.detectedCount === 0, 'a cash amount that does not match shares times per share is left out');
+assert(dropped.forecast.detectedNzd == null, 'an inconsistent detected amount is not totalled');
 
 console.log('dividend model tests passed');

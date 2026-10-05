@@ -1,6 +1,8 @@
 /**
  * Dividend records for the signed-in user.
- * Figures are calculated from rows they entered. No market forecast is fetched.
+ * Recorded figures come from rows they entered.
+ * A next payment is added only when Yahoo chart history already used for
+ * equity prices has a real dividend for one of this user's stocks or ETFs.
  */
 import { Router } from 'express';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
@@ -44,7 +46,7 @@ router.get('/', async (req, res) => {
     return;
   }
   const db = await getDb();
-  res.json(dashboardForUser(db, userId, year, today));
+  res.json(await dashboardForUser(db, userId, year, today));
 });
 
 router.post('/', async (req, res) => {

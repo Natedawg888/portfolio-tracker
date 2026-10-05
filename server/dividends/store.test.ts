@@ -10,11 +10,15 @@ import {
   insertDividend,
   listDividendEvents,
   unlinkDividendsForHolding,
+  type PublishedDividendLoader,
 } from './store.ts';
+import type { PublishedDividendSeries } from './model.ts';
 
 function assert(cond: unknown, msg: string): void {
   if (!cond) throw new Error(`FAIL: ${msg}`);
 }
+
+const offlineDividends: PublishedDividendLoader = async () => null;
 
 const userA = 'divtest_user_a';
 const userB = 'divtest_user_b';
@@ -29,7 +33,7 @@ async function main() {
   run(db, `DELETE FROM payee_settings WHERE user_id IN (?, ?)`, [userA, userB]);
   run(db, `DELETE FROM dividend_events WHERE user_id IN (?, ?)`, [userA, userB]);
   run(db, `DELETE FROM budget_categories WHERE user_id IN (?, ?)`, [userA, userB]);
-  run(db, `DELETE FROM holdings WHERE id IN (?, ?, ?)`, [holdingA, holdingA2, holdingB]);
+  run(db, `DELETE FROM holdings WHERE id IN (?, ?, ?, ?, ?)`, [holdingA, holdingA2, holdingB, 'divtest_h_crypto', 'divtest_h_blank']);
   run(
     db,
     `INSERT INTO holdings (id, user_id, asset_class, name, symbol, shares, cost_basis_nzd, created_at, updated_at)
@@ -77,14 +81,14 @@ async function main() {
     });
     assert(own.ok, 'user B can record their own holding');
 
-    const dashA = dashboardForUser(db, userA, 2026, '2026-10-04');
+    const dashA = await dashboardForUser(db, userA, 2026, '2026-10-04', offlineDividends);
     assert(dashA.history.length === 1, 'user A sees one dividend');
     assert(dashA.history[0]?.companyName === 'Alpha ETF', 'user A sees their company');
     assert(!dashA.history.some((row) => row.companyName === 'Bravo Ltd'), 'user A does not see user B');
     assert(Math.abs((dashA.yearIncomeNzd ?? 0) - 17) < 1e-6, 'user A year total is their net dividend');
     assert(dashA.holdings.every((holding) => holding.id !== holdingB), 'holding list is user A only');
 
-    const dashB = dashboardForUser(db, userB, 2026, '2026-10-04');
+    const dashB = await dashboardForUser(db, userB, 2026, '2026-10-04', offlineDividends);
     assert(dashB.history.every((row) => row.companyName === 'Bravo Ltd'), 'user B sees only their rows');
     assert(listDividendEvents(db, userA).every((row) => row.holdingId === holdingA), 'listed rows stay on A');
 
@@ -132,12 +136,81 @@ async function main() {
       'user B rows stay linked to their own holding',
     );
 
-    const afterUnlink = dashboardForUser(db, userA, 2026, '2026-10-04');
+    const afterUnlink = await dashboardForUser(db, userA, 2026, '2026-10-04', offlineDividends);
     assert(afterUnlink.yield.available, 'yield still uses the holding that remains');
     assert(Math.abs((afterUnlink.yield.trailingNetNzd ?? 0) - 10) < 1e-6, 'unlinked dividend is ignored in yield');
     assert(Math.abs((afterUnlink.yield.denominatorNzd ?? 0) - 200) < 1e-6, 'yield denominator is the remaining holding');
     assert(Math.abs((afterUnlink.yearIncomeNzd ?? 0) - 27) < 1e-6, 'both recorded payments still count as income');
     assert(afterUnlink.holdings.every((holding) => holding.id !== holdingB), 'user B holding stays unreachable');
+
+    const cryptoId = 'divtest_h_crypto';
+    const blankSharesId = 'divtest_h_blank';
+    run(db, `DELETE FROM holdings WHERE id IN (?, ?)`, [cryptoId, blankSharesId]);
+    run(
+      db,
+      `INSERT INTO holdings (id, user_id, asset_class, name, symbol, amount, created_at, updated_at)
+       VALUES (?, ?, 'crypto', 'Bitcoin', 'BTC', 1, ?, ?)`,
+      [cryptoId, userA, now, now],
+    );
+    run(
+      db,
+      `INSERT INTO holdings (id, user_id, asset_class, name, symbol, shares, created_at, updated_at)
+       VALUES (?, ?, 'stock', 'No Shares Ltd', 'NOSH', NULL, ?, ?)`,
+      [blankSharesId, userA, now, now],
+    );
+    const upcomingOwn = insertDividend(db, userA, {
+      holdingId: holdingA2,
+      sharesHeld: 10,
+      dividendPerShare: 1,
+      paymentDate: '2026-12-01',
+      currency: 'NZD',
+    });
+    assert(upcomingOwn.ok, 'user A can record an upcoming payment');
+
+    const lookedUp: string[] = [];
+    const quarterly = (amount: number): PublishedDividendSeries => ({
+      source: 'yahoo',
+      currency: 'NZD',
+      payments: [
+        { date: '2026-02-13', amountPerShare: amount },
+        { date: '2026-05-14', amountPerShare: amount },
+        { date: '2026-08-14', amountPerShare: amount },
+      ],
+    });
+    const loader: PublishedDividendLoader = async ({ symbol }) => {
+      lookedUp.push(symbol);
+      if (symbol === 'ALFA') return quarterly(0.3);
+      if (symbol === 'BRAV') return quarterly(9);
+      if (symbol === 'ALF2') return quarterly(4);
+      if (symbol === 'BTC' || symbol === 'NOSH') return quarterly(5);
+      return { source: 'yahoo', currency: 'NZD', payments: [] };
+    };
+
+    const detectedA = await dashboardForUser(db, userA, 2026, '2026-10-04', loader);
+    assert(lookedUp.includes('ALFA'), 'user A stock with shares is looked up');
+    assert(!lookedUp.includes('BRAV'), 'user B symbol is not looked up for user A');
+    assert(!lookedUp.includes('BTC'), 'a crypto holding is not treated as a dividend stock');
+    assert(!lookedUp.includes('NOSH'), 'a stock with no share count is left out');
+    assert(!lookedUp.includes('ALF2'), 'a holding with an upcoming payment the user entered is not looked up again');
+    assert(detectedA.forecast.detected.length === 1, 'only the holding with published history and no stated payment is added');
+    assert(detectedA.forecast.detected[0]?.symbol === 'ALFA', 'the detected row is user A stock');
+    assert(detectedA.forecast.detected[0]?.name === 'Alpha ETF', 'the detected name is the holding on this account');
+    assert(Math.abs((detectedA.forecast.detected[0]?.dividendPerShare ?? 0) - 0.3) < 1e-6, 'per share is the published figure');
+    assert(Math.abs((detectedA.forecast.detected[0]?.amount ?? 0) - 15) < 1e-6, 'cash is shares times the published dividend');
+    assert(detectedA.forecast.detected[0]?.basis === 'projected', 'the row is labelled as a projection from history');
+    assert(!detectedA.forecast.detected.some((row) => row.symbol === 'BRAV' || row.name === 'Bravo Ltd'), 'user B holding stays out of user A forecast');
+    assert(detectedA.holdings.every((holding) => holding.id !== holdingB), 'holding list is still user A only');
+    assert(detectedA.upcoming.some((row) => row.holdingId === holdingA2), 'the payment user A entered stays in upcoming');
+    assert(!detectedA.upcoming.some((row) => row.symbol === 'ALFA' && row.paymentDate === '2026-11-14'), 'a projection is not saved as an entered dividend');
+
+    lookedUp.length = 0;
+    const detectedB = await dashboardForUser(db, userB, 2026, '2026-10-04', loader);
+    assert(lookedUp.length === 1 && lookedUp[0] === 'BRAV', 'user B lookup is only their stock');
+    assert(detectedB.forecast.detected.length === 1, 'user B gets their own projection');
+    assert(detectedB.forecast.detected[0]?.symbol === 'BRAV', 'user B projection is their holding');
+    assert(Math.abs((detectedB.forecast.detected[0]?.amount ?? 0) - 90) < 1e-6, 'user B cash uses their shares and their published amount');
+    assert(!detectedB.forecast.detected.some((row) => row.symbol === 'ALFA'), 'user A projection is not on user B');
+    assert(detectedA.forecast.detected.every((row) => row.symbol === 'ALFA'), 'building user B does not change user A result');
 
     const scoped = deleteScopedDataForUser(db, userA);
     assert((scoped.tables.dividend_events ?? 0) >= 2, 'account deletion counts this user\'s dividend rows');
@@ -149,8 +222,9 @@ async function main() {
       [holdingB, userB],
     );
     assert(holdingBLeft?.id === holdingB, 'the other user\'s holding remains');
-    const dashBAfter = dashboardForUser(db, userB, 2026, '2026-10-04');
+    const dashBAfter = await dashboardForUser(db, userB, 2026, '2026-10-04', offlineDividends);
     assert(dashBAfter.history.every((row) => row.companyName === 'Bravo Ltd'), 'user B dashboard is unchanged');
+    assert(dashBAfter.forecast.detectedCount === 0, 'user B forecast does not keep another account projection');
 
     console.log('dividend store isolation tests passed');
   } finally {
@@ -158,7 +232,7 @@ async function main() {
     run(db, `DELETE FROM payee_settings WHERE user_id IN (?, ?)`, [userA, userB]);
     run(db, `DELETE FROM dividend_events WHERE user_id IN (?, ?)`, [userA, userB]);
     run(db, `DELETE FROM budget_categories WHERE user_id IN (?, ?)`, [userA, userB]);
-    run(db, `DELETE FROM holdings WHERE id IN (?, ?, ?)`, [holdingA, holdingA2, holdingB]);
+    run(db, `DELETE FROM holdings WHERE id IN (?, ?, ?, ?, ?)`, [holdingA, holdingA2, holdingB, 'divtest_h_crypto', 'divtest_h_blank']);
   }
 }
 
