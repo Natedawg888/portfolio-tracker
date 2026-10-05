@@ -605,8 +605,9 @@ a.btn {
 }
 .reinvest-note {
   margin: 0.25rem 0 0;
-  max-width: 18rem;
+  max-width: 14rem;
   white-space: normal;
+  overflow-wrap: anywhere;
 }
 .btn.danger { color: var(--btn-danger-text); border-color: var(--btn-danger-border); background: transparent; }
 .btn.danger:hover { background: var(--btn-danger-hover); }

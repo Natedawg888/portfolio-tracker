@@ -744,10 +744,10 @@ function DetectedDividendTable({
                   {row.symbol} · {row.name}
                 </td>
                 <td className="money">{formatPerShare(row.dividendPerShare, row.currency)}</td>
-                <td className="money">
+                <td>
                   {row.ownedShares}
                   {row.projectedShares !== row.ownedShares ? (
-                    <div className="muted small">Forecast uses {row.projectedShares}</div>
+                    <div className="muted small reinvest-note">Forecast uses {row.projectedShares}</div>
                   ) : null}
                 </td>
                 <td className="money">{moneyOrDash(row.amount, row.currency)}</td>
