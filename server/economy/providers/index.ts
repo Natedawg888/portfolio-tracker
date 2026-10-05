@@ -5,7 +5,7 @@ import type { EconomicDataProvider } from './types.ts';
 
 export const nzPublicProvider: EconomicDataProvider = {
   id: 'nz-public',
-  label: 'New Zealand public extracts (Stats NZ and OECD)',
+  label: 'New Zealand public extracts (Stats NZ, OECD, and the Reserve Bank)',
   kind: 'live',
   country: 'NZ',
   fetch: () => fetchNzPublic(),

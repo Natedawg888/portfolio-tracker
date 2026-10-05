@@ -14,6 +14,7 @@ import {
   OECD_URLS,
 } from './oecd.ts';
 import { BUSINESS_ACTIVITY_NOTE, businessActivitySourceUrl, loadNzBusinessActivity, NZ_BUSINESS_KEY } from './businessActivity.ts';
+import { loadNzCreditConditions, NZ_CREDIT_SERIES } from './nzCreditConditions.ts';
 import { loadNzHousingGrowth } from './consents.ts';
 import {
   fetchCatalog,
@@ -52,7 +53,7 @@ export async function fetchNzPublic(): Promise<ProviderFetchResult> {
   const catalog = await safe('Stats NZ catalogue', warnings, fetchCatalog);
   const docs = catalog ? selectStatsDocs(catalog) : null;
 
-  const [gdp, cpiFile, retail, jobs, housing, business, oecdCpi, unemployment, callRate, yieldSpread, shares, releaseDates] =
+  const [gdp, cpiFile, retail, jobs, housing, business, oecdCpi, unemployment, callRate, yieldSpread, shares, credit, releaseDates] =
     await Promise.all([
       docs?.gdp
         ? safe('Stats NZ GDP', warnings, () => loadStatsSeries(docs.gdp!, STATS_SERIES.gdp, 'quarterly'))
@@ -75,6 +76,7 @@ export async function fetchNzPublic(): Promise<ProviderFetchResult> {
       safe('OECD interest rates', warnings, loadOecdCallRate),
       safe('OECD yield curve', warnings, loadOecdYieldSpread),
       safe('OECD share prices', warnings, loadOecdShareChange),
+      safe('RBNZ credit conditions', warnings, loadNzCreditConditions),
       releaseDatesFor(docs, warnings),
     ]);
 
@@ -264,13 +266,29 @@ export async function fetchNzPublic(): Promise<ProviderFetchResult> {
     );
   }
 
-  warnings.push(
-    'Credit conditions have no New Zealand feed connected. The Reserve Bank credit conditions survey is the official series, and rbnz.govt.nz returns HTTP 403, so the card stays blank instead of using a stand-in.',
-  );
+  if (credit && credit.rates.length > 0) {
+    const publishedAt = credit.publishedAt ?? credit.rates.at(-1)?.periodEnd ?? retrievedAt.slice(0, 10);
+    observations.push(
+      ...toObservations({
+        ...base,
+        points: credit.rates,
+        indicatorType: 'credit_conditions',
+        unit: 'percent',
+        source:
+          'Reserve Bank of New Zealand — credit conditions survey, credit availability for corporate and institutional loans, observed change over the past six months',
+        sourceUrl: credit.sourceUrl,
+        publishedAt,
+        publishedAtPrecision: credit.publishedAt ? 'release' : 'period_end',
+        frequency: 'quarterly',
+        seriesId: NZ_CREDIT_SERIES,
+        notes: credit.notes,
+      }),
+    );
+  }
 
   return {
     providerId: PROVIDER_ID,
-    providerLabel: 'New Zealand public extracts (Stats NZ and OECD)',
+    providerLabel: 'New Zealand public extracts (Stats NZ, OECD, and the Reserve Bank)',
     kind: 'live',
     country: COUNTRY,
     retrievedAt,
