@@ -4299,6 +4299,153 @@ html:not([data-theme]) .dashboard-page :focus-visible {
   }
 }
 
+/* Savings goals sit directly under This month. Same card, serif title, pounamu bar. */
+.dashboard-page .savings-goals {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.dashboard-page .savings-goals-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem 0.85rem;
+}
+.dashboard-page .savings-goals-title {
+  margin: 0;
+  font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
+  font-weight: 500;
+  font-size: 1.05rem;
+  letter-spacing: -0.015em;
+  text-transform: none;
+}
+.dashboard-page .savings-goals-empty-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+.dashboard-page .savings-goals-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.dashboard-page .savings-goals-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+}
+.dashboard-page .savings-goal + .savings-goal {
+  padding-top: 0.95rem;
+  border-top: 1px solid var(--border-soft);
+}
+.dashboard-page .savings-goal-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.dashboard-page .savings-goals .savings-goal-name {
+  margin: 0;
+  min-width: 0;
+  font-size: 1rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.dashboard-page .savings-goal-edit {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-2);
+  font: inherit;
+  font-size: 0.82rem;
+  line-height: 1.2;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+.dashboard-page .savings-goal-edit:hover {
+  color: var(--text);
+}
+.dashboard-page .savings-goal-edit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.dashboard-page .savings-goal-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.25rem;
+  margin: 0.35rem 0 0.45rem;
+}
+.dashboard-page .savings-goal-figures div {
+  min-width: 0;
+}
+.dashboard-page .savings-goal-figures dt {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.dashboard-page .savings-goal-figures dd {
+  margin: 0.12rem 0 0;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+.dashboard-page .savings-goal-bar {
+  height: 0.28rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 12%, var(--surface));
+  overflow: hidden;
+}
+.dashboard-page .savings-goal-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.savings-goal-dialog {
+  width: min(28rem, 100%);
+}
+.savings-goal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-top: 0.15rem;
+}
+.savings-goal-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.savings-goal-form input {
+  font-size: 0.9rem;
+  background: var(--surface-3);
+  color: var(--text);
+  border-color: var(--border);
+}
+.savings-goal-form-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+.savings-goal-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
 /* Economic cycle page only. Header and other screens stay as they are. */
 html[data-theme="light"]:has(.econ-page),
 html[data-theme="light"]:has(.econ-page) body {
