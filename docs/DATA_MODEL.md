@@ -252,6 +252,56 @@ Cash + stocks (cost) + crypto (cost) + **GoMining miners** (est. value or cost) 
 
 Timezone for display: **Pacific/Auckland**. Currency default: **NZD**.
 
+## Forward projections
+
+`GET /api/projections` projects the signed-in user's net worth and savings. Same session cookie as the rest of `/api`. Signed out: `401` `{ error: "Authentication required", code: "UNAUTHORIZED" }`. Every read is filtered by `user_id`.
+
+Query parameters (all optional):
+
+| Param | Default | Bounds |
+|-------|---------|--------|
+| `months` | 12 | whole number 1–360. 12, 60, and 120 are one, five, and ten years |
+| `savingWindowMonths` | 3 | whole number 1–24 |
+| `annualReturnPercent` | 0 | number from -50 to 50. `5` means 5% a year |
+| `monthlySavingNzd` | observed, or null | number from -10000000 to 10000000, rounded to cents |
+
+Out of range is `400` `{ error }`. Amounts in the body are **NZD**, rounded to cents. Dates are **YYYY-MM-DD** in **Pacific/Auckland**. Month 0 is today. Later points are the same calendar day, clamped to the last day of the month (31 January → 28 February, or 29 in a leap year). `points` has `months + 1` entries.
+
+The starting balances come from the same net-worth computation as `GET /api/net-worth` (`server/lib/netWorth.ts`). Debt steps use `advanceDebtOneMonth` in `server/debts/model.ts`, which is the month inside `projectPayoff`.
+
+**Compounding assets** are the known asset total minus signed bank-account liabilities (credit and loan). That includes cash, holdings at the value net worth already uses, gross property value, and the KiwiSaver balance. Those balances compound together. Bank liabilities and property mortgages stay at the recorded amount because the account and the holding do not store a rate or a payment.
+
+**Each month, in order:**
+
+1. `compoundingAssets = round(compoundingAssets × (1 + annualReturnPercent / 100 / 12))`
+2. Add `monthlySavingNzd` when that amount is known.
+3. Add the observed KiwiSaver contribution when activity rows exist.
+4. For each debt that can be stepped: add scheduled interest, then subtract `actualPaymentNzd`. Monthly interest is `balance × rate / 100 / 12` at the start of every projected month. Yearly interest is `balance × rate / 100` on projected months 1, 13, 25, and so on. A payment that covers the balance clears it. A debt with no saved payment, or with recurring interest but no usable rate, is held. A payment that does not cover interest is still stepped, so the balance can rise; `paysDown` is false.
+
+**Net worth** at each point:
+
+`compoundingAssets + bankLiabilities − debtOutstanding − propertyMortgage`
+
+**Monthly saving** when `monthlySavingNzd` is omitted:
+
+`(income − spending) / savingWindowMonths`
+
+over the complete calendar months before today. Income and spending match the home snapshot (`income_records` plus unlinked income-category credits, minus spending-category outflows and unlinked debt repayments). A month with no rows counts as zero in the divisor. If every month in the window is empty, `monthlySavingNzd.value` is **null** and `savings.points` is **null**. No amount is filled in, and that null saving is not added to assets.
+
+Debt repayments are already inside spending. The projection does not subtract the payment from assets a second time when the debt balance falls.
+
+**KiwiSaver.** The balance is inside compounding assets, so it grows at the same assumed return. `kiwisaver_activity` amounts in the window are averaged over the window length and added on top each month. If there are no rows, the contribution is **null**. `users.preferences_json.kiwiSaverEmployeeRatePct` is a percent and is not turned into dollars.
+
+**Dividends.** Cash already recorded as income is inside the saving figure. No future dividend amount is added.
+
+**Savings goals** are not an input. They are targets, not a cashflow history.
+
+**Inflation** is not applied. `assumptions.inflationPercent.value` is null.
+
+`assumptions.*.source` is `user_data`, `default`, or `query`. `default` on the annual return means 0% because no rate was supplied and none is taken from prices. `query` means the caller passed `annualReturnPercent` or `monthlySavingNzd`. The response `note` says this is an educational projection, not a price forecast.
+
+`npm run test:projections`.
+
 ## Economic cycle (country macro, not per-user)
 
 Educational phase classification for New Zealand. These tables have no `user_id`. The phase is calculated from indicators; it is not stored as a manual setting.

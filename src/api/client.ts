@@ -16,6 +16,7 @@ import type {
   DonationWriteBody,
   HomeMonthSnapshot,
   NewsFeedResponse,
+  ProjectionResponse,
   PayeeSetting,
   SavingsGoal,
   SavingsGoalWriteBody,
@@ -154,6 +155,33 @@ export const api = {
       req<HomeMonthSnapshot>(
         month ? `/home/snapshot?month=${encodeURIComponent(month)}` : '/home/snapshot',
       ),
+  },
+  /**
+   * Forward net worth and savings from this user's balances and cashflow.
+   * months defaults to 12 (1–360). annualReturnPercent and monthlySavingNzd
+   * are optional; omitted values are labelled in assumptions.
+   */
+  projections: {
+    get: (query?: {
+      months?: number;
+      savingWindowMonths?: number;
+      annualReturnPercent?: number;
+      monthlySavingNzd?: number;
+    }) => {
+      const params = new URLSearchParams();
+      if (query?.months != null) params.set('months', String(query.months));
+      if (query?.savingWindowMonths != null) {
+        params.set('savingWindowMonths', String(query.savingWindowMonths));
+      }
+      if (query?.annualReturnPercent != null) {
+        params.set('annualReturnPercent', String(query.annualReturnPercent));
+      }
+      if (query?.monthlySavingNzd != null) {
+        params.set('monthlySavingNzd', String(query.monthlySavingNzd));
+      }
+      const qs = params.toString();
+      return req<ProjectionResponse>(`/projections${qs ? `?${qs}` : ''}`);
+    },
   },
   snapshots: {
     list: (year?: number) =>

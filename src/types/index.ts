@@ -498,6 +498,103 @@ export interface HomeMonthSnapshot {
   savingsRate: number | null;
 }
 
+/** Where a projection figure came from. */
+export type ProjectionAssumptionSource = 'user_data' | 'default' | 'query';
+
+export interface ProjectionAssumption {
+  value: number | null;
+  source: ProjectionAssumptionSource;
+  reason: string | null;
+}
+
+/** One month of the forward projection. Amounts are NZD. `date` is YYYY-MM-DD. */
+export interface ProjectionPoint {
+  date: string;
+  monthIndex: number;
+  netWorthNzd: number;
+  compoundingAssetsNzd: number;
+  /** Cumulative budget saving added. Null when no monthly saving is known. */
+  savingsAddedNzd: number | null;
+  /** Cumulative KiwiSaver contributions added. Null when none were observed. */
+  kiwiSaverContributionsAddedNzd: number | null;
+  debtOutstandingNzd: number;
+  bankLiabilitiesNzd: number;
+  propertyMortgageNzd: number;
+}
+
+export interface ProjectionDebtPath {
+  id: string;
+  name: string;
+  startingBalanceNzd: number;
+  endingBalanceNzd: number;
+  annualRatePercent: number | null;
+  interestPeriod: 'month' | 'year' | null;
+  actualPaymentNzd: number | null;
+  stepped: boolean;
+  paysDown: boolean | null;
+  reason: string | null;
+}
+
+/**
+ * Educational forward view of the signed-in user's net worth and savings.
+ * Month 0 is today in Pacific/Auckland. Later points are monthly.
+ * Formulas are on `formula`. Every rate that is not taken from stored rows
+ * is named in `assumptions` with its source.
+ */
+export interface ProjectionResponse {
+  currency: 'NZD';
+  timezone: 'Pacific/Auckland';
+  asOf: string;
+  horizonMonths: number;
+  note: string;
+  formula: {
+    netWorth: string;
+    compoundingAssets: string;
+    monthlySaving: string;
+    debt: string;
+  };
+  starting: {
+    netWorthNzd: number;
+    compoundingAssetsNzd: number;
+    bankLiabilitiesNzd: number;
+    debtOutstandingNzd: number;
+    propertyMortgageNzd: number;
+    kiwiSaverNzd: number | null;
+  };
+  assumptions: {
+    annualReturnPercent: ProjectionAssumption & { compounding: 'monthly' };
+    monthlySavingNzd: ProjectionAssumption & {
+      windowMonths: number;
+      windowStart: string;
+      windowEnd: string;
+      incomeNzd: number | null;
+      spendingNzd: number | null;
+      monthsWithActivity: number;
+      observedMonthlyNzd: number | null;
+    };
+    inflationPercent: ProjectionAssumption;
+    kiwiSaverContributionMonthlyNzd: ProjectionAssumption;
+    dividends: ProjectionAssumption;
+    savingsGoals: ProjectionAssumption;
+  };
+  debts: ProjectionDebtPath[];
+  propertyMortgage: {
+    balanceNzd: number;
+    stepped: false;
+    reason: string;
+  };
+  bankLiabilities: {
+    balanceNzd: number;
+    stepped: false;
+    reason: string;
+  };
+  points: ProjectionPoint[];
+  savings: {
+    monthlyNzd: number | null;
+    points: Array<{ date: string; monthIndex: number; cumulativeNzd: number }> | null;
+  };
+}
+
 export interface HoldingBase {
   id: string;
   assetClass: HoldingAssetClass;

@@ -245,6 +245,51 @@ export function formatYearMonthSpan(years: number, months: number): string {
   return parts.join(' ');
 }
 
+export type DebtMonthStep = {
+  balance: number;
+  interestAdded: number;
+  paymentApplied: number;
+};
+
+/**
+ * One month of the payoff loop. Interest is added first (every month, or on
+ * month indexes 0, 12, 24, … when interest is yearly), then the payment.
+ * `monthsElapsed` is how many months have already been applied.
+ */
+export function advanceDebtOneMonth(input: {
+  balance: number;
+  annualRatePercent: number;
+  actualPayment: number;
+  interestPeriod: InterestPeriod | null;
+  monthsElapsed: number;
+}): DebtMonthStep {
+  const before = roundMoney(input.balance);
+  if (!(before > 0)) {
+    return { balance: 0, interestAdded: 0, paymentApplied: 0 };
+  }
+  let remaining = before;
+  const period = input.interestPeriod;
+  const rate = input.annualRatePercent;
+  if (period === 'month' && rate > 0) {
+    remaining = roundMoney(remaining + interestForPeriod(remaining, rate, 'month'));
+  } else if (period === 'year' && rate > 0 && input.monthsElapsed % 12 === 0) {
+    remaining = roundMoney(remaining + interestForPeriod(remaining, rate, 'year'));
+  }
+  const interestAdded = roundMoney(remaining - before);
+  const payment = input.actualPayment;
+  if (!(payment > 0)) {
+    return { balance: remaining, interestAdded, paymentApplied: 0 };
+  }
+  if (remaining <= payment) {
+    return { balance: 0, interestAdded, paymentApplied: remaining };
+  }
+  return {
+    balance: roundMoney(remaining - payment),
+    interestAdded,
+    paymentApplied: payment,
+  };
+}
+
 /**
  * Forward payoff from the balance, annual rate, and actual monthly payment
  * passed in. Interest is added at the start of each projected month, or at
@@ -283,17 +328,14 @@ export function projectPayoff(input: {
   let monthsElapsed = 0;
   const maxMonths = 100 * 12;
   while (remaining > 0.004 && monthsElapsed < maxMonths) {
-    if (period === 'month' && activeRate > 0) {
-      remaining = roundMoney(remaining + interestForPeriod(remaining, activeRate, 'month'));
-    } else if (period === 'year' && activeRate > 0 && monthsElapsed % 12 === 0) {
-      remaining = roundMoney(remaining + interestForPeriod(remaining, activeRate, 'year'));
-    }
+    remaining = advanceDebtOneMonth({
+      balance: remaining,
+      annualRatePercent: activeRate,
+      actualPayment: payment,
+      interestPeriod: period,
+      monthsElapsed,
+    }).balance;
     monthsElapsed += 1;
-    if (remaining <= payment) {
-      remaining = 0;
-      break;
-    }
-    remaining = roundMoney(remaining - payment);
   }
   if (remaining > 0.004) return { kind: 'does_not_pay_down' };
   return {
