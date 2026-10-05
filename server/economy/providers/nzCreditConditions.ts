@@ -3,6 +3,8 @@
  * table C60. The published index is already signed so a higher number means
  * easier credit. rbnz.govt.nz returns HTTP 403 to this app, so the same official
  * workbook is downloaded from the Internet Archive's public copy of that file.
+ * The latest raw capture is requested directly. The CDX index is only a backup:
+ * it is slow, and a failed index lookup used to leave the series empty.
  */
 import { quarterOfMonth, quarterRange } from '../periods.ts';
 import { attachPrevious, type DatedValue, type WithPrevious } from './derive.ts';
@@ -23,6 +25,14 @@ export const RBNZ_C60_PAGE = 'https://www.rbnz.govt.nz/statistics/series/lending
 export const NZ_CREDIT_SERIES = 'CCS.Q99_AV';
 
 const ARCHIVE_CDX = 'https://web.archive.org/cdx/search/cdx';
+
+/**
+ * 2999 is after any real capture date, so Wayback resolves the newest snapshot.
+ * id_ asks for the stored file bytes rather than the HTML replay page.
+ */
+export function archiveLatestRawUrl(original = RBNZ_C60_URL): string {
+  return `https://web.archive.org/web/2999id_/${original}`;
+}
 
 export type NzCreditLoad = {
   rates: WithPrevious[];
@@ -151,13 +161,18 @@ function workbookFrom(body: Buffer, sourceUrl: string, viaArchive: boolean, last
   };
 }
 
-async function loadFromArchive(): Promise<NzCreditLoad> {
+async function loadCapture(sourceUrl: string): Promise<NzCreditLoad> {
+  const download = await fetchDownload(sourceUrl, { timeoutMs: 45_000, maxBytes: 2_000_000 });
+  return workbookFrom(download.body, sourceUrl, true, download.lastModified);
+}
+
+/** CDX is the backup when the direct latest-capture URL does not return the workbook. */
+async function loadFromArchiveIndex(): Promise<NzCreditLoad> {
   const cdx = new URL(ARCHIVE_CDX);
   cdx.searchParams.set('url', 'www.rbnz.govt.nz/-/media/project/sites/rbnz/files/statistics/series/c/c60/hc60.xlsx');
   cdx.searchParams.set('output', 'json');
-  cdx.searchParams.set('fl', 'timestamp,original,statuscode,mimetype');
+  cdx.searchParams.set('fl', 'timestamp,original,statuscode');
   cdx.searchParams.append('filter', 'statuscode:200');
-  cdx.searchParams.append('filter', 'mimetype:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   const payload = JSON.parse(await fetchText(cdx.toString(), { timeoutMs: 45_000, maxBytes: 2_000_000 })) as unknown;
   const captures = archiveCaptures(payload, 'hc60.xlsx');
   if (captures.length === 0) {
@@ -167,8 +182,7 @@ async function loadFromArchive(): Promise<NzCreditLoad> {
   for (const capture of captures.slice(-5).reverse()) {
     const sourceUrl = `https://web.archive.org/web/${capture.timestamp}id_/${capture.original}`;
     try {
-      const download = await fetchDownload(sourceUrl, { timeoutMs: 45_000, maxBytes: 2_000_000 });
-      return workbookFrom(download.body, sourceUrl, true, download.lastModified);
+      return await loadCapture(sourceUrl);
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
     }
@@ -176,19 +190,33 @@ async function loadFromArchive(): Promise<NzCreditLoad> {
   throw new Error(lastError);
 }
 
+async function loadFromArchive(): Promise<NzCreditLoad> {
+  const direct = archiveLatestRawUrl();
+  try {
+    return await loadCapture(direct);
+  } catch (directErr) {
+    const directMessage = directErr instanceof Error ? directErr.message : String(directErr);
+    try {
+      return await loadFromArchiveIndex();
+    } catch (indexErr) {
+      const indexMessage = indexErr instanceof Error ? indexErr.message : String(indexErr);
+      throw new Error(`${directMessage}; ${indexMessage}`);
+    }
+  }
+}
+
 export async function loadNzCreditConditions(): Promise<NzCreditLoad> {
   try {
-    const download = await fetchDownload(RBNZ_C60_URL, { timeoutMs: 40_000, maxBytes: 2_000_000 });
+    const download = await fetchDownload(RBNZ_C60_URL, { timeoutMs: 20_000, maxBytes: 2_000_000 });
     return workbookFrom(download.body, RBNZ_C60_URL, false, download.lastModified);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    if (!message.includes('HTTP 403')) throw err;
     try {
       return await loadFromArchive();
     } catch (archiveErr) {
       const archiveMessage = archiveErr instanceof Error ? archiveErr.message : String(archiveErr);
       throw new Error(
-        `rbnz.govt.nz returned HTTP 403, and the Internet Archive copy of the C60 credit conditions workbook could not be read (${archiveMessage}).`,
+        `The Reserve Bank C60 workbook could not be read (${message}), and the Internet Archive copy of that file could not be read either (${archiveMessage}).`,
       );
     }
   }

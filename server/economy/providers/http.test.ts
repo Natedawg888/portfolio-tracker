@@ -21,6 +21,20 @@ const server = http.createServer((req, res) => {
     res.end();
     return;
   }
+  if (req.url === '/go-cookie') {
+    res.writeHead(302, {
+      Location: '/need-cookie',
+      'Set-Cookie': 'wb-p-SERVER=app1; path=/',
+    });
+    res.end();
+    return;
+  }
+  if (req.url === '/need-cookie') {
+    const ok = String(req.headers.cookie ?? '').includes('wb-p-SERVER=app1');
+    res.writeHead(ok ? 200 : 500, { 'Content-Type': 'text/plain' });
+    res.end(ok ? 'cookie-ok' : 'missing-cookie');
+    return;
+  }
   res.writeHead(500);
   res.end('nope');
 });
@@ -33,6 +47,8 @@ const body = await fetchText(`${base}/ok`);
 assert(body === 'hello', `body ${body}`);
 const redirected = await fetchText(`${base}/go`);
 assert(redirected === 'hello', `redirect ${redirected}`);
+const withCookie = await fetchText(`${base}/go-cookie`);
+assert(withCookie === 'cookie-ok', `redirect cookie ${withCookie}`);
 let failed = false;
 try {
   await fetchText(`${base}/missing`);
@@ -42,4 +58,4 @@ try {
 assert(failed, 'HTTP 500 is an error');
 
 server.close();
-console.log('3 http client tests passed');
+console.log('4 http client tests passed');
