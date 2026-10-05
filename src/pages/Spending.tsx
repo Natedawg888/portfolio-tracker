@@ -1180,7 +1180,7 @@ export function Spending() {
             aria-label="Previous month"
             onClick={() => setSelectedMonth((m) => addMonths(m, -1))}
           >
-            {'<- Prev'}
+            {'← Prev'}
           </button>
           <div className="period-pager-label">
             <strong>{monthLong}</strong>
@@ -1194,7 +1194,7 @@ export function Spending() {
             aria-label="Next month"
             onClick={() => setSelectedMonth((m) => addMonths(m, 1))}
           >
-            {'Next ->'}
+            {'Next →'}
           </button>
         </div>
         <div
@@ -1450,7 +1450,7 @@ export function Spending() {
         <h3 id="budget-plan-anchor">Budget plan · {monthLabel}</h3>
         <p className="section-desc">
           Plan income and spending for {monthLong} (Pacific/Auckland). Income compares{' '}
-          <strong>planned vs received</strong>; spending compares <strong>planned vs spent</strong>
+          <strong>planned vs received</strong>; spending compares <strong>planned vs spent</strong>{' '}
           (outflows; Debt = repayments only).
         </p>
 
@@ -2498,7 +2498,7 @@ export function Spending() {
       <section className="panel">
         <h3>Import Google Wallet CSV</h3>
         <p className="section-desc">
-          Optional — no live Wallet API. CSV columns: date, amount, description, card_name
+          Optional — no live Wallet API. CSV columns: date, amount, description, card_name{' '}
           (see docs/IMPORT_FORMATS.md). Prefer bank sync + manual for Nexo/GoMining.
         </p>
         <div className="form-grid">

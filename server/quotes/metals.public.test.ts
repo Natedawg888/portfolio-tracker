@@ -8,6 +8,7 @@ import {
   parseGoldApiNzd,
   resetMetalsRuntimeState,
 } from './metals.ts';
+import { metalSpotQuoteNote, summarizeStoredMetalSpots } from './metalSpotCopy.ts';
 
 const originalFetch = globalThis.fetch;
 const originalKey = process.env.METALS_API_KEY;
@@ -99,6 +100,26 @@ try {
     assert.equal(rejected[metal].price, null);
     assert.equal(rejected[metal].status, 'unavailable');
   }
+
+  const noted = summarizeStoredMetalSpots(spots);
+  assert.equal(noted.status, 'ok');
+  assert.equal(noted.source, 'gold-api');
+  const availableNote = metalSpotQuoteNote({ configured: false, ...noted });
+  assert.match(availableNote, /gold-api\.com/);
+  assert.doesNotMatch(availableNote, /unavailable/);
+  const missingNote = metalSpotQuoteNote({
+    configured: false,
+    status: 'unavailable',
+    source: null,
+  });
+  assert.match(missingNote, /unavailable from gold-api\.com/);
+  const devNote = metalSpotQuoteNote({
+    configured: true,
+    status: 'ok',
+    source: 'metals_dev',
+  });
+  assert.match(devNote, /Metals\.Dev/);
+  assert.doesNotMatch(devNote, /gold-api\.com/);
 
   console.log('metals public spot tests passed');
 } finally {
