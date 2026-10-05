@@ -6,6 +6,7 @@ import { isMoneyHidden, MONEY_MASK } from '../lib/privacy';
 import { showQuietToast } from '../lib/quietToast';
 import { AssetBreakdownChart, type AssetBreakdownRow } from '../components/AssetBreakdownChart';
 import { DebtBreakdownChart, type DebtBreakdownPerson } from '../components/DebtBreakdownChart';
+import { SavingsGoalsCard } from '../components/SavingsGoalsCard';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
 import type { HomeMonthSnapshot } from '../types';
@@ -153,11 +154,13 @@ export function Dashboard() {
 
 
   const monthRow = <MonthSnapshot snapshot={monthSnapshot} error={monthError} />;
+  const goalsCard = <SavingsGoalsCard />;
 
   if (error) {
     return (
       <div className="stack dashboard-page">
         {monthRow}
+        {goalsCard}
         <div className="panel warn">
           <h2 className="page-title">Dashboard</h2>
           <p>The figures could not be loaded. Try again.</p>
@@ -170,6 +173,7 @@ export function Dashboard() {
     return (
       <div className="stack dashboard-page">
         {monthRow}
+        {goalsCard}
         <div className="panel">Loading net worth…</div>
       </div>
     );
@@ -226,6 +230,7 @@ export function Dashboard() {
   return (
     <div className="stack dashboard-page">
       {monthRow}
+      {goalsCard}
       <section className="hero-card">
         <p className="eyebrow page-title">Net worth · assets − debt outstanding</p>
         <p className="hero-value">{formatNzd(summary.totalKnownNzd)}</p>
