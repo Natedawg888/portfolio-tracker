@@ -280,17 +280,19 @@ export function YearlyReport() {
 
   if (error) {
     return (
-      <div className="panel warn">
-        <h2>Yearly report</h2>
-        <p>{error}</p>
+      <div className="stack history-page">
+        <div className="panel warn">
+          <h2 className="page-title">History</h2>
+          <p>{error}</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="stack">
+    <div className="stack history-page">
       <section className="panel">
-        <h2>Yearly report</h2>
+        <h2 className="page-title">History</h2>
         <p className="page-lead">
           Net-worth growth and per-asset lines from <strong>valuation_snapshots</strong> only.
           Toggle <strong>by day</strong> / <strong>by month</strong> — empty buckets stay empty
@@ -387,14 +389,23 @@ export function YearlyReport() {
               </div>
               <div className="card">
                 <p className="eyebrow">Latest in year</p>
-                <p className="stat-value">
+                <p className={'stat-value' + (latestInYear!.totalNzd < 0 ? ' return-neg' : '')}>
                   {formatNzd(latestInYear!.totalNzd)}
                 </p>
                 <p className="muted small">{formatAuckland(latestInYear!.takenAt)}</p>
               </div>
               <div className="card">
                 <p className="eyebrow">Change (first → last)</p>
-                <p className="stat-value">
+                <p
+                  className={
+                    'stat-value' +
+                    (growthNzd == null || growthNzd === 0
+                      ? ''
+                      : growthNzd < 0
+                        ? ' return-neg'
+                        : ' return-pos')
+                  }
+                >
                   {growthNzd == null ? '—' : formatNzd(growthNzd)}
                 </p>
                 <p className="muted small">
@@ -434,7 +445,7 @@ export function YearlyReport() {
         <div className="grid cards">
           <div className="card">
             <p className="eyebrow">Outstanding now</p>
-            <p className="stat-value">
+            <p className={'stat-value' + (debtSummary != null ? ' history-deduction' : '')}>
               {debtSummary != null ? formatNzd(debtSummary.outstandingTotalNzd) : '—'}
             </p>
             <p className="muted small">
@@ -478,7 +489,9 @@ export function YearlyReport() {
                         {p.kind === 'corporation' ? 'Corporation' : 'Person'}
                       </td>
                       <td>{p.name}</td>
-                      <td>{formatNzd(p.outstandingNzd)}</td>
+                      <td className={p.outstandingNzd < 0 ? 'return-neg' : 'history-deduction'}>
+                        {formatNzd(p.outstandingNzd)}
+                      </td>
                       <td className="muted small">{p.notes || '—'}</td>
                     </tr>
                   ))}
@@ -556,7 +569,9 @@ export function YearlyReport() {
                       <tr key={h.id}>
                         <td>{h.label}</td>
                         <td>{h.assetClass}</td>
-                        <td>{formatNzd(h.valueNzd)}</td>
+                        <td className={h.valueNzd < 0 ? 'return-neg' : undefined}>
+                          {formatNzd(h.valueNzd)}
+                        </td>
                       </tr>
                     ))}
                 </tbody>
@@ -594,7 +609,10 @@ export function YearlyReport() {
           <ul className="plain-list">
             {snapshots.map((s) => (
               <li key={s.id}>
-                {formatAuckland(s.takenAt)} · {formatNzd(s.totalNzd)}
+                {formatAuckland(s.takenAt)} ·{' '}
+                <span className={s.totalNzd < 0 ? 'return-neg' : undefined}>
+                  {formatNzd(s.totalNzd)}
+                </span>
                 {s.notes ? ` · ${s.notes}` : ''}
               </li>
             ))}
