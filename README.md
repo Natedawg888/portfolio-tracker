@@ -77,6 +77,7 @@ Production: `npm run build && npm run start` (serves `dist/` + API; `HOST=0.0.0.
 - Docs: this README + `docs/DATA_MODEL.md`
 - **Economic cycle** (educational): calculated phase for New Zealand (default) or the United States, from public Stats NZ, Census, and OECD extracts, with indicator cards, housing activity, and historical asset-class context. `npm run test:economy`
 - **Dividends** (personal record, not advice): payments on your own stock/ETF holdings, with NZD totals, yield, and a forecast taken only from amounts you entered. Shown under Portfolio and Budget. `npm run test:dividends`
+- **Savings goals** (API): a name, NZD target, current amount, and optional deadline. Required weekly and monthly saving, percent complete, and estimated completion are counted from those figures. Not added to net worth. `npm run test:savings-goals`
 
 ### Stubbed (clear interfaces — never invent prices)
 

@@ -23,6 +23,7 @@ export const SCOPED_TABLES = [
   'valuation_snapshots',
   'budget_categories',
   'payee_settings',
+  'savings_goals',
 ] as const;
 
 export type ScopedTable = (typeof SCOPED_TABLES)[number];
@@ -121,6 +122,7 @@ export function deleteScopedDataForUser(
     'dividend_forecast_reinvest',
     'dividend_events',
     'payee_settings',
+    'savings_goals',
     'budgets',
     'debt_people',
     'transactions',

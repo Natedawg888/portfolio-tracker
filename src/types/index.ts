@@ -194,6 +194,69 @@ export interface DebtRepayment {
   createdAt: string;
 }
 
+/**
+ * Named NZD savings goal for the signed-in user.
+ * Stored: name, targetNzd, currentAmountNzd, deadline.
+ * Counted on read from those figures: remainingNzd, percentComplete,
+ * requiredWeeklySavingNzd, requiredMonthlySavingNzd, estimatedCompletion.
+ * currentAmountNzd is not added to net worth.
+ */
+export interface SavingsGoal {
+  id: string;
+  name: string;
+  notes: string | null;
+  /** Goal amount, NZD. */
+  targetNzd: number;
+  /** Amount saved toward the goal so far, NZD. */
+  currentAmountNzd: number;
+  /** YYYY-MM-DD, or null when no deadline is set. */
+  deadline: string | null;
+  currency: 'NZD';
+  timezone: 'Pacific/Auckland';
+  /** Pacific/Auckland calendar date the progress figures were counted on. */
+  asOf: string;
+  /** max(0, targetNzd − currentAmountNzd), NZD. */
+  remainingNzd: number;
+  /**
+   * currentAmountNzd / targetNzd × 100.
+   * A percent, not a fraction: 25 means 25%. May exceed 100.
+   */
+  percentComplete: number;
+  /**
+   * Whole calendar days from asOf to deadline.
+   * Negative when the deadline has passed. Null when deadline is null.
+   */
+  daysRemaining: number | null;
+  /**
+   * NZD to save each week to finish by the deadline.
+   * Null when that pace is not defined. 0 when nothing remains.
+   */
+  requiredWeeklySavingNzd: number | null;
+  /**
+   * NZD to save each month to finish by the deadline.
+   * A month is 365.25 / 12 days. Null when that pace is not defined.
+   */
+  requiredMonthlySavingNzd: number | null;
+  /**
+   * YYYY-MM-DD the goal is met at the required pace, or null.
+   * Today (asOf) once currentAmountNzd has reached targetNzd.
+   * The deadline while a gap is still open and the deadline is today or later.
+   */
+  estimatedCompletion: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Fields the user can save on a savings goal. */
+export interface SavingsGoalWriteBody {
+  name?: string;
+  notes?: string | null;
+  targetNzd?: number;
+  currentAmountNzd?: number;
+  /** YYYY-MM-DD, null, or '' to clear. */
+  deadline?: string | null;
+}
+
 export interface DebtSummary {
   outstandingTotalNzd: number;
   /** Total creditors (people + corporations). */

@@ -25,6 +25,7 @@ holdings  (polymorphic by asset_class)
   └── forex            (Revolut etc. foreign cash → NZD via Frankfurter)
 
 kiwisaver_accounts  (Sharesies via Akahu + bank-held manual/CSV)
+savings_goals          (target, current amount, optional deadline; progress counted on read)
 price_quotes        (cache; stub providers write status=stubbed)
 valuation_snapshots (net-worth history)
 app_settings / meta
@@ -134,6 +135,63 @@ Table: `kiwisaver_accounts` (+ `kiwisaver_balance_history`).
 - **Bank-held:** IRD/Akahu bank KS not available → KiwiSaver tab **manual form** + `POST /api/kiwisaver/import-bank-csv`. Honest UI labels: Manual / Manual (CSV) vs Akahu (Sharesies). History point on each save.
 
 Employee contribution **rate** (not a dollar amount) is stored per user at `users.preferences_json.kiwiSaverEmployeeRatePct`. When none is saved, the PAYE page offers **3%**. The calculator multiplies the gross pay the user enters by that rate. `GET/PUT /api/settings/kiwisaver-employee-rate`.
+
+## Savings goals
+
+Table: `savings_goals`. One row per goal for the signed-in user. Amounts are **NZD**. Dates are calendar dates. `asOf` on each response is **today in Pacific/Auckland**.
+
+`current_amount_nzd` is the figure the user entered for this goal. It is **not** a bank balance and is **not** added to net worth (that money may already sit on an account).
+
+| Stored | API field | Notes |
+|--------|-----------|--------|
+| `name` | `name` | Required |
+| `target_nzd` | `targetNzd` | Goal amount, NZD. Must be greater than 0 after rounding to cents |
+| `current_amount_nzd` | `currentAmountNzd` | Saved so far, NZD. Defaults to 0. Must be ≥ 0 |
+| `deadline` | `deadline` | `YYYY-MM-DD`, or null when no date is set |
+| `notes` | `notes` | Optional |
+
+Progress is **not stored**. It is counted on every read from `targetNzd`, `currentAmountNzd`, and `deadline`. No interest and no separate savings rate are assumed, because neither is stored.
+
+Let `remaining = max(0, target − current)` in NZD, rounded to cents. A week is 7 days. A mean month is `365.25 / 12` days (30.4375). `daysRemaining` is the whole calendar days from `asOf` to `deadline` (negative when the deadline is already past, null when no deadline is set).
+
+| Response field | Formula |
+|----------------|---------|
+| `remainingNzd` | `max(0, round(targetNzd − currentAmountNzd))` |
+| `percentComplete` | `currentAmountNzd / targetNzd × 100`, rounded to 2 decimals. **A percent, not a fraction** (25 means 25%). May exceed 100 |
+| `requiredWeeklySavingNzd` | See below. NZD per week |
+| `requiredMonthlySavingNzd` | See below. NZD per month, using the 30.4375-day month |
+| `estimatedCompletion` | `YYYY-MM-DD` or null. See below |
+| `daysRemaining` | `deadline − asOf` in whole days, or null |
+| `currency` | Always `NZD` |
+| `timezone` | Always `Pacific/Auckland` |
+
+**Required weekly and monthly saving**
+
+- `remaining` is 0: both are **0**. The goal is already met.
+- No deadline, or `daysRemaining < 0`: both are **null**. A past date cannot define a future weekly or monthly amount, and no other pace is stored.
+- `daysRemaining` is 0: both **equal `remaining`**. The gap is due today, so it is not spread across a later week or month.
+- `daysRemaining > 0`:
+  - weekly = `remaining × 7 / daysRemaining`
+  - monthly = `remaining × (365.25 / 12) / daysRemaining`
+  - each rounded to the nearest cent.
+
+A 365-day deadline is a little longer than 12 mean months, so a goal of 12000 NZD due in 365 days needs **1000.68 NZD per month**, not 1000.
+
+**Estimated completion**
+
+- `remaining` is 0: **`asOf`**. The goal is already met. The day it was first reached is not stored.
+- Deadline is today or later, and a gap is still open: **the deadline**. That is the date the required weekly or monthly amount finishes the goal.
+- Otherwise **null**. A missed deadline does not invent a later date, and a goal with no deadline has no completion date.
+
+Worked example, counted on 2026-10-05, target 10000, current 2500, deadline 2027-04-05 (182 days):
+
+- `remainingNzd` 7500
+- `percentComplete` 25
+- `requiredWeeklySavingNzd` 288.46
+- `requiredMonthlySavingNzd` 1254.29
+- `estimatedCompletion` `2027-04-05`
+
+`GET/POST /api/savings-goals`, `GET/PATCH/DELETE /api/savings-goals/:id`. Session cookie, same as the rest of `/api`. Another user's id is `404`. Deleting the account deletes that user's `savings_goals` only.
 
 ## Quotes & snapshots
 
