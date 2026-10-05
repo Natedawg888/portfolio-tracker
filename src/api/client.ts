@@ -12,6 +12,7 @@ import type {
   DebtSummary,
   DebtWriteBody,
   HomeMonthSnapshot,
+  NewsFeedResponse,
   PayeeSetting,
   SavingsGoal,
   SavingsGoalWriteBody,
@@ -1201,6 +1202,14 @@ export const api = {
       if (opts?.refresh) q.set('refresh', '1');
       const search = q.toString();
       return req<PhaseNewsResponse>(`/economy/news${search ? `?${search}` : ''}`);
+    },
+  },
+  news: {
+    feed: (opts?: { refresh?: boolean }) => {
+      const q = new URLSearchParams();
+      if (opts?.refresh) q.set('refresh', '1');
+      const search = q.toString();
+      return req<NewsFeedResponse>(`/news${search ? `?${search}` : ''}`);
     },
   },
 };

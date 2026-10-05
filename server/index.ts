@@ -26,6 +26,7 @@ import payeesRouter from './routes/payees.ts';
 import savingsGoalsRouter from './routes/savingsGoals.ts';
 import authRouter from './routes/auth.ts';
 import economyRouter from './routes/economy.ts';
+import newsRouter from './routes/news.ts';
 import { loadDotEnv } from './akahu/loadEnv.ts';
 import { ensureUploadDirs } from './lib/uploads.ts';
 import { attachUser, requireAuth, isPublicApiPath } from './middleware/requireAuth.ts';
@@ -125,6 +126,7 @@ async function main() {
   app.use('/api/payees', payeesRouter);
   app.use('/api/savings-goals', savingsGoalsRouter);
   app.use('/api/economy', economyRouter);
+  app.use('/api/news', newsRouter);
 
   // Unmatched /api stops here (JSON). It must not fall through to the SPA.
   app.use('/api', apiNotFound);
