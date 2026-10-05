@@ -535,9 +535,9 @@ export function ValueSearch() {
 
   if (!anyTool) {
     return (
-      <div className="stack">
+      <div className="stack value-search-page">
         <section className="panel">
-          <h2>Value search</h2>
+          <h2 className="page-title">Value search</h2>
           <p className="page-lead">
             No lookup tools are visible — enable asset classes (stocks, crypto, GoMining,
             metals, precious stones, or collectables) or the currency exchanger in{' '}
@@ -549,9 +549,9 @@ export function ValueSearch() {
   }
 
   return (
-    <div className="stack">
+    <div className="stack value-search-page">
       <section className="panel">
-        <h2>Value search</h2>
+        <h2 className="page-title">Value search</h2>
         <p className="page-lead">
           Preview-only lookups from live quote APIs — never invents prices. Showing tools for
           your enabled classes: <strong>{enabledLabels.join(', ')}</strong>. Change visibility in{' '}
@@ -573,7 +573,7 @@ export function ValueSearch() {
               <input
                 value={stockTicker}
                 onChange={(e) => setStockTicker(e.target.value)}
-                placeholder="AAPL"
+                placeholder="e.g. AAPL"
                 required
               />
             </label>
@@ -623,7 +623,7 @@ export function ValueSearch() {
               <input
                 value={cryptoTicker}
                 onChange={(e) => setCryptoTicker(e.target.value)}
-                placeholder="BTC, GMT…"
+                placeholder="e.g. BTC, GMT"
                 required
               />
             </label>
@@ -676,7 +676,7 @@ export function ValueSearch() {
                 <input
                   value={mtgForm.name}
                   onChange={(e) => setMtgForm({ ...mtgForm, name: e.target.value })}
-                  placeholder="Lightning Bolt"
+                  placeholder="e.g. Lightning Bolt"
                 />
               </label>
               <label>
@@ -684,7 +684,7 @@ export function ValueSearch() {
                 <input
                   value={mtgForm.set}
                   onChange={(e) => setMtgForm({ ...mtgForm, set: e.target.value })}
-                  placeholder="lea"
+                  placeholder="e.g. lea"
                 />
               </label>
               <label>
@@ -692,7 +692,7 @@ export function ValueSearch() {
                 <input
                   value={mtgForm.number}
                   onChange={(e) => setMtgForm({ ...mtgForm, number: e.target.value })}
-                  placeholder="161"
+                  placeholder="e.g. 161"
                 />
               </label>
               <label>
@@ -713,7 +713,7 @@ export function ValueSearch() {
                 <input
                   value={mtgForm.apiId}
                   onChange={(e) => setMtgForm({ ...mtgForm, apiId: e.target.value })}
-                  placeholder="uuid"
+                  placeholder="e.g. uuid"
                 />
               </label>
               <button type="submit" className="btn primary" disabled={mtgLoading}>
@@ -735,7 +735,7 @@ export function ValueSearch() {
                 <input
                   value={pokeForm.name}
                   onChange={(e) => setPokeForm({ ...pokeForm, name: e.target.value })}
-                  placeholder="Charizard"
+                  placeholder="e.g. Charizard"
                 />
               </label>
               <label>
@@ -743,7 +743,7 @@ export function ValueSearch() {
                 <input
                   value={pokeForm.set}
                   onChange={(e) => setPokeForm({ ...pokeForm, set: e.target.value })}
-                  placeholder="base1"
+                  placeholder="e.g. base1"
                 />
               </label>
               <label>
@@ -751,7 +751,7 @@ export function ValueSearch() {
                 <input
                   value={pokeForm.number}
                   onChange={(e) => setPokeForm({ ...pokeForm, number: e.target.value })}
-                  placeholder="4"
+                  placeholder="e.g. 4"
                 />
               </label>
               <label>
@@ -772,7 +772,7 @@ export function ValueSearch() {
                 <input
                   value={pokeForm.apiId}
                   onChange={(e) => setPokeForm({ ...pokeForm, apiId: e.target.value })}
-                  placeholder="base1-4"
+                  placeholder="e.g. base1-4"
                 />
               </label>
               <button type="submit" className="btn primary" disabled={pokeLoading}>
