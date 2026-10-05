@@ -44,6 +44,13 @@ type HoldingRow = {
   valuationNzd?: number | null;
 };
 
+/** Red only when money is actually owed. A zero balance stays uncoloured. */
+function debtOutstandingClass(amount: number): 'return-neg' | 'history-deduction' | undefined {
+  if (amount > 0) return 'return-neg';
+  if (amount < 0) return 'history-deduction';
+  return undefined;
+}
+
 const CLASS_LABELS: Record<string, string> = {
   total: 'Total net worth',
   assets: 'Assets (before debt)',
@@ -445,7 +452,18 @@ export function YearlyReport() {
         <div className="grid cards">
           <div className="card">
             <p className="eyebrow">Outstanding now</p>
-            <p className={'stat-value' + (debtSummary != null ? ' history-deduction' : '')}>
+            <p
+              className={
+                [
+                  'stat-value',
+                  debtSummary != null
+                    ? debtOutstandingClass(debtSummary.outstandingTotalNzd)
+                    : undefined,
+                ]
+                  .filter(Boolean)
+                  .join(' ')
+              }
+            >
               {debtSummary != null ? formatNzd(debtSummary.outstandingTotalNzd) : '—'}
             </p>
             <p className="muted small">
@@ -489,7 +507,7 @@ export function YearlyReport() {
                         {p.kind === 'corporation' ? 'Corporation' : 'Person'}
                       </td>
                       <td>{p.name}</td>
-                      <td className={p.outstandingNzd < 0 ? 'return-neg' : 'history-deduction'}>
+                      <td className={debtOutstandingClass(p.outstandingNzd)}>
                         {formatNzd(p.outstandingNzd)}
                       </td>
                       <td className="muted small">{p.notes || '—'}</td>

@@ -1930,7 +1930,12 @@ export function Spending() {
               </tbody>
             </table>
           </div>
-        ) : hasReceivedIncome ? null : (
+        ) : hasReceivedIncome ? (
+          <p className="muted">
+            Income was received in {monthLong}
+            {actualIncomeNzd > 0 ? ` (${formatNzd(actualIncomeNzd)})` : ''}.
+          </p>
+        ) : (
           <p className="muted">No income in {monthLong}.</p>
         )}
       </section>
