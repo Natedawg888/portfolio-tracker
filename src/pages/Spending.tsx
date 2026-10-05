@@ -166,6 +166,7 @@ export function Spending() {
   const [payees, setPayees] = useState<PayeeSetting[]>([]);
   const [payeeCategoryDraft, setPayeeCategoryDraft] = useState<Record<string, string>>({});
   const [payeeSavingName, setPayeeSavingName] = useState<string | null>(null);
+  const [payeeSettingsOpen, setPayeeSettingsOpen] = useState(false);
   const [planIncomeCategoryId, setPlanIncomeCategoryId] = useState('');
   const [planIncomeAmount, setPlanIncomeAmount] = useState('');
   const [planIncomeSaving, setPlanIncomeSaving] = useState(false);
@@ -1942,70 +1943,6 @@ export function Spending() {
       </section>
 
       <section className="panel">
-        <h3>Payee settings</h3>
-        <p className="section-desc">
-          A payee you have used, including a dividend payer, can keep a category you already have.
-          That category is filled in the next time you use the payee. Income uses it when the
-          category is an income category. Transactions use it when the payee is the description.
-          This is a personal record, not advice.
-        </p>
-        {payees.length === 0 ? (
-          <p className="muted">
-            No payees yet. Record income, a transaction, or a dividend and the name is listed here.
-          </p>
-        ) : (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Payee</th>
-                  <th>Category</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {payees.map((payee) => (
-                  <tr key={payee.name}>
-                    <td>{payee.name}</td>
-                    <td>
-                      <select
-                        aria-label={`Category for ${payee.name}`}
-                        value={payeeCategoryDraft[payee.name] ?? payee.categoryId ?? ''}
-                        onChange={(e) =>
-                          setPayeeCategoryDraft((prev) => ({ ...prev, [payee.name]: e.target.value }))
-                        }
-                      >
-                        <option value="">No saved category</option>
-                        {categories.map((c) => {
-                          const tag = categoryTypeShortTag(normalizeCategoryType(c.type, c.isIncome));
-                          return (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                              {tag ? ` (${tag})` : ''}
-                            </option>
-                          );
-                        })}
-                      </select>
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="btn small"
-                        disabled={payeeSavingName === payee.name}
-                        onClick={() => onSavePayee(payee.name)}
-                      >
-                        {payeeSavingName === payee.name ? 'Saving…' : 'Save'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="panel">
         <h3>Spend by category · {monthLabel}</h3>
         <CategorySpendChart
           rows={categorySpend}
@@ -2701,6 +2638,86 @@ export function Spending() {
           </div>
         </div>
       )}
+
+      <section className={`panel payee-settings-panel${payeeSettingsOpen ? ' is-open' : ''}`}>
+        <h3>
+          <button
+            type="button"
+            className="payee-settings-toggle"
+            aria-expanded={payeeSettingsOpen}
+            aria-controls="payee-settings-body"
+            onClick={() => setPayeeSettingsOpen((open) => !open)}
+          >
+            <span className="payee-settings-title">
+              Payee settings
+              <span className="payee-settings-count muted">({payees.length})</span>
+            </span>
+            <span className="payee-settings-chevron" aria-hidden="true" />
+          </button>
+        </h3>
+        <div id="payee-settings-body" hidden={!payeeSettingsOpen}>
+          <p className="section-desc">
+            A payee you have used, including a dividend payer, can keep a category you already have.
+            That category is filled in the next time you use the payee. Income uses it when the
+            category is an income category. Transactions use it when the payee is the description.
+            This is a personal record, not advice.
+          </p>
+          {payees.length === 0 ? (
+            <p className="muted">
+              No payees yet. Record income, a transaction, or a dividend and the name is listed here.
+            </p>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Payee</th>
+                    <th>Category</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payees.map((payee) => (
+                    <tr key={payee.name}>
+                      <td>{payee.name}</td>
+                      <td>
+                        <select
+                          aria-label={`Category for ${payee.name}`}
+                          value={payeeCategoryDraft[payee.name] ?? payee.categoryId ?? ''}
+                          onChange={(e) =>
+                            setPayeeCategoryDraft((prev) => ({ ...prev, [payee.name]: e.target.value }))
+                          }
+                        >
+                          <option value="">No saved category</option>
+                          {categories.map((c) => {
+                            const tag = categoryTypeShortTag(normalizeCategoryType(c.type, c.isIncome));
+                            return (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                                {tag ? ` (${tag})` : ''}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn small"
+                          disabled={payeeSavingName === payee.name}
+                          onClick={() => onSavePayee(payee.name)}
+                        >
+                          {payeeSavingName === payee.name ? 'Saving…' : 'Save'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </section>
 
     </div>
   );
