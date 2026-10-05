@@ -9,6 +9,8 @@ import {
   deleteDividend,
   insertDividend,
   listDividendEvents,
+  setDividendReinvest,
+  setForecastReinvest,
   unlinkDividendsForHolding,
   type PublishedDividendLoader,
 } from './store.ts';
@@ -31,9 +33,11 @@ async function main() {
   const now = new Date().toISOString();
   run(db, `DELETE FROM income_records WHERE user_id IN (?, ?)`, [userA, userB]);
   run(db, `DELETE FROM payee_settings WHERE user_id IN (?, ?)`, [userA, userB]);
+  run(db, `DELETE FROM dividend_forecast_reinvest WHERE user_id IN (?, ?)`, [userA, userB]);
   run(db, `DELETE FROM dividend_events WHERE user_id IN (?, ?)`, [userA, userB]);
   run(db, `DELETE FROM budget_categories WHERE user_id IN (?, ?)`, [userA, userB]);
-  run(db, `DELETE FROM holdings WHERE id IN (?, ?, ?, ?, ?)`, [holdingA, holdingA2, holdingB, 'divtest_h_crypto', 'divtest_h_blank']);
+  run(db, `DELETE FROM holdings WHERE id IN (?, ?, ?, ?, ?, ?)`, [holdingA, holdingA2, holdingB, 'divtest_h_crypto', 'divtest_h_blank', 'divtest_h_noprice']);
+  run(db, `DELETE FROM price_quotes WHERE asset_key = ?`, ['STOCK:NOPX']);
   run(
     db,
     `INSERT INTO holdings (id, user_id, asset_class, name, symbol, shares, cost_basis_nzd, created_at, updated_at)
@@ -183,6 +187,7 @@ async function main() {
       if (symbol === 'BRAV') return quarterly(9);
       if (symbol === 'ALF2') return quarterly(4);
       if (symbol === 'BTC' || symbol === 'NOSH') return quarterly(5);
+      if (symbol === 'NOPX') return quarterly(0.5);
       return { source: 'yahoo', currency: 'NZD', payments: [] };
     };
 
@@ -191,12 +196,16 @@ async function main() {
     assert(!lookedUp.includes('BRAV'), 'user B symbol is not looked up for user A');
     assert(!lookedUp.includes('BTC'), 'a crypto holding is not treated as a dividend stock');
     assert(!lookedUp.includes('NOSH'), 'a stock with no share count is left out');
-    assert(!lookedUp.includes('ALF2'), 'a holding with an upcoming payment the user entered is not looked up again');
-    assert(detectedA.forecast.detected.length === 1, 'only the holding with published history and no stated payment is added');
-    assert(detectedA.forecast.detected[0]?.symbol === 'ALFA', 'the detected row is user A stock');
+    assert(lookedUp.includes('ALF2'), 'a holding with a stated upcoming payment is still checked for later dates');
+    const alfaRows = detectedA.forecast.detected.filter((row) => row.symbol === 'ALFA');
+    const alf2Rows = detectedA.forecast.detected.filter((row) => row.symbol === 'ALF2');
+    assert(alfaRows.length === 4, 'predicted payments cover the next 12 months for the holding with no stated payment');
+    assert(alf2Rows.length === 3, 'later predicted payments remain after the payment the user already entered');
+    assert(alf2Rows.every((row) => row.paymentDate > '2026-12-01'), 'the entered upcoming payment is not repeated');
     assert(detectedA.forecast.detected[0]?.name === 'Alpha ETF', 'the detected name is the holding on this account');
-    assert(Math.abs((detectedA.forecast.detected[0]?.dividendPerShare ?? 0) - 0.3) < 1e-6, 'per share is the published figure');
-    assert(Math.abs((detectedA.forecast.detected[0]?.amount ?? 0) - 15) < 1e-6, 'cash is shares times the published dividend');
+    assert(Math.abs((alfaRows[0]?.dividendPerShare ?? 0) - 0.3) < 1e-6, 'per share is the published figure');
+    assert(Math.abs((alfaRows[0]?.amount ?? 0) - 15) < 1e-6, 'cash is shares times the published dividend');
+    assert(alfaRows.every((row) => Math.abs(row.amount - 15) < 1e-6), 'reinvest off keeps every payment on the current share count');
     assert(detectedA.forecast.detected[0]?.basis === 'projected', 'the row is labelled as a projection from history');
     assert(!detectedA.forecast.detected.some((row) => row.symbol === 'BRAV' || row.name === 'Bravo Ltd'), 'user B holding stays out of user A forecast');
     assert(detectedA.holdings.every((holding) => holding.id !== holdingB), 'holding list is still user A only');
@@ -206,16 +215,285 @@ async function main() {
     lookedUp.length = 0;
     const detectedB = await dashboardForUser(db, userB, 2026, '2026-10-04', loader);
     assert(lookedUp.length === 1 && lookedUp[0] === 'BRAV', 'user B lookup is only their stock');
-    assert(detectedB.forecast.detected.length === 1, 'user B gets their own projection');
+    assert(detectedB.forecast.detected.length === 4, 'user B gets their own projection');
     assert(detectedB.forecast.detected[0]?.symbol === 'BRAV', 'user B projection is their holding');
     assert(Math.abs((detectedB.forecast.detected[0]?.amount ?? 0) - 90) < 1e-6, 'user B cash uses their shares and their published amount');
-    assert(!detectedB.forecast.detected.some((row) => row.symbol === 'ALFA'), 'user A projection is not on user B');
-    assert(detectedA.forecast.detected.every((row) => row.symbol === 'ALFA'), 'building user B does not change user A result');
+    assert(detectedB.forecast.detected.every((row) => Math.abs(row.amount - 90) < 1e-6), 'user B payments stay on their own share count');
+    assert(!detectedB.forecast.detected.some((row) => row.symbol === 'ALFA' || row.symbol === 'ALF2'), 'user A projection is not on user B');
+    assert(
+      detectedA.forecast.detected.filter((row) => row.symbol === 'ALFA').length === 4
+        && detectedA.forecast.detected.filter((row) => row.symbol === 'ALF2').length === 3
+        && detectedA.forecast.detected.every((row) => row.symbol === 'ALFA' || row.symbol === 'ALF2'),
+      'building user B does not change user A result',
+    );
+
+    const sharesBefore = queryOne<{ shares: number }>(
+      db,
+      `SELECT shares FROM holdings WHERE id = ? AND user_id = ?`,
+      [holdingA, userA],
+    );
+    const dividendsBefore = queryOne<{ c: number }>(
+      db,
+      `SELECT COUNT(*) AS c FROM dividend_events WHERE user_id = ?`,
+      [userA],
+    );
+    const incomeBefore = queryOne<{ c: number }>(
+      db,
+      `SELECT COUNT(*) AS c FROM income_records WHERE user_id = ?`,
+      [userA],
+    );
+    const forecastOn = await setForecastReinvest(
+      db,
+      userA,
+      holdingA,
+      '2026-11-14',
+      true,
+      '2026-10-04',
+      loader,
+    );
+    assert(forecastOn.ok, 'user A can turn reinvest on for a forecast row');
+    if (!forecastOn.ok) return;
+    assert(forecastOn.reinvested === true, 'the forecast toggle reports on');
+    assert(Math.abs((forecastOn.ownedShares ?? 0) - 50) < 1e-6, 'forecast reinvest does not change shares owned');
+    assert(Math.abs((forecastOn.detected[0]?.amount ?? 0) - 15) < 1e-6, 'the toggled payment still uses the shares owned');
+    assert(forecastOn.detected[0]?.reinvestment.status === 'applied', 'cost basis supplies the recorded price');
+    assert(Math.abs((forecastOn.detected[1]?.sharesHeld ?? 0) - 51.5) < 1e-6, 'the next predicted payment uses the extra shares');
+    assert(Math.abs((forecastOn.detected[1]?.amount ?? 0) - 15.45) < 1e-6, 'the next amount compounds');
+    const sharesAfterForecast = queryOne<{ shares: number }>(
+      db,
+      `SELECT shares FROM holdings WHERE id = ? AND user_id = ?`,
+      [holdingA, userA],
+    );
+    assert(Number(sharesAfterForecast?.shares) === Number(sharesBefore?.shares), 'the stored holding quantity stays unchanged');
+    const dividendsAfterForecast = queryOne<{ c: number }>(
+      db,
+      `SELECT COUNT(*) AS c FROM dividend_events WHERE user_id = ?`,
+      [userA],
+    );
+    const incomeAfterForecast = queryOne<{ c: number }>(
+      db,
+      `SELECT COUNT(*) AS c FROM income_records WHERE user_id = ?`,
+      [userA],
+    );
+    assert(Number(dividendsAfterForecast?.c) === Number(dividendsBefore?.c), 'a forecast row is not saved as a dividend');
+    assert(Number(incomeAfterForecast?.c) === Number(incomeBefore?.c), 'a forecast row is not saved as income');
+    const forecastAsEvent = queryOne<{ c: number }>(
+      db,
+      `SELECT COUNT(*) AS c FROM dividend_events WHERE user_id = ? AND payment_date = ?`,
+      [userA, '2026-11-14'],
+    );
+    assert(Number(forecastAsEvent?.c ?? 0) === 0, 'the predicted date is not a recorded payment');
+
+    const stolenForecast = await setForecastReinvest(
+      db,
+      userB,
+      holdingA,
+      '2026-11-14',
+      false,
+      '2026-10-04',
+      loader,
+    );
+    assert(!stolenForecast.ok, 'user B cannot change user A forecast reinvest');
+    if (!stolenForecast.ok) assert(stolenForecast.status === 404, 'another user\'s holding is not found');
+    const prefStillA = queryOne<{ c: number }>(
+      db,
+      `SELECT COUNT(*) AS c FROM dividend_forecast_reinvest WHERE user_id = ? AND holding_id = ?`,
+      [userA, holdingA],
+    );
+    assert(Number(prefStillA?.c) === 1, 'user A forecast setting stays after the other user tries to change it');
+
+    const missingForecast = await setForecastReinvest(
+      db,
+      userA,
+      holdingA,
+      '1999-01-01',
+      true,
+      '2026-10-04',
+      loader,
+    );
+    assert(!missingForecast.ok, 'a date that is not on the projection is rejected');
+    const stalePrefs = queryOne<{ c: number }>(
+      db,
+      `SELECT COUNT(*) AS c FROM dividend_forecast_reinvest WHERE user_id = ? AND payment_date = ?`,
+      [userA, '1999-01-01'],
+    );
+    assert(Number(stalePrefs?.c ?? 0) === 0, 'a rejected forecast toggle is not stored');
+
+    const forecastOff = await setForecastReinvest(
+      db,
+      userA,
+      holdingA,
+      '2026-11-14',
+      false,
+      '2026-10-04',
+      loader,
+    );
+    assert(forecastOff.ok, 'user A can turn forecast reinvest off');
+    if (!forecastOff.ok) return;
+    assert(forecastOff.detected.every((row) => Math.abs(row.amount - 15) < 1e-6), 'off leaves the forecast on the current share count');
+    const prefCleared = queryOne<{ c: number }>(
+      db,
+      `SELECT COUNT(*) AS c FROM dividend_forecast_reinvest WHERE user_id = ? AND holding_id = ?`,
+      [userA, holdingA],
+    );
+    assert(Number(prefCleared?.c ?? 0) === 0, 'off removes the forecast setting');
+
+    const noPriceId = 'divtest_h_noprice';
+    run(db, `DELETE FROM holdings WHERE id = ?`, [noPriceId]);
+    run(db, `DELETE FROM price_quotes WHERE asset_key = ?`, ['STOCK:NOPX']);
+    run(
+      db,
+      `INSERT INTO holdings (id, user_id, asset_class, name, symbol, shares, cost_basis_nzd, created_at, updated_at)
+       VALUES (?, ?, 'stock', 'No Price Ltd', 'NOPX', 20, NULL, ?, ?)`,
+      [noPriceId, userA, now, now],
+    );
+    const noPriceOn = await setForecastReinvest(
+      db,
+      userA,
+      noPriceId,
+      '2026-11-14',
+      true,
+      '2026-10-04',
+      loader,
+    );
+    assert(noPriceOn.ok, 'reinvest can be turned on when no price is saved');
+    if (!noPriceOn.ok) return;
+    assert(noPriceOn.detected[0]?.reinvestment.status === 'unavailable', 'reinvestment is unavailable without a price');
+    assert(
+      noPriceOn.detected[0]?.reinvestment.note?.includes('could not be applied') === true,
+      'the response says reinvestment could not be applied',
+    );
+    assert(noPriceOn.detected.every((row) => Math.abs(row.sharesHeld - 20) < 1e-6), 'projected shares stay on the shares owned');
+    const noPriceShares = queryOne<{ shares: number }>(
+      db,
+      `SELECT shares FROM holdings WHERE id = ? AND user_id = ?`,
+      [noPriceId, userA],
+    );
+    assert(Number(noPriceShares?.shares) === 20, 'the no-price holding quantity stays unchanged');
+
+    const linked = insertDividend(db, userA, {
+      holdingId: holdingA,
+      sharesHeld: 50,
+      dividendPerShare: 0.2,
+      paymentDate: '2026-09-01',
+      currency: 'NZD',
+      reinvested: false,
+    });
+    assert(linked.ok, 'user A can record another dividend on the holding that has a forecast');
+    if (!linked.ok) return;
+    const recordedOn = await setDividendReinvest(
+      db,
+      userA,
+      linked.event.id,
+      true,
+      '2026-10-04',
+      loader,
+    );
+    assert(recordedOn.ok, 'user A can turn reinvest on for a recorded payment');
+    if (!recordedOn.ok) return;
+    assert(recordedOn.event.reinvested === true, 'the recorded toggle is on');
+    assert(Math.abs((recordedOn.event.reinvestedAmount ?? 0) - 10) < 1e-6, 'on reinvests the net cash');
+    assert(Math.abs((recordedOn.ownedShares ?? 0) - 50) < 1e-6, 'recorded reinvest does not change shares owned');
+    assert(recordedOn.event.reinvestment.sharesAdded == null, 'a paid dividend does not add projected shares');
+    assert(Math.abs((recordedOn.detected[0]?.sharesHeld ?? 0) - 50) < 1e-6, 'a paid dividend leaves the forecast on the shares owned');
+    assert(Math.abs((recordedOn.detected[0]?.amount ?? 0) - 15) < 1e-6, 'a paid reinvested dividend does not inflate the forecast');
+    const upcomingRecorded = insertDividend(db, userA, {
+      holdingId: holdingA,
+      sharesHeld: 50,
+      dividendPerShare: 0.2,
+      paymentDate: '2026-11-01',
+      currency: 'NZD',
+      reinvested: false,
+    });
+    assert(upcomingRecorded.ok, 'user A can record a payment after today');
+    if (!upcomingRecorded.ok) return;
+    const upcomingOn = await setDividendReinvest(
+      db,
+      userA,
+      upcomingRecorded.event.id,
+      true,
+      '2026-10-04',
+      loader,
+    );
+    assert(upcomingOn.ok, 'user A can turn reinvest on for a payment after today');
+    if (!upcomingOn.ok) return;
+    assert(Math.abs((upcomingOn.event.reinvestment.sharesAdded ?? 0) - 1) < 1e-6, 'net cash after today buys shares for the forecast');
+    assert(Math.abs((upcomingOn.detected[0]?.sharesHeld ?? 0) - 51) < 1e-6, 'later predicted payments include a recorded payment after today');
+    assert(Math.abs((upcomingOn.detected[0]?.amount ?? 0) - 15.3) < 1e-6, 'the predicted cash uses those extra shares');
+    assert(Math.abs((upcomingOn.ownedShares ?? 0) - 50) < 1e-6, 'a future reinvest still does not change shares owned');
+    const sharesAfterRecorded = queryOne<{ shares: number }>(
+      db,
+      `SELECT shares FROM holdings WHERE id = ? AND user_id = ?`,
+      [holdingA, userA],
+    );
+    assert(Number(sharesAfterRecorded?.shares) === 50, 'shares owned stay at 50 after the recorded toggle');
+    const stolenRecorded = await setDividendReinvest(
+      db,
+      userB,
+      linked.event.id,
+      false,
+      '2026-10-04',
+      loader,
+    );
+    assert(!stolenRecorded.ok, 'user B cannot change user A recorded reinvest');
+    const stillOn = queryOne<{ reinvested: number }>(
+      db,
+      `SELECT reinvested FROM dividend_events WHERE id = ? AND user_id = ?`,
+      [linked.event.id, userA],
+    );
+    assert(Number(stillOn?.reinvested) === 1, 'user A recorded reinvest stays on');
+
+    const userBAfter = await dashboardForUser(db, userB, 2026, '2026-10-04', loader);
+    assert(userBAfter.forecast.detected.every((row) => row.symbol === 'BRAV'), 'user B forecast is still only their holding');
+    assert(userBAfter.forecast.detected.every((row) => Math.abs(row.amount - 90) < 1e-6), 'user B amounts are unchanged by user A reinvestment');
+    assert(userBAfter.history.every((row) => row.companyName === 'Bravo Ltd'), 'user B recorded rows are untouched');
+
+    run(
+      db,
+      `INSERT INTO dividend_forecast_reinvest (
+         id, user_id, holding_id, payment_date, reinvested, created_at, updated_at
+       ) VALUES (?, ?, ?, '2026-11-14', 1, ?, ?)`,
+      ['divtest_pref_b', userB, holdingB, now, now],
+    );
+    const unlinkedPrefs = unlinkDividendsForHolding(db, userB, holdingA);
+    assert(unlinkedPrefs === 0, 'user B still cannot unlink user A dividends');
+    const clearedByOther = queryOne<{ c: number }>(
+      db,
+      `SELECT COUNT(*) AS c FROM dividend_forecast_reinvest WHERE user_id = ? AND holding_id = ?`,
+      [userA, noPriceId],
+    );
+    assert(Number(clearedByOther?.c) === 1, 'user B cannot clear user A forecast settings');
+    const unlinkedOwnPref = unlinkDividendsForHolding(db, userA, noPriceId);
+    assert(unlinkedOwnPref === 0, 'unlinking a holding with no dividend rows still runs');
+    const prefGone = queryOne<{ c: number }>(
+      db,
+      `SELECT COUNT(*) AS c FROM dividend_forecast_reinvest WHERE user_id = ? AND holding_id = ?`,
+      [userA, noPriceId],
+    );
+    assert(Number(prefGone?.c ?? 0) === 0, 'removing a holding clears that user\'s forecast reinvest rows');
+    const prefBLeft = queryOne<{ c: number }>(
+      db,
+      `SELECT COUNT(*) AS c FROM dividend_forecast_reinvest WHERE user_id = ? AND holding_id = ?`,
+      [userB, holdingB],
+    );
+    assert(Number(prefBLeft?.c) === 1, 'the other user\'s forecast setting remains');
 
     const scoped = deleteScopedDataForUser(db, userA);
     assert((scoped.tables.dividend_events ?? 0) >= 2, 'account deletion counts this user\'s dividend rows');
     assert(listDividendEvents(db, userA).length === 0, 'account deletion removes that user\'s dividend data');
     assert(listDividendEvents(db, userB).length === 1, 'the other user\'s dividend data remains');
+    const prefBAfterDelete = queryOne<{ c: number }>(
+      db,
+      `SELECT COUNT(*) AS c FROM dividend_forecast_reinvest WHERE user_id = ?`,
+      [userB],
+    );
+    assert(Number(prefBAfterDelete?.c) === 1, 'account deletion leaves the other user\'s forecast reinvest setting');
+    const prefAAfterDelete = queryOne<{ c: number }>(
+      db,
+      `SELECT COUNT(*) AS c FROM dividend_forecast_reinvest WHERE user_id = ?`,
+      [userA],
+    );
+    assert(Number(prefAAfterDelete?.c ?? 0) === 0, 'account deletion removes that user\'s forecast reinvest settings');
     const holdingBLeft = queryOne<{ id: string }>(
       db,
       `SELECT id FROM holdings WHERE id = ? AND user_id = ?`,
@@ -230,9 +508,11 @@ async function main() {
   } finally {
     run(db, `DELETE FROM income_records WHERE user_id IN (?, ?)`, [userA, userB]);
     run(db, `DELETE FROM payee_settings WHERE user_id IN (?, ?)`, [userA, userB]);
+    run(db, `DELETE FROM dividend_forecast_reinvest WHERE user_id IN (?, ?)`, [userA, userB]);
     run(db, `DELETE FROM dividend_events WHERE user_id IN (?, ?)`, [userA, userB]);
     run(db, `DELETE FROM budget_categories WHERE user_id IN (?, ?)`, [userA, userB]);
-    run(db, `DELETE FROM holdings WHERE id IN (?, ?, ?, ?, ?)`, [holdingA, holdingA2, holdingB, 'divtest_h_crypto', 'divtest_h_blank']);
+    run(db, `DELETE FROM holdings WHERE id IN (?, ?, ?, ?, ?, ?)`, [holdingA, holdingA2, holdingB, 'divtest_h_crypto', 'divtest_h_blank', 'divtest_h_noprice']);
+    run(db, `DELETE FROM price_quotes WHERE asset_key = ?`, ['STOCK:NOPX']);
   }
 }
 

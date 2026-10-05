@@ -11,12 +11,14 @@ import { removeDividendIncome, syncDividendIncome } from './incomeSync.ts';
 import {
   buildDividendDashboard,
   computeDividend,
+  forecastReinvestKey,
   isYmd,
-  projectDividendFromHistory,
+  projectDividendSchedule,
   todayAucklandYmd,
   type DetectedDividend,
   type DividendDashboard,
   type DividendRecord,
+  type DividendView,
   type HoldingValueInput,
   type PublishedDividendSeries,
 } from './model.ts';
@@ -304,6 +306,11 @@ export function unlinkDividendsForHolding(db: Database, userId: string, holdingI
     [userId, holdingId],
   );
   const count = Number(before?.c ?? 0);
+  run(
+    db,
+    `DELETE FROM dividend_forecast_reinvest WHERE user_id = ? AND holding_id = ?`,
+    [userId, holdingId],
+  );
   if (count <= 0) return 0;
   run(
     db,
@@ -315,9 +322,194 @@ export function unlinkDividendsForHolding(db: Database, userId: string, holdingI
   return count;
 }
 
+export type DividendReinvestResult =
+  | {
+      ok: true;
+      event: DividendView;
+      /** Forecast rows for this holding after the toggle. */
+      detected: DetectedDividend[];
+      /** Shares stored on the holding. This toggle does not change them. */
+      ownedShares: number | null;
+    }
+  | { ok: false; status: number; error: string };
+
+export type ForecastReinvestResult =
+  | {
+      ok: true;
+      holdingId: string;
+      paymentDate: string;
+      reinvested: boolean;
+      detected: DetectedDividend[];
+      ownedShares: number | null;
+    }
+  | { ok: false; status: number; error: string };
+
+/**
+ * Turn reinvestment on or off for one recorded dividend.
+ * On sets the reinvested amount to that payment's net cash.
+ * The holding quantity is not updated. Forecast rows are not saved.
+ */
+export async function setDividendReinvest(
+  db: Database,
+  userId: string,
+  id: string,
+  reinvested: boolean,
+  today?: string,
+  loadPublished: PublishedDividendLoader = defaultPublishedLoader,
+): Promise<DividendReinvestResult> {
+  const existing = queryOne<{ id: string; net_dividend: number }>(
+    db,
+    `SELECT id, net_dividend FROM dividend_events WHERE id = ? AND user_id = ?`,
+    [id, userId],
+  );
+  if (!existing) return { ok: false, status: 404, error: 'Dividend not found.' };
+  const net = Number(existing.net_dividend);
+  if (reinvested && !(net > 0)) {
+    return { ok: false, status: 400, error: 'There is no net cash to reinvest.' };
+  }
+  run(
+    db,
+    `UPDATE dividend_events
+     SET reinvested = ?, reinvested_amount = ?, updated_at = ?
+     WHERE id = ? AND user_id = ?`,
+    [reinvested ? 1 : 0, reinvested ? net : null, new Date().toISOString(), id, userId],
+  );
+  const todayYmd = today && isYmd(today) ? today : todayAucklandYmd();
+  const dash = await dashboardForUser(db, userId, Number(todayYmd.slice(0, 4)), todayYmd, loadPublished);
+  const event = [...dash.history, ...dash.upcoming].find((row) => row.id === id);
+  if (!event) return { ok: false, status: 500, error: 'Dividend was not updated.' };
+  const holdingId = event.holdingId;
+  return {
+    ok: true,
+    event,
+    detected: holdingId ? dash.forecast.detected.filter((row) => row.holdingId === holdingId) : [],
+    ownedShares: holdingId
+      ? dash.holdings.find((holding) => holding.id === holdingId)?.shares ?? null
+      : null,
+  };
+}
+
+/**
+ * Turn reinvestment on or off for one forecast row.
+ * The preference is stored on its own. It is not a dividend event and not income.
+ */
+export async function setForecastReinvest(
+  db: Database,
+  userId: string,
+  holdingId: string,
+  paymentDate: string,
+  reinvested: boolean,
+  today?: string,
+  loadPublished: PublishedDividendLoader = defaultPublishedLoader,
+): Promise<ForecastReinvestResult> {
+  if (!isYmd(paymentDate)) {
+    return { ok: false, status: 400, error: 'Payment date must be a real calendar date (YYYY-MM-DD).' };
+  }
+  const holding = ownedStock(db, userId, holdingId);
+  if (!holding) return { ok: false, status: 404, error: 'That holding is not on your portfolio.' };
+  const prefs = readForecastReinvest(db, userId);
+  const key = forecastReinvestKey(holdingId, paymentDate);
+  if (reinvested) prefs.set(key, true);
+  else prefs.delete(key);
+  const todayYmd = today && isYmd(today) ? today : todayAucklandYmd();
+  const dash = await dashboardForUser(
+    db,
+    userId,
+    Number(todayYmd.slice(0, 4)),
+    todayYmd,
+    loadPublished,
+    prefs,
+  );
+  const detected = dash.forecast.detected.filter((row) => row.holdingId === holdingId);
+  const match = detected.some((row) => row.paymentDate === paymentDate);
+  if (!match) {
+    if (!reinvested) {
+      writeForecastReinvest(db, userId, holdingId, paymentDate, false);
+      return {
+        ok: true,
+        holdingId,
+        paymentDate,
+        reinvested: false,
+        detected,
+        ownedShares: dash.holdings.find((item) => item.id === holdingId)?.shares ?? null,
+      };
+    }
+    return { ok: false, status: 404, error: 'That forecast payment is not on your projection.' };
+  }
+  writeForecastReinvest(db, userId, holdingId, paymentDate, reinvested);
+  return {
+    ok: true,
+    holdingId,
+    paymentDate,
+    reinvested,
+    detected,
+    ownedShares: dash.holdings.find((item) => item.id === holdingId)?.shares ?? null,
+  };
+}
+
 function usableShares(shares: number | null): number | null {
   if (shares == null || !Number.isFinite(shares) || !(shares > 0)) return null;
   return shares;
+}
+
+function readForecastReinvest(db: Database, userId: string): Map<string, boolean> {
+  const rows = queryAll<Record<string, unknown>>(
+    db,
+    `SELECT holding_id, payment_date, reinvested
+     FROM dividend_forecast_reinvest
+     WHERE user_id = ?`,
+    [userId],
+  );
+  const prefs = new Map<string, boolean>();
+  for (const row of rows) {
+    const holdingId = String(row.holding_id ?? '');
+    const paymentDate = String(row.payment_date ?? '');
+    if (!holdingId || !isYmd(paymentDate)) continue;
+    if (Number(row.reinvested) === 1) prefs.set(forecastReinvestKey(holdingId, paymentDate), true);
+  }
+  return prefs;
+}
+
+function writeForecastReinvest(
+  db: Database,
+  userId: string,
+  holdingId: string,
+  paymentDate: string,
+  reinvested: boolean,
+): void {
+  if (!reinvested) {
+    run(
+      db,
+      `DELETE FROM dividend_forecast_reinvest
+       WHERE user_id = ? AND holding_id = ? AND payment_date = ?`,
+      [userId, holdingId, paymentDate],
+    );
+    return;
+  }
+  const now = new Date().toISOString();
+  const existing = queryOne<{ id: string }>(
+    db,
+    `SELECT id FROM dividend_forecast_reinvest
+     WHERE user_id = ? AND holding_id = ? AND payment_date = ?`,
+    [userId, holdingId, paymentDate],
+  );
+  if (existing) {
+    run(
+      db,
+      `UPDATE dividend_forecast_reinvest
+       SET reinvested = 1, updated_at = ?
+       WHERE id = ? AND user_id = ?`,
+      [now, existing.id, userId],
+    );
+    return;
+  }
+  run(
+    db,
+    `INSERT INTO dividend_forecast_reinvest (
+       id, user_id, holding_id, payment_date, reinvested, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, 1, ?, ?)`,
+    [newId('dre'), userId, holdingId, paymentDate, now, now],
+  );
 }
 
 async function detectedForHoldings(
@@ -325,14 +517,16 @@ async function detectedForHoldings(
   events: DividendRecord[],
   today: string,
   loadPublished: PublishedDividendLoader,
+  forecastPrefs: Map<string, boolean>,
 ): Promise<DetectedDividend[]> {
-  const statedUpcoming = new Set(
-    events
-      .filter((event) => event.holdingId && event.paymentDate > today)
-      .map((event) => event.holdingId as string),
-  );
+  const statedThrough = new Map<string, string>();
+  for (const event of events) {
+    if (!event.holdingId || !(event.paymentDate > today)) continue;
+    const current = statedThrough.get(event.holdingId);
+    if (current == null || event.paymentDate > current) statedThrough.set(event.holdingId, event.paymentDate);
+  }
   const candidates = holdings.filter((holding) => {
-    if (!holding.symbol || statedUpcoming.has(holding.id)) return false;
+    if (!holding.symbol) return false;
     return usableShares(holding.shares) != null;
   });
   const loaded = await Promise.all(candidates.map(async (holding) => {
@@ -373,7 +567,7 @@ async function detectedForHoldings(
     const shares = usableShares(item.holding.shares);
     if (shares == null || !item.holding.symbol) continue;
     const currency = item.series?.currency?.toUpperCase() ?? '';
-    const projected = projectDividendFromHistory({
+    const schedule = projectDividendSchedule({
       holdingId: item.holding.id,
       name: item.holding.name,
       symbol: item.holding.symbol,
@@ -382,7 +576,12 @@ async function detectedForHoldings(
       today,
       fxRateToNzd: currency === 'NZD' ? 1 : rates.get(currency) ?? null,
     });
-    if (projected) detected.push(projected);
+    const through = statedThrough.get(item.holding.id);
+    for (const projected of schedule) {
+      if (through && projected.paymentDate <= through) continue;
+      const reinvested = forecastPrefs.get(forecastReinvestKey(projected.holdingId, projected.paymentDate)) === true;
+      detected.push(reinvested ? { ...projected, reinvested: true } : projected);
+    }
   }
   return detected;
 }
@@ -393,6 +592,7 @@ export async function dashboardForUser(
   year: number,
   today?: string,
   loadPublished: PublishedDividendLoader = defaultPublishedLoader,
+  forecastPrefs?: Map<string, boolean>,
 ): Promise<DividendDashboard & { holdings: StockHoldingOption[] }> {
   const owned = listOwnedStocks(db, userId);
   const holdings = owned.map((holding) => ({
@@ -404,7 +604,8 @@ export async function dashboardForUser(
   }));
   const events = listDividendEvents(db, userId);
   const todayYmd = today && isYmd(today) ? today : todayAucklandYmd();
-  const detected = await detectedForHoldings(owned, events, todayYmd, loadPublished);
+  const prefs = forecastPrefs ?? readForecastReinvest(db, userId);
+  const detected = await detectedForHoldings(owned, events, todayYmd, loadPublished, prefs);
   const valued: HoldingValueInput[] = holdings.map((holding) => ({
     ...holding,
     quotedPriceNzd: quotePriceNzd(db, holding.symbol),

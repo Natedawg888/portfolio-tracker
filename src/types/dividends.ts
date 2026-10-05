@@ -17,6 +17,8 @@ export interface DividendEvent {
   netNzd: number | null;
   reinvested: boolean;
   reinvestedAmount: number | null;
+  /** How this payment changes later forecast share counts. It does not change shares owned. */
+  reinvestment: DividendReinvestment;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -38,13 +40,37 @@ export interface DividendMonthTotal {
   unconvertedCount: number;
 }
 
-/** Next payment taken from Yahoo Finance dividend history for one holding this user owns. */
+/**
+ * Result of one reinvest toggle.
+ * `applied` — this payment's cash bought extra shares of the same holding for later predicted payments.
+ * Recorded payments use net cash, and only when the payment date is after today. Forecast rows use gross cash (per share times projected shares; tax is not estimated).
+ * `unavailable` — projected shares were left unchanged. `note` says reinvestment could not be applied.
+ * `off` — this payment does not add shares. A paid recorded dividend stays off here because those shares are already in the holding.
+ */
+export interface DividendReinvestment {
+  status: 'off' | 'applied' | 'unavailable';
+  /** Extra shares added for later predicted payments of this holding. Null when none are added. */
+  sharesAdded: number | null;
+  pricePerShareNzd: number | null;
+  /** `quote` is a saved NZD quote. `cost` is recorded cost basis divided by shares owned. */
+  priceSource: 'quote' | 'cost' | null;
+  note: string | null;
+}
+
+/** One predicted payment from Yahoo Finance dividend history. Not a saved dividend or income row. */
 export interface DetectedDividend {
+  /** `holdingId:paymentDate`. Use this as the row identity for the reinvest toggle. */
+  id: string;
   holdingId: string;
   name: string;
   symbol: string;
   dividendPerShare: number;
+  /** Projected shares used for this payment. */
   sharesHeld: number;
+  /** Shares stored on the holding. Reinvestment does not change this. */
+  ownedShares: number;
+  /** Same number as `sharesHeld`. */
+  projectedShares: number;
   amount: number;
   currency: string;
   amountNzd: number | null;
@@ -55,6 +81,28 @@ export interface DetectedDividend {
   historyCount: number;
   basis: 'projected' | 'published';
   source: 'yahoo';
+  /** On spends this row's gross cash on more of the same holding. Tax is not estimated. */
+  reinvested: boolean;
+  reinvestment: DividendReinvestment;
+}
+
+/** `PATCH /api/dividends/:id/reinvest` with `{ reinvested: boolean }`. */
+export interface DividendReinvestResponse {
+  event: DividendEvent;
+  /** Forecast rows for this holding after the toggle. */
+  detected: DetectedDividend[];
+  /** Shares stored on the holding. Unchanged by the toggle. */
+  ownedShares: number | null;
+}
+
+/** `PUT /api/dividends/forecast-reinvest` with `{ holdingId, paymentDate, reinvested }`. */
+export interface ForecastReinvestResponse {
+  holdingId: string;
+  paymentDate: string;
+  reinvested: boolean;
+  /** Forecast rows for this holding after the toggle, including later compounded payments. */
+  detected: DetectedDividend[];
+  ownedShares: number | null;
 }
 
 export interface DividendYearTotal {
