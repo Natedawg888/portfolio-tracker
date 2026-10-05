@@ -11,7 +11,7 @@ import { buildCycleView, type CycleResponse } from './view.ts';
 export { EconomyCountryError } from './countries.ts';
 
 /** Bump when a provider starts returning a series the previous extract did not store. */
-export const EXTRACT_REVISION = 'activity-credit-1';
+export const EXTRACT_REVISION = 'nz-credit-c60-1';
 
 function cacheMs(): number {
   const hours = Number(process.env.ECONOMY_CACHE_HOURS ?? '12');

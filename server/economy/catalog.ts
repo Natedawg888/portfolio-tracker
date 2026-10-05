@@ -65,7 +65,7 @@ export const INDICATOR_CATALOG: Record<IndicatorType, IndicatorMeta> = {
   credit_conditions: {
     label: 'Credit conditions',
     description:
-      'Whether credit is loosening or tightening. The Reserve Bank of New Zealand credit conditions survey is the official series, and rbnz.govt.nz returns HTTP 403 to this app, so the card stays blank instead of using a stand-in.',
+      'Whether credit is loosening or tightening. The Reserve Bank of New Zealand credit conditions survey is the official series: the published index of credit availability for corporate and institutional loans over the past six months. A higher number means easier credit.',
     frequency: 'quarterly',
     staleAfterDays: 200,
   },

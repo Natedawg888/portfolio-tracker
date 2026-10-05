@@ -73,10 +73,7 @@ Wired feeds (no API key, no secrets):
 | Share market | OECD share-price index | Percent change over three months, calculated here |
 | Housing activity | Stats NZ building consents, monthly workbook (about 180 KB), not the regional CSV | Number of new dwellings consented, all dwellings, seasonally adjusted (`BLDM.SFTZ1100A1S`). This app calculates the annual percent change from the count and says so |
 | Business activity | OECD business tendency surveys | Production tendency, percentage balance. This app shows 50 plus half that balance, so 50 is the published neutral point. It is not a branded PMI |
-
-Not wired, and left blank rather than filled in:
-
-- Credit conditions — the Reserve Bank credit conditions survey is the official New Zealand series. `rbnz.govt.nz` returns HTTP 403, so the card stays blank instead of using a stand-in
+| Credit conditions | Reserve Bank of New Zealand credit conditions survey, table C60 | Credit availability for corporate and institutional loans, observed change over the past six months (`CCS.Q99_AV`). The published index already rises when credit is easier. `rbnz.govt.nz` returns HTTP 403, so this app downloads the Internet Archive copy of the official `hc60.xlsx` workbook. If that copy cannot be read, the card stays blank |
 
 `ECONOMY_PROVIDER=sample` switches to a fixture provider. Those rows are labelled sample, use old periods, and are marked stale. The default path never substitutes them when a live fetch fails.
 
@@ -109,6 +106,7 @@ Under the indicator cards, the page loads headlines with the same RSS client as 
 - Stats NZ catalogue HTML and series ids can change. A missed series becomes a blank card and a lower confidence, not a made-up number.
 - OECD republishes national data and can lag or revise. The card names OECD when that is the source. Downloads use Node's `https` client: the global `fetch` implementation receives HTTP 500 from `sdmx.oecd.org` for the same CSV URLs.
 - The interbank rate is not the OCR. An RBNZ table provider can replace that series later without a scoring change.
+- Credit conditions use the official C60 workbook. When `rbnz.govt.nz` returns HTTP 403, the file is the Internet Archive copy of that same workbook. The archive can lag a new release until it has captured the file. A failed download leaves the card blank.
 - Derived percent changes (employment, shares, yield spread) are arithmetic on official levels, labelled as calculated here.
 - Latest-vintage history overstates how obvious a phase was at the time.
 - Thresholds are a documented starting point for New Zealand, not a structural model of the economy.
