@@ -394,8 +394,33 @@ async function main() {
     assert(recordedOn.event.reinvested === true, 'the recorded toggle is on');
     assert(Math.abs((recordedOn.event.reinvestedAmount ?? 0) - 10) < 1e-6, 'on reinvests the net cash');
     assert(Math.abs((recordedOn.ownedShares ?? 0) - 50) < 1e-6, 'recorded reinvest does not change shares owned');
-    assert(Math.abs((recordedOn.detected[0]?.sharesHeld ?? 0) - 51) < 1e-6, 'later predicted payments include the recorded reinvestment');
-    assert(Math.abs((recordedOn.detected[0]?.amount ?? 0) - 15.3) < 1e-6, 'the predicted cash uses those extra shares');
+    assert(recordedOn.event.reinvestment.sharesAdded == null, 'a paid dividend does not add projected shares');
+    assert(Math.abs((recordedOn.detected[0]?.sharesHeld ?? 0) - 50) < 1e-6, 'a paid dividend leaves the forecast on the shares owned');
+    assert(Math.abs((recordedOn.detected[0]?.amount ?? 0) - 15) < 1e-6, 'a paid reinvested dividend does not inflate the forecast');
+    const upcomingRecorded = insertDividend(db, userA, {
+      holdingId: holdingA,
+      sharesHeld: 50,
+      dividendPerShare: 0.2,
+      paymentDate: '2026-11-01',
+      currency: 'NZD',
+      reinvested: false,
+    });
+    assert(upcomingRecorded.ok, 'user A can record a payment after today');
+    if (!upcomingRecorded.ok) return;
+    const upcomingOn = await setDividendReinvest(
+      db,
+      userA,
+      upcomingRecorded.event.id,
+      true,
+      '2026-10-04',
+      loader,
+    );
+    assert(upcomingOn.ok, 'user A can turn reinvest on for a payment after today');
+    if (!upcomingOn.ok) return;
+    assert(Math.abs((upcomingOn.event.reinvestment.sharesAdded ?? 0) - 1) < 1e-6, 'net cash after today buys shares for the forecast');
+    assert(Math.abs((upcomingOn.detected[0]?.sharesHeld ?? 0) - 51) < 1e-6, 'later predicted payments include a recorded payment after today');
+    assert(Math.abs((upcomingOn.detected[0]?.amount ?? 0) - 15.3) < 1e-6, 'the predicted cash uses those extra shares');
+    assert(Math.abs((upcomingOn.ownedShares ?? 0) - 50) < 1e-6, 'a future reinvest still does not change shares owned');
     const sharesAfterRecorded = queryOne<{ shares: number }>(
       db,
       `SELECT shares FROM holdings WHERE id = ? AND user_id = ?`,

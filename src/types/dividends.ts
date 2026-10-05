@@ -42,9 +42,10 @@ export interface DividendMonthTotal {
 
 /**
  * Result of one reinvest toggle.
- * `applied` — net cash bought extra shares of the same holding for later predicted payments.
+ * `applied` — this payment's cash bought extra shares of the same holding for later predicted payments.
+ * Recorded payments use net cash, and only when the payment date is after today. Forecast rows use gross cash (per share times projected shares; tax is not estimated).
  * `unavailable` — projected shares were left unchanged. `note` says reinvestment could not be applied.
- * `off` — this payment does not add shares.
+ * `off` — this payment does not add shares. A paid recorded dividend stays off here because those shares are already in the holding.
  */
 export interface DividendReinvestment {
   status: 'off' | 'applied' | 'unavailable';
@@ -80,7 +81,7 @@ export interface DetectedDividend {
   historyCount: number;
   basis: 'projected' | 'published';
   source: 'yahoo';
-  /** On spends this payment's net cash on more of the same holding inside the forecast. */
+  /** On spends this row's gross cash on more of the same holding. Tax is not estimated. */
   reinvested: boolean;
   reinvestment: DividendReinvestment;
 }

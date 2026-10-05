@@ -1134,7 +1134,7 @@ export const api = {
       }),
     remove: (id: string) =>
       req<{ ok: boolean; id: string }>(`/dividends/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-    /** On/off for one recorded payment. On reinvests that payment's net cash into the same holding. */
+    /** On/off for one recorded payment. On reinvests that payment's net cash. A paid payment does not add forecast shares. */
     setReinvest: (id: string, reinvested: boolean) =>
       req<DividendReinvestResponse>(`/dividends/${encodeURIComponent(id)}/reinvest`, {
         method: 'PATCH',
@@ -1143,6 +1143,7 @@ export const api = {
     /**
      * On/off for one forecast row (`detected[].id` is `holdingId:paymentDate`).
      * Does not save the forecast row as a dividend or income record.
+     * On spends the row's gross cash. Tax is not estimated.
      */
     setForecastReinvest: (body: { holdingId: string; paymentDate: string; reinvested: boolean }) =>
       req<ForecastReinvestResponse>('/dividends/forecast-reinvest', {

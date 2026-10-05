@@ -4,9 +4,12 @@
  * The forecast repeats published Yahoo Finance dividend history for a stock
  * or ETF the same user holds, through the next 12 months. Each amount is the
  * last published cash dividend per share times a projected share count.
- * That count starts at the shares they own. Reinvest on spends that payment's
- * net cash on more of the same holding inside the forecast only, so later
- * predicted payments compound. The stored holding quantity is not changed.
+ * That count starts at the shares they own. Reinvest on for a forecast row
+ * spends that row's gross cash (per share times projected shares; tax is not
+ * estimated) on more of the same holding inside the forecast only, so later
+ * predicted payments compound. A recorded payment adds projected shares only
+ * when its date is after today. Paid reinvestment is already in the shares
+ * owned. The stored holding quantity is not changed.
  * Missing figures stay missing. Missing FX rates stay missing. A share price
  * is never invented. Imputation credits are not cash. This is not advice.
  */
@@ -80,14 +83,25 @@ export const REINVEST_OFF: ReinvestmentEffect = {
   note: null,
 };
 
+/** Forecast rows. The cash is per share times projected shares; tax is not estimated. */
 export const REINVEST_NO_PRICE_NOTE =
+  'Reinvestment could not be applied. There is no saved quote or recorded price to turn this gross cash into shares.';
+
+/** Recorded payments. The cash is the net amount the user marked reinvested. */
+export const REINVEST_NO_NET_PRICE_NOTE =
   'Reinvestment could not be applied. There is no saved quote or recorded price to turn this net cash into shares.';
 
 export const REINVEST_NO_FX_NOTE =
   'Reinvestment could not be applied. There is no FX rate to turn this net cash into shares.';
 
+export const REINVEST_NO_GROSS_FX_NOTE =
+  'Reinvestment could not be applied. There is no FX rate to turn this gross cash into shares.';
+
 export const REINVEST_UNLINKED_NOTE =
   'Reinvestment could not be applied. This payment is not linked to a holding, so it cannot buy more of the same holding.';
+
+export const REINVEST_ALREADY_OWNED_NOTE =
+  'This payment is already paid. Reinvested shares are already included in the shares you own, so it does not add shares to the forecast.';
 
 /** Predicted payments run from the day after today through this many months. */
 export const DIVIDEND_FORECAST_HORIZON_MONTHS = 12;
@@ -124,7 +138,7 @@ export type DetectedDividend = {
   historyCount: number;
   basis: 'projected' | 'published';
   source: 'yahoo';
-  /** On spends this payment's net cash on more of the same holding inside the forecast. */
+  /** On spends this row's gross cash on more of the same holding. Tax is not estimated. */
   reinvested: boolean;
   reinvestment: ReinvestmentEffect;
 };
@@ -231,7 +245,8 @@ export const DIVIDEND_FORECAST_NOTE =
   'A stock or ETF you hold is added only when Yahoo Finance has published a dividend for it. ' +
   'Predicted payments cover the next 12 months. The date repeats the gap between those published dates, and the amount is the last cash dividend per share times a projected share count. ' +
   'The projected share count starts at the shares you own. Reinvest does not change that stored quantity. ' +
-  'When reinvest is on, that payment\'s net cash buys more of the same holding, and later predicted payments use the extra shares. ' +
+  'When reinvest is on for a predicted payment, that row\'s gross cash buys more of the same holding. Tax is not estimated. Later predicted payments use the extra shares. ' +
+  'A recorded payment adds shares only when its date is after today. A paid dividend does not add shares again; those shares are already in the quantity you own. ' +
   'Reinvestment is left unchanged when there is no saved quote or recorded price. ' +
   'A holding is left out when that source has no dividend figure. A payment you already entered is not repeated; later predicted payments for that holding can still appear. ' +
   'Forecast rows are not saved as dividend or income records. ' +
@@ -727,11 +742,14 @@ export function recordedSharePriceNzd(
   return null;
 }
 
-function appliedNote(source: 'quote' | 'cost'): string {
+function appliedNote(source: 'quote' | 'cost', cashKind: 'net' | 'gross'): string {
   const priceSentence = source === 'quote'
     ? 'The share price is the saved NZD quote.'
     : 'The share price is the recorded cost per share (cost basis divided by the shares you own). There is no saved quote.';
-  return `${priceSentence} This net cash buys more of the same holding in the forecast only. The shares you own stay as recorded. Later predicted payments for this holding use the extra shares. Not financial advice.`;
+  const cashSentence = cashKind === 'gross'
+    ? 'This gross cash buys more of the same holding in the forecast only. Tax is not estimated.'
+    : 'This net cash buys more of the same holding in the forecast only.';
+  return `${priceSentence} ${cashSentence} The shares you own stay as recorded. Later predicted payments for this holding use the extra shares. Not financial advice.`;
 }
 
 function effectForCash(args: {
@@ -741,7 +759,11 @@ function effectForCash(args: {
   fxRateToNzd: number | null;
   price: { priceNzd: number; source: 'quote' | 'cost' } | null;
   linked: boolean;
+  /** Recorded payments use net cash. Forecast rows use gross cash because tax is not estimated. */
+  cashKind: 'net' | 'gross';
 }): ReinvestmentEffect {
+  const noPriceNote = args.cashKind === 'gross' ? REINVEST_NO_PRICE_NOTE : REINVEST_NO_NET_PRICE_NOTE;
+  const noFxNote = args.cashKind === 'gross' ? REINVEST_NO_GROSS_FX_NOTE : REINVEST_NO_FX_NOTE;
   if (!args.reinvested) return REINVEST_OFF;
   if (!args.linked) {
     return {
@@ -758,7 +780,7 @@ function effectForCash(args: {
       sharesAdded: null,
       pricePerShareNzd: null,
       priceSource: null,
-      note: REINVEST_NO_PRICE_NOTE,
+      note: noPriceNote,
     };
   }
   const fx = fxForCurrency(args.currency, args.fxRateToNzd);
@@ -768,7 +790,7 @@ function effectForCash(args: {
       sharesAdded: null,
       pricePerShareNzd: args.price.priceNzd,
       priceSource: args.price.source,
-      note: REINVEST_NO_FX_NOTE,
+      note: noFxNote,
     };
   }
   const cashNzd = args.cashInPaymentCurrency * fx;
@@ -778,7 +800,7 @@ function effectForCash(args: {
       sharesAdded: null,
       pricePerShareNzd: args.price.priceNzd,
       priceSource: args.price.source,
-      note: REINVEST_NO_PRICE_NOTE,
+      note: noPriceNote,
     };
   }
   const sharesAdded = cashNzd / args.price.priceNzd;
@@ -788,7 +810,7 @@ function effectForCash(args: {
       sharesAdded: null,
       pricePerShareNzd: args.price.priceNzd,
       priceSource: args.price.source,
-      note: REINVEST_NO_PRICE_NOTE,
+      note: noPriceNote,
     };
   }
   return {
@@ -796,7 +818,7 @@ function effectForCash(args: {
     sharesAdded,
     pricePerShareNzd: args.price.priceNzd,
     priceSource: args.price.source,
-    note: appliedNote(args.price.source),
+    note: appliedNote(args.price.source, args.cashKind),
   };
 }
 
@@ -805,14 +827,21 @@ function recordedReinvestCash(event: DividendRecord): number {
   return event.netDividend > 0 ? event.netDividend : 0;
 }
 
+/** A recorded payment adds forecast shares only when it is still after today. */
+function recordedPaymentAddsShares(paymentDate: string, today: string): boolean {
+  return isYmd(today) && paymentDate > today;
+}
+
 /**
  * Annotate recorded payments and rebuild forecast amounts from a projected share count.
- * Owned shares stay the base. Reinvested net cash adds shares for later predicted payments only.
+ * Owned shares stay the base. Paid reinvestment is already in that quantity.
+ * Only a recorded payment dated after today, or a forecast row with reinvest on, adds shares for later predicted payments.
  */
 export function applyDividendReinvestment(input: {
   events: DividendRecord[];
   holdings: HoldingValueInput[];
   detected: DetectedDividend[];
+  today: string;
 }): { events: Array<DividendRecord & { reinvestment: ReinvestmentEffect }>; detected: DetectedDividend[] } {
   const holdingById = new Map(input.holdings.map((holding) => [holding.id, holding]));
   const priceByHolding = new Map(
@@ -821,21 +850,29 @@ export function applyDividendReinvestment(input: {
 
   const events = input.events.map((event) => {
     const holding = event.holdingId ? holdingById.get(event.holdingId) ?? null : null;
-    return {
-      ...event,
-      reinvestment: effectForCash({
-        reinvested: event.reinvested,
-        cashInPaymentCurrency: recordedReinvestCash(event),
-        currency: event.currency,
-        fxRateToNzd: event.fxRateToNzd,
-        price: holding ? priceByHolding.get(holding.id) ?? null : null,
-        linked: holding != null,
-      }),
-    };
+    const reinvestment = event.reinvested && !recordedPaymentAddsShares(event.paymentDate, input.today)
+      ? {
+          status: 'off' as const,
+          sharesAdded: null,
+          pricePerShareNzd: null,
+          priceSource: null,
+          note: REINVEST_ALREADY_OWNED_NOTE,
+        }
+      : effectForCash({
+          reinvested: event.reinvested,
+          cashInPaymentCurrency: recordedReinvestCash(event),
+          currency: event.currency,
+          fxRateToNzd: event.fxRateToNzd,
+          price: holding ? priceByHolding.get(holding.id) ?? null : null,
+          linked: holding != null,
+          cashKind: 'net',
+        });
+    return { ...event, reinvestment };
   });
 
   const recordedExtras = new Map<string, Array<{ date: string; shares: number }>>();
   for (const event of events) {
+    if (!recordedPaymentAddsShares(event.paymentDate, input.today)) continue;
     if (event.reinvestment.status !== 'applied' || event.reinvestment.sharesAdded == null || !event.holdingId) {
       continue;
     }
@@ -880,6 +917,7 @@ export function applyDividendReinvestment(input: {
         fxRateToNzd: fx,
         price,
         linked,
+        cashKind: 'gross',
       });
       if (reinvestment.status === 'applied' && reinvestment.sharesAdded != null) {
         pendingShares += reinvestment.sharesAdded;
@@ -926,6 +964,7 @@ export function buildDividendDashboard(input: {
     events: input.events,
     holdings: input.holdings,
     detected: (input.detected ?? []).filter(detectedIsConsistent),
+    today,
   });
   const rows = reinvestedRows.events.map(withNzd);
   const paid = rows.filter((row) => row.paymentDate <= today);
