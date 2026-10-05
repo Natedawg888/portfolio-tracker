@@ -481,10 +481,12 @@ export async function computeNetWorth(
       (metalsHaveAny && !metalsHaveQuote) || (forexHaveAny && !forexHaveQuote),
     asOf: new Date().toISOString(),
     quoteNote: metalsHaveQuote
-      ? 'Metals use Metals.Dev spot NZD; other live marks still stubbed (cost / manual). Never invented.'
+      ? metalsConfigured()
+        ? 'Metals use Metals.Dev spot NZD; other live marks still stubbed (cost / manual). Never invented.'
+        : 'Metals use gold-api.com spot NZD (no API key). Other live marks still stubbed (cost / manual). Never invented.'
       : metalsConfigured()
         ? 'Metals key set but no fresh spot yet — open Portfolio / Value search and Refresh. Other marks stubbed. Never invented.'
-        : 'Live marks stubbed — totals use cost / manual. Set METALS_API_KEY (free at metals.dev) for metal spots. Never invented.',
+        : 'Metal spots unavailable from gold-api.com — totals use cost / manual. Never invented.',
     settings: {
       defaultCurrency: settingsMap.defaultCurrency ?? 'NZD',
       timezone: settingsMap.timezone ?? 'Pacific/Auckland',

@@ -62,7 +62,7 @@ export const cryptoQuoteProvider: QuoteProvider = {
 export const krakenQuoteProvider: QuoteProvider = cryptoQuoteProvider;
 
 /**
- * Precious metal spot → NZD via Metals.Dev (METALS_API_KEY).
+ * Precious metal spot → NZD. gold-api.com unless METALS_API_KEY selects Metals.Dev.
  * Prices are NZD per troy ounce; holdings in grams are converted.
  */
 export const metalQuoteProvider: QuoteProvider = {

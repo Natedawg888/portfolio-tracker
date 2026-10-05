@@ -1161,7 +1161,7 @@ function HoldingCard({
         <p className="muted small holding-card-meta">
           {holding.spotPriceNzdPerOzT != null
             ? `Spot ${formatNzd(holding.spotPriceNzdPerOzT)}/oz t`
-            : 'No spot NZD — cost / — (set METALS_API_KEY or Refresh metal quotes)'}
+            : 'No spot NZD — cost / — (gold-api.com unavailable)'}
           {holding.spotAsOf && <> · {formatAuckland(holding.spotAsOf)}</>}
         </p>
       )}
@@ -2663,11 +2663,15 @@ export function Portfolio() {
       const status = await api.quotes.metalsStatus();
       setMetalsConfigured(status.configured);
       const r = await api.quotes.refreshMetals();
-      const ok = r.quotes.filter((q) => q.status === 'ok').length;
+      const ok = r.quotes.filter(
+        (q) => (q.status === 'ok' || q.status === 'stale') && q.price != null,
+      ).length;
       setMsg(
         status.configured
           ? `Metals.Dev: ${ok}/${r.quotes.length} NZD spots refreshed · reload holdings`
-          : 'METALS_API_KEY missing — free key at https://metals.dev/ → add to .env and restart API. Metal value stays cost / —.',
+          : ok > 0
+            ? `gold-api.com: ${ok}/${r.quotes.length} NZD spots refreshed · reload holdings`
+            : 'gold-api.com returned no NZD spots. Metal value stays cost / —. Not inventing prices.',
       );
       await load();
     } catch (err) {
@@ -3068,7 +3072,7 @@ export function Portfolio() {
                 ? 'Checking Metals.Dev…'
                 : metalsConfigured
                   ? 'METALS_API_KEY set · NZD/oz t (quota miss → last-good stale, never invent)'
-                  : 'METALS_API_KEY missing — cost / — until set (free: metals.dev)'}
+                  : 'Live NZD/oz t via gold-api.com (no key)'}
             </span>
             <button
               type="button"
@@ -3082,7 +3086,7 @@ export function Portfolio() {
         </div>
         {grouped.metals.length === 0 ? (
           <p className="muted">
-            No metal holdings yet. Add below, then Refresh metal quotes (needs METALS_API_KEY).
+            No metal holdings yet. Add below, then Refresh metal quotes.
           </p>
         ) : (
           <div className="holding-cards" style={{ marginTop: '0.75rem' }}>

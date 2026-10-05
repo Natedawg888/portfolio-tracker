@@ -148,7 +148,7 @@ Employee contribution **rate** (not a dollar amount) is stored per user at `user
 |----------|------------|-----------|
 | Kraken | `CRYPTO:*` | Stub for generic; crypto spot uses CoinGecko path |
 | Frankfurter | `FX:*` | Live FX→NZD for forex holdings (ECB daily); USD fallback BTC FX ratio |
-| Metal spot (Metals.Dev) | `METAL:*:oz_t` | Live NZD/oz t when `METALS_API_KEY` set; else unavailable |
+| Metal spot | `METAL:*:oz_t` | Live NZD/oz t from gold-api.com, or Metals.Dev when `METALS_API_KEY` is set |
 | GoMining | `GOMINING:*` | Primary generative USD/TH × BTC FX → NZD (stub if API down) |
 | Equity | `STOCK:*` | Yahoo Finance live × Frankfurter/BTC FX → NZD |
 | Stone comps | `STONE:*` | `not_applicable` until search comps |
