@@ -1,6 +1,12 @@
 import { isMoneyHidden, MONEY_MASK } from '../lib/privacy';
 import type { EconomicCycleResponse, PhaseNewsResponse } from '../types/economy.ts';
-import type { DividendDashboard, DividendEvent, DividendWriteBody } from '../types/dividends.ts';
+import type {
+  DividendDashboard,
+  DividendEvent,
+  DividendReinvestResponse,
+  DividendWriteBody,
+  ForecastReinvestResponse,
+} from '../types/dividends.ts';
 import type { DebtPerson, DebtSummary, DebtWriteBody, PayeeSetting } from '../types/index.ts';
 
 const BASE = '/api';
@@ -1128,6 +1134,22 @@ export const api = {
       }),
     remove: (id: string) =>
       req<{ ok: boolean; id: string }>(`/dividends/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    /** On/off for one recorded payment. On reinvests that payment's net cash. A paid payment does not add forecast shares. */
+    setReinvest: (id: string, reinvested: boolean) =>
+      req<DividendReinvestResponse>(`/dividends/${encodeURIComponent(id)}/reinvest`, {
+        method: 'PATCH',
+        body: JSON.stringify({ reinvested }),
+      }),
+    /**
+     * On/off for one forecast row (`detected[].id` is `holdingId:paymentDate`).
+     * Does not save the forecast row as a dividend or income record.
+     * On spends the row's gross cash. Tax is not estimated.
+     */
+    setForecastReinvest: (body: { holdingId: string; paymentDate: string; reinvested: boolean }) =>
+      req<ForecastReinvestResponse>('/dividends/forecast-reinvest', {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      }),
   },
   economy: {
     cycle: (opts?: { refresh?: boolean; country?: string; signal?: AbortSignal }) => {

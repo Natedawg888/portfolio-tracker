@@ -3,10 +3,14 @@
  * Run: npm run test:dividends
  */
 import {
+  REINVEST_ALREADY_OWNED_NOTE,
+  REINVEST_NO_FX_NOTE,
+  REINVEST_NO_PRICE_NOTE,
   buildDividendDashboard,
   computeDividend,
   netInNzd,
   projectDividendFromHistory,
+  projectDividendSchedule,
   shiftMonths,
 } from './model.ts';
 import type { DetectedDividend, DividendRecord, HoldingValueInput, PublishedDividendSeries } from './model.ts';
@@ -510,5 +514,198 @@ const dropped = buildDividendDashboard({
 });
 assert(dropped.forecast.detectedCount === 0, 'a cash amount that does not match shares times per share is left out');
 assert(dropped.forecast.detectedNzd == null, 'an inconsistent detected amount is not totalled');
+
+const quarterlySeries = series([
+  { date: '2026-02-13', amountPerShare: 0.3 },
+  { date: '2026-05-14', amountPerShare: 0.3 },
+  { date: '2026-08-14', amountPerShare: 0.3 },
+]);
+const schedule = projectDividendSchedule({
+  holdingId: 'h1',
+  name: 'Example ETF',
+  symbol: 'ETF',
+  shares: 100,
+  today: '2026-10-04',
+  fxRateToNzd: null,
+  series: quarterlySeries,
+});
+assert(schedule.length === 4, 'the forecast lists predicted payments through the next 12 months');
+assert(schedule[0]?.paymentDate === '2026-11-14', 'the first predicted date matches the single next payment');
+assert(schedule[1]?.paymentDate === '2027-02-14', 'the second date keeps the quarterly gap');
+assert(schedule[2]?.paymentDate === '2027-05-14', 'the third date keeps the quarterly gap');
+assert(schedule[3]?.paymentDate === '2027-08-14', 'the fourth date stays inside the 12-month window');
+assert(schedule.every((row) => row.sharesHeld === 100 && row.ownedShares === 100), 'off starts on the shares owned');
+assert(schedule.every((row) => row.reinvested === false), 'forecast reinvest defaults to off');
+assert(schedule[0]?.id === 'h1:2026-11-14', 'forecast row id is the holding and the payment date');
+
+const pricedHolding: HoldingValueInput = {
+  ...holding,
+  shares: 100,
+  costBasisNzd: 1000,
+  quotedPriceNzd: null,
+};
+const compounded = buildDividendDashboard({
+  events: [],
+  holdings: [pricedHolding],
+  year: 2026,
+  today: '2026-10-04',
+  detected: schedule.map((row, index) => ({ ...row, reinvested: index === 0 || index === 1 })),
+});
+eq(compounded.forecast.detected[0]?.amount ?? null, 30, 'the first payment still uses the shares owned');
+eq(compounded.forecast.detected[0]?.ownedShares ?? null, 100, 'owned shares stay on the forecast row');
+eq(compounded.forecast.detected[0]?.reinvestment.sharesAdded ?? null, 3, 'gross cash divided by the recorded cost buys shares');
+assert(compounded.forecast.detected[0]?.reinvestment.priceSource === 'cost', 'cost basis is the recorded price when no quote is saved');
+assert(compounded.forecast.detected[0]?.reinvestment.note?.includes('gross cash') === true, 'forecast reinvestment is labelled gross cash');
+assert(compounded.forecast.detected[0]?.reinvestment.note?.includes('net cash') !== true, 'forecast reinvestment is not called net cash');
+assert(compounded.forecast.detected[0]?.reinvestment.note?.includes('Tax is not estimated') === true, 'forecast reinvestment says tax is not estimated');
+assert(compounded.forecast.note.includes('gross cash'), 'the forecast note calls the reinvested amount gross cash');
+assert(!compounded.forecast.note.includes("payment's net cash"), 'the forecast note does not call a predicted payment net cash');
+assert(compounded.forecast.detected[0]?.reinvestment.note?.includes('Not financial advice') === true, 'applied reinvestment is not advice');
+eq(compounded.forecast.detected[1]?.sharesHeld ?? null, 103, 'the next payment uses the extra shares');
+eq(compounded.forecast.detected[1]?.amount ?? null, 30.9, 'the next amount compounds');
+eq(compounded.forecast.detected[1]?.reinvestment.sharesAdded ?? null, 3.09, 'the second payment also buys shares');
+eq(compounded.forecast.detected[2]?.sharesHeld ?? null, 106.09, 'a later payment includes both earlier reinvestments');
+eq(compounded.forecast.detected[2]?.amount ?? null, 31.827, 'the third amount uses the compounded share count');
+assert(compounded.forecast.detected[2]?.reinvested === false, 'a later row can stay off');
+assert(compounded.forecast.detected[2]?.reinvestment.status === 'off', 'off does not add further shares');
+assert(compounded.history.length === 0, 'forecast rows are not saved as dividend records');
+assert(compounded.upcoming.length === 0, 'forecast rows are not saved as upcoming records');
+
+const quotePreferred = buildDividendDashboard({
+  events: [],
+  holdings: [{ ...pricedHolding, quotedPriceNzd: 20 }],
+  year: 2026,
+  today: '2026-10-04',
+  detected: schedule.map((row, index) => ({ ...row, reinvested: index === 0 })),
+});
+eq(quotePreferred.forecast.detected[0]?.reinvestment.sharesAdded ?? null, 1.5, 'a saved quote is used instead of cost basis');
+assert(quotePreferred.forecast.detected[0]?.reinvestment.priceSource === 'quote', 'the price source is the saved quote');
+eq(quotePreferred.forecast.detected[1]?.sharesHeld ?? null, 101.5, 'later payments use the shares bought at the saved quote');
+
+const noPrice = buildDividendDashboard({
+  events: [],
+  holdings: [{ ...pricedHolding, costBasisNzd: null, quotedPriceNzd: null }],
+  year: 2026,
+  today: '2026-10-04',
+  detected: schedule.map((row, index) => ({ ...row, reinvested: index === 0 })),
+});
+assert(noPrice.forecast.detected[0]?.reinvestment.status === 'unavailable', 'reinvestment is unavailable without a price');
+assert(noPrice.forecast.detected[0]?.reinvestment.note === REINVEST_NO_PRICE_NOTE, 'the note says reinvestment could not be applied');
+eq(noPrice.forecast.detected[0]?.sharesHeld ?? null, 100, 'missing price leaves the first projected share count unchanged');
+eq(noPrice.forecast.detected[1]?.sharesHeld ?? null, 100, 'missing price leaves later projected share counts unchanged');
+eq(noPrice.forecast.detected[1]?.amount ?? null, 30, 'later amounts stay on the current share count');
+
+const pastReinvest = buildDividendDashboard({
+  events: [
+    row({
+      id: 'past-re',
+      paymentDate: '2026-08-01',
+      netDividend: 50,
+      grossDividend: 50,
+      dividendPerShare: 0.5,
+      reinvested: true,
+      reinvestedAmount: 50,
+    }),
+  ],
+  holdings: [pricedHolding],
+  year: 2026,
+  today: '2026-10-04',
+  detected: schedule,
+});
+eq(pastReinvest.history[0]?.sharesHeld ?? null, 100, 'a recorded payment keeps the shares that were stored on it');
+eq(pastReinvest.history[0]?.netDividend ?? null, 50, 'reinvestment does not change the recorded net cash');
+assert(pastReinvest.history[0]?.reinvested === true, 'the paid row can still be marked reinvested');
+assert(pastReinvest.history[0]?.reinvestment.sharesAdded == null, 'a paid dividend does not add projected shares');
+assert(pastReinvest.history[0]?.reinvestment.note === REINVEST_ALREADY_OWNED_NOTE, 'a paid dividend is already in the shares owned');
+eq(pastReinvest.forecast.detected[0]?.sharesHeld ?? null, 100, 'later predicted payments stay on the shares owned');
+eq(pastReinvest.forecast.detected[0]?.amount ?? null, 30, 'a paid reinvested dividend does not inflate the forecast');
+assert(pastReinvest.forecast.detected.every((item) => item.sharesHeld === 100), 'no later payment picks up shares from a paid dividend');
+assert(pastReinvest.forecast.detected.every((item) => item.reinvested === false), 'forecast rows stay off unless toggled');
+
+const futureReinvest = buildDividendDashboard({
+  events: [
+    row({
+      id: 'future-re',
+      paymentDate: '2026-11-01',
+      netDividend: 50,
+      grossDividend: 50,
+      dividendPerShare: 0.5,
+      reinvested: true,
+      reinvestedAmount: 50,
+    }),
+  ],
+  holdings: [pricedHolding],
+  year: 2026,
+  today: '2026-10-04',
+  detected: schedule,
+});
+eq(futureReinvest.upcoming[0]?.reinvestment.sharesAdded ?? null, 5, 'a recorded payment after today buys shares for later predictions');
+assert(futureReinvest.upcoming[0]?.reinvestment.note?.includes('net cash') === true, 'a recorded payment reinvests net cash');
+eq(futureReinvest.forecast.detected[0]?.sharesHeld ?? null, 105, 'later predicted payments include shares from a recorded payment after today');
+eq(futureReinvest.forecast.detected[0]?.amount ?? null, 31.5, 'the predicted cash uses those extra shares');
+
+const missingFxReinvest = buildDividendDashboard({
+  events: [
+    row({
+      id: 'fx-re',
+      paymentDate: '2026-11-01',
+      netDividend: 10,
+      grossDividend: 10,
+      dividendPerShare: 0.1,
+      currency: 'USD',
+      fxRateToNzd: null,
+      reinvested: true,
+      reinvestedAmount: 10,
+    }),
+  ],
+  holdings: [pricedHolding],
+  year: 2026,
+  today: '2026-10-04',
+  detected: schedule,
+});
+assert(missingFxReinvest.upcoming[0]?.reinvestment.status === 'unavailable', 'missing FX cannot buy shares');
+assert(missingFxReinvest.upcoming[0]?.reinvestment.note === REINVEST_NO_FX_NOTE, 'missing FX says reinvestment could not be applied');
+eq(missingFxReinvest.forecast.detected[0]?.sharesHeld ?? null, 100, 'missing FX leaves the projected share count unchanged');
+
+const otherHolding = buildDividendDashboard({
+  events: [
+    row({
+      id: 'other',
+      holdingId: 'h2',
+      paymentDate: '2026-08-01',
+      netDividend: 50,
+      grossDividend: 50,
+      reinvested: true,
+      reinvestedAmount: 50,
+    }),
+  ],
+  holdings: [
+    pricedHolding,
+    { ...pricedHolding, id: 'h2', name: 'Other', symbol: 'OTH' },
+  ],
+  year: 2026,
+  today: '2026-10-04',
+  detected: schedule,
+});
+eq(otherHolding.forecast.detected[0]?.sharesHeld ?? null, 100, 'another holding\'s reinvestment does not change this forecast');
+
+const publishedSchedule = projectDividendSchedule({
+  holdingId: 'h1',
+  name: 'Example ETF',
+  symbol: 'ETF',
+  shares: 8,
+  today: '2026-10-04',
+  fxRateToNzd: null,
+  series: series([
+    { date: '2026-05-14', amountPerShare: 0.2 },
+    { date: '2026-08-14', amountPerShare: 0.2 },
+    { date: '2026-11-20', amountPerShare: 0.45 },
+  ]),
+});
+assert(publishedSchedule[0]?.basis === 'published', 'the first future published date stays published');
+assert(publishedSchedule[0]?.paymentDate === '2026-11-20', 'the published date is not shifted');
+assert(publishedSchedule[1]?.basis === 'projected', 'later dates repeat the gap');
+assert(publishedSchedule[1]?.paymentDate === '2027-02-20', 'the next date is one quarter after the published one');
+eq(publishedSchedule[1]?.dividendPerShare ?? null, 0.45, 'later payments repeat the last published amount');
 
 console.log('dividend model tests passed');

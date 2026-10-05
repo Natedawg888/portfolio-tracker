@@ -18,6 +18,7 @@ export const SCOPED_TABLES = [
   'income_records',
   'income_plans',
   'dividend_events',
+  'dividend_forecast_reinvest',
   'budgets',
   'valuation_snapshots',
   'budget_categories',
@@ -117,6 +118,7 @@ export function deleteScopedDataForUser(
   const deleteOrder: ScopedTable[] = [
     'income_records',
     'income_plans',
+    'dividend_forecast_reinvest',
     'dividend_events',
     'payee_settings',
     'budgets',

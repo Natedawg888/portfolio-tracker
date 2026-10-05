@@ -8,11 +8,13 @@ import { Router } from 'express';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { requireUserId } from '../lib/userScope.ts';
 import { getDb } from '../db/index.ts';
-import { todayAucklandYmd } from '../dividends/model.ts';
+import { isYmd, todayAucklandYmd } from '../dividends/model.ts';
 import {
   dashboardForUser,
   deleteDividend,
   insertDividend,
+  setDividendReinvest,
+  setForecastReinvest,
   updateDividend,
   type DividendWriteBody,
 } from '../dividends/store.ts';
@@ -58,6 +60,58 @@ router.post('/', async (req, res) => {
     return;
   }
   res.status(201).json(result.event);
+});
+
+router.patch('/:id/reinvest', async (req, res) => {
+  const userId = uid(req as AuthedRequest & { scopeUserId?: string });
+  const reinvested = (req.body ?? {}).reinvested;
+  if (reinvested !== true && reinvested !== false) {
+    res.status(400).json({ error: 'reinvested must be true or false.' });
+    return;
+  }
+  const db = await getDb();
+  const result = await setDividendReinvest(db, userId, req.params.id, reinvested);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json({
+    event: result.event,
+    detected: result.detected,
+    ownedShares: result.ownedShares,
+  });
+});
+
+router.put('/forecast-reinvest', async (req, res) => {
+  const userId = uid(req as AuthedRequest & { scopeUserId?: string });
+  const body = (req.body ?? {}) as { holdingId?: unknown; paymentDate?: unknown; reinvested?: unknown };
+  const holdingId = typeof body.holdingId === 'string' ? body.holdingId.trim() : '';
+  const paymentDate = typeof body.paymentDate === 'string' ? body.paymentDate.trim() : '';
+  if (!holdingId) {
+    res.status(400).json({ error: 'Choose one of your stock or ETF holdings.' });
+    return;
+  }
+  if (!isYmd(paymentDate)) {
+    res.status(400).json({ error: 'Payment date must be a real calendar date (YYYY-MM-DD).' });
+    return;
+  }
+  if (body.reinvested !== true && body.reinvested !== false) {
+    res.status(400).json({ error: 'reinvested must be true or false.' });
+    return;
+  }
+  const db = await getDb();
+  const result = await setForecastReinvest(db, userId, holdingId, paymentDate, body.reinvested);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json({
+    holdingId: result.holdingId,
+    paymentDate: result.paymentDate,
+    reinvested: result.reinvested,
+    detected: result.detected,
+    ownedShares: result.ownedShares,
+  });
 });
 
 router.patch('/:id', async (req, res) => {
