@@ -5539,3 +5539,268 @@ html:not([data-theme]) .paye-page :focus-visible {
   outline: 2px solid #c5d5c8;
   outline-offset: 2px;
 }
+
+/* History page only. Header and other screens stay as they are. */
+html[data-theme="light"]:has(.history-page),
+html[data-theme="light"]:has(.history-page) body {
+  background: #e7e0d4;
+}
+html[data-theme="dark"]:has(.history-page),
+html[data-theme="dark"]:has(.history-page) body,
+html:not([data-theme]):has(.history-page),
+html:not([data-theme]):has(.history-page) body {
+  background: #121a16;
+}
+html[data-theme="light"]:has(.history-page) .app-footer {
+  color: #5c564e;
+  border-top-color: rgba(26, 26, 26, 0.12);
+}
+html[data-theme="dark"]:has(.history-page) .app-footer,
+html:not([data-theme]):has(.history-page) .app-footer {
+  color: #c5d5c8;
+  border-top-color: rgba(197, 213, 200, 0.22);
+}
+
+html[data-theme="light"] .history-page {
+  --bg: #e7e0d4;
+  --surface: #f7f3ec;
+  --surface-2: #f7f3ec;
+  --surface-3: #efe8dc;
+  --text: #1a1a1a;
+  --muted: #5c564e;
+  --border: #8c7b66;
+  --border-soft: #8c7b66;
+  --accent: #1b4332;
+  --accent-2: #6e6278;
+  --accent-deep: #143528;
+  --btn-primary-text: #f7f3ec;
+  --hero-grad: #f7f3ec;
+  --hover-row: rgba(27, 67, 50, 0.05);
+  --shadow-card: 0 8px 24px rgba(48, 36, 22, 0.06);
+  --return-neg: #6e1b1b;
+  accent-color: #1b4332;
+  color: #1a1a1a;
+}
+html[data-theme="dark"] .history-page,
+html:not([data-theme]) .history-page {
+  --bg: #121a16;
+  --surface: #1c2822;
+  --surface-2: #1c2822;
+  --surface-3: #24352c;
+  --text: #f3eee4;
+  --muted: #c5d5c8;
+  --border: #6f8276;
+  --border-soft: #6f8276;
+  --accent: #2f6b4f;
+  --accent-2: #b7a8c4;
+  --accent-deep: #1b4332;
+  --btn-primary-text: #f3eee4;
+  --hero-grad: #1c2822;
+  --hover-row: rgba(243, 238, 228, 0.04);
+  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --return-neg: #e89284;
+  accent-color: #2f6b4f;
+  color: #f3eee4;
+}
+
+.history-page .page-title {
+  font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  font-size: 1.35rem;
+  text-transform: none;
+  font-variant-caps: normal;
+  margin: 0 0 0.35rem;
+}
+
+html[data-theme="light"] .history-page h2,
+html[data-theme="light"] .history-page h3,
+html[data-theme="light"] .history-page h4,
+html[data-theme="light"] .history-page .page-title,
+html[data-theme="light"] .history-page .stat-value {
+  color: #1a1a1a;
+}
+html[data-theme="light"] .history-page .panel,
+html[data-theme="light"] .history-page .card {
+  background: #f7f3ec;
+  color: #1a1a1a;
+  border: 1px solid #8c7b66;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset, 0 8px 24px rgba(48, 36, 22, 0.06);
+}
+html[data-theme="light"] .history-page .period-pager,
+html[data-theme="light"] .history-page .chart-toggle {
+  background: #f7f3ec;
+  color: #1a1a1a;
+  border: 1px solid #8c7b66;
+  box-shadow: none;
+}
+html[data-theme="light"] .history-page .panel.warn {
+  color: #6e1b1b;
+  background: #f8e4e0;
+  border-color: #8a4a42;
+  box-shadow: none;
+}
+html[data-theme="light"] .history-page .panel.warn .page-title,
+html[data-theme="light"] .history-page .panel.warn h2,
+html[data-theme="light"] .history-page .panel.warn h3 {
+  color: #1a1a1a;
+}
+html[data-theme="light"] .history-page .panel.warn p,
+html[data-theme="light"] .history-page .panel.warn .muted {
+  color: #6e1b1b;
+}
+html[data-theme="light"] .history-page a,
+html[data-theme="light"] .history-page a:visited {
+  color: #6e6278;
+}
+html[data-theme="light"] .history-page .btn.primary,
+html[data-theme="light"] .history-page .chart-toggle .btn.primary {
+  background: #1b4332;
+  border-color: #1b4332;
+  color: #f7f3ec;
+}
+html[data-theme="light"] .history-page .btn.primary:hover:not(:disabled),
+html[data-theme="light"] .history-page .chart-toggle .btn.primary:hover:not(:disabled) {
+  color: #f7f3ec;
+}
+html[data-theme="light"] .history-page .btn:not(.primary):not(.danger) {
+  background: #e7e0d4;
+  border-color: #8c7b66;
+  color: #1a1a1a;
+}
+html[data-theme="light"] .history-page .period-pager .btn:not(.primary):not(.danger),
+html[data-theme="light"] .history-page .chart-toggle .btn:not(.primary):not(.danger) {
+  background: transparent;
+  border-color: transparent;
+  color: #1a1a1a;
+}
+html[data-theme="light"] .history-page .banner {
+  background: #efe8dc;
+  color: #1a1a1a;
+  border-left-color: #6e6278;
+}
+html[data-theme="light"] .history-page code {
+  background: #efe8dc;
+  color: #1a1a1a;
+}
+html[data-theme="light"] .history-page .return-pos {
+  color: #1b4332;
+}
+html[data-theme="light"] .history-page .return-neg,
+html[data-theme="light"] .history-page .history-deduction {
+  color: #6e1b1b;
+}
+html[data-theme="light"] .history-page :focus-visible {
+  outline: 2px solid #1b4332;
+  outline-offset: 2px;
+}
+
+html[data-theme="dark"] .history-page h2,
+html[data-theme="dark"] .history-page h3,
+html[data-theme="dark"] .history-page h4,
+html[data-theme="dark"] .history-page .page-title,
+html[data-theme="dark"] .history-page .stat-value,
+html:not([data-theme]) .history-page h2,
+html:not([data-theme]) .history-page h3,
+html:not([data-theme]) .history-page h4,
+html:not([data-theme]) .history-page .page-title,
+html:not([data-theme]) .history-page .stat-value {
+  color: #f3eee4;
+}
+html[data-theme="dark"] .history-page .panel,
+html[data-theme="dark"] .history-page .card,
+html:not([data-theme]) .history-page .panel,
+html:not([data-theme]) .history-page .card {
+  background: #1c2822;
+  color: #f3eee4;
+  border: 1px solid #6f8276;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+html[data-theme="dark"] .history-page .period-pager,
+html[data-theme="dark"] .history-page .chart-toggle,
+html:not([data-theme]) .history-page .period-pager,
+html:not([data-theme]) .history-page .chart-toggle {
+  background: #1c2822;
+  color: #f3eee4;
+  border: 1px solid #6f8276;
+  box-shadow: none;
+}
+html[data-theme="dark"] .history-page .panel.warn,
+html:not([data-theme]) .history-page .panel.warn {
+  color: #f3eee4;
+  background: #4a2422;
+  border-color: #e0b2aa;
+  box-shadow: none;
+}
+html[data-theme="dark"] .history-page .panel.warn .page-title,
+html[data-theme="dark"] .history-page .panel.warn h2,
+html[data-theme="dark"] .history-page .panel.warn h3,
+html[data-theme="dark"] .history-page .panel.warn p,
+html[data-theme="dark"] .history-page .panel.warn .muted,
+html:not([data-theme]) .history-page .panel.warn .page-title,
+html:not([data-theme]) .history-page .panel.warn h2,
+html:not([data-theme]) .history-page .panel.warn h3,
+html:not([data-theme]) .history-page .panel.warn p,
+html:not([data-theme]) .history-page .panel.warn .muted {
+  color: #f3eee4;
+}
+html[data-theme="dark"] .history-page a,
+html[data-theme="dark"] .history-page a:visited,
+html:not([data-theme]) .history-page a,
+html:not([data-theme]) .history-page a:visited {
+  color: #b7a8c4;
+}
+html[data-theme="dark"] .history-page .btn.primary,
+html[data-theme="dark"] .history-page .chart-toggle .btn.primary,
+html:not([data-theme]) .history-page .btn.primary,
+html:not([data-theme]) .history-page .chart-toggle .btn.primary {
+  background: #2f6b4f;
+  border-color: #2f6b4f;
+  color: #f3eee4;
+}
+html[data-theme="dark"] .history-page .btn.primary:hover:not(:disabled),
+html[data-theme="dark"] .history-page .chart-toggle .btn.primary:hover:not(:disabled),
+html:not([data-theme]) .history-page .btn.primary:hover:not(:disabled),
+html:not([data-theme]) .history-page .chart-toggle .btn.primary:hover:not(:disabled) {
+  color: #f3eee4;
+}
+html[data-theme="dark"] .history-page .btn:not(.primary):not(.danger),
+html:not([data-theme]) .history-page .btn:not(.primary):not(.danger) {
+  background: #121a16;
+  border-color: #6f8276;
+  color: #f3eee4;
+}
+html[data-theme="dark"] .history-page .period-pager .btn:not(.primary):not(.danger),
+html[data-theme="dark"] .history-page .chart-toggle .btn:not(.primary):not(.danger),
+html:not([data-theme]) .history-page .period-pager .btn:not(.primary):not(.danger),
+html:not([data-theme]) .history-page .chart-toggle .btn:not(.primary):not(.danger) {
+  background: transparent;
+  border-color: transparent;
+  color: #f3eee4;
+}
+html[data-theme="dark"] .history-page .banner,
+html:not([data-theme]) .history-page .banner {
+  background: #24352c;
+  color: #f3eee4;
+  border-left-color: #b7a8c4;
+}
+html[data-theme="dark"] .history-page code,
+html:not([data-theme]) .history-page code {
+  background: #24352c;
+  color: #f3eee4;
+}
+html[data-theme="dark"] .history-page .return-pos,
+html:not([data-theme]) .history-page .return-pos {
+  color: #8fcb9a;
+}
+html[data-theme="dark"] .history-page .return-neg,
+html[data-theme="dark"] .history-page .history-deduction,
+html:not([data-theme]) .history-page .return-neg,
+html:not([data-theme]) .history-page .history-deduction {
+  color: #e89284;
+}
+html[data-theme="dark"] .history-page :focus-visible,
+html:not([data-theme]) .history-page :focus-visible {
+  outline: 2px solid #c5d5c8;
+  outline-offset: 2px;
+}
