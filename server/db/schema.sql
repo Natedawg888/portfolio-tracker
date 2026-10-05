@@ -518,4 +518,35 @@ CREATE TABLE IF NOT EXISTS savings_goals (
 
 CREATE INDEX IF NOT EXISTS idx_savings_goals_user ON savings_goals(user_id);
 
+-- Donations ledger. Separate from transactions and from charity receipt files
+-- (transactions.receipt_path under data/uploads/receipts/). A row may optionally
+-- point at a transaction that already has a receipt. Amounts are NZD. date is
+-- YYYY-MM-DD. Tax-year totals are counted on read (server/donations/model.ts).
+-- No foreign key: sql.js does not keep PRAGMA foreign_keys from this script.
+-- The trigger below clears the pointer when that transaction is deleted.
+CREATE TABLE IF NOT EXISTS donations (
+  id                      TEXT PRIMARY KEY,
+  user_id                 TEXT,
+  date                    TEXT NOT NULL,
+  recipient               TEXT NOT NULL,
+  amount_nzd              REAL NOT NULL,
+  notes                   TEXT,
+  evidence_url            TEXT,
+  receipt_transaction_id  TEXT,
+  created_at              TEXT NOT NULL,
+  updated_at              TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_donations_user ON donations(user_id);
+CREATE INDEX IF NOT EXISTS idx_donations_user_date ON donations(user_id, date);
+
+CREATE TRIGGER IF NOT EXISTS donations_clear_receipt_link
+AFTER DELETE ON transactions
+FOR EACH ROW
+BEGIN
+  UPDATE donations
+  SET receipt_transaction_id = NULL
+  WHERE receipt_transaction_id = OLD.id;
+END;
+
 -- per-user indexes created in migrateSchema after user_id columns exist

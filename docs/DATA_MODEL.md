@@ -26,6 +26,9 @@ holdings  (polymorphic by asset_class)
 
 kiwisaver_accounts  (Sharesies via Akahu + bank-held manual/CSV)
 savings_goals          (target, current amount, optional deadline; progress counted on read)
+donations               (date, recipient, NZD amount; optional evidence URL;
+                         optional pointer to a transaction that already has a receipt.
+                         Not a receipt file and not a transactions row.)
 price_quotes        (cache; stub providers write status=stubbed)
 valuation_snapshots (net-worth history)
 app_settings / meta
@@ -192,6 +195,38 @@ Worked example, counted on 2026-10-05, target 10000, current 2500, deadline 2027
 - `estimatedCompletion` `2027-04-05`
 
 `GET/POST /api/savings-goals`, `GET/PATCH/DELETE /api/savings-goals/:id`. Session cookie, same as the rest of `/api`. Another user's id is `404`. Deleting the account deletes that user's `savings_goals` only.
+
+## Donations ledger
+
+Table: `donations`. One row per gift for the signed-in user. Amounts are **NZD**. Dates are calendar dates. This ledger is **not** a receipt and it is **not** a `transactions` row. Charity receipt files stay on `transactions.receipt_path` under `data/uploads/receipts/`.
+
+| Stored | API field | Notes |
+|--------|-----------|--------|
+| `date` | `date` | `YYYY-MM-DD`. Required |
+| `recipient` | `recipient` | Charity or other recipient. Required |
+| `amount_nzd` | `amountNzd` | NZD, greater than 0 after rounding to cents |
+| `notes` | `notes` | Optional |
+| `evidence_url` | `evidenceUrl` | Optional `http` or `https` link to supporting evidence. Not a stored file |
+| `receipt_transaction_id` | `receiptTransactionId` | Optional. A transaction **this user** already attached a receipt to. Null clears it |
+
+`receiptPath` and `receiptUrl` are read from that transaction. They are not copied into `donations`. Deleting the transaction clears the pointer and leaves the donation. Deleting the donation leaves the transaction and its receipt file.
+
+The NZ tax year is counted on read. It runs from **1 April through 31 March** and is labelled by the year it ends. The 2027 tax year is `2026-04-01` through `2027-03-31`. A date in April–December belongs to the tax year ending the next 31 March. A date in January–March belongs to the tax year ending that 31 March.
+
+`GET /api/donations/summary` totals the signed-in user's donations. `?taxYear=2027` selects that year; omitting it selects the tax year that contains today in Pacific/Auckland.
+
+| Response field | Formula |
+|----------------|---------|
+| `totalAmountNzd` | Sum of `amountNzd` for donations in the tax year, in cents |
+| `eligibleAmountNzd` | Sum of those donations whose `amountNzd` is **at least 5**. Gifts under $5 are not added together to reach $5 |
+| `belowMinimumAmountNzd` | Sum of donations under $5 |
+| `estimatedTaxCreditNzd` | `eligibleAmountNzd / 3`, rounded to the nearest cent. **An estimate** (`estimateLabel` is `"estimate"`) |
+
+The one-third is taken **once** on the summed eligible amount. Two gifts of $5 are $10 eligible, and the estimate is **3.33 NZD**, not 1.67 + 1.67.
+
+This is the standard IRD donation tax credit: **33.33 cents per dollar** of donations of $5 or more, claimed after year-end (IR526) with receipts. IRD also caps the credit at **one third of taxable income**. Taxable income is not stored here, so `incomeCapApplied` is **false** and the cap is not applied. Payroll giving is already credited each pay and is not part of this estimate. Approved-donee status is not checked, and the estimate does not require `evidenceUrl` or `receiptTransactionId`. The full wording is returned as `estimateNote`.
+
+`GET/POST /api/donations`, `GET /api/donations/summary`, `GET/PATCH/DELETE /api/donations/:id`. Session cookie `pt_sid`, same gate as the rest of `/api`. Another user's id is `404`. Deleting the account deletes that user's `donations` only.
 
 ## Quotes & snapshots
 

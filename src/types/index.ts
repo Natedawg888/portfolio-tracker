@@ -257,6 +257,113 @@ export interface SavingsGoalWriteBody {
   deadline?: string | null;
 }
 
+/**
+ * One donation in the signed-in user's ledger (NZD).
+ * Stored on its own. It is not a transaction and it is not a receipt file.
+ * Tax-year fields are counted from `date` on read.
+ */
+export interface Donation {
+  id: string;
+  /** YYYY-MM-DD. Calendar date the gift was made. */
+  date: string;
+  /** Charity or other recipient. */
+  recipient: string;
+  /** Gift amount in NZD, rounded to cents. Greater than 0. */
+  amountNzd: number;
+  notes: string | null;
+  /** http(s) link to supporting evidence, or null. Not a stored receipt file. */
+  evidenceUrl: string | null;
+  /**
+   * Optional id of this user's transaction that already has a receipt.
+   * The receipt file stays on that transaction.
+   */
+  receiptTransactionId: string | null;
+  /** Receipt path copied from the linked transaction, or null. */
+  receiptPath: string | null;
+  /** `/api/uploads/...` for receiptPath, or null. */
+  receiptUrl: string | null;
+  currency: 'NZD';
+  timezone: 'Pacific/Auckland';
+  /** NZ tax year the date falls in, labelled by the year ending 31 March. */
+  taxYear: number;
+  /** Inclusive start, YYYY-MM-DD (1 April). */
+  taxYearStart: string;
+  /** Inclusive end, YYYY-MM-DD (31 March). */
+  taxYearEnd: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Fields the user can save on a donation. */
+export interface DonationWriteBody {
+  /** YYYY-MM-DD. */
+  date?: string;
+  recipient?: string;
+  /** NZD. */
+  amountNzd?: number;
+  notes?: string | null;
+  /** http(s) URL, null, or '' to clear. */
+  evidenceUrl?: string | null;
+  /** Transaction id, null, or '' to clear. */
+  receiptTransactionId?: string | null;
+}
+
+/**
+ * Counted totals for one NZ tax year (1 April–31 March).
+ * Amounts are NZD.
+ */
+export interface DonationTaxYearTotals {
+  taxYear: number;
+  taxYearStart: string;
+  taxYearEnd: string;
+  /** Donations whose date falls in this tax year. */
+  count: number;
+  /** Sum of amountNzd for those donations. */
+  totalAmountNzd: number;
+  /** Donations with amountNzd of at least 5. */
+  eligibleCount: number;
+  /** Sum of donations of at least $5. Donations under $5 are not pooled. */
+  eligibleAmountNzd: number;
+  /** Donations with amountNzd under 5. */
+  belowMinimumCount: number;
+  /** Sum of donations under $5. */
+  belowMinimumAmountNzd: number;
+  /**
+   * Estimate of the IR526 credit: eligibleAmountNzd / 3, rounded to cents.
+   * Not reduced by the taxable-income cap. See DonationSummary.estimateNote.
+   */
+  estimatedTaxCreditNzd: number;
+  estimateLabel: 'estimate';
+  /** A donation below this (NZD) is excluded from the credit estimate. */
+  minimumDonationNzd: 5;
+  creditRate: '1/3';
+  /** Taxable income is not stored, so the one-third income cap is not applied. */
+  incomeCapApplied: false;
+}
+
+/** Tax-year donation totals for the signed-in user. */
+export interface DonationSummary {
+  currency: 'NZD';
+  timezone: 'Pacific/Auckland';
+  /** Pacific/Auckland date the summary was counted on. */
+  asOf: string;
+  /** Tax year that contains asOf. */
+  currentTaxYear: number;
+  /** Tax year described by `selected`. From ?taxYear=, or currentTaxYear. */
+  taxYear: number;
+  estimateLabel: 'estimate';
+  /** Plain-language rule for estimatedTaxCreditNzd. */
+  estimateNote: string;
+  /** How the 1 April–31 March label is chosen. */
+  taxYearNote: string;
+  minimumDonationNzd: 5;
+  creditRate: '1/3';
+  incomeCapApplied: false;
+  selected: DonationTaxYearTotals;
+  /** Newest tax year first. Includes years with donations, the current year, and `taxYear`. */
+  years: DonationTaxYearTotals[];
+}
+
 export interface DebtSummary {
   outstandingTotalNzd: number;
   /** Total creditors (people + corporations). */

@@ -24,6 +24,7 @@ import homeRouter from './routes/home.ts';
 import dividendsRouter from './routes/dividends.ts';
 import payeesRouter from './routes/payees.ts';
 import savingsGoalsRouter from './routes/savingsGoals.ts';
+import donationsRouter from './routes/donations.ts';
 import authRouter from './routes/auth.ts';
 import economyRouter from './routes/economy.ts';
 import newsRouter from './routes/news.ts';
@@ -125,6 +126,7 @@ async function main() {
   app.use('/api/dividends', dividendsRouter);
   app.use('/api/payees', payeesRouter);
   app.use('/api/savings-goals', savingsGoalsRouter);
+  app.use('/api/donations', donationsRouter);
   app.use('/api/economy', economyRouter);
   app.use('/api/news', newsRouter);
 
