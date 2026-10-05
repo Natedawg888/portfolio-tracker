@@ -33,6 +33,7 @@ const links: Array<{
 }> = [
   { to: '/', label: 'Dashboard', end: true },
   { to: '/spending', label: 'Budget' },
+  { to: '/debts', label: 'Debts' },
   { to: '/portfolio', label: 'Portfolio' },
   { to: '/kiwisaver', label: 'KiwiSaver', requirePref: 'kiwisaver' },
   { to: '/paye', label: 'PAYE' },

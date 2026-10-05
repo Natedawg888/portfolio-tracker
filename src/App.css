@@ -1683,6 +1683,33 @@ code { background: var(--surface-2); padding: 0.1rem 0.35rem; border-radius: 4px
 .debt-people-table .btn.small {
   padding: 0.18rem 0.5rem;
 }
+.debt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.debt-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.65rem 1rem;
+  margin: 0.75rem 0 0.35rem;
+}
+.debt-facts div {
+  min-width: 0;
+}
+.debt-facts dt {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+.debt-facts dd {
+  margin: 0.12rem 0 0;
+  font-weight: 600;
+}
+.debt-projection {
+  margin: 0.55rem 0 0.35rem;
+}
 .txn-desc {
   max-width: 16rem;
   overflow: hidden;

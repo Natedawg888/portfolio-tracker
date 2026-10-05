@@ -253,8 +253,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_ks_activity_external
 CREATE INDEX IF NOT EXISTS idx_ks_activity_account_date
   ON kiwisaver_activity(account_id, date DESC);
 
--- Personal debts / creditors Nathan owes (Spending → I owe)
--- kind: person | corporation (company). Same outstanding + repayments for both.
+-- Personal debts / creditors (Spending → I owe, Debts page).
+-- kind: person | corporation (who is owed).
+-- product_kind: credit_card | personal_loan | student_loan | car_loan | mortgage | bnpl.
+-- is_loan is an explicit flag. interest_period is month, year, or NULL when interest does not recur.
+-- Rates, payments, term, and interest paid stay NULL until the user enters them.
 CREATE TABLE IF NOT EXISTS debt_people (
   id               TEXT PRIMARY KEY,
   user_id          TEXT,
@@ -263,7 +266,17 @@ CREATE TABLE IF NOT EXISTS debt_people (
   notes            TEXT,
   outstanding_nzd  REAL NOT NULL DEFAULT 0,
   created_at       TEXT NOT NULL,
-  updated_at       TEXT NOT NULL
+  updated_at       TEXT NOT NULL,
+  product_kind     TEXT,
+  is_loan          INTEGER NOT NULL DEFAULT 0,
+  interest_period  TEXT,  -- month | year | NULL
+  interest_rate_percent REAL,  -- annual percent entered by the user
+  minimum_payment_nzd REAL,
+  actual_payment_nzd REAL,
+  remaining_term_months INTEGER,
+  interest_paid_nzd REAL,
+  interest_posted_through TEXT,  -- YYYY-MM-DD cursor for scheduled interest
+  interest_charged_nzd REAL NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS debt_repayments (

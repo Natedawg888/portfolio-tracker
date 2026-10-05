@@ -8,6 +8,15 @@ import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { requireUserId } from '../lib/userScope.ts';
 import { DEBT_SLUG, resolveCategoryIdOrSlug } from '../lib/categories.ts';
 import { getDb, queryAll, queryOne, run, newId } from '../db/index.ts';
+import { aucklandToday, parseCreateDebt, parsePatchDebt } from '../debts/model.ts';
+import {
+  applyScheduledInterestForUser,
+  createDebt,
+  getDebtForUser,
+  listDebtsForUser,
+  recordedIncomeForMonth,
+  updateDebt,
+} from '../debts/store.ts';
 
 const router = Router();
 
@@ -36,20 +45,6 @@ function normaliseKind(raw: unknown): 'person' | 'corporation' {
   return 'person';
 }
 
-function mapPerson(r: Record<string, unknown>) {
-  return {
-    id: r.id as string,
-    name: r.name as string,
-    kind: normaliseKind(r.kind),
-    notes: (r.notes as string | null) ?? null,
-    outstandingNzd: Number(r.outstanding_nzd ?? 0),
-    createdAt: r.created_at as string,
-    updatedAt: r.updated_at as string,
-    repaidTotalNzd:
-      r.repaid_total != null ? Number(r.repaid_total) : undefined,
-  };
-}
-
 function mapRepayment(r: Record<string, unknown>) {
   return {
     id: r.id as string,
@@ -63,19 +58,10 @@ function mapRepayment(r: Record<string, unknown>) {
   };
 }
 
-/** List people owed, with optional repaid totals. */
+/** List debts the signed-in user owns, with schedule, DTI, and payoff from their figures. */
 router.get('/people', async (req, res) => {
   const db = await getDb();
-  const rows = queryAll(
-    db,
-    `SELECT p.*,
-       COALESCE((SELECT SUM(r.amount_nzd) FROM debt_repayments r WHERE r.person_id = p.id), 0) AS repaid_total
-     FROM debt_people p
-     WHERE p.user_id = ?
-     ORDER BY p.outstanding_nzd DESC, p.name ASC`,
-    [uid(req)],
-  );
-  res.json(rows.map(mapPerson));
+  res.json(listDebtsForUser(db, uid(req), aucklandToday()));
 });
 
 /** Summary: current outstanding + optional year filter on repayments. */
@@ -84,6 +70,9 @@ router.get('/summary', async (req, res) => {
   const yearRaw = typeof req.query.year === 'string' ? req.query.year : '';
   const year = /^\d{4}$/.test(yearRaw) ? yearRaw : null;
 
+  const asOf = aucklandToday();
+  applyScheduledInterestForUser(db, uid(req), asOf);
+  const income = recordedIncomeForMonth(db, uid(req), asOf);
   const people = queryAll<{ outstanding_nzd?: number; kind?: string }>(
     db,
     `SELECT outstanding_nzd, kind FROM debt_people WHERE user_id = ?`,
@@ -117,83 +106,35 @@ router.get('/summary', async (req, res) => {
     repaidTotalNzd,
     year: year ? Number(year) : null,
     asOf: new Date().toISOString(),
+    recordedIncomeNzd: income.total,
+    incomeMonth: income.yearMonth,
   });
 });
 
 router.post('/people', async (req, res) => {
+  const parsed = parseCreateDebt(req.body);
+  if (!parsed.ok) {
+    res.status(400).json({ error: parsed.error });
+    return;
+  }
   const db = await getDb();
-  const b = req.body ?? {};
-  const name = typeof b.name === 'string' ? b.name.trim() : '';
-  if (!name) {
-    res.status(400).json({ error: 'name is required' });
-    return;
-  }
-  const kind = normaliseKind(b.kind ?? b.type);
-  const outstanding = Number(b.outstandingNzd ?? 0);
-  if (!Number.isFinite(outstanding) || outstanding < 0) {
-    res.status(400).json({ error: 'outstandingNzd must be a non-negative number' });
-    return;
-  }
-  const now = new Date().toISOString();
-  const id = newId('debt');
-  run(
-    db,
-    `INSERT INTO debt_people (id, user_id, name, kind, notes, outstanding_nzd, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?)`,
-    [
-      id,
-      uid(req),
-      name,
-      kind,
-      typeof b.notes === 'string' && b.notes.trim() ? b.notes.trim() : null,
-      outstanding,
-      now,
-      now,
-    ],
-  );
-  const row = queryOne(db, 'SELECT * FROM debt_people WHERE id=? AND user_id=?', [id, uid(req)])!;
-  res.status(201).json(mapPerson(row));
+  const saved = createDebt(db, uid(req), parsed.value, aucklandToday());
+  res.status(201).json(saved);
 });
 
 router.patch('/people/:id', async (req, res) => {
+  const parsed = parsePatchDebt(req.body);
+  if (!parsed.ok) {
+    res.status(400).json({ error: parsed.error });
+    return;
+  }
   const db = await getDb();
-  const id = req.params.id;
-  const existing = queryOne(db, 'SELECT * FROM debt_people WHERE id=? AND user_id=?', [id, uid(req)]);
-  if (!existing) {
+  const saved = updateDebt(db, uid(req), req.params.id, parsed.value, aucklandToday());
+  if (!saved) {
     res.status(404).json({ error: 'Creditor not found' });
     return;
   }
-  const b = req.body ?? {};
-  const name =
-    typeof b.name === 'string' && b.name.trim()
-      ? b.name.trim()
-      : (existing.name as string);
-  const notes =
-    b.notes === null
-      ? null
-      : typeof b.notes === 'string'
-        ? b.notes.trim() || null
-        : (existing.notes as string | null);
-  const kind =
-    b.kind !== undefined || b.type !== undefined
-      ? normaliseKind(b.kind ?? b.type)
-      : normaliseKind(existing.kind);
-  let outstanding = Number(existing.outstanding_nzd ?? 0);
-  if (b.outstandingNzd !== undefined) {
-    outstanding = Number(b.outstandingNzd);
-    if (!Number.isFinite(outstanding) || outstanding < 0) {
-      res.status(400).json({ error: 'outstandingNzd must be a non-negative number' });
-      return;
-    }
-  }
-  const now = new Date().toISOString();
-  run(
-    db,
-    `UPDATE debt_people SET name=?, kind=?, notes=?, outstanding_nzd=?, updated_at=? WHERE id=?`,
-    [name, kind, notes, outstanding, now, id],
-  );
-  const row = queryOne(db, 'SELECT * FROM debt_people WHERE id=? AND user_id=?', [id, uid(req)])!;
-  res.json(mapPerson(row));
+  res.json(saved);
 });
 
 router.delete('/people/:id', async (req, res) => {
@@ -331,10 +272,10 @@ router.post('/people/:id/repayments', async (req, res) => {
      WHERE r.id=?`,
     [id],
   )!;
-  const updatedPerson = queryOne(db, 'SELECT * FROM debt_people WHERE id=? AND user_id=?', [personId, uid(req)])!;
+  const updated = getDebtForUser(db, uid(req), personId, aucklandToday());
   res.status(201).json({
     repayment: mapRepayment(row),
-    person: mapPerson(updatedPerson),
+    person: updated,
   });
 });
 
