@@ -1,10 +1,14 @@
 /**
  * Dividend record maths.
  * Totals, yield, and growth use only amounts the user stored.
- * The forecast may also repeat the next date from Yahoo Finance dividend
- * history for a stock or ETF the same user holds. That amount is the last
- * published cash dividend per share times their shares. Missing figures stay
- * missing. Missing FX rates stay missing. Imputation credits are not cash.
+ * The forecast repeats published Yahoo Finance dividend history for a stock
+ * or ETF the same user holds, through the next 12 months. Each amount is the
+ * last published cash dividend per share times a projected share count.
+ * That count starts at the shares they own. Reinvest on spends that payment's
+ * net cash on more of the same holding inside the forecast only, so later
+ * predicted payments compound. The stored holding quantity is not changed.
+ * Missing figures stay missing. Missing FX rates stay missing. A share price
+ * is never invented. Imputation credits are not cash. This is not advice.
  */
 
 export type DividendRecord = {
@@ -51,17 +55,63 @@ export type PublishedDividendSeries = {
   payments: PublishedDividendPayment[];
 };
 
+export type ReinvestmentStatus = 'off' | 'applied' | 'unavailable';
+
 /**
- * Next payment for one holding, taken from published dividend history.
+ * What one reinvest toggle did to the forecast.
+ * `applied` adds `sharesAdded` to later predicted payments of the same holding.
+ * `unavailable` leaves the projected share count unchanged.
+ */
+export type ReinvestmentEffect = {
+  status: ReinvestmentStatus;
+  /** Extra shares this payment adds for later predicted payments. Null when it does not. */
+  sharesAdded: number | null;
+  pricePerShareNzd: number | null;
+  /** `quote` is a saved NZD quote. `cost` is cost basis divided by shares owned. */
+  priceSource: 'quote' | 'cost' | null;
+  note: string | null;
+};
+
+export const REINVEST_OFF: ReinvestmentEffect = {
+  status: 'off',
+  sharesAdded: null,
+  pricePerShareNzd: null,
+  priceSource: null,
+  note: null,
+};
+
+export const REINVEST_NO_PRICE_NOTE =
+  'Reinvestment could not be applied. There is no saved quote or recorded price to turn this net cash into shares.';
+
+export const REINVEST_NO_FX_NOTE =
+  'Reinvestment could not be applied. There is no FX rate to turn this net cash into shares.';
+
+export const REINVEST_UNLINKED_NOTE =
+  'Reinvestment could not be applied. This payment is not linked to a holding, so it cannot buy more of the same holding.';
+
+/** Predicted payments run from the day after today through this many months. */
+export const DIVIDEND_FORECAST_HORIZON_MONTHS = 12;
+
+/**
+ * One predicted payment for a holding, taken from published dividend history.
  * `projected` repeats the gap the published dates already showed.
  * `published` uses a future date and amount the source itself listed.
+ * `sharesHeld` is the projected share count used for this payment.
+ * `ownedShares` is the quantity stored on the holding and is not changed here.
  */
 export type DetectedDividend = {
+  /** Stable id for this forecast row: holding id, a colon, then the payment date. */
+  id: string;
   holdingId: string;
   name: string;
   symbol: string;
   dividendPerShare: number;
+  /** Projected shares used for this payment's cash amount. */
   sharesHeld: number;
+  /** Shares stored on the holding. Reinvestment does not change this. */
+  ownedShares: number;
+  /** Same as sharesHeld. Named so the forecast count is obvious beside owned shares. */
+  projectedShares: number;
   /** Shares times the published cash dividend per share. Tax is not estimated. */
   amount: number;
   currency: string;
@@ -74,7 +124,20 @@ export type DetectedDividend = {
   historyCount: number;
   basis: 'projected' | 'published';
   source: 'yahoo';
+  /** On spends this payment's net cash on more of the same holding inside the forecast. */
+  reinvested: boolean;
+  reinvestment: ReinvestmentEffect;
 };
+
+export type DividendView = DividendRecord & {
+  netNzd: number | null;
+  reinvestment: ReinvestmentEffect;
+};
+
+/** `holdingId:paymentDate` identifies one forecast row for the reinvest toggle. */
+export function forecastReinvestKey(holdingId: string, paymentDate: string): string {
+  return `${holdingId}:${paymentDate}`;
+}
 
 export type ComputedDividend = {
   sharesHeld: number;
@@ -152,21 +215,26 @@ export type DividendDashboard = {
     detectedUnconvertedCount: number;
     note: string;
   };
-  upcoming: Array<DividendRecord & { netNzd: number | null }>;
-  history: Array<DividendRecord & { netNzd: number | null }>;
+  upcoming: DividendView[];
+  history: DividendView[];
 };
 
 export const DIVIDEND_DISCLAIMER =
   'Personal record of dividends you enter. Totals use your amounts and the FX rates you record. ' +
-  'The forecast repeats your own history, adds up payments you stated, or projects the next payment from published dividend history on stocks and ETFs you hold. ' +
+  'The forecast repeats your own history, adds up payments you stated, or projects payments over the next 12 months from published dividend history on stocks and ETFs you hold. ' +
+  'Reinvest on buys more of the same holding inside that forecast only. It does not change the shares you own. ' +
   'It is not financial advice and it is not a market forecast.';
 
 export const DIVIDEND_FORECAST_NOTE =
   'The history figure repeats net dividends you already recorded over the last 12 months. ' +
   'Upcoming amounts are only payments you entered yourself. ' +
   'A stock or ETF you hold is added only when Yahoo Finance has published a dividend for it. ' +
-  'The projected date repeats the gap between those published dates, and the amount is the last cash dividend per share times your shares. ' +
-  'A holding is left out when that source has no dividend figure, or when you already entered an upcoming payment for it. ' +
+  'Predicted payments cover the next 12 months. The date repeats the gap between those published dates, and the amount is the last cash dividend per share times a projected share count. ' +
+  'The projected share count starts at the shares you own. Reinvest does not change that stored quantity. ' +
+  'When reinvest is on, that payment\'s net cash buys more of the same holding, and later predicted payments use the extra shares. ' +
+  'Reinvestment is left unchanged when there is no saved quote or recorded price. ' +
+  'A holding is left out when that source has no dividend figure. A payment you already entered is not repeated; later predicted payments for that holding can still appear. ' +
+  'Forecast rows are not saved as dividend or income records. ' +
   'This is not financial advice and it is not a market forecast.';
 
 const MONEY_EPS = 1e-6;
@@ -320,7 +388,7 @@ export function computeDividend(raw: {
   };
 }
 
-function withNzd(row: DividendRecord): DividendRecord & { netNzd: number | null } {
+function withNzd(row: DividendRecord & { reinvestment: ReinvestmentEffect }): DividendView {
   return { ...row, netNzd: netInNzd(row.netDividend, row.fxRateToNzd) };
 }
 
@@ -428,13 +496,7 @@ function fxForCurrency(currency: string, fxRateToNzd: number | null): number | n
   return fxRateToNzd;
 }
 
-/**
- * Next payment for one holding, or null when the published history does not support one.
- * The cash amount is the last positive published dividend per share times shares held.
- * The date is either a future date the source published, or the last published date
- * shifted by the gap the latest dates already showed. No yield is calculated.
- */
-export function projectDividendFromHistory(input: {
+type DividendProjectionInput = {
   holdingId: string;
   name: string;
   symbol: string;
@@ -442,7 +504,33 @@ export function projectDividendFromHistory(input: {
   series: PublishedDividendSeries | null;
   today: string;
   fxRateToNzd: number | null;
-}): DetectedDividend | null {
+};
+
+type ProjectionPlan = {
+  symbol: string;
+  currency: string;
+  fx: number | null;
+  dividendPerShare: number;
+  firstPaymentDate: string;
+  lastPaidDate: string;
+  /** Cadence used to step later dates. Null when later dates would be invented. */
+  intervalMonths: 1 | 3 | 6 | 12 | null;
+  historyCount: number;
+  firstBasis: 'projected' | 'published';
+};
+
+function matchingCadence(dates: string[]): 1 | 3 | 6 | 12 | null {
+  if (dates.length < 3) return null;
+  const a = dates[dates.length - 3]!;
+  const b = dates[dates.length - 2]!;
+  const c = dates[dates.length - 1]!;
+  const recent = cadenceMonths(b, c);
+  const prior = cadenceMonths(a, b);
+  if (recent == null || recent !== prior) return null;
+  return recent;
+}
+
+function parseProjection(input: DividendProjectionInput): ProjectionPlan | null {
   const series = input.series;
   if (!series || series.source !== 'yahoo') return null;
   if (!Number.isFinite(input.shares) || !(input.shares > 0)) return null;
@@ -469,68 +557,128 @@ export function projectDividendFromHistory(input: {
   const past = dates.filter((date) => date <= input.today);
   const fx = fxForCurrency(currency, input.fxRateToNzd);
 
-  const finish = (args: {
-    dividendPerShare: number;
-    paymentDate: string;
-    lastPaidDate: string;
-    intervalMonths: 1 | 3 | 6 | 12 | null;
-    historyCount: number;
-    basis: 'projected' | 'published';
-  }): DetectedDividend => {
-    const amount = input.shares * args.dividendPerShare;
-    return {
-      holdingId: input.holdingId,
-      name: input.name,
-      symbol,
-      dividendPerShare: args.dividendPerShare,
-      sharesHeld: input.shares,
-      amount,
-      currency,
-      amountNzd: fx == null ? null : amount * fx,
-      fxRateToNzd: fx,
-      lastPaidDate: args.lastPaidDate,
-      paymentDate: args.paymentDate,
-      intervalMonths: args.intervalMonths,
-      historyCount: args.historyCount,
-      basis: args.basis,
-      source: 'yahoo',
-    };
-  };
-
   if (future.length > 0) {
     const paymentDate = future[0]!;
     const dividendPerShare = byDate.get(paymentDate);
     if (dividendPerShare == null || !(dividendPerShare > 0)) return null;
     const lastPaidDate = past.length > 0 ? past[past.length - 1]! : paymentDate;
-    return finish({
+    const throughFirst = dates.filter((date) => date <= paymentDate);
+    return {
+      symbol,
+      currency,
+      fx,
       dividendPerShare,
-      paymentDate,
+      firstPaymentDate: paymentDate,
       lastPaidDate,
-      intervalMonths: null,
+      intervalMonths: matchingCadence(throughFirst),
       historyCount: dates.length,
-      basis: 'published',
-    });
+      firstBasis: 'published',
+    };
   }
 
   if (past.length < 3) return null;
+  const intervalMonths = matchingCadence(past);
+  if (intervalMonths == null) return null;
   const last = past[past.length - 1]!;
-  const prev = past[past.length - 2]!;
-  const prev2 = past[past.length - 3]!;
-  const recent = cadenceMonths(prev, last);
-  const prior = cadenceMonths(prev2, prev);
-  if (recent == null || recent !== prior) return null;
-  const paymentDate = shiftMonths(last, recent);
+  const paymentDate = shiftMonths(last, intervalMonths);
   if (!(paymentDate > input.today)) return null;
   const dividendPerShare = byDate.get(last);
   if (dividendPerShare == null || !(dividendPerShare > 0)) return null;
-  return finish({
+  return {
+    symbol,
+    currency,
+    fx,
     dividendPerShare,
-    paymentDate,
+    firstPaymentDate: paymentDate,
     lastPaidDate: last,
-    intervalMonths: recent,
+    intervalMonths,
     historyCount: past.length,
-    basis: 'projected',
+    firstBasis: 'projected',
+  };
+}
+
+function forecastDates(first: string, interval: 1 | 3 | 6 | 12 | null, today: string): string[] {
+  const dates = [first];
+  if (interval == null) return dates;
+  const horizonEnd = shiftMonths(today, DIVIDEND_FORECAST_HORIZON_MONTHS);
+  if (first > horizonEnd) return dates;
+  let cursor = first;
+  while (dates.length < 24) {
+    const next = shiftMonths(cursor, interval);
+    if (!(next > cursor) || next > horizonEnd) break;
+    dates.push(next);
+    cursor = next;
+  }
+  return dates;
+}
+
+function detectedFromPlan(
+  input: DividendProjectionInput,
+  plan: ProjectionPlan,
+  paymentDate: string,
+  basis: 'projected' | 'published',
+  intervalMonths: 1 | 3 | 6 | 12 | null,
+): DetectedDividend {
+  const amount = input.shares * plan.dividendPerShare;
+  return {
+    id: forecastReinvestKey(input.holdingId, paymentDate),
+    holdingId: input.holdingId,
+    name: input.name,
+    symbol: plan.symbol,
+    dividendPerShare: plan.dividendPerShare,
+    sharesHeld: input.shares,
+    ownedShares: input.shares,
+    projectedShares: input.shares,
+    amount,
+    currency: plan.currency,
+    amountNzd: plan.fx == null ? null : amount * plan.fx,
+    fxRateToNzd: plan.fx,
+    lastPaidDate: plan.lastPaidDate,
+    paymentDate,
+    intervalMonths,
+    historyCount: plan.historyCount,
+    basis,
+    source: 'yahoo',
+    reinvested: false,
+    reinvestment: REINVEST_OFF,
+  };
+}
+
+/**
+ * Next payment for one holding, or null when the published history does not support one.
+ * The cash amount is the last positive published dividend per share times shares held.
+ * The date is either a future date the source published, or the last published date
+ * shifted by the gap the latest dates already showed. No yield is calculated.
+ */
+export function projectDividendFromHistory(input: DividendProjectionInput): DetectedDividend | null {
+  const plan = parseProjection(input);
+  if (!plan) return null;
+  const intervalMonths = plan.firstBasis === 'published' ? null : plan.intervalMonths;
+  return detectedFromPlan(input, plan, plan.firstPaymentDate, plan.firstBasis, intervalMonths);
+}
+
+/**
+ * Predicted payments for one holding through the next 12 months.
+ * The first row is the same payment `projectDividendFromHistory` returns.
+ * Later rows repeat that per-share amount on the same gap. They are not saved.
+ */
+export function projectDividendSchedule(input: DividendProjectionInput): DetectedDividend[] {
+  const plan = parseProjection(input);
+  if (!plan) return [];
+  return forecastDates(plan.firstPaymentDate, plan.intervalMonths, input.today).map((paymentDate, index) => {
+    const basis = index === 0 ? plan.firstBasis : 'projected';
+    const intervalMonths = basis === 'published' ? null : plan.intervalMonths;
+    return detectedFromPlan(input, plan, paymentDate, basis, intervalMonths);
   });
+}
+
+function reinvestmentShapeOk(row: DetectedDividend): boolean {
+  const effect = row.reinvestment;
+  if (!effect || !row.id) return false;
+  if (typeof row.reinvested !== 'boolean') return false;
+  if (effect.status !== 'off' && effect.status !== 'applied' && effect.status !== 'unavailable') return false;
+  if (effect.status === 'applied') return effect.sharesAdded != null && effect.sharesAdded > 0;
+  return effect.sharesAdded == null;
 }
 
 function detectedIsConsistent(row: DetectedDividend): boolean {
@@ -541,15 +689,213 @@ function detectedIsConsistent(row: DetectedDividend): boolean {
   }
   if (row.basis === 'published' && row.intervalMonths != null) return false;
   if (!Number.isFinite(row.dividendPerShare) || !(row.dividendPerShare > 0)) return false;
+  if (!Number.isFinite(row.ownedShares) || !(row.ownedShares > 0)) return false;
   if (!Number.isFinite(row.sharesHeld) || !(row.sharesHeld > 0)) return false;
+  if (!Number.isFinite(row.projectedShares) || !(row.projectedShares > 0)) return false;
+  if (Math.abs(row.projectedShares - row.sharesHeld) > MONEY_EPS) return false;
   if (!Number.isFinite(row.amount) || !(row.amount > 0)) return false;
   if (Math.abs(row.amount - row.sharesHeld * row.dividendPerShare) > MONEY_EPS) return false;
   if (!isYmd(row.paymentDate) || !isYmd(row.lastPaidDate)) return false;
   if (!/^[A-Z]{3}$/.test(row.currency)) return false;
   if (!Number.isInteger(row.historyCount) || row.historyCount < 1) return false;
+  if (!reinvestmentShapeOk(row)) return false;
   if (row.amountNzd == null) return row.currency !== 'NZD' && row.fxRateToNzd == null;
   if (row.fxRateToNzd == null || !(row.fxRateToNzd > 0) || !Number.isFinite(row.amountNzd)) return false;
   return Math.abs(row.amountNzd - row.amount * row.fxRateToNzd) <= MONEY_EPS;
+}
+
+/**
+ * Saved NZD quote when one exists. Otherwise cost basis divided by the shares owned.
+ * Never a guessed market price.
+ */
+export function recordedSharePriceNzd(
+  holding: HoldingValueInput | null | undefined,
+): { priceNzd: number; source: 'quote' | 'cost' } | null {
+  if (!holding) return null;
+  if (holding.quotedPriceNzd != null && Number.isFinite(holding.quotedPriceNzd) && holding.quotedPriceNzd > 0) {
+    return { priceNzd: holding.quotedPriceNzd, source: 'quote' };
+  }
+  if (
+    holding.costBasisNzd != null
+    && holding.costBasisNzd > 0
+    && holding.shares != null
+    && holding.shares > 0
+  ) {
+    const priceNzd = holding.costBasisNzd / holding.shares;
+    if (Number.isFinite(priceNzd) && priceNzd > 0) return { priceNzd, source: 'cost' };
+  }
+  return null;
+}
+
+function appliedNote(source: 'quote' | 'cost'): string {
+  const priceSentence = source === 'quote'
+    ? 'The share price is the saved NZD quote.'
+    : 'The share price is the recorded cost per share (cost basis divided by the shares you own). There is no saved quote.';
+  return `${priceSentence} This net cash buys more of the same holding in the forecast only. The shares you own stay as recorded. Later predicted payments for this holding use the extra shares. Not financial advice.`;
+}
+
+function effectForCash(args: {
+  reinvested: boolean;
+  cashInPaymentCurrency: number;
+  currency: string;
+  fxRateToNzd: number | null;
+  price: { priceNzd: number; source: 'quote' | 'cost' } | null;
+  linked: boolean;
+}): ReinvestmentEffect {
+  if (!args.reinvested) return REINVEST_OFF;
+  if (!args.linked) {
+    return {
+      status: 'unavailable',
+      sharesAdded: null,
+      pricePerShareNzd: null,
+      priceSource: null,
+      note: REINVEST_UNLINKED_NOTE,
+    };
+  }
+  if (!args.price) {
+    return {
+      status: 'unavailable',
+      sharesAdded: null,
+      pricePerShareNzd: null,
+      priceSource: null,
+      note: REINVEST_NO_PRICE_NOTE,
+    };
+  }
+  const fx = fxForCurrency(args.currency, args.fxRateToNzd);
+  if (fx == null) {
+    return {
+      status: 'unavailable',
+      sharesAdded: null,
+      pricePerShareNzd: args.price.priceNzd,
+      priceSource: args.price.source,
+      note: REINVEST_NO_FX_NOTE,
+    };
+  }
+  const cashNzd = args.cashInPaymentCurrency * fx;
+  if (!(cashNzd > 0) || !Number.isFinite(cashNzd)) {
+    return {
+      status: 'unavailable',
+      sharesAdded: null,
+      pricePerShareNzd: args.price.priceNzd,
+      priceSource: args.price.source,
+      note: REINVEST_NO_PRICE_NOTE,
+    };
+  }
+  const sharesAdded = cashNzd / args.price.priceNzd;
+  if (!(sharesAdded > 0) || !Number.isFinite(sharesAdded)) {
+    return {
+      status: 'unavailable',
+      sharesAdded: null,
+      pricePerShareNzd: args.price.priceNzd,
+      priceSource: args.price.source,
+      note: REINVEST_NO_PRICE_NOTE,
+    };
+  }
+  return {
+    status: 'applied',
+    sharesAdded,
+    pricePerShareNzd: args.price.priceNzd,
+    priceSource: args.price.source,
+    note: appliedNote(args.price.source),
+  };
+}
+
+function recordedReinvestCash(event: DividendRecord): number {
+  if (event.reinvestedAmount != null && event.reinvestedAmount > 0) return event.reinvestedAmount;
+  return event.netDividend > 0 ? event.netDividend : 0;
+}
+
+/**
+ * Annotate recorded payments and rebuild forecast amounts from a projected share count.
+ * Owned shares stay the base. Reinvested net cash adds shares for later predicted payments only.
+ */
+export function applyDividendReinvestment(input: {
+  events: DividendRecord[];
+  holdings: HoldingValueInput[];
+  detected: DetectedDividend[];
+}): { events: Array<DividendRecord & { reinvestment: ReinvestmentEffect }>; detected: DetectedDividend[] } {
+  const holdingById = new Map(input.holdings.map((holding) => [holding.id, holding]));
+  const priceByHolding = new Map(
+    input.holdings.map((holding) => [holding.id, recordedSharePriceNzd(holding)]),
+  );
+
+  const events = input.events.map((event) => {
+    const holding = event.holdingId ? holdingById.get(event.holdingId) ?? null : null;
+    return {
+      ...event,
+      reinvestment: effectForCash({
+        reinvested: event.reinvested,
+        cashInPaymentCurrency: recordedReinvestCash(event),
+        currency: event.currency,
+        fxRateToNzd: event.fxRateToNzd,
+        price: holding ? priceByHolding.get(holding.id) ?? null : null,
+        linked: holding != null,
+      }),
+    };
+  });
+
+  const recordedExtras = new Map<string, Array<{ date: string; shares: number }>>();
+  for (const event of events) {
+    if (event.reinvestment.status !== 'applied' || event.reinvestment.sharesAdded == null || !event.holdingId) {
+      continue;
+    }
+    const list = recordedExtras.get(event.holdingId) ?? [];
+    list.push({ date: event.paymentDate, shares: event.reinvestment.sharesAdded });
+    recordedExtras.set(event.holdingId, list);
+  }
+
+  const groups = new Map<string, DetectedDividend[]>();
+  for (const row of input.detected) {
+    const list = groups.get(row.holdingId) ?? [];
+    list.push(row);
+    groups.set(row.holdingId, list);
+  }
+
+  const detected: DetectedDividend[] = [];
+  for (const [holdingId, rows] of groups) {
+    const sorted = [...rows].sort(
+      (a, b) => a.paymentDate.localeCompare(b.paymentDate) || a.symbol.localeCompare(b.symbol),
+    );
+    const price = priceByHolding.get(holdingId) ?? null;
+    const linked = holdingById.has(holdingId);
+    let forecastExtra = 0;
+    let pendingShares = 0;
+    let pendingDate: string | null = null;
+    for (const row of sorted) {
+      if (pendingDate != null && row.paymentDate !== pendingDate) {
+        forecastExtra += pendingShares;
+        pendingShares = 0;
+      }
+      pendingDate = row.paymentDate;
+      const recordedExtra = (recordedExtras.get(holdingId) ?? [])
+        .filter((item) => item.date < row.paymentDate)
+        .reduce((sum, item) => sum + item.shares, 0);
+      const projectedShares = row.ownedShares + recordedExtra + forecastExtra;
+      const amount = projectedShares * row.dividendPerShare;
+      const fx = row.fxRateToNzd;
+      const reinvestment = effectForCash({
+        reinvested: row.reinvested,
+        cashInPaymentCurrency: amount,
+        currency: row.currency,
+        fxRateToNzd: fx,
+        price,
+        linked,
+      });
+      if (reinvestment.status === 'applied' && reinvestment.sharesAdded != null) {
+        pendingShares += reinvestment.sharesAdded;
+      }
+      detected.push({
+        ...row,
+        sharesHeld: projectedShares,
+        projectedShares,
+        amount,
+        amountNzd: fx == null ? null : amount * fx,
+        reinvestment,
+      });
+    }
+  }
+
+  return { events, detected };
 }
 
 function holdingDenominator(holding: HoldingValueInput): { value: number; basis: 'quote' | 'cost' } | null {
@@ -576,7 +922,12 @@ export function buildDividendDashboard(input: {
 }): DividendDashboard {
   const today = input.today && isYmd(input.today) ? input.today : todayAucklandYmd();
   const year = input.year;
-  const rows = input.events.map(withNzd);
+  const reinvestedRows = applyDividendReinvestment({
+    events: input.events,
+    holdings: input.holdings,
+    detected: (input.detected ?? []).filter(detectedIsConsistent),
+  });
+  const rows = reinvestedRows.events.map(withNzd);
   const paid = rows.filter((row) => row.paymentDate <= today);
   const upcoming = rows
     .filter((row) => row.paymentDate > today)
@@ -707,9 +1058,9 @@ export function buildDividendDashboard(input: {
 
   const stated = upcoming.filter((row) => row.netNzd != null);
   const historyCount = trailing.length;
-  const detected = (input.detected ?? [])
-    .filter(detectedIsConsistent)
-    .sort((a, b) => a.paymentDate.localeCompare(b.paymentDate) || a.name.localeCompare(b.name));
+  const detected = [...reinvestedRows.detected].sort(
+    (a, b) => a.paymentDate.localeCompare(b.paymentDate) || a.name.localeCompare(b.name),
+  );
   const detectedConverted = detected.filter((row) => row.amountNzd != null);
   const forecast: DividendDashboard['forecast'] = {
     heading: 'Projection from your records and published history',

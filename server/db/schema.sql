@@ -460,7 +460,7 @@ CREATE TABLE IF NOT EXISTS dividend_events (
   currency             TEXT NOT NULL DEFAULT 'NZD',
   fx_rate_to_nzd       REAL,
   reinvested           INTEGER NOT NULL DEFAULT 0,
-  reinvested_amount    REAL,
+  reinvested_amount    REAL, -- net cash reinvested in the payment currency; does not change holdings.shares
   notes                TEXT,
   created_at           TEXT NOT NULL,
   updated_at           TEXT NOT NULL
@@ -468,6 +468,21 @@ CREATE TABLE IF NOT EXISTS dividend_events (
 
 CREATE INDEX IF NOT EXISTS idx_dividend_events_user_date
   ON dividend_events(user_id, payment_date);
+
+-- On/off for one forecast payment this user can see. Not a dividend_events row and not income.
+-- Absence means reinvest is off. Deleting the holding or the account removes only that user's rows.
+CREATE TABLE IF NOT EXISTS dividend_forecast_reinvest (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL,
+  holding_id   TEXT NOT NULL,
+  payment_date TEXT NOT NULL,
+  reinvested   INTEGER NOT NULL DEFAULT 0,
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dividend_forecast_reinvest_user_holding_date
+  ON dividend_forecast_reinvest(user_id, holding_id, payment_date);
 
 -- Category remembered for a payee this user has used (income description, transaction
 -- description/merchant, or dividend company). Category must already exist for that user.
