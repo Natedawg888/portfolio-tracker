@@ -21,8 +21,13 @@ for (const feed of feeds) {
 
 const phaseQuery = new URL(feeds[0]!.url).searchParams.get('q') ?? '';
 assert.match(phaseQuery, /New Zealand/);
-assert.match(phaseQuery, /Recession/);
+assert.match(phaseQuery, /economic recession|in recession|economic downturn/);
+assert.doesNotMatch(phaseQuery, /"Recession"/);
 assert.match(phaseQuery, /when:14d/);
+
+const expansionQuery = new URL(planPhaseNewsFeeds('expansion')[0]!.url).searchParams.get('q') ?? '';
+assert.match(expansionQuery, /economic expansion|expanding economy|economic growth/);
+assert.doesNotMatch(expansionQuery, /"Expansion"/);
 
 const withoutPhase = planPhaseNewsFeeds(null).map((feed) => feed.id);
 assert.equal(withoutPhase.includes('phase'), false);
@@ -106,5 +111,57 @@ assert.doesNotMatch(usQuery, /Reserve Bank of New Zealand/);
 assert.equal(usFeeds.some((feed) => feed.id === 'global'), false);
 assert.ok(usFeeds.some((feed) => feed.url.includes('bbci.co.uk/news/world')));
 assert.throws(() => planPhaseNewsFeeds('expansion', 'FR'), /connected for NZ, US/);
+
+const phaseOnly = await loadPhaseNews('expansion', {
+  fetchImpl: async (input) => {
+    const url = String(input);
+    if (!url.includes('news.google.com')) {
+      return new Response('not a feed', { status: 200 });
+    }
+    const q = new URL(url).searchParams.get('q') ?? '';
+    if (!/economic expansion|expanding economy|economic growth/.test(q)) {
+      return new Response(
+        `<?xml version="1.0"?><rss><channel><item>
+<title>OCR held - Reuters</title>
+<link>https://news.google.com/rss/articles/fixture-other</link>
+<pubDate>Fri, 02 Oct 2026 01:00:00 GMT</pubDate>
+<source url="https://www.reuters.com">Reuters</source>
+<description>The Reserve Bank left the official cash rate unchanged.</description>
+</item></channel></rss>`,
+        { status: 200, headers: { 'content-type': 'application/xml' } },
+      );
+    }
+    return new Response(
+      `<?xml version="1.0"?><rss><channel>
+<item>
+<title>Canadian cattle herd expansion program adds grazing land - Farm News</title>
+<link>https://news.google.com/rss/articles/fixture-cattle</link>
+<pubDate>Sat, 03 Oct 2026 01:00:00 GMT</pubDate>
+<source url="https://example.com">Farm News</source>
+<description>A herd expansion program was announced for cattle producers.</description>
+</item>
+<item>
+<title>LNG expansion project receives a construction permit - Energy Wire</title>
+<link>https://news.google.com/rss/articles/fixture-lng</link>
+<pubDate>Sat, 03 Oct 2026 02:00:00 GMT</pubDate>
+<source url="https://example.com">Energy Wire</source>
+<description>The terminal expansion adds liquefaction capacity.</description>
+</item>
+<item>
+<title>New Zealand economy grows as household spending picks up - Stats NZ</title>
+<link>https://news.google.com/rss/articles/fixture-growth</link>
+<pubDate>Sun, 04 Oct 2026 01:00:00 GMT</pubDate>
+<source url="https://www.stats.govt.nz">Stats NZ</source>
+<description>Economists described the expansion as part of the business cycle.</description>
+</item>
+</channel></rss>`,
+      { status: 200, headers: { 'content-type': 'application/xml' } },
+    );
+  },
+});
+const phaseGroup = phaseOnly.groups.find((group) => group.id === 'phase');
+assert.equal(phaseGroup?.status, 'ok');
+assert.equal(phaseGroup?.items.length, 1);
+assert.match(phaseGroup?.items[0]?.headline ?? '', /economy grows/);
 
 console.log('phase news tests passed');

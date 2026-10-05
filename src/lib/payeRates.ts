@@ -67,12 +67,12 @@ export const KIWISAVER_EMPLOYEE_RATES = [3.5, 4, 6, 8, 10] as const;
 export const KIWISAVER_DEFAULT_EMPLOYEE_RATE = 3.5;
 export const KIWISAVER_EMPLOYER_MIN_RATE = 3.5;
 /**
- * Starting employee rate offered for this account when the user has not saved one.
- * 3% is Nathan's rate. It is not the IRD minimum (that remains 3.5% from 1 April 2026).
+ * Starting employee rate when this account has not saved one.
+ * The page states the statutory minimum is 3.5% from 1 April 2026, so that rate is the start.
  */
-export const KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE = 3;
-/** Buttons on the PAYE page: the account starting rate, then the statutory rates. */
-export const KIWISAVER_EMPLOYEE_RATE_CHOICES = [3, ...KIWISAVER_EMPLOYEE_RATES] as const;
+export const KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE = KIWISAVER_DEFAULT_EMPLOYEE_RATE;
+/** Buttons on the PAYE page. The starting choice is the statutory minimum. */
+export const KIWISAVER_EMPLOYEE_RATE_CHOICES = KIWISAVER_EMPLOYEE_RATES;
 
 /**
  * Student loan — NZ-based borrowers.

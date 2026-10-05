@@ -446,7 +446,7 @@ function AccountPanel() {
         <h3>Delete account</h3>
         <p className="muted small">
           Permanently removes this local account, your sessions, profile picture, preferences, and
-          finance data scoped to you. Other users&apos; data is not touched. Shared app data
+          finance data scoped to you. Other users&apos; data is not touched. Shared app data{' '}
           (transaction categories, GoMining settings, quote cache) stays until per-user isolation
           covers those tables — see docs/AUTH.md.
         </p>
@@ -829,7 +829,7 @@ function CategoriesPanel({
       <section className="panel">
         <h2>Transaction categories</h2>
         <p className="page-lead">
-          Add or remove categories by type (spending, income, transfer out, transfer in) for the Spending page and budget plans.
+          Add or remove categories by type (spending, income, transfer out, transfer in) for the Budget page and budget plans.
         </p>
 
         <form className="auth-form account-form" onSubmit={onAddCategory}>

@@ -14,7 +14,8 @@ import {
   metalMarketValueNzd,
   metalsConfigured,
 } from '../quotes/metals.ts';
-import { ensureMetalQuotesPersisted } from '../quotes/metalQuotesDb.ts';
+import { ensureMetalQuotesPersisted, readDbMetalQuotes } from '../quotes/metalQuotesDb.ts';
+import { metalSpotQuoteNote, summarizeStoredMetalSpots } from '../quotes/metalSpotCopy.ts';
 import {
   ensureForexQuotesPersisted,
   forexAssetKey,
@@ -47,6 +48,9 @@ export type NetWorthResult = {
   metalsNzd: number | null;
   metalsUseSpot: boolean;
   metalsConfigured: boolean;
+  /** Spot table status. Independent of whether this user holds any metal. */
+  metalsSpotStatus: 'ok' | 'stale' | 'unavailable';
+  metalsSpotSource: 'gold-api' | 'metals_dev' | null;
   stonesNzd: number | null;
   forexNzd: number | null;
   forexUseSpot: boolean;
@@ -128,6 +132,7 @@ export async function computeNetWorth(
   }
   await ensureMetalQuotesPersisted(db);
   await ensureForexQuotesPersisted(db);
+  const metalSpots = summarizeStoredMetalSpots(readDbMetalQuotes(db));
 
   const accounts = queryAll<{
     balance: number;
@@ -465,6 +470,8 @@ export async function computeNetWorth(
     metalsNzd: metalsNzdValue,
     metalsUseSpot: metalsHaveQuote,
     metalsConfigured: metalsConfigured(),
+    metalsSpotStatus: metalSpots.status,
+    metalsSpotSource: metalSpots.source,
     stonesNzd: stonesHas ? stonesVal : null,
     forexNzd: forexNzdValue,
     forexUseSpot: forexHaveQuote,
@@ -480,13 +487,11 @@ export async function computeNetWorth(
     hasUnavailableQuotes:
       (metalsHaveAny && !metalsHaveQuote) || (forexHaveAny && !forexHaveQuote),
     asOf: new Date().toISOString(),
-    quoteNote: metalsHaveQuote
-      ? metalsConfigured()
-        ? 'Metals use Metals.Dev spot NZD; other live marks still stubbed (cost / manual). Never invented.'
-        : 'Metals use gold-api.com spot NZD (no API key). Other live marks still stubbed (cost / manual). Never invented.'
-      : metalsConfigured()
-        ? 'Metals key set but no fresh spot yet — open Portfolio / Value search and Refresh. Other marks stubbed. Never invented.'
-        : 'Metal spots unavailable from gold-api.com — totals use cost / manual. Never invented.',
+    quoteNote: metalSpotQuoteNote({
+      configured: metalsConfigured(),
+      status: metalSpots.status,
+      source: metalSpots.source,
+    }),
     settings: {
       defaultCurrency: settingsMap.defaultCurrency ?? 'NZD',
       timezone: settingsMap.timezone ?? 'Pacific/Auckland',
