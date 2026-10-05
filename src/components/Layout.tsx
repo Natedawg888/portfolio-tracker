@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { applyTheme, resolveTheme, setTheme, type Theme } from '../lib/theme';
 import {
@@ -11,6 +11,8 @@ import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
 import { ProfileMenu } from './ProfileMenu';
 import { QuietToast } from './QuietToast';
+import { api } from '../api/client';
+import { metalProviderFooter } from '../lib/metalSpotCopy';
 
 /** Prefs that unlock at least one Value Search tool. */
 const VALUE_SEARCH_NAV_PREFS: AssetClassPrefKey[] = [
@@ -88,11 +90,12 @@ function MenuIcon() {
   );
 }
 
-export function Layout() {
+export function Layout({ children }: { children?: ReactNode }) {
   const { enabled } = useAssetClassPrefs();
   const location = useLocation();
   const [theme, setThemeState] = useState<Theme>(() => resolveTheme());
   const [navOpen, setNavOpen] = useState(false);
+  const [metalProvider, setMetalProvider] = useState<string | null>(null);
   const moneyHidden = useMoneyHidden();
   const visibleLinks = links.filter((l) => {
     if (l.requireAnyPref?.length) return l.requireAnyPref.some((k) => enabled(k));
@@ -103,6 +106,21 @@ export function Layout() {
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.quotes
+      .metalsStatus()
+      .then((status) => {
+        if (!cancelled) setMetalProvider(status.provider);
+      })
+      .catch(() => {
+        if (!cancelled) setMetalProvider(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     setNavOpen(false);
@@ -277,12 +295,12 @@ export function Layout() {
       </header>
       <main className="app-main">
         <MoneyHiddenProvider>
-          <Outlet />
+          {children ?? <Outlet />}
         </MoneyHiddenProvider>
       </main>
       <QuietToast />
       <footer className="app-footer">
-        Local-first · email/password · metals via Metals.Dev when keyed (never invented) · sync failures stay quiet
+        Local-first · email/password · {metalProviderFooter(metalProvider)} · sync failures stay quiet
       </footer>
     </div>
   );

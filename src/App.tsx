@@ -14,6 +14,7 @@ import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Settings } from './pages/Settings';
 import { EconomicCycle } from './pages/EconomicCycle';
+import { NotFoundRoute } from './pages/NotFound';
 import { AuthProvider } from './auth/AuthContext';
 import { AssetClassPrefsProvider } from './auth/AssetClassPrefsContext';
 import { RequireAuth } from './auth/RequireAuth';
@@ -42,6 +43,7 @@ export default function App() {
                 <Route path="settings" element={<Settings />} />
               </Route>
             </Route>
+            <Route path="*" element={<NotFoundRoute />} />
           </Routes>
         </BrowserRouter>
       </AssetClassPrefsProvider>

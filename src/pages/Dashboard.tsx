@@ -6,8 +6,10 @@ import { isMoneyHidden, MONEY_MASK } from '../lib/privacy';
 import { showQuietToast } from '../lib/quietToast';
 import { AssetBreakdownChart, type AssetBreakdownRow } from '../components/AssetBreakdownChart';
 import { DebtBreakdownChart, type DebtBreakdownPerson } from '../components/DebtBreakdownChart';
+import { SavingsGoalsCard } from '../components/SavingsGoalsCard';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
+import { metalSpotHint, type MetalSpotSource, type MetalSpotStatus } from '../lib/metalSpotCopy';
 import type { HomeMonthSnapshot } from '../types';
 
 type Summary = {
@@ -20,6 +22,8 @@ type Summary = {
   metalsNzd: number | null;
   metalsUseSpot?: boolean;
   metalsConfigured?: boolean;
+  metalsSpotStatus?: MetalSpotStatus;
+  metalsSpotSource?: MetalSpotSource | null;
   stonesNzd: number | null;
   /** True when the shares total uses market quotes (cost only when this is false). */
   stocksUseMarket?: boolean;
@@ -153,11 +157,13 @@ export function Dashboard() {
 
 
   const monthRow = <MonthSnapshot snapshot={monthSnapshot} error={monthError} />;
+  const goalsCard = <SavingsGoalsCard />;
 
   if (error) {
     return (
       <div className="stack dashboard-page">
         {monthRow}
+        {goalsCard}
         <div className="panel warn">
           <h2 className="page-title">Dashboard</h2>
           <p>The figures could not be loaded. Try again.</p>
@@ -170,6 +176,7 @@ export function Dashboard() {
     return (
       <div className="stack dashboard-page">
         {monthRow}
+        {goalsCard}
         <div className="panel">Loading net worth…</div>
       </div>
     );
@@ -226,6 +233,7 @@ export function Dashboard() {
   return (
     <div className="stack dashboard-page">
       {monthRow}
+      {goalsCard}
       <section className="hero-card">
         <p className="eyebrow page-title">Net worth · assets − debt outstanding</p>
         <p className="hero-value">{formatNzd(summary.totalKnownNzd)}</p>
@@ -261,15 +269,15 @@ export function Dashboard() {
           <Bucket
             title="Metals"
             value={summary.metalsNzd}
-            hint={
-              summary.metalsUseSpot
-                ? summary.metalsConfigured
-                  ? 'Metals.Dev spot NZD (stale OK if quota exhausted)'
-                  : 'gold-api.com spot NZD'
-                : summary.metalsConfigured
-                  ? 'Refresh on Portfolio or Value search for a spot. The last good value stays if the quota is used up.'
-                  : 'No stored spot yet'
-            }
+            hint={metalSpotHint({
+              status:
+                summary.metalsSpotStatus ??
+                (summary.metalsUseSpot ? 'ok' : 'unavailable'),
+              source:
+                summary.metalsSpotSource ??
+                (summary.metalsConfigured ? 'metals_dev' : summary.metalsUseSpot ? 'gold-api' : null),
+              configured: summary.metalsConfigured,
+            })}
           />
         ) : null}
         {assetEnabled('stone') ? (
@@ -312,7 +320,7 @@ export function Dashboard() {
           value={summary.debtOutstandingNzd ?? 0}
           hint={
             (summary.debtPersonCount ?? 0) === 0
-              ? 'No creditors recorded · manage under Spending'
+              ? 'No creditors recorded · manage under Debts'
               : `${summary.debtPersonCount} creditor${summary.debtPersonCount === 1 ? '' : 's'} · outstanding reduces net worth (not spend)`
           }
         />

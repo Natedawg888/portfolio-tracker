@@ -26,6 +26,7 @@ import type { MtgColour } from '../types';
 import { DividendTracker } from '../components/DividendTracker';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
+import { metalSpotHint, type MetalSpotSource, type MetalSpotStatus } from '../lib/metalSpotCopy';
 
 type Holding = {
   id: string;
@@ -1218,7 +1219,7 @@ function HoldingCard({
         <p className="muted small holding-card-meta">
           {holding.spotPriceNzdPerOzT != null
             ? `Spot ${formatNzd(holding.spotPriceNzdPerOzT)}/oz t`
-            : 'No spot NZD — cost / — (gold-api.com unavailable)'}
+            : 'No spot NZD — cost / — (spot unavailable)'}
           {holding.spotAsOf && <> · {formatAuckland(holding.spotAsOf)}</>}
         </p>
       )}
@@ -1616,7 +1617,7 @@ function GoMiningMinersSection({
         )}
       </div>
       <p className="muted small">
-        Card Value / Return use estimated NZD from public primary generative list
+        Card Value / Return use estimated NZD from public primary generative list{' '}
         (priceUsdt ÷ TH × BTC FX). Live generative EE bands are typically{' '}
         <strong>12 and 15 W/TH only</strong>. Miners outside those bands (~19–23
         W/TH) get an <strong>estimate extrapolated from primary 12/15 W/TH</strong>{' '}
@@ -1923,6 +1924,9 @@ type PortfolioNetWorth = {
   totalKnownNzd: number;
   asOf: string;
   quoteNote?: string;
+  metalsConfigured?: boolean;
+  metalsSpotStatus?: MetalSpotStatus;
+  metalsSpotSource?: MetalSpotSource | null;
 };
 
 export function Portfolio() {
@@ -2834,7 +2838,7 @@ export function Portfolio() {
             subtitle="NZD totals · classes enabled in portfolio preferences"
             centerLabel="Assets"
             barTitle="By class"
-            note="Values come from known quotes and recorded balances — never invented. Toggle classes under Settings."
+            note="Values come from known quotes and recorded balances — never invented. Toggle classes in the account menu → Settings."
             headingId="portfolio-asset-breakdown-title"
             showPie={false}
             showTotal={false}
@@ -2855,12 +2859,12 @@ export function Portfolio() {
           <div className="row gap" style={{ marginTop: 0 }}>
             <span className="muted small">
               Value = Akahu market × live FX (Frankfurter; USD fallback BTC FX) → NZD.
-              Connect / re-link under Settings; initial sync is during signup.
+              Connect / re-link in the account menu → Settings; initial sync is during signup.
             </span>
           </div>
         </div>
         {grouped.stocks.length === 0 ? (
-          <p className="muted">No stock holdings yet. Connect Akahu during signup/Settings or add manually below (ticker required).</p>
+          <p className="muted">No stock holdings yet. Connect Akahu during signup, or later in the account menu → Settings, or add manually below (ticker required).</p>
         ) : (
           <div className="holding-cards" style={{ marginTop: '0.75rem' }}>
             {grouped.stocks.map((h) => (
@@ -3125,11 +3129,17 @@ export function Portfolio() {
           <h3>Metals</h3>
           <div className="row gap" style={{ marginTop: 0 }}>
             <span className="muted small">
-              {metalsConfigured == null
-                ? 'Checking Metals.Dev…'
-                : metalsConfigured
-                  ? 'METALS_API_KEY set · NZD/oz t (quota miss → last-good stale, never invent)'
-                  : 'Live NZD/oz t via gold-api.com (no key)'}
+              {summary?.metalsSpotStatus
+                ? metalSpotHint({
+                    status: summary.metalsSpotStatus,
+                    source: summary.metalsSpotSource,
+                    configured: summary.metalsConfigured,
+                  })
+                : metalsConfigured == null
+                  ? 'Checking metal spots…'
+                  : metalsConfigured
+                    ? 'Metals.Dev spot NZD'
+                    : 'Live NZD/oz t via gold-api.com (no key)'}
             </span>
             <button
               type="button"
