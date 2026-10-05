@@ -7,7 +7,7 @@ import type {
   DividendWriteBody,
   ForecastReinvestResponse,
 } from '../types/dividends.ts';
-import type { DebtPerson, DebtSummary, DebtWriteBody, PayeeSetting } from '../types/index.ts';
+import type { DebtPerson, DebtSummary, DebtWriteBody, HomeMonthSnapshot, PayeeSetting } from '../types/index.ts';
 
 const BASE = '/api';
 
@@ -133,6 +133,16 @@ export const api = {
   },
   health: () => req<{ ok: boolean }>('/health'),
   netWorth: () => req<Record<string, unknown>>('/net-worth'),
+  home: {
+    /**
+     * This month's budget income, spending, savings, and savings rate.
+     * Omit month for the current Pacific/Auckland month. savingsRate is a fraction of income.
+     */
+    snapshot: (month?: string) =>
+      req<HomeMonthSnapshot>(
+        month ? `/home/snapshot?month=${encodeURIComponent(month)}` : '/home/snapshot',
+      ),
+  },
   snapshots: {
     list: (year?: number) =>
       req<

@@ -301,6 +301,33 @@ export interface Budget {
   yearMonth?: string | null;
 }
 
+/**
+ * Home-screen month from budget rows already stored for the signed-in user.
+ * Amounts are NZD. `savingsRate` is a fraction of income, same kind of ratio as
+ * `debtToIncome`: 0.25 means 25%, not 25. Null when income is zero or negative.
+ */
+export interface HomeMonthSnapshot {
+  /** Calendar month in Pacific/Auckland, YYYY-MM. */
+  yearMonth: string;
+  /** Inclusive first day, YYYY-MM-DD. */
+  periodStart: string;
+  /** Inclusive last day, YYYY-MM-DD. */
+  periodEnd: string;
+  currency: 'NZD';
+  timezone: 'Pacific/Auckland';
+  /** Received income: income records plus unlinked income-category credits. */
+  incomeNzd: number;
+  /** Spending-category outflows plus unlinked debt repayments. Transfers are excluded. */
+  spendingNzd: number;
+  /** incomeNzd − spendingNzd. */
+  savingsNzd: number;
+  /**
+   * savingsNzd / incomeNzd.
+   * A fraction of income, not a percent. Null when incomeNzd is not positive.
+   */
+  savingsRate: number | null;
+}
+
 export interface HoldingBase {
   id: string;
   assetClass: HoldingAssetClass;

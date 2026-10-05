@@ -24,4 +24,5 @@ jobs:
       - run: npm run test:cash-sync
       - run: npm run test:prod-routing
       - run: npm run test:dividends
+      - run: npm run test:home-snapshot
       - run: npm run build

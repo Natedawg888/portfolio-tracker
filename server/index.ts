@@ -20,6 +20,7 @@ import quotesRouter from './routes/quotes.ts';
 import settingsRouter from './routes/settings.ts';
 import debtsRouter from './routes/debts.ts';
 import incomeRouter from './routes/income.ts';
+import homeRouter from './routes/home.ts';
 import dividendsRouter from './routes/dividends.ts';
 import payeesRouter from './routes/payees.ts';
 import authRouter from './routes/auth.ts';
@@ -118,6 +119,7 @@ async function main() {
   app.use('/api/settings', settingsRouter);
   app.use('/api/debts', debtsRouter);
   app.use('/api/income', incomeRouter);
+  app.use('/api/home', homeRouter);
   app.use('/api/dividends', dividendsRouter);
   app.use('/api/payees', payeesRouter);
   app.use('/api/economy', economyRouter);
