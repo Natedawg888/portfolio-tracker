@@ -4513,7 +4513,7 @@ html[data-theme="light"] .budget-page select,
 html[data-theme="light"] .budget-page textarea {
   background: #e7e0d4;
   color: #1a1a1a;
-  border-color: #d4c8b6;
+  border-color: #8c7b66;
 }
 html[data-theme="light"] .budget-page code {
   background: #efe8dc;
@@ -4602,7 +4602,7 @@ html:not([data-theme]) .budget-page select,
 html:not([data-theme]) .budget-page textarea {
   background: #121a16;
   color: #f3eee4;
-  border-color: #31443a;
+  border-color: #6f8276;
 }
 html[data-theme="dark"] .budget-page code,
 html:not([data-theme]) .budget-page code {
@@ -4697,7 +4697,7 @@ html:not([data-theme]) .portfolio-page {
   --hero-grad: #1c2822;
   --hover-row: rgba(243, 238, 228, 0.04);
   --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.28);
-  --return-neg: #f6d5ce;
+  --return-neg: #e89284;
   --amt-in: #c5d5c8;
   color: #f3eee4;
 }
@@ -4944,7 +4944,7 @@ html:not([data-theme]) .portfolio-page .miner-edit-error {
 }
 html[data-theme="dark"] .portfolio-page .return-pos,
 html:not([data-theme]) .portfolio-page .return-pos {
-  color: #c5d5c8;
+  color: #8fcb9a;
 }
 html[data-theme="dark"] .portfolio-page code,
 html:not([data-theme]) .portfolio-page code {
@@ -5360,7 +5360,7 @@ html:not([data-theme]) .paye-page {
   --hover-row: rgba(243, 238, 228, 0.04);
   --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.28);
   --amt-in: #f3eee4;
-  --amt-out: #c5d5c8;
+  --amt-out: #729478;
   --btn-danger-text: #f6d5ce;
   --btn-danger-border: #e0b2aa;
   --btn-danger-hover: #4a2422;
@@ -5532,7 +5532,7 @@ html:not([data-theme]) .paye-page .amt-in {
 }
 html[data-theme="dark"] .paye-page .amt-out,
 html:not([data-theme]) .paye-page .amt-out {
-  color: #c5d5c8;
+  color: #729478;
 }
 html[data-theme="dark"] .paye-page :focus-visible,
 html:not([data-theme]) .paye-page :focus-visible {
@@ -5686,9 +5686,11 @@ html[data-theme="light"] .history-page code {
 html[data-theme="light"] .history-page .return-pos {
   color: #1b4332;
 }
-html[data-theme="light"] .history-page .return-neg,
-html[data-theme="light"] .history-page .history-deduction {
+html[data-theme="light"] .history-page .return-neg {
   color: #6e1b1b;
+}
+html[data-theme="light"] .history-page .history-deduction {
+  color: #6e6278;
 }
 html[data-theme="light"] .history-page :focus-visible {
   outline: 2px solid #1b4332;
@@ -5794,10 +5796,12 @@ html:not([data-theme]) .history-page .return-pos {
   color: #8fcb9a;
 }
 html[data-theme="dark"] .history-page .return-neg,
-html[data-theme="dark"] .history-page .history-deduction,
-html:not([data-theme]) .history-page .return-neg,
-html:not([data-theme]) .history-page .history-deduction {
+html:not([data-theme]) .history-page .return-neg {
   color: #e89284;
+}
+html[data-theme="dark"] .history-page .history-deduction,
+html:not([data-theme]) .history-page .history-deduction {
+  color: #c5d5c8;
 }
 html[data-theme="dark"] .history-page :focus-visible,
 html:not([data-theme]) .history-page :focus-visible {
@@ -6274,12 +6278,16 @@ html:not([data-theme]) .settings-page .akahu-institution-list li {
   box-shadow: none;
 }
 html[data-theme="dark"] .settings-page .asset-toggle.on,
+html:not([data-theme]) .settings-page .asset-toggle.on {
+  border-color: #6f8276;
+  background: #24352c;
+  color: #f3eee4;
+}
 html[data-theme="dark"] .settings-page .category-type-btn.active,
 html[data-theme="dark"] .settings-page .settings-side-link.active,
-html:not([data-theme]) .settings-page .asset-toggle.on,
 html:not([data-theme]) .settings-page .category-type-btn.active,
 html:not([data-theme]) .settings-page .settings-side-link.active {
-  border-color: #6f8276;
+  border-color: #c5d5c8;
   background: #24352c;
   color: #f3eee4;
 }

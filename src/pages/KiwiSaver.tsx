@@ -458,7 +458,7 @@ export function KiwiSaver() {
     return (
       <div className="panel warn kiwisaver-page">
         <h2 className="page-title">KiwiSaver</h2>
-        <p>KiwiSaver: {error}</p>
+        <p>{error}</p>
       </div>
     );
   }

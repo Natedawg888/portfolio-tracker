@@ -19,6 +19,8 @@ type Summary = {
   metalsUseSpot?: boolean;
   metalsConfigured?: boolean;
   stonesNzd: number | null;
+  /** True when the shares total uses market quotes (cost only when this is false). */
+  stocksUseMarket?: boolean;
   forexNzd: number | null;
   forexUseSpot?: boolean;
   realEstateNzd: number | null;
@@ -58,13 +60,6 @@ function dashboardQuoteNote(note: string | undefined): string | undefined {
     return 'Live marks use cost or recorded values. Metals are not connected.';
   }
   return note;
-}
-
-function dashboardErrorText(message: string): string {
-  if (/api[_-]?key|\b[A-Za-z0-9]+_KEY\b/i.test(message)) {
-    return 'Could not load the dashboard.';
-  }
-  return message;
 }
 
 export function Dashboard() {
@@ -125,8 +120,7 @@ export function Dashboard() {
     return (
       <div className="panel warn dashboard-page">
         <h2 className="page-title">Dashboard</h2>
-        <p>API unreachable: {dashboardErrorText(error)}</p>
-        <p className="muted">Start with <code>npm run dev</code> (Vite + API on :8787).</p>
+        <p>The figures could not be loaded. Try again.</p>
       </div>
     );
   }
@@ -203,7 +197,12 @@ export function Dashboard() {
         {assetEnabled('cash') ? (
           <Bucket title="Cash" value={summary.cashNzd} hint="NZD liquid (cheque/savings/wallet/term)" />
         ) : null}
-        {assetEnabled('stock') ? <Bucket title="Shares, at cost" value={summary.stocksNzd} /> : null}
+        {assetEnabled('stock') ? (
+          <Bucket
+            title={summary.stocksUseMarket ? 'Shares, market value' : 'Shares, at cost'}
+            value={summary.stocksNzd}
+          />
+        ) : null}
         {assetEnabled('crypto') ? <Bucket title="Crypto" value={summary.cryptoNzd} /> : null}
         {assetEnabled('gomining') ? (
           <Bucket title="GoMining miners" value={summary.gominingMinersNzd} />

@@ -713,7 +713,7 @@ export function ValueSearch() {
                 <input
                   value={mtgForm.apiId}
                   onChange={(e) => setMtgForm({ ...mtgForm, apiId: e.target.value })}
-                  placeholder="e.g. uuid"
+                  placeholder="e.g. a Scryfall UUID"
                 />
               </label>
               <button type="submit" className="btn primary" disabled={mtgLoading}>
