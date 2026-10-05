@@ -26,5 +26,6 @@ jobs:
       - run: npm run test:dividends
       - run: npm run test:home-snapshot
       - run: npm run test:savings-goals
+      - run: npm run test:donations
       - run: npm run test:projections
       - run: npm run build

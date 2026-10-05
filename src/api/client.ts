@@ -11,6 +11,9 @@ import type {
   DebtPerson,
   DebtSummary,
   DebtWriteBody,
+  Donation,
+  DonationSummary,
+  DonationWriteBody,
   HomeMonthSnapshot,
   NewsFeedResponse,
   ProjectionResponse,
@@ -455,6 +458,24 @@ export const api = {
       }),
     remove: (id: string) =>
       req<{ ok: boolean; id: string }>(`/savings-goals/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      }),
+  },
+  donations: {
+    list: (taxYear?: number) =>
+      req<Donation[]>(`/donations${taxYear != null ? `?taxYear=${taxYear}` : ''}`),
+    summary: (taxYear?: number) =>
+      req<DonationSummary>(`/donations/summary${taxYear != null ? `?taxYear=${taxYear}` : ''}`),
+    get: (id: string) => req<Donation>(`/donations/${encodeURIComponent(id)}`),
+    create: (body: DonationWriteBody & { date: string; recipient: string; amountNzd: number }) =>
+      req<Donation>('/donations', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: DonationWriteBody) =>
+      req<Donation>(`/donations/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+    remove: (id: string) =>
+      req<{ ok: boolean; id: string }>(`/donations/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       }),
   },
