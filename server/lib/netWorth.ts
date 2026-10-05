@@ -20,6 +20,8 @@ import {
   forexAssetKey,
 } from '../quotes/forexQuotesDb.ts';
 import type { MetalKind, MetalUnit } from '../../src/types/index.ts';
+import { aucklandToday } from '../debts/model.ts';
+import { applyScheduledInterestForUser } from '../debts/store.ts';
 
 export type HoldingSeriesPoint = {
   id: string;
@@ -377,6 +379,7 @@ export async function computeNetWorth(
     }
   }
 
+  applyScheduledInterestForUser(db, userId, aucklandToday());
   const debtPeople = queryAll<{ outstanding_nzd?: number }>(
     db,
     `SELECT outstanding_nzd FROM debt_people WHERE user_id = ?`,

@@ -124,7 +124,35 @@ export interface BudgetCategory {
 /** Creditor kind for I-owe debts. */
 export type DebtCreditorKind = 'person' | 'corporation';
 
-/** Someone / company Nathan owes (debt creditor, NZD). */
+/** Product kind recorded on a debt. Blank until the user chooses one. */
+export type DebtProductKind =
+  | 'credit_card'
+  | 'personal_loan'
+  | 'student_loan'
+  | 'car_loan'
+  | 'mortgage'
+  | 'bnpl';
+
+/** When recurring interest is added. Null means interest does not recur. */
+export type DebtInterestPeriod = 'month' | 'year';
+
+/** Fields the user can save on a debt. Omitted numbers stay unset. */
+export interface DebtWriteBody {
+  name?: string;
+  kind?: DebtCreditorKind;
+  notes?: string | null;
+  outstandingNzd?: number;
+  productKind?: DebtProductKind | null;
+  isLoan?: boolean;
+  interestPeriod?: DebtInterestPeriod | null;
+  interestRatePercent?: number | null;
+  minimumPaymentNzd?: number | null;
+  actualPaymentNzd?: number | null;
+  remainingTermMonths?: number | null;
+  interestPaidNzd?: number | null;
+}
+
+/** Someone / company the signed-in user owes (debt, NZD). */
 export interface DebtPerson {
   id: string;
   name: string;
@@ -135,6 +163,22 @@ export interface DebtPerson {
   createdAt: string;
   updatedAt: string;
   repaidTotalNzd?: number;
+  productKind?: DebtProductKind | null;
+  isLoan?: boolean;
+  interestPeriod?: DebtInterestPeriod | null;
+  interestRatePercent?: number | null;
+  minimumPaymentNzd?: number | null;
+  actualPaymentNzd?: number | null;
+  remainingTermMonths?: number | null;
+  interestPaidNzd?: number | null;
+  /** Interest the schedule has already added to the balance. */
+  interestChargedNzd?: number;
+  /** Actual payment ÷ income recorded in incomeMonth. Null when either figure is missing. */
+  debtToIncome?: number | null;
+  incomeMonth?: string | null;
+  recordedIncomeNzd?: number | null;
+  /** Null when the payoff cannot be counted from entered figures. */
+  projectionText?: string | null;
 }
 
 /** Repayment toward a debt person. Date ≥ 2026-10-01. */
@@ -158,6 +202,9 @@ export interface DebtSummary {
   repaidTotalNzd: number;
   year: number | null;
   asOf: string;
+  /** Income recorded in incomeMonth. Null when that month has no income records. */
+  recordedIncomeNzd?: number | null;
+  incomeMonth?: string | null;
 }
 
 export type IncomeKind = 'cash' | 'crypto';

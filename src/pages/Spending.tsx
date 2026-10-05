@@ -4,6 +4,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { api, formatNzd } from '../api/client';
 import {
   maybeAutoSyncBankTransactions,
@@ -2019,6 +2020,8 @@ export function Spending() {
           People or corporations you owe (NZD). Outstanding reduces net worth but does{' '}
           <strong>not</strong> appear on spend charts — only repayments on/after {SPENDING_FLOOR}
           (and linked bank txns categorised as <strong>Debt</strong>) count as spend this month.
+          Balance, interest, payments, term, and debt-to-income for each debt are on{' '}
+          <Link to="/debts">Debts</Link>.
         </p>
         <div className="grid cards budget-compare-summary">
           <div className="card">

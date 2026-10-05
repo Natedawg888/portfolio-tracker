@@ -1,7 +1,7 @@
 import { isMoneyHidden, MONEY_MASK } from '../lib/privacy';
 import type { EconomicCycleResponse, PhaseNewsResponse } from '../types/economy.ts';
 import type { DividendDashboard, DividendEvent, DividendWriteBody } from '../types/dividends.ts';
-import type { PayeeSetting } from '../types/index.ts';
+import type { DebtPerson, DebtSummary, DebtWriteBody, PayeeSetting } from '../types/index.ts';
 
 const BASE = '/api';
 
@@ -326,46 +326,13 @@ export const api = {
       }),
   },
   debts: {
-    people: () =>
-      req<
-        Array<{
-          id: string;
-          name: string;
-          kind: 'person' | 'corporation';
-          notes: string | null;
-          outstandingNzd: number;
-          createdAt: string;
-          updatedAt: string;
-          repaidTotalNzd?: number;
-        }>
-      >('/debts/people'),
+    people: () => req<DebtPerson[]>('/debts/people'),
     summary: (year?: number) =>
-      req<{
-        outstandingTotalNzd: number;
-        personCount: number;
-        personKindCount?: number;
-        corporationCount?: number;
-        repaidTotalNzd: number;
-        year: number | null;
-        asOf: string;
-      }>(year != null ? `/debts/summary?year=${year}` : '/debts/summary'),
-    createPerson: (body: {
-      name: string;
-      kind?: 'person' | 'corporation';
-      notes?: string | null;
-      outstandingNzd: number;
-    }) =>
-      req('/debts/people', { method: 'POST', body: JSON.stringify(body) }),
-    updatePerson: (
-      id: string,
-      body: {
-        name?: string;
-        kind?: 'person' | 'corporation';
-        notes?: string | null;
-        outstandingNzd?: number;
-      },
-    ) =>
-      req(`/debts/people/${encodeURIComponent(id)}`, {
+      req<DebtSummary>(year != null ? `/debts/summary?year=${year}` : '/debts/summary'),
+    createPerson: (body: DebtWriteBody & { name: string; outstandingNzd: number }) =>
+      req<DebtPerson>('/debts/people', { method: 'POST', body: JSON.stringify(body) }),
+    updatePerson: (id: string, body: DebtWriteBody) =>
+      req<DebtPerson>(`/debts/people/${encodeURIComponent(id)}`, {
         method: 'PATCH',
         body: JSON.stringify(body),
       }),
@@ -413,15 +380,7 @@ export const api = {
           transactionId: string | null;
           createdAt: string;
         };
-        person: {
-          id: string;
-          name: string;
-          kind: 'person' | 'corporation';
-          notes: string | null;
-          outstandingNzd: number;
-          createdAt: string;
-          updatedAt: string;
-        };
+        person: DebtPerson;
       }>(`/debts/people/${encodeURIComponent(personId)}/repayments`, {
         method: 'POST',
         body: JSON.stringify(body),

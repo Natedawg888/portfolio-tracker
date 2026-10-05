@@ -218,6 +218,26 @@ function migrateSchema(database: Database) {
   if (debtCols.size > 0 && !debtCols.has('kind')) {
     database.run(`ALTER TABLE debt_people ADD COLUMN kind TEXT NOT NULL DEFAULT 'person'`);
   }
+  const debtScheduleCols = tableColumns(database, 'debt_people');
+  if (debtScheduleCols.size > 0) {
+    const debtSchedule: Array<[string, string]> = [
+      ['product_kind', 'TEXT'],
+      ['is_loan', 'INTEGER NOT NULL DEFAULT 0'],
+      ['interest_period', 'TEXT'],
+      ['interest_rate_percent', 'REAL'],
+      ['minimum_payment_nzd', 'REAL'],
+      ['actual_payment_nzd', 'REAL'],
+      ['remaining_term_months', 'INTEGER'],
+      ['interest_paid_nzd', 'REAL'],
+      ['interest_posted_through', 'TEXT'],
+      ['interest_charged_nzd', 'REAL NOT NULL DEFAULT 0'],
+    ];
+    for (const [col, typ] of debtSchedule) {
+      if (!debtScheduleCols.has(col)) {
+        database.run(`ALTER TABLE debt_people ADD COLUMN ${col} ${typ}`);
+      }
+    }
+  }
 
   // Monthly budget plans: unique per category + calendar-month period
   // idx_budgets_user_category_period created after user_id migration below

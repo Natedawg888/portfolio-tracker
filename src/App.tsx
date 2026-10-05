@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { Spending } from './pages/Spending';
+import { Debts } from './pages/Debts';
 import { YearlyReport } from './pages/YearlyReport';
 import { Portfolio } from './pages/Portfolio';
 import { KiwiSaver } from './pages/KiwiSaver';
@@ -29,6 +30,7 @@ export default function App() {
               <Route element={<Layout />}>
                 <Route index element={<Dashboard />} />
                 <Route path="spending" element={<Spending />} />
+                <Route path="debts" element={<Debts />} />
                 <Route path="yearly" element={<YearlyReport />} />
                 <Route path="economic-cycle" element={<EconomicCycle />} />
                 <Route path="portfolio" element={<Portfolio />} />
