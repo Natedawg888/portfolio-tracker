@@ -24,6 +24,7 @@ import { CollectablesPanel } from '../components/CollectablesPanel';
 import { isApiCardGame, isManualCollectableGame } from '../lib/collectables';
 import type { MtgColour } from '../types';
 import { DividendTracker } from '../components/DividendTracker';
+import { CryptoWallets } from '../components/AddWalletPanel';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
 import { metalSpotHint, type MetalSpotSource, type MetalSpotStatus } from '../lib/metalSpotCopy';
@@ -2959,6 +2960,7 @@ export function Portfolio() {
         onDelete={deleteHolding}
         onUpdateQuantity={updateHoldingQuantity}
       >
+        <CryptoWallets />
         <InlineAddDetails label="Add crypto">
           <form className="form-grid" onSubmit={onAddCrypto}>
             <h4>Add crypto (manual / Nexo)</h4>

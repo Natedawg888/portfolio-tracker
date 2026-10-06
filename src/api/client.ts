@@ -20,6 +20,9 @@ import type {
   PayeeSetting,
   SavingsGoal,
   SavingsGoalWriteBody,
+  Wallet,
+  WalletNetwork,
+  WalletNetworkInfo,
 } from '../types/index.ts';
 
 const BASE = '/api';
@@ -460,6 +463,14 @@ export const api = {
       req<{ ok: boolean; id: string }>(`/savings-goals/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       }),
+  },
+  wallets: {
+    list: () => req<Wallet[]>('/wallets'),
+    networks: () => req<WalletNetworkInfo[]>('/wallets/networks'),
+    create: (body: { network: WalletNetwork; address: string; name?: string }) =>
+      req<Wallet>('/wallets', { method: 'POST', body: JSON.stringify(body) }),
+    remove: (id: string) =>
+      req<{ ok: boolean; id: string }>(`/wallets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
   donations: {
     list: (taxYear?: number) =>

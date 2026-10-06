@@ -1043,3 +1043,27 @@ export interface NewsFeedResponse {
   fetchedAt: string;
   sections: NewsSection[];
 }
+
+/** Read-only crypto wallet (public address only — never keys or recovery phrases). */
+export type WalletNetwork = 'ethereum' | 'polygon' | 'base' | 'arbitrum' | 'bitcoin' | 'solana';
+
+export type Wallet = {
+  id: string;
+  name: string;
+  network: WalletNetwork;
+  address: string;
+  status: 'connected' | 'syncing' | 'error';
+  statusMessage: string | null;
+  lastSynced: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WalletNetworkInfo = {
+  network: WalletNetwork;
+  label: string;
+  family: 'evm' | 'bitcoin' | 'solana';
+  nativeSymbol: string;
+  syncable: boolean;
+  configured: boolean;
+};
