@@ -17,6 +17,7 @@ import {
   type WalletNetwork,
 } from '../lib/walletAddress.ts';
 import { getDb, queryAll, queryOne, run, newId } from '../db/index.ts';
+import { describeChainConfig, isNetworkSyncable, NETWORK_CHAIN_INFO } from '../chain/index.ts';
 
 const router = Router();
 
@@ -124,6 +125,24 @@ router.get('/', async (req, res) => {
     [uid(req)],
   );
   res.json(rows.map(mapWallet));
+});
+
+/**
+ * Networks the Add Wallet screen can offer. Client-safe: no endpoint URLs, hosts or
+ * keys — only whether an adapter + endpoint exist so the wallet can be synced.
+ */
+router.get('/networks', (_req, res) => {
+  const config = new Map(describeChainConfig().map((c) => [c.network, c]));
+  res.json(
+    (Object.keys(WALLET_NETWORKS) as WalletNetwork[]).map((network) => ({
+      network,
+      label: WALLET_NETWORKS[network].label,
+      family: WALLET_NETWORKS[network].family,
+      nativeSymbol: NETWORK_CHAIN_INFO[network].nativeAsset.symbol,
+      syncable: isNetworkSyncable(network),
+      configured: config.get(network)?.configured ?? false,
+    })),
+  );
 });
 
 router.get('/:id', async (req, res) => {

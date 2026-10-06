@@ -246,6 +246,14 @@ Read-only, per-user (`user_id`) public wallet addresses. **Never** stores seed p
 
 APIs: `GET /api/wallets`, `GET /api/wallets/:id`, `POST /api/wallets` `{ network, address, name? }`, `PATCH /api/wallets/:id` `{ name?, network?, address? }`, `DELETE /api/wallets/:id`. Error codes: `INVALID_NETWORK`, `INVALID_ADDRESS`, `INVALID_NAME`, `SECRET_REJECTED`, `DUPLICATE_WALLET` (409). Tests: `npm run test:wallets`.
 
+### Chain providers (`server/chain/`)
+
+Balances and transactions come from chain adapters, never from the `wallets` table. Portfolio / sync code calls only `fetchWalletBalances` / `fetchWalletTransactions` (`server/chain/service.ts`); it looks up the registered `ChainProvider` whose `supports(network)` is true and passes it the resolved endpoint. Adding a network = `WALLET_NETWORKS` entry + `NETWORK_CHAIN_INFO` (native asset, EVM chain id) + public default URL + an adapter that supports it — no aggregation change. Adapters register in `server/chain/index.ts` (KAN-35 Bitcoin, KAN-36/37 EVM, KAN-38 Solana).
+
+Amounts are smallest-unit integer strings (`amountRaw`) + `decimals`; `formatUnits` converts without float rounding.
+
+Endpoints come from env (`CHAIN_<NETWORK>_RPC_URL`, optional `CHAIN_<NETWORK>_API_KEY`), https only (http for loopback), falling back to public keyless endpoints. Keys stay server-side: requests refuse redirects, every failure is a `ChainProviderError` (`unsupported_network`, `not_configured`, `rate_limited` + `retryAfterSec`, `timeout`, `upstream_error`, `network_error`) whose message passes through `redactChainSecrets`, and the only client view is `GET /api/wallets/networks` (labels, native symbol, `syncable` / `configured` booleans — no URLs or hosts). Tests: `npm run test:chain`.
+
 ## Quotes & snapshots
 
 | Entity | Purpose |
