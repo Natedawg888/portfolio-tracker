@@ -20,6 +20,7 @@ import { redactChainSecrets } from './config.ts';
 import { fetchWalletBalances } from './service.ts';
 import { ChainProviderError } from './types.ts';
 import { primeBalanceCache } from './valuation.ts';
+import { blockNetwork, networkBlockedSec, paceNetwork, resetRateLimitsForTest } from './rateLimit.ts';
 
 const TICK_MS = 60_000;
 const TICK_BATCH = 10;
@@ -35,11 +36,6 @@ function intervalMs(): number {
   const min = Number(process.env.WALLET_SYNC_INTERVAL_MIN);
   return (Number.isFinite(min) && min >= 1 ? min : 30) * 60_000;
 }
-function minGapMs(): number {
-  const ms = Number(process.env.WALLET_SYNC_MIN_GAP_MS);
-  return Number.isFinite(ms) && ms >= 0 ? ms : 1500;
-}
-
 /** Exponential backoff with ±20% jitter, never shorter than the provider's Retry-After. */
 export function backoffMs(failures: number, retryAfterSec: number | null = null, random = Math.random): number {
   const exp = Math.min(BACKOFF_MAX_MS, BACKOFF_BASE_MS * 2 ** Math.max(0, failures - 1));
@@ -47,22 +43,7 @@ export function backoffMs(failures: number, retryAfterSec: number | null = null,
   return Math.max(Math.min(jittered, BACKOFF_MAX_MS), (retryAfterSec ?? 0) * 1000);
 }
 
-// --- per-network rate limiting -----------------------------------------------------
-
-const networkLastCall = new Map<WalletNetwork, number>();
-const networkBlockedUntil = new Map<WalletNetwork, number>();
-
-/** Seconds until the network may be called again after a provider rate limit; 0 when clear. */
-export function networkBlockedSec(network: WalletNetwork, now = Date.now()): number {
-  const until = networkBlockedUntil.get(network) ?? 0;
-  return until > now ? Math.ceil((until - now) / 1000) : 0;
-}
-
-async function paceNetwork(network: WalletNetwork): Promise<void> {
-  const wait = (networkLastCall.get(network) ?? 0) + minGapMs() - Date.now();
-  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-  networkLastCall.set(network, Date.now());
-}
+export { networkBlockedSec } from './rateLimit.ts';
 
 // --- one wallet ------------------------------------------------------------------
 
@@ -158,7 +139,7 @@ async function doSync(walletId: string, userId: string | null): Promise<SyncOutc
     const permanent = e.code === 'unsupported_network' || e.code === 'not_configured';
     const delay = permanent ? PERMANENT_RETRY_MS : backoffMs(failures, e.retryAfterSec);
     if (e.code === 'rate_limited') {
-      networkBlockedUntil.set(network, Date.now() + Math.max(delay, (e.retryAfterSec ?? 0) * 1000));
+      blockNetwork(network, Math.max(delay, (e.retryAfterSec ?? 0) * 1000));
     }
     const now = new Date();
     const message = redactChainSecrets(e.message);
@@ -267,7 +248,6 @@ export function stopWalletSyncScheduler(): void {
 
 /** Tests only. */
 export function resetSyncStateForTest(): void {
-  networkLastCall.clear();
-  networkBlockedUntil.clear();
+  resetRateLimitsForTest();
   inflight.clear();
 }

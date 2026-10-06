@@ -23,6 +23,7 @@ import type {
   Wallet,
   WalletNetwork,
   WalletNetworkInfo,
+  WalletsValuationResponse,
 } from '../types/index.ts';
 
 const BASE = '/api';
@@ -467,6 +468,7 @@ export const api = {
   wallets: {
     list: () => req<Wallet[]>('/wallets'),
     networks: () => req<WalletNetworkInfo[]>('/wallets/networks'),
+    valuation: () => req<WalletsValuationResponse>('/wallets/valuation'),
     create: (body: { network: WalletNetwork; address: string; name?: string }) =>
       req<Wallet>('/wallets', { method: 'POST', body: JSON.stringify(body) }),
     remove: (id: string) =>

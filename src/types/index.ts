@@ -1067,3 +1067,38 @@ export type WalletNetworkInfo = {
   syncable: boolean;
   configured: boolean;
 };
+
+export type WalletValuationItem = {
+  asset: { kind: 'native' | 'token'; symbol: string; name: string; decimals: number; contract: string | null };
+  amountRaw: string;
+  amount: string;
+  status: 'priced' | 'stale' | 'unpriced';
+  priceNzd: number | null;
+  valueNzd: number | null;
+  pricedAt: string | null;
+  priceSource: string | null;
+  message: string | null;
+};
+
+export type WalletValuation =
+  | {
+      ok: true;
+      fetchedAt: string;
+      currency: 'NZD';
+      items: WalletValuationItem[];
+      totalNzd: number;
+      complete: boolean;
+      pricedAt: string | null;
+      hasStalePrices: boolean;
+    }
+  | { ok: false; error: string; code: string; retryAfterSec: number | null };
+
+export type WalletsValuationResponse = {
+  currency: 'NZD';
+  totalNzd: number;
+  complete: boolean;
+  pricedAt: string | null;
+  hasStalePrices: boolean;
+  failedWallets: number;
+  wallets: Array<{ wallet: Wallet; valuation: WalletValuation }>;
+};

@@ -24,7 +24,13 @@ import { CollectablesPanel } from '../components/CollectablesPanel';
 import { isApiCardGame, isManualCollectableGame } from '../lib/collectables';
 import type { MtgColour } from '../types';
 import { DividendTracker } from '../components/DividendTracker';
-import { CryptoWallets } from '../components/AddWalletPanel';
+import {
+  AddWalletDetails,
+  WalletCard,
+  WalletNotices,
+  WalletsTotal,
+} from '../components/CryptoWalletCards';
+import { useCryptoWallets } from '../lib/cryptoWallets';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
 import { metalSpotHint, type MetalSpotSource, type MetalSpotStatus } from '../lib/metalSpotCopy';
@@ -1388,6 +1394,8 @@ function Section({
   onUpdateQuantity,
   onUpdateArt,
   earningsById,
+  headerExtra,
+  extraCards,
   children,
 }: {
   title: string;
@@ -1407,12 +1415,24 @@ function Section({
     },
   ) => Promise<void>;
   earningsById?: Record<string, GoMiningEarningsEstimate>;
+  /** Shown beside the title (e.g. a section total). */
+  headerExtra?: ReactNode;
+  /** Extra cards rendered in the same grid after the holdings (e.g. crypto wallets). */
+  extraCards?: ReactNode[];
   children?: ReactNode;
 }) {
+  const hasExtra = Boolean(extraCards?.length);
   return (
     <section className="panel">
-      <h3>{title}</h3>
-      {items.length === 0 ? (
+      {headerExtra ? (
+        <div className="section-head-row">
+          <h3>{title}</h3>
+          {headerExtra}
+        </div>
+      ) : (
+        <h3>{title}</h3>
+      )}
+      {items.length === 0 && !hasExtra ? (
         <p className="muted">{empty}</p>
       ) : (
         <div className="holding-cards">
@@ -1427,6 +1447,7 @@ function Section({
               earnings={earningsById?.[h.id]}
             />
           ))}
+          {extraCards}
         </div>
       )}
       {children}
@@ -1932,6 +1953,7 @@ type PortfolioNetWorth = {
 
 export function Portfolio() {
   const { enabled: assetEnabled } = useAssetClassPrefs();
+  const cryptoWallets = useCryptoWallets(assetEnabled('crypto'));
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [summary, setSummary] = useState<PortfolioNetWorth | null>(null);
   const [form, setForm] = useState(emptyMiner);
@@ -2959,8 +2981,13 @@ export function Portfolio() {
         onRefresh={refresh}
         onDelete={deleteHolding}
         onUpdateQuantity={updateHoldingQuantity}
+        headerExtra={<WalletsTotal state={cryptoWallets} />}
+        extraCards={cryptoWallets.entries.map((e) => (
+          <WalletCard key={`wallet-${e.wallet.id}`} entry={e} state={cryptoWallets} />
+        ))}
       >
-        <CryptoWallets />
+        <WalletNotices state={cryptoWallets} />
+        <AddWalletDetails state={cryptoWallets} />
         <InlineAddDetails label="Add crypto">
           <form className="form-grid" onSubmit={onAddCrypto}>
             <h4>Add crypto (manual / Nexo)</h4>

@@ -6,6 +6,7 @@
 import type { QuoteResult } from '../../src/types/index.ts';
 import { NETWORK_CHAIN_INFO } from './networks.ts';
 import { registerChainProvider, resetChainProvidersForTest } from './registry.ts';
+import { blockNetwork, resetRateLimitsForTest } from './rateLimit.ts';
 import { ChainProviderError, type ChainAsset, type ChainBalance } from './types.ts';
 import {
   STALE_AFTER_MS,
@@ -135,6 +136,13 @@ try {
   check(all.totalNzd === 50_000, 'failed wallets excluded from total');
   check(!all.complete && all.failedWallets === 2, 'portfolio marked incomplete with failure count');
   check(all.pricedAt === iso(60_000), 'portfolio pricedAt');
+  blockNetwork('bitcoin', 60_000);
+  const fetchesBefore = fetches;
+  const blockedVal = await valueWallet({ network: 'bitcoin', address: 'uncached' }, quote);
+  check(!blockedVal.ok && blockedVal.code === 'rate_limited' && fetches === fetchesBefore, 'rate-limited network not fetched on page load');
+  const cachedVal = await valueWallet({ network: 'bitcoin', address: 'a' }, quote);
+  check(cachedVal.ok, 'cached balances still valued during a rate-limit window');
+  resetRateLimitsForTest();
   const none = combineValuations([]);
   check(none.totalNzd === 0 && none.complete && none.pricedAt === null, 'no wallets → 0, complete');
 } finally {

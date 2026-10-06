@@ -18,11 +18,16 @@ import { getCryptoQuoteNzd } from '../quotes/crypto.ts';
 import { formatUnits } from './networks.ts';
 import { fetchWalletBalances, type WalletRef } from './service.ts';
 import { ChainProviderError, type ChainAsset, type ChainBalance } from './types.ts';
+import { networkBlockedSec } from './rateLimit.ts';
 
 /** Quotes older than this are flagged stale (crypto quote cache TTL is 10 min). */
 export const STALE_AFTER_MS = 30 * 60 * 1000;
-/** Short in-memory reuse of fetched chain balances so page loads don't hammer providers. */
-const BALANCE_CACHE_MS = 60 * 1000;
+/**
+ * In-memory reuse of chain balances. The sync job refreshes them (default every
+ * 30 min), so page loads read what the last sync fetched instead of calling providers.
+ * Memory only — balances are never persisted.
+ */
+const BALANCE_CACHE_MS = 35 * 60 * 1000;
 
 export type PricedItem = {
   asset: ChainAsset;
@@ -141,6 +146,11 @@ async function cachedBalances(wallet: WalletRef): Promise<{ balances: ChainBalan
   if (hit && Date.now() - hit.at < BALANCE_CACHE_MS) return hit;
   const running = inflight.get(key);
   if (running) return running;
+  const blocked = networkBlockedSec(wallet.network);
+  if (blocked > 0) {
+    // Respect the provider's back-off window rather than fetching on page load.
+    throw new ChainProviderError('rate_limited', wallet.network, 'Provider is rate limited; showing no value until the next sync.', blocked);
+  }
   const p = fetchWalletBalances(wallet)
     .then((snap) => {
       const entry = { at: Date.now(), balances: snap.balances, fetchedAt: snap.fetchedAt };
