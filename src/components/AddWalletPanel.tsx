@@ -203,11 +203,44 @@ const NETWORK_LABEL: Record<WalletNetwork, string> = {
   solana: 'Solana',
 };
 
+function relativeTime(iso: string, now = Date.now()): string {
+  const sec = Math.max(0, Math.round((now - Date.parse(iso)) / 1000));
+  if (sec < 60) return 'just now';
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min} min ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr} h ago`;
+  return new Date(iso).toLocaleDateString('en-NZ');
+}
+
+function WalletStatus({ wallet }: { wallet: Wallet }) {
+  if (wallet.status === 'syncing') {
+    return <span className="wallet-status wallet-status--syncing">Syncing…</span>;
+  }
+  if (wallet.status === 'error') {
+    return (
+      <span className="wallet-status wallet-status--error" title={wallet.statusMessage ?? undefined}>
+        Error{wallet.statusMessage ? `: ${wallet.statusMessage}` : ''}
+      </span>
+    );
+  }
+  return (
+    <span className="wallet-status wallet-status--ok">
+      {wallet.lastSynced ? `Connected · synced ${relativeTime(wallet.lastSynced)}` : 'Connected · not synced yet'}
+    </span>
+  );
+}
+
+/** A freshly added / syncing wallet is worth re-checking shortly. */
+const needsRefresh = (w: Wallet) => w.status === 'syncing' || (w.status === 'connected' && !w.lastSynced);
+
 /** Portfolio → Crypto: connected wallets + Add wallet. */
 export function CryptoWallets() {
   const [wallets, setWallets] = useState<Wallet[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
@@ -224,6 +257,51 @@ export function CryptoWallets() {
       cancelled = true;
     };
   }, []);
+
+  // Background sync runs server-side after adding a wallet; poll briefly until it settles.
+  const pending = (wallets ?? []).some(needsRefresh);
+  useEffect(() => {
+    if (!pending) return;
+    let tries = 0;
+    const timer = window.setInterval(() => {
+      tries += 1;
+      api.wallets
+        .list()
+        .then(setWallets)
+        .catch(() => {});
+      if (tries >= 12) window.clearInterval(timer);
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [pending]);
+
+  const replace = (w: Wallet) => setWallets((rows) => (rows ?? []).map((r) => (r.id === w.id ? w : r)));
+
+  const syncNow = async (w: Wallet) => {
+    setSyncing(w.id);
+    setError(null);
+    setNotice(null);
+    replace({ ...w, status: 'syncing' });
+    try {
+      const r = await api.wallets.sync(w.id);
+      replace(r.wallet);
+      if (!r.synced && r.error) setNotice(r.error);
+    } catch (err) {
+      replace(w);
+      if (err instanceof ApiError && err.status === 429) {
+        try {
+          const body = JSON.parse(err.body) as { wallet?: Wallet };
+          if (body.wallet) replace(body.wallet);
+        } catch {
+          /* keep previous row */
+        }
+        setNotice(err.message);
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Could not sync wallet');
+      }
+    } finally {
+      setSyncing(null);
+    }
+  };
 
   const remove = async (w: Wallet) => {
     if (!window.confirm(`Remove “${w.name}”? Only the saved address is deleted — nothing on-chain changes.`)) return;
@@ -243,6 +321,11 @@ export function CryptoWallets() {
     <div className="crypto-wallets">
       <h4>Wallets</h4>
       {error ? <p className="warn">{error}</p> : null}
+      {notice ? (
+        <p className="muted small" role="status">
+          {notice}
+        </p>
+      ) : null}
       {wallets === null && !error ? <p className="muted small">Loading wallets…</p> : null}
       {wallets && wallets.length === 0 ? (
         <p className="muted small">No wallets connected. Add a public address to track on-chain holdings.</p>
@@ -256,18 +339,26 @@ export function CryptoWallets() {
                 <span className="wallet-address" title={w.address}>
                   {w.address}
                 </span>
+                <WalletStatus wallet={w} />
               </div>
-              <span className="muted small">
-                {w.lastSynced ? `Synced ${new Date(w.lastSynced).toLocaleString('en-NZ')}` : 'Not synced yet'}
-              </span>
-              <button
-                type="button"
-                className="btn small danger"
-                onClick={() => void remove(w)}
-                disabled={removing === w.id}
-              >
-                {removing === w.id ? 'Removing…' : 'Remove'}
-              </button>
+              <div className="wallet-actions">
+                <button
+                  type="button"
+                  className="btn small"
+                  onClick={() => void syncNow(w)}
+                  disabled={syncing === w.id || w.status === 'syncing'}
+                >
+                  {syncing === w.id || w.status === 'syncing' ? 'Syncing…' : 'Sync now'}
+                </button>
+                <button
+                  type="button"
+                  className="btn small danger"
+                  onClick={() => void remove(w)}
+                  disabled={removing === w.id}
+                >
+                  {removing === w.id ? 'Removing…' : 'Remove'}
+                </button>
+              </div>
             </li>
           ))}
         </ul>

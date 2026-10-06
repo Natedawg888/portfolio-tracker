@@ -27,6 +27,7 @@ import savingsGoalsRouter from './routes/savingsGoals.ts';
 import donationsRouter from './routes/donations.ts';
 import projectionsRouter from './routes/projections.ts';
 import walletsRouter from './routes/wallets.ts';
+import { startWalletSyncScheduler } from './chain/index.ts';
 import authRouter from './routes/auth.ts';
 import economyRouter from './routes/economy.ts';
 import newsRouter from './routes/news.ts';
@@ -161,6 +162,8 @@ async function main() {
       console.error('[portfolio-tracker] Failed to start API:', err);
       process.exit(1);
     }
+    const stopWalletSync = startWalletSyncScheduler();
+    server.once('close', stopWalletSync);
     logger.info('api_listening', {
       host: HOST,
       port: PORT,

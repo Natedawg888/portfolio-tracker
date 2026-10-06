@@ -152,6 +152,11 @@ async function cachedBalances(wallet: WalletRef): Promise<{ balances: ChainBalan
   return p;
 }
 
+/** Sync job hands over fresh balances so the next valuation needn't refetch. */
+export function primeBalanceCache(wallet: WalletRef, balances: ChainBalance[], fetchedAt: string): void {
+  balanceCache.set(`${wallet.network}:${wallet.address}`, { at: Date.now(), balances, fetchedAt });
+}
+
 export function clearWalletBalanceCache(): void {
   balanceCache.clear();
 }

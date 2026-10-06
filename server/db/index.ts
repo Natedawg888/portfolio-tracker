@@ -451,6 +451,15 @@ function migrateSchema(database: Database) {
     `CREATE INDEX IF NOT EXISTS idx_akahu_connections_user ON akahu_connections(user_id)`,
   );
 
+  // Wallet sync scheduling (KAN-41) — wallets table predates these columns.
+  const walletCols = tableColumns(database, 'wallets');
+  if (walletCols.size > 0 && !walletCols.has('next_sync_at')) {
+    database.run('ALTER TABLE wallets ADD COLUMN next_sync_at TEXT');
+  }
+  if (walletCols.size > 0 && !walletCols.has('sync_failures')) {
+    database.run('ALTER TABLE wallets ADD COLUMN sync_failures INTEGER NOT NULL DEFAULT 0');
+  }
+
   // Per-user finance isolation: user_id on scoped tables.
   // First user (data_owner_user_id) keeps existing rows; later users start empty.
   const scopedTables: Array<{ table: string; index?: string }> = [

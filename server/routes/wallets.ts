@@ -19,6 +19,7 @@ import {
 import { getDb, queryAll, queryOne, run, newId } from '../db/index.ts';
 import { describeChainConfig, isNetworkSyncable, NETWORK_CHAIN_INFO } from '../chain/index.ts';
 import { combineValuations, valueWallet } from '../chain/valuation.ts';
+import { requestManualSync, syncWallet } from '../chain/sync.ts';
 
 const router = Router();
 
@@ -174,6 +175,35 @@ router.get('/:id/valuation', async (req, res) => {
   res.json({ wallet: mapWallet(row), valuation });
 });
 
+/**
+ * Sync now. 200 with the updated wallet when the sync ran (its status says whether it
+ * succeeded); 429 while in the post-sync cooldown or a provider rate-limit window.
+ */
+router.post('/:id/sync', async (req, res) => {
+  const r = await requestManualSync(req.params.id, uid(req));
+  if (!r.ok && r.code === 'not_found') {
+    res.status(404).json({ error: 'Wallet not found' });
+    return;
+  }
+  const db = await getDb();
+  const row = queryOne(db, 'SELECT * FROM wallets WHERE id=? AND user_id=?', [req.params.id, uid(req)]);
+  if (!row) {
+    res.status(404).json({ error: 'Wallet not found' });
+    return;
+  }
+  if (!r.ok && r.deferred) {
+    if (r.retryAfterSec) res.setHeader('Retry-After', String(r.retryAfterSec));
+    res.status(429).json({
+      error: r.message,
+      code: r.code === 'cooldown' ? 'SYNC_COOLDOWN' : 'RATE_LIMITED',
+      retryAfterSec: r.retryAfterSec,
+      wallet: mapWallet(row),
+    });
+    return;
+  }
+  res.json({ synced: r.ok, wallet: mapWallet(row), ...(r.ok ? {} : { error: r.message, code: r.code }) });
+});
+
 router.get('/:id', async (req, res) => {
   const db = await getDb();
   const row = queryOne(db, 'SELECT * FROM wallets WHERE id=? AND user_id=?', [req.params.id, uid(req)]);
@@ -211,6 +241,8 @@ router.post('/', async (req, res) => {
   );
   const row = queryOne(db, 'SELECT * FROM wallets WHERE id=? AND user_id=?', [id, uid(req)])!;
   res.status(201).json(mapWallet(row));
+  // First sync in the background so the wallet shows a balance without waiting for the scheduler.
+  void syncWallet(id, uid(req)).catch(() => {});
 });
 
 router.patch('/:id', async (req, res) => {
@@ -256,9 +288,10 @@ router.patch('/:id', async (req, res) => {
     run(
       db,
       `UPDATE wallets SET name=?, network=?, address=?, status='connected', status_message=NULL,
-         last_synced=NULL, updated_at=? WHERE id=? AND user_id=?`,
+         last_synced=NULL, next_sync_at=NULL, sync_failures=0, updated_at=? WHERE id=? AND user_id=?`,
       [name, network, address, now, id, uid(req)],
     );
+    void syncWallet(id, uid(req)).catch(() => {});
   } else {
     run(db, `UPDATE wallets SET name=?, updated_at=? WHERE id=? AND user_id=?`, [name, now, id, uid(req)]);
   }

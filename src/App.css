@@ -6853,3 +6853,21 @@ html:not([data-theme]) .settings-page :focus-visible {
   font-size: 0.8rem;
   color: var(--muted);
 }
+
+.wallet-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+.wallet-status {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+}
+.wallet-status--ok { color: var(--muted); }
+.wallet-status--syncing { color: var(--accent-2); }
+.wallet-status--error { color: var(--warn); }
+@media (max-width: 560px) {
+  .wallet-list li { flex-wrap: wrap; }
+  .wallet-actions { width: 100%; justify-content: flex-end; }
+}

@@ -246,6 +246,12 @@ Read-only, per-user (`user_id`) public wallet addresses. **Never** stores seed p
 
 APIs: `GET /api/wallets`, `GET /api/wallets/:id`, `POST /api/wallets` `{ network, address, name? }`, `PATCH /api/wallets/:id` `{ name?, network?, address? }`, `DELETE /api/wallets/:id`. Error codes: `INVALID_NETWORK`, `INVALID_ADDRESS`, `INVALID_NAME`, `SECRET_REJECTED`, `DUPLICATE_WALLET` (409). Tests: `npm run test:wallets`.
 
+### Wallet sync (`server/chain/sync.ts`)
+
+A scheduler (started with the API; `WALLET_SYNC_DISABLED=1` turns it off) checks every minute for due wallets (`next_sync_at` null or past, up to 10 per pass, one at a time) and syncs each through the chain service. Success → `status=connected`, `status_message` null, `last_synced` = fetch time, `sync_failures` 0, next sync after `WALLET_SYNC_INTERVAL_MIN` (default 30). Failure → `status=error` with a user-safe, redacted `status_message`; provider errors back off exponentially (2 min doubling, ±20% jitter, max 6 h, never shorter than `Retry-After`); unsupported / misconfigured networks retry after 6 h. A provider rate limit also opens a per-network window: other wallets on that network are deferred (not counted as failures). Calls to one network are spaced by `WALLET_SYNC_MIN_GAP_MS` (default 1500). Rows stuck in `syncing` > 10 min (restart) are picked up again; results are discarded if the wallet's address changed mid-sync. New wallets (and address edits) sync once in the background immediately. Balances are never persisted — fresh ones prime the 60 s valuation cache.
+
+`POST /api/wallets/:id/sync` (Sync now): 200 `{ synced, wallet }` when it ran (an error status explains a failed sync); 429 `SYNC_COOLDOWN` within 30 s of the last sync, or `RATE_LIMITED` during a provider window, with `Retry-After`.
+
 ### Chain providers (`server/chain/`)
 
 Balances and transactions come from chain adapters, never from the `wallets` table. Portfolio / sync code calls only `fetchWalletBalances` / `fetchWalletTransactions` (`server/chain/service.ts`); it looks up the registered `ChainProvider` whose `supports(network)` is true and passes it the resolved endpoint. Adding a network = `WALLET_NETWORKS` entry + `NETWORK_CHAIN_INFO` (native asset, EVM chain id) + public default URL + an adapter that supports it — no aggregation change. Adapters register in `server/chain/index.ts` (KAN-35 Bitcoin, KAN-36/37 EVM, KAN-38 Solana).

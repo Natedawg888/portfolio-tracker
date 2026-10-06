@@ -471,6 +471,11 @@ export const api = {
       req<Wallet>('/wallets', { method: 'POST', body: JSON.stringify(body) }),
     remove: (id: string) =>
       req<{ ok: boolean; id: string }>(`/wallets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    sync: (id: string) =>
+      req<{ synced: boolean; wallet: Wallet; error?: string; code?: string }>(
+        `/wallets/${encodeURIComponent(id)}/sync`,
+        { method: 'POST' },
+      ),
   },
   donations: {
     list: (taxYear?: number) =>

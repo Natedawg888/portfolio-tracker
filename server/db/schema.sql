@@ -560,6 +560,8 @@ CREATE TABLE IF NOT EXISTS wallets (
   status          TEXT NOT NULL DEFAULT 'connected',  -- connected | syncing | error (sync job owns this)
   status_message  TEXT,
   last_synced     TEXT,
+  next_sync_at    TEXT,                       -- scheduler: due time (backoff pushes it later)
+  sync_failures   INTEGER NOT NULL DEFAULT 0, -- consecutive failures, drives backoff
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );

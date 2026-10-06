@@ -15,6 +15,7 @@ if (!getChainProvider('bitcoin')) registerChainProvider(bitcoinProvider);
 export { registerChainProvider, getChainProvider, listChainProviders } from './registry.ts';
 export { fetchWalletBalances, fetchWalletTransactions, isNetworkSyncable } from './service.ts';
 export { describeChainConfig, redactChainSecrets } from './config.ts';
+export { startWalletSyncScheduler, stopWalletSyncScheduler } from './sync.ts';
 export { NETWORK_CHAIN_INFO, formatUnits } from './networks.ts';
 export { ChainProviderError } from './types.ts';
 export type * from './types.ts';
