@@ -16,6 +16,7 @@
     "test:cash-sync": "node --import tsx server/akahu/sync.cash.test.ts",
     "test:onboarding": "node --import tsx server/auth/registerAkahuOnboarding.test.ts",
     "test:prod-routing": "node --import tsx scripts/verify-prod-routing.ts",
+    "test:wallets": "node --import tsx server/lib/walletAddress.test.ts",
     "test:user-isolation": "node --import tsx scripts/verify-user-isolation.ts",
     "test:news": "node --import tsx server/news/sections.test.ts",
     "test:debts": "node --import tsx server/debts/model.test.ts && node --import tsx server/debts/store.test.ts",

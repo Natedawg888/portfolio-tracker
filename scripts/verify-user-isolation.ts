@@ -12,6 +12,7 @@
  *
  * Run: node --import tsx scripts/verify-user-isolation.ts
  */
+import { randomBytes } from 'node:crypto';
 import { getDb, queryAll, queryOne, run, newId, persist } from '../server/db/index.ts';
 import { getDataOwnerUserId } from '../server/lib/userScope.ts';
 import { resolveAkahuUserToken } from '../server/akahu/connections.ts';
@@ -230,6 +231,35 @@ async function apiChecks() {
     if (holdId) {
       await api(jarA, 'DELETE', `/api/holdings/${holdId}`);
     }
+  }
+
+  // Create a wallet for A; B must not list, read, edit or delete it
+  const createW = await api(jarA, 'POST', '/api/wallets', {
+    network: 'ethereum',
+    address: `0x${randomBytes(20).toString('hex')}`, // fresh so reruns never hit DUPLICATE_WALLET
+    name: `Smoke wallet ${stamp}`,
+  });
+  if (createW.status !== 201) {
+    fail(`user A create wallet status ${createW.status} ${createW.json?.error ?? ''}`);
+  } else {
+    const walletId = createW.json.id;
+    const listA = await api(jarA, 'GET', '/api/wallets');
+    const listB = await api(jarB, 'GET', '/api/wallets');
+    if (!Array.isArray(listA.json) || !listA.json.some((w: any) => w.id === walletId)) {
+      fail('user A cannot see own smoke wallet');
+    }
+    if (Array.isArray(listB.json) && listB.json.some((w: any) => w.id === walletId)) {
+      fail('user B can see user A smoke wallet');
+    }
+    const getB = await api(jarB, 'GET', `/api/wallets/${walletId}`);
+    const patchB = await api(jarB, 'PATCH', `/api/wallets/${walletId}`, { name: 'x' });
+    const delB = await api(jarB, 'DELETE', `/api/wallets/${walletId}`);
+    if (getB.status !== 404 || patchB.status !== 404 || delB.status !== 404) {
+      fail(`user B reached user A wallet (get=${getB.status} patch=${patchB.status} delete=${delB.status})`);
+    } else {
+      ok('wallets isolated (B cannot list/read/edit/delete A wallet)');
+    }
+    await api(jarA, 'DELETE', `/api/wallets/${walletId}`);
   }
 
   const sumA = await api(jarA, 'GET', '/api/summary/net-worth');

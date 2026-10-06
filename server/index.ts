@@ -26,6 +26,7 @@ import payeesRouter from './routes/payees.ts';
 import savingsGoalsRouter from './routes/savingsGoals.ts';
 import donationsRouter from './routes/donations.ts';
 import projectionsRouter from './routes/projections.ts';
+import walletsRouter from './routes/wallets.ts';
 import authRouter from './routes/auth.ts';
 import economyRouter from './routes/economy.ts';
 import newsRouter from './routes/news.ts';
@@ -131,6 +132,7 @@ async function main() {
   app.use('/api/projections', projectionsRouter);
   app.use('/api/economy', economyRouter);
   app.use('/api/news', newsRouter);
+  app.use('/api/wallets', walletsRouter);
 
   // Unmatched /api stops here (JSON). It must not fall through to the SPA.
   app.use('/api', apiNotFound);

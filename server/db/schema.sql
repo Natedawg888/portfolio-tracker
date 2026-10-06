@@ -548,5 +548,22 @@ BEGIN
   SET receipt_transaction_id = NULL
   WHERE receipt_transaction_id = OLD.id;
 END;
+-- Read-only crypto wallets: public address only. Never store seed phrases / private keys.
+-- No balance column on purpose: balances come from chain providers at sync time
+-- (balance is never stored as the source of truth here).
+CREATE TABLE IF NOT EXISTS wallets (
+  id              TEXT PRIMARY KEY,
+  user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name            TEXT NOT NULL,
+  network         TEXT NOT NULL,              -- ethereum | polygon | base | arbitrum | bitcoin | solana
+  address         TEXT NOT NULL,              -- normalised (EVM EIP-55 checksummed, bech32 lowercase)
+  status          TEXT NOT NULL DEFAULT 'connected',  -- connected | syncing | error (sync job owns this)
+  status_message  TEXT,
+  last_synced     TEXT,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_wallets_user ON wallets(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wallets_user_network_address ON wallets(user_id, network, address);
 
 -- per-user indexes created in migrateSchema after user_id columns exist

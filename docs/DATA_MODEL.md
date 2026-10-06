@@ -29,6 +29,7 @@ savings_goals          (target, current amount, optional deadline; progress coun
 donations               (date, recipient, NZD amount; optional evidence URL;
                          optional pointer to a transaction that already has a receipt.
                          Not a receipt file and not a transactions row.)
+wallets             (read-only crypto wallets — public address only)
 price_quotes        (cache; stub providers write status=stubbed)
 valuation_snapshots (net-worth history)
 app_settings / meta
@@ -227,6 +228,23 @@ The one-third is taken **once** on the summed eligible amount. Two gifts of $5 a
 This is the standard IRD donation tax credit: **33.33 cents per dollar** of donations of $5 or more, claimed after year-end (IR526) with receipts. IRD also caps the credit at **one third of taxable income**. Taxable income is not stored here, so `incomeCapApplied` is **false** and the cap is not applied. Payroll giving is already credited each pay and is not part of this estimate. Approved-donee status is not checked, and the estimate does not require `evidenceUrl` or `receiptTransactionId`. The full wording is returned as `estimateNote`.
 
 `GET/POST /api/donations`, `GET /api/donations/summary`, `GET/PATCH/DELETE /api/donations/:id`. Session cookie `pt_sid`, same gate as the rest of `/api`. Another user's id is `404`. Deleting the account deletes that user's `donations` only.
+## Crypto wallets (`wallets`)
+
+Read-only, per-user (`user_id`) public wallet addresses. **Never** stores seed phrases, private keys or passwords, and has **no balance column** — balances come from chain providers at sync time, never stored as source of truth.
+
+| Field | Notes |
+|-------|-------|
+| `name` | ≤ 80 chars; defaults to "<Network> wallet" |
+| `network` | `ethereum` \| `polygon` \| `base` \| `arbitrum` \| `bitcoin` \| `solana` |
+| `address` | Validated + normalised per network (see below). Unique per `(user_id, network, address)` |
+| `status` / `status_message` | `connected` \| `syncing` \| `error` — owned by the sync job; reset to `connected` when the address changes |
+| `last_synced` | ISO timestamp set by the sync job; null until first sync (cleared when the address changes) |
+
+**Address validation** (`server/lib/walletAddress.ts`): EVM — `0x` + 40 hex, mixed case must match EIP-55 (stored checksummed); Bitcoin mainnet — base58check P2PKH/P2SH or bech32 (v0) / bech32m (v1+, taproot), stored lowercase; Solana — base58 decoding to 32 bytes.
+
+**Secret rejection:** `address` and `name` are checked first for BIP39-style phrases (any language; in `name` only an exact 12/15/18/21/24 single-case word list counts, so descriptive names pass), 64-hex keys, WIF, `xprv`/`Zprv`-family keys, and Solana secret keys (base58 seed+pubkey pair verified via Ed25519, or a JSON byte array). Rejected with `400 { code: "SECRET_REJECTED" }` and a "never share this" message; the input is never echoed, logged or stored.
+
+APIs: `GET /api/wallets`, `GET /api/wallets/:id`, `POST /api/wallets` `{ network, address, name? }`, `PATCH /api/wallets/:id` `{ name?, network?, address? }`, `DELETE /api/wallets/:id`. Error codes: `INVALID_NETWORK`, `INVALID_ADDRESS`, `INVALID_NAME`, `SECRET_REJECTED`, `DUPLICATE_WALLET` (409). Tests: `npm run test:wallets`.
 
 ## Quotes & snapshots
 
