@@ -254,6 +254,8 @@ Amounts are smallest-unit integer strings (`amountRaw`) + `decimals`; `formatUni
 
 Endpoints come from env (`CHAIN_<NETWORK>_RPC_URL`, optional `CHAIN_<NETWORK>_API_KEY`), https only (http for loopback), falling back to public keyless endpoints. Keys stay server-side: requests refuse redirects, every failure is a `ChainProviderError` (`unsupported_network`, `not_configured`, `rate_limited` + `retryAfterSec`, `timeout`, `upstream_error`, `network_error`) whose message passes through `redactChainSecrets`, and the only client view is `GET /api/wallets/networks` (labels, native symbol, `syncable` / `configured` booleans — no URLs or hosts). Tests: `npm run test:chain`.
 
+**Bitcoin adapter** (`server/chain/bitcoin.ts`, provider `bitcoin-esplora`): Esplora REST (`CHAIN_BITCOIN_RPC_URL`, default blockstream.info; mempool.space or a self-hosted Esplora also work). Balance is **confirmed only** (`chain_stats` funded − spent). History is newest-first: unconfirmed txs on the first page only, then confirmed txs; the cursor is the last confirmed txid. Each tx is from the wallet's view — `in` (amount received), `out` (amount that left, excluding change and the fee; fee in `feeRaw` when the wallet funded every input), `self` (amount 0, fee only); coinjoin-style partial funding reports the net change with `feeRaw` null. xpub watching (stretch) is not implemented. `CHAIN_LIVE=1 npm run test:chain` adds checks against the public endpoint.
+
 ## Quotes & snapshots
 
 | Entity | Purpose |
