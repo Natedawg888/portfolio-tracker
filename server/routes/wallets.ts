@@ -18,6 +18,7 @@ import {
 } from '../lib/walletAddress.ts';
 import { getDb, queryAll, queryOne, run, newId } from '../db/index.ts';
 import { describeChainConfig, isNetworkSyncable, NETWORK_CHAIN_INFO } from '../chain/index.ts';
+import { combineValuations, valueWallet } from '../chain/valuation.ts';
 
 const router = Router();
 
@@ -143,6 +144,34 @@ router.get('/networks', (_req, res) => {
       configured: config.get(network)?.configured ?? false,
     })),
   );
+});
+
+/**
+ * Live NZD valuation of every wallet (balances from chain providers, prices from the
+ * crypto quote cache). A wallet that fails to fetch is reported and left out of the
+ * total, which is then marked incomplete — it never zeroes or corrupts the others.
+ */
+router.get('/valuation', async (req, res) => {
+  const db = await getDb();
+  const rows = queryAll(db, `SELECT * FROM wallets WHERE user_id = ? ORDER BY created_at ASC`, [uid(req)]);
+  const results = await Promise.all(
+    rows.map((r) => valueWallet({ network: r.network as WalletNetwork, address: r.address as string })),
+  );
+  res.json({
+    ...combineValuations(results),
+    wallets: rows.map((r, i) => ({ wallet: mapWallet(r), valuation: results[i] })),
+  });
+});
+
+router.get('/:id/valuation', async (req, res) => {
+  const db = await getDb();
+  const row = queryOne(db, 'SELECT * FROM wallets WHERE id=? AND user_id=?', [req.params.id, uid(req)]);
+  if (!row) {
+    res.status(404).json({ error: 'Wallet not found' });
+    return;
+  }
+  const valuation = await valueWallet({ network: row.network as WalletNetwork, address: row.address as string });
+  res.json({ wallet: mapWallet(row), valuation });
 });
 
 router.get('/:id', async (req, res) => {

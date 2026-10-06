@@ -50,6 +50,8 @@ const WELL_KNOWN: Record<string, { id: string; name: string }> = {
   DOT: { id: 'polkadot', name: 'Polkadot' },
   AVAX: { id: 'avalanche-2', name: 'Avalanche' },
   MATIC: { id: 'matic-network', name: 'Polygon' },
+  // Polygon's native gas token since the 2024 MATIC → POL migration
+  POL: { id: 'polygon-ecosystem-token', name: 'POL (ex-MATIC)' },
   LINK: { id: 'chainlink', name: 'Chainlink' },
   LTC: { id: 'litecoin', name: 'Litecoin' },
   BCH: { id: 'bitcoin-cash', name: 'Bitcoin Cash' },
