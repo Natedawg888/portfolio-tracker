@@ -3,6 +3,8 @@
  *
  *   CHAIN_<NETWORK>_RPC_URL   e.g. CHAIN_ETHEREUM_RPC_URL=https://eth-mainnet.g.alchemy.com/v2/<key>
  *   CHAIN_<NETWORK>_API_KEY   optional key for data providers that take it as a header
+ *   CHAIN_<NETWORK>_INDEXER_URL  EVM only: Blockscout API v2 base for ERC-20 discovery and
+ *                             history (plain JSON-RPC can't list an address's tokens)
  *
  * Without an env URL each network falls back to a public keyless endpoint
  * (rate-limited; fine for local use). Values are read on each call so .env
@@ -27,9 +29,17 @@ export const PUBLIC_DEFAULT_URLS: Record<WalletNetwork, string> = {
   solana: 'https://api.mainnet-beta.solana.com',
 };
 
-export function envKeys(network: WalletNetwork): { url: string; apiKey: string } {
+/**
+ * Public keyless Blockscout API v2 bases for EVM token discovery and history (KAN-36).
+ * Polygon / Base / Arbitrum arrive with KAN-37.
+ */
+export const PUBLIC_INDEXER_URLS: Partial<Record<WalletNetwork, string>> = {
+  ethereum: 'https://eth.blockscout.com/api/v2',
+};
+
+export function envKeys(network: WalletNetwork): { url: string; apiKey: string; indexerUrl: string } {
   const p = `CHAIN_${network.toUpperCase()}`;
-  return { url: `${p}_RPC_URL`, apiKey: `${p}_API_KEY` };
+  return { url: `${p}_RPC_URL`, apiKey: `${p}_API_KEY`, indexerUrl: `${p}_INDEXER_URL` };
 }
 
 /** https only; plain http allowed for loopback (local nodes, tests). */
@@ -62,6 +72,22 @@ export function resolveChainEndpoint(network: WalletNetwork): EndpointResolution
     ok: true,
     endpoint: { network, url: PUBLIC_DEFAULT_URLS[network], apiKey, source: 'public-default' },
   };
+}
+
+/**
+ * Indexer (Blockscout API v2) for an EVM network: env override, else the public default.
+ * The RPC key is never sent to it (apiKey null) — it's a different host.
+ */
+export function resolveIndexerEndpoint(network: WalletNetwork): EndpointResolution {
+  const key = envKeys(network).indexerUrl;
+  const envUrl = process.env[key]?.trim() || '';
+  if (envUrl) {
+    if (!isAllowedUrl(envUrl)) return { ok: false, reason: `${key} must be an https URL` };
+    return { ok: true, endpoint: { network, url: envUrl, apiKey: null, source: 'env' } };
+  }
+  const url = PUBLIC_INDEXER_URLS[network];
+  if (!url) return { ok: false, reason: `${key} is not set and there is no public default` };
+  return { ok: true, endpoint: { network, url, apiKey: null, source: 'public-default' } };
 }
 
 export type ChainConfigStatus = {
@@ -98,10 +124,10 @@ export function redactChainSecrets(text: string): string {
   const secrets = new Set<string>();
   for (const network of Object.keys(WALLET_NETWORKS) as WalletNetwork[]) {
     const keys = envKeys(network);
-    const url = process.env[keys.url]?.trim();
     const apiKey = process.env[keys.apiKey]?.trim();
     if (apiKey) secrets.add(apiKey);
-    if (url) {
+    for (const url of [process.env[keys.url]?.trim(), process.env[keys.indexerUrl]?.trim()]) {
+      if (!url) continue;
       secrets.add(url);
       secrets.add(url.replace(/\/+$/, ''));
       try {
