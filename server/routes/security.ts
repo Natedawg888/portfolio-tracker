@@ -10,6 +10,9 @@ import { getDb, queryOne } from '../db/index.ts';
 import { verifyPassword } from '../auth/passwords.ts';
 import { listSessions, parseCookieHeader, revokeOtherSessions, revokeSession } from '../auth/sessions.ts';
 import { listAccounts, switchAccount } from '../auth/accounts.ts';
+import { hasPassword } from '../auth/users.ts';
+import { configuredSsoProviders } from '../auth/sso.ts';
+import { listIdentities } from './sso.ts';
 import {
   TRUSTED_DEVICE_COOKIE,
   beginTotpSetup,
@@ -47,7 +50,11 @@ function browserTrustedTokens(req: AuthedRequest): string[] {
 router.get('/security', async (req: AuthedRequest, res) => {
   if (!signedIn(req, res)) return;
   const db = await getDb();
+  const pw = queryOne<{ password_hash: string }>(db, `SELECT password_hash FROM users WHERE id = ?`, [req.user.id]);
   res.json({
+    hasPassword: hasPassword(pw?.password_hash),
+    identities: await listIdentities(req.user.id),
+    ssoProviders: configuredSsoProviders(),
     twoFactor: twoFactorState(db, req.user.id),
     sessions: listSessions(db, req.user.id, req.user.sessionId),
     trustedDevices: listTrustedDevices(db, req.user.id, browserTrustedTokens(req)),

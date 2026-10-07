@@ -5,7 +5,7 @@
  * First signup claims existing local finance data; later users get empty scoped ledgers.
  */
 import { Router } from 'express';
-import { getDb, queryOne, run, newId } from '../db/index.ts';
+import { getDb, queryOne, run } from '../db/index.ts';
 import {
   hashPassword,
   verifyPassword,
@@ -41,19 +41,18 @@ import {
   verifySecondFactor,
 } from '../auth/twoFactor.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
+import { composeDisplayName, createUserAccount, hasPassword } from '../auth/users.ts';
 import {
   claimUnscopedRowsForOwner,
   deleteScopedDataForUser,
   getDataOwnerUserId,
 } from '../lib/userScope.ts';
-import { seedCategoriesForUser } from '../lib/categories.ts';
 import {
   deleteAvatarFile,
   photoUrlFromPath,
   saveUserAvatar,
 } from '../lib/uploads.ts';
 import {
-  initialPreferencesJsonForNewUser,
   parseOnboardingFromPreferencesJson,
   preferencesWithAkahuSkippedUnlessRequired,
   type OnboardingFlags,
@@ -69,12 +68,6 @@ function normalizeNamePart(raw: unknown, max = 40): string | null {
   return t || null;
 }
 
-/** Compose "First Last" for display; null if both missing. */
-function composeDisplayName(first: string | null, last: string | null): string | null {
-  const parts = [first, last].filter((p): p is string => Boolean(p && p.trim()));
-  if (parts.length === 0) return null;
-  return parts.join(' ').slice(0, 80);
-}
 
 function publicUser(u: {
   id: string;
@@ -277,30 +270,11 @@ router.post('/register', async (req, res) => {
   }
 
   const db = await getDb();
-  const usersBefore = await countUsers();
-  const id = newId('user');
-  const now = new Date().toISOString();
   const passwordHash = await hashPassword(password);
-  const displayName = composeDisplayName(firstName, lastName);
-
-  const prefsJson = initialPreferencesJsonForNewUser(email);
-  run(
-    db,
-    `INSERT INTO users (id, email, password_hash, first_name, last_name, display_name, avatar_url, preferences_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
-    [id, email, passwordHash, firstName, lastName, displayName, prefsJson, now, now],
-  );
-
-  let claimedExistingData = false;
-  if (usersBefore === 0) {
-    run(db, `INSERT OR REPLACE INTO meta (key, value) VALUES ('data_owner_user_id', ?)`, [id]);
-    run(db, `INSERT OR REPLACE INTO meta (key, value) VALUES ('data_claimed_at', ?)`, [now]);
-    claimUnscopedRowsForOwner(db, id);
-    claimedExistingData = true;
-  }
-  // Every user gets their own budget category set (owner claims legacy globals).
-  seedCategoriesForUser(db, id);
-  // Later signups intentionally get empty finance rows (holdings/txns/etc.).
+  const created = createUserAccount(db, { email, passwordHash, firstName, lastName });
+  const { id, displayName, claimedExistingData } = created;
+  const now = created.createdAt;
+  const prefsJson = created.preferencesJson;
 
   await startSession(req, res, id, parseRemember(req.body));
   res.status(201).json({
@@ -642,7 +616,7 @@ router.post('/change-password', async (req: AuthedRequest, res) => {
   const currentPassword = typeof req.body?.currentPassword === 'string' ? req.body.currentPassword : '';
   const newPassword = typeof req.body?.newPassword === 'string' ? req.body.newPassword : '';
 
-  if (!currentPassword || !newPassword) {
+  if (!newPassword) {
     res.status(400).json({ error: 'currentPassword and newPassword are required', code: 'MISSING_FIELDS' });
     return;
   }
@@ -658,10 +632,17 @@ router.post('/change-password', async (req: AuthedRequest, res) => {
     res.status(401).json({ error: 'Authentication required', code: 'UNAUTHORIZED' });
     return;
   }
-  const ok = await verifyPassword(currentPassword, row.password_hash);
-  if (!ok) {
-    res.status(403).json({ error: 'Current password is incorrect', code: 'WRONG_PASSWORD' });
-    return;
+  // Accounts created with Google / Apple / Microsoft have no password yet: this sets the first one.
+  if (hasPassword(row.password_hash)) {
+    if (!currentPassword) {
+      res.status(400).json({ error: 'currentPassword and newPassword are required', code: 'MISSING_FIELDS' });
+      return;
+    }
+    const ok = await verifyPassword(currentPassword, row.password_hash);
+    if (!ok) {
+      res.status(403).json({ error: 'Current password is incorrect', code: 'WRONG_PASSWORD' });
+      return;
+    }
   }
 
   const passwordHash = await hashPassword(newPassword);
@@ -816,6 +797,7 @@ router.post('/delete-account', async (req: AuthedRequest, res) => {
   run(db, `DELETE FROM user_backup_codes WHERE user_id = ?`, [userId]);
   run(db, `DELETE FROM trusted_devices WHERE user_id = ?`, [userId]);
   run(db, `DELETE FROM login_challenges WHERE user_id = ?`, [userId]);
+  run(db, `DELETE FROM user_identities WHERE user_id = ?`, [userId]);
 
   // 5) data_owner_user_id — reassign or clear; never leave a dangling owner id
   if (wasOwner) {

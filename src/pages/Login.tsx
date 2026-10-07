@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
-import { ApiError, type AuthUser } from '../api/client';
+import { ApiError, api, type AuthUser, type SsoProvider } from '../api/client';
 import { showQuietToast } from '../lib/quietToast';
+import { ssoErrorMessage, ssoStartUrl } from '../lib/sso';
 
 /** Last email used on this browser (never the password). Convenience only — may be unavailable. */
 const LAST_EMAIL_KEY = 'koru.auth.lastEmail';
@@ -27,6 +28,15 @@ function writeLastEmail(email: string | null): void {
 
 type Step = { kind: 'password' } | { kind: 'code'; challenge: string };
 
+/** After Google / Apple / Microsoft sign-in with 2FA on, the server sends #sso2fa=<challenge>. */
+function initialStep(): Step {
+  const m = /^#sso2fa=([A-Za-z0-9_%-]{20,200})$/.exec(window.location.hash);
+  if (!m) return { kind: 'password' };
+  // Drop the challenge from the address bar and history.
+  window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  return { kind: 'code', challenge: decodeURIComponent(m[1]) };
+}
+
 export function Login() {
   const { user, loading, login, completeTwoFactor, status } = useAuth();
   const navigate = useNavigate();
@@ -37,12 +47,26 @@ export function Login() {
   const [email, setEmail] = useState(rememberedEmail);
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
-  const [step, setStep] = useState<Step>({ kind: 'password' });
+  const [step, setStep] = useState<Step>(initialStep);
+  const [providers, setProviders] = useState<SsoProvider[]>([]);
   const [code, setCode] = useState('');
   const [useBackup, setUseBackup] = useState(false);
   const [trustDevice, setTrustDevice] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() => ssoErrorMessage(searchParams.get('sso_error')));
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.auth
+      .ssoProviders()
+      .then((r) => {
+        if (!cancelled) setProviders(r.providers);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (!loading && user && !adding) {
     if (!user.onboardingComplete) return <Navigate to="/register" replace />;
@@ -159,6 +183,20 @@ export function Login() {
                 {busy ? 'Signing in…' : 'Sign in'}
               </button>
             </form>
+            {providers.length > 0 ? (
+              <div className="sso-buttons">
+                <p className="sso-divider muted small">or</p>
+                {providers.map((p) => (
+                  <a
+                    key={p.id}
+                    className={`btn ghost sso-btn sso-btn--${p.id}`}
+                    href={ssoStartUrl(p.id, { remember, mode: adding ? 'add' : 'signin' })}
+                  >
+                    Continue with {p.label}
+                  </a>
+                ))}
+              </div>
+            ) : null}
             <p className="auth-switch">
               {adding && user ? (
                 <Link to="/">Cancel</Link>

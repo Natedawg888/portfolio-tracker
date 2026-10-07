@@ -4,7 +4,9 @@
  * never kept in browser storage.
  */
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ApiError, api, type AccountSecurity } from '../api/client';
+import { ssoErrorMessage, ssoStartUrl } from '../lib/sso';
 
 function when(iso: string | null): string {
   if (!iso) return '—';
@@ -229,10 +231,112 @@ function TwoFactorSection({ state, reload }: { state: AccountSecurity['twoFactor
   );
 }
 
-export function SecurityPanel() {
-  const [data, setData] = useState<AccountSecurity | null>(null);
+/** Password + Google / Apple / Microsoft connections. */
+function SignInMethods({ data, reload }: { data: AccountSecurity; reload: () => Promise<void> }) {
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const linked = new Set(data.identities.map((i) => i.provider));
+  const connectable = data.ssoProviders.filter((p) => !linked.has(p.id));
+
+  const setFirstPassword = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy('password');
+    setError(null);
+    try {
+      await api.auth.changePassword({ currentPassword: '', newPassword: password });
+      setPassword('');
+      setMsg('Password set. You can now sign in with your email and password too.');
+      await reload();
+    } catch (err) {
+      setError(errorText(err, 'Could not set a password'));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const disconnect = async (id: string) => {
+    setBusy(id);
+    setError(null);
+    try {
+      await api.auth.disconnectIdentity(id);
+      await reload();
+    } catch (err) {
+      setError(errorText(err, 'Could not disconnect'));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (!data.hasPassword && data.identities.length === 0 && data.ssoProviders.length === 0) return null;
+  return (
+    <section className="panel">
+      <h3>Sign-in methods</h3>
+      <ul className="security-list">
+        <li>
+          <div>
+            <strong>Email and password</strong>
+            <div className="muted small">{data.hasPassword ? 'Set' : 'Not set — you sign in with a connected account below'}</div>
+          </div>
+        </li>
+        {data.identities.map((i) => (
+          <li key={i.id}>
+            <div>
+              <strong>{i.label}</strong>
+              {i.email ? <span className="muted small"> · {i.email}</span> : null}
+              <div className="muted small">Connected {when(i.createdAt)} · last used {when(i.lastUsedAt)}</div>
+            </div>
+            <button type="button" className="btn ghost" disabled={busy === i.id} onClick={() => void disconnect(i.id)}>
+              Disconnect
+            </button>
+          </li>
+        ))}
+      </ul>
+      {!data.hasPassword ? (
+        <form className="auth-form account-form" onSubmit={setFirstPassword}>
+          <label>
+            <span>Set a password (needed to turn on two-factor sign-in, change your email or delete the account)</span>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" minLength={8} required disabled={busy !== null} />
+          </label>
+          <button type="submit" className="btn primary" disabled={busy !== null || password.length < 8}>
+            Set password
+          </button>
+        </form>
+      ) : null}
+      {connectable.length ? (
+        <div className="row gap">
+          {connectable.map((p) => (
+            <a key={p.id} className={`btn ghost sso-btn sso-btn--${p.id}`} href={ssoStartUrl(p.id, { mode: 'link' })}>
+              Connect {p.label}
+            </a>
+          ))}
+        </div>
+      ) : null}
+      {msg ? <p className="muted" role="status">{msg}</p> : null}
+      {error ? <p className="auth-error" role="alert">{error}</p> : null}
+    </section>
+  );
+}
+
+export function SecurityPanel() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [data, setData] = useState<AccountSecurity | null>(null);
+  const [error, setError] = useState<string | null>(() => ssoErrorMessage(searchParams.get('sso_error')));
+  const [notice] = useState<string | null>(() => {
+    const p = searchParams.get('sso_linked');
+    return p ? `${p.charAt(0).toUpperCase()}${p.slice(1)} connected. You can now use it to sign in.` : null;
+  });
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  // Drop the one-off sso_linked / sso_error from the URL once shown.
+  useEffect(() => {
+    if (!searchParams.has('sso_error') && !searchParams.has('sso_linked')) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('sso_error');
+    next.delete('sso_linked');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const reload = useCallback(async () => {
     try {
@@ -265,7 +369,16 @@ export function SecurityPanel() {
   return (
     <>
       {error ? <p className="warn">{error}</p> : null}
-      <TwoFactorSection state={data.twoFactor} reload={reload} />
+      {notice ? <p className="muted" role="status">{notice}</p> : null}
+      <SignInMethods data={data} reload={reload} />
+      {data.hasPassword ? (
+        <TwoFactorSection state={data.twoFactor} reload={reload} />
+      ) : (
+        <section className="panel">
+          <h3>Two-factor sign-in</h3>
+          <p className="muted">Set a password above first — turning on two-factor sign-in asks for it.</p>
+        </section>
+      )}
 
       <section className="panel">
         <h3>Signed-in sessions</h3>

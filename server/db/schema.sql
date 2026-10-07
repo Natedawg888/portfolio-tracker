@@ -398,6 +398,20 @@ CREATE TABLE IF NOT EXISTS trusted_devices (
 );
 CREATE INDEX IF NOT EXISTS idx_trusted_devices_user ON trusted_devices(user_id);
 
+-- Single sign-on links: one row per provider account (Google / Apple / Microsoft).
+-- subject = the provider's stable user id ("sub"), never the email (emails change).
+CREATE TABLE IF NOT EXISTS user_identities (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider     TEXT NOT NULL,
+  subject      TEXT NOT NULL,
+  email        TEXT,
+  created_at   TEXT NOT NULL,
+  last_used_at TEXT,
+  UNIQUE (provider, subject)
+);
+CREATE INDEX IF NOT EXISTS idx_user_identities_user ON user_identities(user_id);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 

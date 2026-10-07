@@ -1,6 +1,6 @@
 # Local auth (email / password)
 
-Portfolio Tracker uses **local accounts** on the machine running the API. No third-party OAuth.
+Portfolio Tracker uses **local accounts** on the machine running the API, with optional **Sign in with Google / Apple / Microsoft** (see below).
 
 ## How it works
 
@@ -34,6 +34,31 @@ How it's stored:
 - Sessions record a coarse device label (“Chrome on Windows”) and last-active time (written at most every 10 min) — never the raw User-Agent or IP.
 
 Tests: `npm run test:2fa` (RFC 6238 vectors, sealing, replay, backup codes, trusted devices, sessions, rate limits).
+
+## Sign in with Google, Apple or Microsoft
+
+Each button appears on the sign-in page only when that provider's credentials are set in `.env`. The redirect (callback) URL to register with every provider is
+
+    ${PUBLIC_URL}/api/auth/sso/<google|apple|microsoft>/callback
+
+(`PUBLIC_URL` defaults to `http://127.0.0.1:3000` locally; use your HTTPS domain in production.) Restart the API after changing `.env`.
+
+**Google** — Google Cloud Console → APIs & Services → Credentials → Create OAuth client ID → *Web application*. Add the callback URL under *Authorised redirect URIs*. Configure the OAuth consent screen (scopes: `openid`, `email`, `profile`). Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
+
+**Microsoft** — Azure portal → Microsoft Entra ID → App registrations → New registration. *Supported account types*: personal + work/school (or your tenant only). Redirect URI: platform *Web*, the callback URL. Certificates & secrets → New client secret. Token configuration → add optional claims `email` and `xms_edov` to the ID token. Set `MICROSOFT_CLIENT_ID` (Application ID), `MICROSOFT_CLIENT_SECRET` (the secret *value*), and optionally `MICROSOFT_TENANT` (default `common`; a tenant ID pins sign-in to that organisation).
+
+**Apple** — needs a paid Apple Developer account and an HTTPS domain (Apple doesn't allow localhost callbacks). Certificates, Identifiers & Profiles → Identifiers → an App ID with *Sign in with Apple*, then a *Services ID* (this is the client ID) with Sign in with Apple configured for your domain and the callback URL. Keys → create a key with Sign in with Apple → download the `.p8`. Set `APPLE_CLIENT_ID` (Services ID), `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY` (the `.p8` contents; newlines may be written as `\n`).
+
+How it behaves:
+
+- A provider account is remembered by its stable ID (`user_identities.provider + subject`), not by email.
+- First sign-in with an email that already has an account **links to it only when the provider says the email is verified** (Google `email_verified`, Apple `email_verified`, Microsoft personal accounts or `xms_edov`). Otherwise: “sign in with your password, then connect it under Settings → Security”.
+- A new email creates a new account (no password). It can sign in with the provider, and can set a password under Settings → Security (needed to turn on 2FA, change email or delete the account). The last sign-in method can't be disconnected until a password is set.
+- **2FA still applies**: with 2FA on, an untrusted browser goes to the code step after the provider. **Add another account** works with providers too.
+- Settings → Security → *Sign-in methods* lists connected providers (Disconnect) and offers **Connect Google / Apple / Microsoft** for the signed-in account.
+- Security: `state` + `nonce` + PKCE (Google, Microsoft) in a sealed, httpOnly, 10-minute cookie bound to the browser; ID tokens verified against the provider's published keys (RS256 signature, issuer, audience, expiry, nonce) using Node crypto; client secrets never reach the browser. Apple's form POST is re-issued as a same-site GET so the cookies arrive.
+
+Tests: `npm run test:2fa` includes `server/auth/sso.test.ts` (mock provider signing real tokens).
 
 ## First signup claims existing data; later users start empty
 

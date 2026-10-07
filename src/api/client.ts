@@ -101,7 +101,12 @@ export type RememberedAccount = {
 };
 
 /** Settings → Security (KAN-16). */
+export type SsoProvider = { id: 'google' | 'apple' | 'microsoft'; label: string };
+
 export type AccountSecurity = {
+  hasPassword: boolean;
+  identities: Array<{ id: string; provider: string; label: string; email: string | null; createdAt: string; lastUsedAt: string | null }>;
+  ssoProviders: SsoProvider[];
   twoFactor: { enabled: boolean; enabledAt: string | null; backupCodesRemaining: number };
   sessions: Array<{
     id: string;
@@ -150,6 +155,8 @@ export const api = {
         body: JSON.stringify(body),
       }),
     security: () => req<AccountSecurity>('/auth/security'),
+    ssoProviders: () => req<{ providers: SsoProvider[] }>('/auth/sso/providers'),
+    disconnectIdentity: (id: string) => req<{ ok: boolean }>(`/auth/identities/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     twoFactorSetup: (password: string) =>
       req<{ secret: string; otpauthUri: string; qrSvg: string }>('/auth/2fa/setup', {
         method: 'POST',

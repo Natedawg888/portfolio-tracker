@@ -7029,3 +7029,20 @@ html:not([data-theme]) .settings-page :focus-visible {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+/* Single sign-on buttons (sign-in page + Settings → Security) */
+.sso-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+.sso-divider {
+  margin: 0;
+  text-align: center;
+}
+.sso-btn {
+  justify-content: center;
+  text-align: center;
+  text-decoration: none;
+}
