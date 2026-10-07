@@ -67,4 +67,14 @@ assert(
   'GoMining settings stay cached when holdings change',
 );
 
+writePageCache('news-page', { sections: 1 });
+writePageCache('news:NZ:expansion', { items: 1 });
+writePageCache('projections:12:3::', { net: 1 });
+invalidateFinancial('portfolio');
+assert(readPageCache('news-page') === undefined, 'holding edits drop the news page cache');
+assert(readPageCache('news:NZ:expansion') !== undefined, 'phase news stays when holdings change');
+assert(readPageCache('projections:12:3::') !== undefined, 'projections stay until their own scope is cleared');
+invalidateFinancial('projections');
+assert(readPageCache('projections:12:3::') === undefined, 'projection cache drops on its own scope');
+
 console.log('pageDataCache tests passed');

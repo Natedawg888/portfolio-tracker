@@ -252,6 +252,8 @@ export function KiwiSaver() {
   const [loading, setLoading] = useState(initialKs == null);
   const akahuRef = useRef(initialKs?.akahuConfigured ?? null);
   akahuRef.current = akahuConfigured;
+  const accountsRef = useRef(accounts);
+  accountsRef.current = accounts;
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<ManualForm>(emptyForm);
   const [csvText, setCsvText] = useState('');
@@ -280,7 +282,7 @@ export function KiwiSaver() {
   }, [selectedId]);
 
   const reloadAfterEdit = useCallback(async (preferAccountId?: string | null) => {
-    invalidateFinancial('kiwisaver', 'dashboard');
+    invalidateFinancial('kiwisaver', 'dashboard', 'projections');
     await load(preferAccountId);
   }, [load]);
 
@@ -318,14 +320,11 @@ export function KiwiSaver() {
       } catch (e) {
         if (!cancelled) {
           // Prefer quiet toast when we already have accounts; avoid blanking the page.
-          setAccounts((prev) => {
-            if (Array.isArray(prev) && prev.length > 0) {
-              showQuietToast('Could not refresh KiwiSaver — showing last data.', { kind: 'warn' });
-              return prev;
-            }
+          if (accountsRef.current.length > 0) {
+            showQuietToast('Could not refresh KiwiSaver — showing last data.', { kind: 'warn' });
+          } else {
             setError((e as Error).message);
-            return prev;
-          });
+          }
         }
       } finally {
         if (!cancelled) setLoading(false);

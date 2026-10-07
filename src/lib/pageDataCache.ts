@@ -112,6 +112,7 @@ export type FinancialScope =
   | 'debts'
   | 'spending'
   | 'portfolio'
+  | 'projections'
   | 'kiwisaver'
   | 'yearly'
   | 'dividends'
@@ -128,7 +129,8 @@ const SCOPE_PREFIXES: Record<FinancialScope, readonly string[]> = {
   savings: ['savings-goals'],
   debts: ['debts'],
   spending: ['spending'],
-  portfolio: ['=portfolio'],
+  portfolio: ['=portfolio', 'news-page'],
+  projections: ['projections'],
   kiwisaver: ['kiwisaver'],
   yearly: ['yearly'],
   dividends: ['dividends'],
@@ -190,6 +192,7 @@ export function invalidateAfterExternalSync(): void {
     'dividends',
     'debts',
     'paye',
+    'projections',
     'charts',
     'collectable-types',
   );

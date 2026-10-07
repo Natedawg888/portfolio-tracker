@@ -9,8 +9,10 @@ import {
   DebtsPage,
   EconomicCyclePage,
   KiwiSaverPage,
+  NewsPage,
   PayePage,
   PortfolioPage,
+  ProjectionsPage,
   SettingsPage,
   SpendingPage,
   ValueSearchPage,
@@ -37,6 +39,8 @@ export default function App() {
                 <Route path="yearly" element={<YearlyReportPage />} />
                 <Route path="economic-cycle" element={<EconomicCyclePage />} />
                 <Route path="portfolio" element={<PortfolioPage />} />
+                <Route path="projections" element={<ProjectionsPage />} />
+                <Route path="news" element={<NewsPage />} />
                 <Route path="kiwisaver" element={<KiwiSaverPage />} />
                 <Route path="paye" element={<PayePage />} />
                 <Route path="value-search" element={<ValueSearchPage />} />

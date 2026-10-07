@@ -249,12 +249,13 @@ export function AssetLineChart({
             </text>
           </g>
         ))}
-        {xTicks.map((at) => (
+        {xTicks.map((at, i) => (
           <text
             key={at}
             x={xOf(at)}
             y={chartH - 8}
-            textAnchor="middle"
+            // The last label sits on the right edge: anchor it there so it isn't clipped.
+            textAnchor={i === xTicks.length - 1 && xTicks.length > 1 ? 'end' : 'middle'}
             className="line-chart-axis"
           >
             {axisLabel(at, resolution)}

@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import { ApiError, api } from '../api/client';
 import { AssetClassToggles } from '../components/AssetClassToggles';
+import { AddWalletPanel } from '../components/AddWalletPanel';
 import {
   defaultAssetClassPrefs,
   type AssetClassPrefs,
@@ -25,7 +26,7 @@ import {
 import { CategoryTypeToggle } from '../components/CategoryTypeToggle';
 import { akahuOnboardingRequiredForEmail } from '../lib/onboardingPrefs';
 
-type Step = 'credentials' | 'assets' | 'budgets' | 'connect';
+type Step = 'credentials' | 'assets' | 'wallets' | 'budgets' | 'connect';
 
 type TxCategory = {
   id: string;
@@ -78,6 +79,7 @@ export function Register() {
   const [newCatType, setNewCatType] = useState<CategoryType>('spending');
 
   const [akahu, setAkahu] = useState<AkahuConnectionStatus | null>(null);
+  const [walletsAdded, setWalletsAdded] = useState<string[]>([]);
 
   // Resume incomplete onboarding after refresh / login redirect.
   useEffect(() => {
@@ -239,7 +241,8 @@ export function Register() {
     try {
       await savePrefs(prefs);
       await refresh();
-      setStep('budgets');
+      // Optional wallet step only when Crypto is turned on.
+      setStep(prefs.crypto ? 'wallets' : 'budgets');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not save asset preferences');
     } finally {
@@ -400,7 +403,7 @@ export function Register() {
 
   const catsByType = (t: CategoryType) =>
     categories.filter((c) => normalizeCategoryType(c.type, c.isIncome) === t);
-  const wide = step === 'assets' || step === 'budgets' || step === 'connect';
+  const wide = step === 'assets' || step === 'wallets' || step === 'budgets' || step === 'connect';
 
   if (loading || !resumed) {
     return (
@@ -523,6 +526,27 @@ export function Register() {
                 {busy ? 'Saving…' : 'Save & continue'}
               </button>
             </form>
+          </>
+        ) : step === 'wallets' ? (
+          <>
+            <h2>Connect crypto wallets</h2>
+            <p className="page-lead">
+              Add the public address of any wallet you want tracked in Portfolio. This step is
+              optional — you can add or remove wallets later in Portfolio → Crypto.
+            </p>
+            {walletsAdded.length > 0 ? (
+              <p className="auth-info" role="status">
+                Added: {walletsAdded.join(', ')}
+              </p>
+            ) : null}
+            <AddWalletPanel
+              onAdded={(w) => setWalletsAdded((names) => [...names, w.name])}
+              onSkip={() => {
+                setError(null);
+                setStep('budgets');
+              }}
+              skipLabel={walletsAdded.length > 0 ? 'Continue' : 'Skip for now'}
+            />
           </>
         ) : step === 'budgets' ? (
           <>

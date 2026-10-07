@@ -204,6 +204,7 @@ export function Spending() {
     payeeDraftFrom(initialSpend?.payees ?? []),
   );
   const [payeeSavingName, setPayeeSavingName] = useState<string | null>(null);
+  const [payeeSettingsOpen, setPayeeSettingsOpen] = useState(false);
   const [planIncomeCategoryId, setPlanIncomeCategoryId] = useState('');
   const [planIncomeAmount, setPlanIncomeAmount] = useState('');
   const [planIncomeSaving, setPlanIncomeSaving] = useState(false);
@@ -219,6 +220,10 @@ export function Spending() {
   const [formAmount, setFormAmount] = useState('');
   const [formKind, setFormKind] = useState<'debit' | 'credit'>('debit');
   const [formAccountId, setFormAccountId] = useState(initialCash?.id ?? '');
+  /** Off for crypto Visa debit cards (Nexo, GoMining…): spend not charged to a bank account. */
+  const [formCharged, setFormCharged] = useState(true);
+  /** '' = automatic: the payee's saved category, else uncategorised. */
+  const [formCategoryId, setFormCategoryId] = useState('');
   const [formCardPreset, setFormCardPreset] = useState<string>('Nexo card');
   const [formCardCustom, setFormCardCustom] = useState('');
   const [importAccountId, setImportAccountId] = useState(initialCash?.id ?? '');
@@ -327,6 +332,8 @@ export function Spending() {
   const formAccountSeeded = useRef(Boolean(initialCash));
   const monthRef = useRef(selectedMonth);
   monthRef.current = selectedMonth;
+  const txnsRef = useRef(txns);
+  txnsRef.current = txns;
 
   const load = useCallback(async () => {
     const requested = selectedMonth;
@@ -411,7 +418,7 @@ export function Spending() {
   }, [periodFrom, periodTo, selectedMonth]);
 
   const reloadAfterEdit = useCallback(async () => {
-    invalidateFinancial('spending', 'dashboard', 'debts', 'yearly', 'paye');
+    invalidateFinancial('spending', 'dashboard', 'debts', 'yearly', 'paye', 'projections');
     await load();
   }, [load]);
 
@@ -421,14 +428,11 @@ export function Spending() {
 
   useEffect(() => {
     load().catch((e: Error) => {
-      setTxns((prev) => {
-        if (Array.isArray(prev) && prev.length > 0) {
-          showQuietToast('Could not refresh budget — showing last data.', { kind: 'warn' });
-          return prev;
-        }
-        setError(e.message);
-        return prev;
-      });
+      if (txnsRef.current.length > 0) {
+        showQuietToast('Could not refresh budget — showing last data.', { kind: 'warn' });
+        return;
+      }
+      setError(e.message);
     });
   }, [load]);
 
@@ -467,8 +471,8 @@ export function Spending() {
   async function onAddTxn(e: FormEvent) {
     e.preventDefault();
     setMsg(null);
-    if (!formAccountId) {
-      setMsg('Choose the charged account (Kiwibank Main / Debit / etc.).');
+    if (formCharged && !formAccountId) {
+      setMsg('Choose the charged account (Kiwibank Main / Debit / etc.), or turn off “Charged to a bank account”.');
       return;
     }
     if (formSource !== 'bank' && !resolvedCardName) {
@@ -510,14 +514,14 @@ export function Spending() {
             : 'manual';
       const cardName =
         resolvedCardName ||
-        (source === 'bank'
+        (source === 'bank' && formCharged
           ? accounts.find((a) => a.id === formAccountId)?.name || 'Bank'
           : null);
       const description =
         formDesc.trim() ||
         (source === 'bank' ? cardName || '' : cardName || '(manual)');
       const created = (await api.accounts.createTransaction({
-        accountId: formAccountId,
+        accountId: formCharged ? formAccountId : null,
         date: formDate,
         description,
         amount,
@@ -526,6 +530,8 @@ export function Spending() {
         source,
         affectsBtc: formUseBtc,
         btcHoldingId: formUseBtc ? formBtcHoldingId || null : null,
+        // Omitted = server applies the payee's saved category.
+        ...(formCategoryId ? { categoryId: formCategoryId } : {}),
       })) as Transaction & {
         btcLink?: {
           applied?: boolean;
@@ -540,14 +546,18 @@ export function Spending() {
           : formUseBtc
             ? ' · Use BTC'
             : '';
-      setMsg(
-        `Saved · ${sourceLabel(source)} · charged ${accounts.find((a) => a.id === formAccountId)?.name ?? formAccountId}${btcNote}`,
-      );
+      const chargedNote = formCharged
+        ? `charged ${accounts.find((a) => a.id === formAccountId)?.name ?? formAccountId}`
+        : 'not charged to a bank account';
+      setMsg(`Saved · ${sourceLabel(source)} · ${chargedNote}${btcNote}`);
       setFormDesc('');
       setFormAmount('');
       setFormUseBtc(false);
+      setFormCategoryId('');
       setShowTxnModal(false);
       await reloadAfterEdit();
+      // Same as picking Charity in the list: offer the receipt / PAYE link.
+      if (isCharityCategoryId(created.categoryId)) openCharityReceiptModal(created);
     } catch (err) {
       setMsg((err as Error).message);
     } finally {
@@ -836,6 +846,7 @@ export function Spending() {
     const netFlow = flowTxns
       .filter(
         (t) =>
+          t.accountId !== null &&
           liquidCashIds.has(t.accountId) &&
           t.date >= periodFrom &&
           t.date <= todayYmd,
@@ -1366,7 +1377,8 @@ export function Spending() {
             </div>
             <p className="section-desc">
               Bank: Kiwibank / debit before Akahu posts. Manual: off-Akahu cards (Nexo, GoMining, …).
-              Charged account required so spend ties to a cash balance.
+              Pick the charged account so spend ties to a cash balance, or turn it off for a crypto
+              Visa debit card that spends from crypto rather than a bank account.
             </p>
             <form className="form-grid" onSubmit={onAddTxn}>
             <label>
@@ -1432,8 +1444,24 @@ export function Spending() {
                 ))}
               </datalist>
               <span className="muted small">
-                A saved category for this payee is applied when you save.
+                Leave Category on Automatic to use this payee’s saved category, or one guessed from
+                your past transactions like it.
               </span>
+            </label>
+            <label className="span-2">
+              Category
+              <select value={formCategoryId} onChange={(e) => setFormCategoryId(e.target.value)}>
+                <option value="">Automatic (from this payee or similar past transactions)</option>
+                {categories.map((c) => {
+                  const tag = categoryTypeShortTag(normalizeCategoryType(c.type, c.isIncome));
+                  return (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                      {tag ? ` (${tag})` : ''}
+                    </option>
+                  );
+                })}
+              </select>
             </label>
             <label>
               Card
@@ -1473,6 +1501,22 @@ export function Spending() {
                 />
               </label>
             )}
+            <label className="span-2 row gap" style={{ alignItems: 'center' }}>
+              <input
+                type="checkbox"
+                checked={formCharged}
+                onChange={(e) => {
+                  setFormCharged(e.target.checked);
+                  // A card that spends crypto isn't a bank transaction.
+                  if (!e.target.checked && formSource === 'bank') setFormSource('manual');
+                }}
+              />
+              <span>
+                Charged to a bank account{' '}
+                <span className="muted small">(turn off for crypto Visa debit cards — Nexo, GoMining, …)</span>
+              </span>
+            </label>
+            {formCharged ? (
             <label className="span-2">
               Charged account
               <select
@@ -1498,6 +1542,12 @@ export function Spending() {
                 ))}
               </select>
             </label>
+            ) : (
+              <p className="span-2 muted small">
+                Not charged to a bank account: the spend still counts in budgets and categories, but no
+                cash balance changes. Tick “Pays with BTC” to take it out of a BTC holding instead.
+              </p>
+            )}
             <label className="span-2 row gap" style={{ alignItems: 'center' }}>
               <input
                 type="checkbox"
@@ -2041,70 +2091,6 @@ export function Spending() {
       </section>
 
       <section className="panel">
-        <h3>Payee settings</h3>
-        <p className="section-desc">
-          A payee you have used, including a dividend payer, can keep a category you already have.
-          That category is filled in the next time you use the payee. Income uses it when the
-          category is an income category. Transactions use it when the payee is the description.
-          This is a personal record, not advice.
-        </p>
-        {payees.length === 0 ? (
-          <p className="muted">
-            No payees yet. Record income, a transaction, or a dividend and the name is listed here.
-          </p>
-        ) : (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Payee</th>
-                  <th>Category</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {payees.map((payee) => (
-                  <tr key={payee.name}>
-                    <td>{payee.name}</td>
-                    <td>
-                      <select
-                        aria-label={`Category for ${payee.name}`}
-                        value={payeeCategoryDraft[payee.name] ?? payee.categoryId ?? ''}
-                        onChange={(e) =>
-                          setPayeeCategoryDraft((prev) => ({ ...prev, [payee.name]: e.target.value }))
-                        }
-                      >
-                        <option value="">No saved category</option>
-                        {categories.map((c) => {
-                          const tag = categoryTypeShortTag(normalizeCategoryType(c.type, c.isIncome));
-                          return (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                              {tag ? ` (${tag})` : ''}
-                            </option>
-                          );
-                        })}
-                      </select>
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="btn small"
-                        disabled={payeeSavingName === payee.name}
-                        onClick={() => onSavePayee(payee.name)}
-                      >
-                        {payeeSavingName === payee.name ? 'Saving…' : 'Save'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="panel">
         <h3>Spend by category · {monthLabel}</h3>
         <CategorySpendChart
           rows={categorySpend}
@@ -2436,7 +2422,7 @@ export function Spending() {
                       {formatNzd(Number(t.amount))}
                     </td>
                     <td className="muted small">{t.cardName || '—'}</td>
-                    <td className="muted small">{t.accountName || t.accountId}</td>
+                    <td className="muted small">{t.accountName || t.accountId || 'Not charged'}</td>
                     <td>
                       <div className="category-cell">
                         <select
@@ -2800,6 +2786,86 @@ export function Spending() {
           </div>
         </div>
       )}
+
+      <section className={`panel payee-settings-panel${payeeSettingsOpen ? ' is-open' : ''}`}>
+        <h3>
+          <button
+            type="button"
+            className="payee-settings-toggle"
+            aria-expanded={payeeSettingsOpen}
+            aria-controls="payee-settings-body"
+            onClick={() => setPayeeSettingsOpen((open) => !open)}
+          >
+            <span className="payee-settings-title">
+              Payee settings
+              <span className="payee-settings-count muted">({payees.length})</span>
+            </span>
+            <span className="payee-settings-chevron" aria-hidden="true" />
+          </button>
+        </h3>
+        <div id="payee-settings-body" hidden={!payeeSettingsOpen}>
+          <p className="section-desc">
+            A payee you have used, including a dividend payer, can keep a category you already have.
+            That category is filled in the next time you use the payee. Income uses it when the
+            category is an income category. Transactions use it when the payee is the description.
+            This is a personal record, not advice.
+          </p>
+          {payees.length === 0 ? (
+            <p className="muted">
+              No payees yet. Record income, a transaction, or a dividend and the name is listed here.
+            </p>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Payee</th>
+                    <th>Category</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payees.map((payee) => (
+                    <tr key={payee.name}>
+                      <td>{payee.name}</td>
+                      <td>
+                        <select
+                          aria-label={`Category for ${payee.name}`}
+                          value={payeeCategoryDraft[payee.name] ?? payee.categoryId ?? ''}
+                          onChange={(e) =>
+                            setPayeeCategoryDraft((prev) => ({ ...prev, [payee.name]: e.target.value }))
+                          }
+                        >
+                          <option value="">No saved category</option>
+                          {categories.map((c) => {
+                            const tag = categoryTypeShortTag(normalizeCategoryType(c.type, c.isIncome));
+                            return (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                                {tag ? ` (${tag})` : ''}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn small"
+                          disabled={payeeSavingName === payee.name}
+                          onClick={() => onSavePayee(payee.name)}
+                        >
+                          {payeeSavingName === payee.name ? 'Saving…' : 'Save'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </section>
 
     </div>
   );

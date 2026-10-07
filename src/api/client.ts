@@ -11,10 +11,19 @@ import type {
   DebtPerson,
   DebtSummary,
   DebtWriteBody,
+  Donation,
+  DonationSummary,
+  DonationWriteBody,
   HomeMonthSnapshot,
+  NewsFeedResponse,
+  ProjectionResponse,
   PayeeSetting,
   SavingsGoal,
   SavingsGoalWriteBody,
+  Wallet,
+  WalletNetwork,
+  WalletNetworkInfo,
+  WalletsValuationResponse,
 } from '../types/index.ts';
 
 const BASE = '/api';
@@ -82,6 +91,42 @@ export type AuthUser = {
   };
 };
 
+/** An account signed in on this browser (account switcher). */
+export type RememberedAccount = {
+  userId: string;
+  email: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  current: boolean;
+};
+
+/** Settings → Security (KAN-16). */
+export type SsoProvider = { id: 'google' | 'apple' | 'microsoft'; label: string };
+
+export type AccountSecurity = {
+  hasPassword: boolean;
+  identities: Array<{ id: string; provider: string; label: string; email: string | null; createdAt: string; lastUsedAt: string | null }>;
+  ssoProviders: SsoProvider[];
+  twoFactor: { enabled: boolean; enabledAt: string | null; backupCodesRemaining: number };
+  sessions: Array<{
+    id: string;
+    deviceLabel: string | null;
+    createdAt: string;
+    lastSeenAt: string | null;
+    expiresAt: string;
+    persistent: boolean;
+    current: boolean;
+  }>;
+  trustedDevices: Array<{
+    id: string;
+    label: string | null;
+    createdAt: string;
+    lastUsedAt: string | null;
+    expiresAt: string;
+    current: boolean;
+  }>;
+};
+
 export const api = {
   auth: {
     status: () =>
@@ -99,9 +144,40 @@ export const api = {
         claimedExistingData: boolean;
         message: string;
       }>('/auth/register', { method: 'POST', body: JSON.stringify(body) }),
-    login: (body: { email: string; password: string }) =>
-      req<{ user: AuthUser }>('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
-    logout: () => req<{ ok: boolean }>('/auth/logout', { method: 'POST', body: '{}' }),
+    login: (body: { email: string; password: string; remember?: boolean }) =>
+      req<
+        | { user: AuthUser; twoFactorRequired?: false }
+        | { twoFactorRequired: true; challenge: string; expiresAt: string; methods: Array<'totp' | 'backup_code'> }
+      >('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
+    loginTwoFactor: (body: { challenge: string; code: string; trustDevice: boolean }) =>
+      req<{ user: AuthUser; usedBackupCode?: boolean; backupCodesRemaining?: number }>('/auth/login/2fa', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    security: () => req<AccountSecurity>('/auth/security'),
+    ssoProviders: () => req<{ providers: SsoProvider[] }>('/auth/sso/providers'),
+    disconnectIdentity: (id: string) => req<{ ok: boolean }>(`/auth/identities/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    twoFactorSetup: (password: string) =>
+      req<{ secret: string; otpauthUri: string; qrSvg: string }>('/auth/2fa/setup', {
+        method: 'POST',
+        body: JSON.stringify({ password }),
+      }),
+    twoFactorEnable: (code: string) =>
+      req<{ ok: boolean; backupCodes: string[] }>('/auth/2fa/enable', { method: 'POST', body: JSON.stringify({ code }) }),
+    twoFactorDisable: (body: { password: string; code: string }) =>
+      req<{ ok: boolean }>('/auth/2fa/disable', { method: 'POST', body: JSON.stringify(body) }),
+    twoFactorBackupCodes: (body: { password: string; code: string }) =>
+      req<{ ok: boolean; backupCodes: string[] }>('/auth/2fa/backup-codes', { method: 'POST', body: JSON.stringify(body) }),
+    revokeSession: (id: string) => req<{ ok: boolean }>(`/auth/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    revokeOtherSessions: () => req<{ ok: boolean; signedOut: number }>('/auth/sessions/revoke-others', { method: 'POST', body: '{}' }),
+    revokeTrustedDevice: (id: string) =>
+      req<{ ok: boolean }>(`/auth/trusted-devices/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    revokeAllTrustedDevices: () => req<{ ok: boolean; revoked: number }>('/auth/trusted-devices', { method: 'DELETE' }),
+    logout: () => req<{ ok: boolean; switchedToUserId: string | null }>('/auth/logout', { method: 'POST', body: '{}' }),
+    logoutAll: () => req<{ ok: boolean; signedOut: number }>('/auth/logout-all', { method: 'POST', body: '{}' }),
+    accounts: () => req<{ accounts: RememberedAccount[] }>('/auth/accounts'),
+    switchAccount: (userId: string) =>
+      req<{ ok: boolean; userId: string }>('/auth/accounts/switch', { method: 'POST', body: JSON.stringify({ userId }) }),
     updateProfile: (body: { firstName?: string | null; lastName?: string | null; displayName?: string | null }) =>
       req<{ user: AuthUser }>('/auth/profile', { method: 'PATCH', body: JSON.stringify(body) }),
     uploadAvatar: (photoBase64: string) =>
@@ -150,6 +226,33 @@ export const api = {
       req<HomeMonthSnapshot>(
         month ? `/home/snapshot?month=${encodeURIComponent(month)}` : '/home/snapshot',
       ),
+  },
+  /**
+   * Forward net worth and savings from this user's balances and cashflow.
+   * months defaults to 12 (1–360). annualReturnPercent and monthlySavingNzd
+   * are optional; omitted values are labelled in assumptions.
+   */
+  projections: {
+    get: (query?: {
+      months?: number;
+      savingWindowMonths?: number;
+      annualReturnPercent?: number;
+      monthlySavingNzd?: number;
+    }) => {
+      const params = new URLSearchParams();
+      if (query?.months != null) params.set('months', String(query.months));
+      if (query?.savingWindowMonths != null) {
+        params.set('savingWindowMonths', String(query.savingWindowMonths));
+      }
+      if (query?.annualReturnPercent != null) {
+        params.set('annualReturnPercent', String(query.annualReturnPercent));
+      }
+      if (query?.monthlySavingNzd != null) {
+        params.set('monthlySavingNzd', String(query.monthlySavingNzd));
+      }
+      const qs = params.toString();
+      return req<ProjectionResponse>(`/projections${qs ? `?${qs}` : ''}`);
+    },
   },
   snapshots: {
     list: (year?: number) =>
@@ -290,7 +393,8 @@ export const api = {
         primaryId: string | null;
       }>('/accounts/btc-holdings'),
     createTransaction: (body: {
-      accountId: string;
+      /** Null = not charged to a bank account (crypto Visa debit card). */
+      accountId: string | null;
       date: string;
       description: string;
       amount: number;
@@ -426,6 +530,38 @@ export const api = {
       }),
     remove: (id: string) =>
       req<{ ok: boolean; id: string }>(`/savings-goals/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      }),
+  },
+  wallets: {
+    list: () => req<Wallet[]>('/wallets'),
+    networks: () => req<WalletNetworkInfo[]>('/wallets/networks'),
+    valuation: () => req<WalletsValuationResponse>('/wallets/valuation'),
+    create: (body: { network: WalletNetwork; address: string; name?: string }) =>
+      req<Wallet>('/wallets', { method: 'POST', body: JSON.stringify(body) }),
+    remove: (id: string) =>
+      req<{ ok: boolean; id: string }>(`/wallets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    sync: (id: string) =>
+      req<{ synced: boolean; wallet: Wallet; error?: string; code?: string }>(
+        `/wallets/${encodeURIComponent(id)}/sync`,
+        { method: 'POST' },
+      ),
+  },
+  donations: {
+    list: (taxYear?: number) =>
+      req<Donation[]>(`/donations${taxYear != null ? `?taxYear=${taxYear}` : ''}`),
+    summary: (taxYear?: number) =>
+      req<DonationSummary>(`/donations/summary${taxYear != null ? `?taxYear=${taxYear}` : ''}`),
+    get: (id: string) => req<Donation>(`/donations/${encodeURIComponent(id)}`),
+    create: (body: DonationWriteBody & { date: string; recipient: string; amountNzd: number }) =>
+      req<Donation>('/donations', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: DonationWriteBody) =>
+      req<Donation>(`/donations/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+    remove: (id: string) =>
+      req<{ ok: boolean; id: string }>(`/donations/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       }),
   },
@@ -1201,6 +1337,14 @@ export const api = {
       if (opts?.refresh) q.set('refresh', '1');
       const search = q.toString();
       return req<PhaseNewsResponse>(`/economy/news${search ? `?${search}` : ''}`);
+    },
+  },
+  news: {
+    feed: (opts?: { refresh?: boolean }) => {
+      const q = new URLSearchParams();
+      if (opts?.refresh) q.set('refresh', '1');
+      const search = q.toString();
+      return req<NewsFeedResponse>(`/news${search ? `?${search}` : ''}`);
     },
   },
 };

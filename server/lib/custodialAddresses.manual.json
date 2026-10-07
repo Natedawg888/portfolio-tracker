@@ -1,0 +1,4 @@
+{
+  "_comment": "Hand-checked custodial / exchange addresses merged into custodialAddresses.json by `npm run denylist:update`. family is evm | bitcoin | solana (one evm entry covers Ethereum, Polygon, Base and Arbitrum). Check each address on an explorer (Etherscan name tag, Solscan label, the exchange's proof-of-reserves page) and put that link in source. Addresses only, never secrets.",
+  "addresses": []
+}

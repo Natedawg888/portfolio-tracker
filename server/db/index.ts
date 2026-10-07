@@ -49,6 +49,47 @@ export function persist() {
 }
 
 
+/**
+ * Existing databases have transactions.account_id NOT NULL. Spend on a crypto Visa debit
+ * card (Nexo, GoMining…) isn't charged to a bank account, so the column becomes nullable.
+ * SQLite can't drop NOT NULL in place: rebuild from the live CREATE statement (keeps every
+ * migrated column), copy rows, swap, and recreate the indexes.
+ */
+function migrateNullableTransactionAccount(database: Database) {
+  const cols = database.exec('PRAGMA table_info(transactions)')[0];
+  if (!cols) return;
+  const nameIdx = cols.columns.indexOf('name');
+  const notNullIdx = cols.columns.indexOf('notnull');
+  const accountCol = cols.values.find((r) => r[nameIdx] === 'account_id');
+  if (!accountCol || Number(accountCol[notNullIdx]) !== 1) return;
+
+  const createSql = String(
+    database.exec(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transactions'`)[0].values[0][0],
+  );
+  const relaxed = createSql
+    .replace(/CREATE TABLE\s+(IF NOT EXISTS\s+)?"?transactions"?/i, 'CREATE TABLE transactions_nullable_acct')
+    .replace(/(account_id\s+TEXT)\s+NOT NULL/i, '$1');
+  if (relaxed === createSql || /account_id\s+TEXT\s+NOT NULL/i.test(relaxed)) {
+    throw new Error('transactions migration: could not relax account_id NOT NULL');
+  }
+  const indexSql = (database.exec(
+    `SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'transactions' AND sql IS NOT NULL`,
+  )[0]?.values ?? []).map((r) => String(r[0]));
+
+  database.run('BEGIN');
+  try {
+    database.run(relaxed);
+    database.run('INSERT INTO transactions_nullable_acct SELECT * FROM transactions');
+    database.run('DROP TABLE transactions');
+    database.run('ALTER TABLE transactions_nullable_acct RENAME TO transactions');
+    for (const sql of indexSql) database.run(sql);
+    database.run('COMMIT');
+  } catch (err) {
+    database.run('ROLLBACK');
+    throw err;
+  }
+}
+
 /** Existing databases were created with cost_basis_nzd NOT NULL DEFAULT 0.
  * Rebuild that table once so a blank cost basis can be stored as SQL NULL. */
 function migrateNullableHoldingCost(database: Database) {
@@ -451,6 +492,35 @@ function migrateSchema(database: Database) {
     `CREATE INDEX IF NOT EXISTS idx_akahu_connections_user ON akahu_connections(user_id)`,
   );
 
+  // Wallet sync scheduling (KAN-41) — wallets table predates these columns.
+  const walletCols = tableColumns(database, 'wallets');
+  if (walletCols.size > 0 && !walletCols.has('next_sync_at')) {
+    database.run('ALTER TABLE wallets ADD COLUMN next_sync_at TEXT');
+  }
+  if (walletCols.size > 0 && !walletCols.has('sync_failures')) {
+    database.run('ALTER TABLE wallets ADD COLUMN sync_failures INTEGER NOT NULL DEFAULT 0');
+  }
+
+  // 2FA + session devices (KAN-16) — users / sessions predate these columns.
+  const totpUserCols = tableColumns(database, 'users');
+  for (const [col, type] of [
+    ['totp_secret_enc', 'TEXT'],
+    ['totp_pending_enc', 'TEXT'],
+    ['totp_pending_at', 'TEXT'],
+    ['totp_enabled_at', 'TEXT'],
+    ['totp_last_step', 'INTEGER'],
+  ] as const) {
+    if (totpUserCols.size > 0 && !totpUserCols.has(col)) database.run(`ALTER TABLE users ADD COLUMN ${col} ${type}`);
+  }
+  const sessionCols = tableColumns(database, 'sessions');
+  for (const [col, type] of [
+    ['device_label', 'TEXT'],
+    ['last_seen_at', 'TEXT'],
+    ['persistent', 'INTEGER NOT NULL DEFAULT 1'],
+  ] as const) {
+    if (sessionCols.size > 0 && !sessionCols.has(col)) database.run(`ALTER TABLE sessions ADD COLUMN ${col} ${type}`);
+  }
+
   // Per-user finance isolation: user_id on scoped tables.
   // First user (data_owner_user_id) keeps existing rows; later users start empty.
   const scopedTables: Array<{ table: string; index?: string }> = [
@@ -468,6 +538,7 @@ function migrateSchema(database: Database) {
     { table: 'budget_categories', index: 'idx_budget_categories_user' },
     { table: 'payee_settings', index: 'idx_payee_settings_user' },
     { table: 'savings_goals', index: 'idx_savings_goals_user' },
+    { table: 'donations', index: 'idx_donations_user' },
   ];
   for (const { table, index } of scopedTables) {
     const cols = tableColumns(database, table);
@@ -655,6 +726,7 @@ export async function getDb(): Promise<Database> {
   db.exec(schema);
   migrateSchema(db);
   migrateNullableHoldingCost(db);
+  migrateNullableTransactionAccount(db);
   seedDefaults(db);
   persist();
   return db;

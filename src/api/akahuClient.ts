@@ -57,6 +57,8 @@ export type AkahuTxnSyncResult = {
   inserted: number;
   updated: number;
   merged?: number;
+  /** Uncategorised rows given a category guessed from past transactions */
+  categorised?: number;
   skippedNoAccount: number;
   skippedBeforeDate: number;
   sinceDate: string;

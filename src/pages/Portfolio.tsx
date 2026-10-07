@@ -11,6 +11,7 @@ import {
   portfolioSyncChanged,
   readPageCache,
   txnSyncChanged,
+  writePageCache,
 } from '../lib/pageDataCache';
 import { AssetBreakdownChart, type AssetBreakdownRow } from '../components/AssetBreakdownChart';
 import { HoldingPriceChart } from '../components/HoldingPriceChart';
@@ -33,6 +34,13 @@ import { CollectablesPanel } from '../components/CollectablesPanel';
 import { isApiCardGame, isManualCollectableGame } from '../lib/collectables';
 import type { MtgColour } from '../types';
 import { DividendTracker } from '../components/DividendTracker';
+import {
+  AddWalletDetails,
+  WalletCard,
+  WalletNotices,
+  WalletsTotal,
+} from '../components/CryptoWalletCards';
+import { useCryptoWallets } from '../lib/cryptoWallets';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
 import { metalSpotHint, type MetalSpotSource, type MetalSpotStatus } from '../lib/metalSpotCopy';
@@ -1376,9 +1384,20 @@ function HoldingCard({
 }
 
 
-function InlineAddDetails({ label, children }: { label: string; children: ReactNode }) {
+const MANUAL_CRYPTO_ID = 'add-crypto-manual';
+
+/** Exchange / app balances (Nexo, GoMining…) go in the manual crypto form (KAN-69). */
+function openManualCrypto() {
+  const el = document.getElementById(MANUAL_CRYPTO_ID);
+  if (!(el instanceof HTMLDetailsElement)) return;
+  el.open = true;
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  el.querySelector('input')?.focus({ preventScroll: true });
+}
+
+function InlineAddDetails({ label, id, children }: { label: string; id?: string; children: ReactNode }) {
   return (
-    <details className="section-add">
+    <details className="section-add" id={id}>
       <summary className="section-add-summary">
         <span className="section-add-label">{label}</span>
       </summary>
@@ -1396,6 +1415,8 @@ function Section({
   onUpdateQuantity,
   onUpdateArt,
   earningsById,
+  headerExtra,
+  extraCards,
   children,
 }: {
   title: string;
@@ -1415,12 +1436,24 @@ function Section({
     },
   ) => Promise<void>;
   earningsById?: Record<string, GoMiningEarningsEstimate>;
+  /** Shown beside the title (e.g. a section total). */
+  headerExtra?: ReactNode;
+  /** Extra cards rendered in the same grid after the holdings (e.g. crypto wallets). */
+  extraCards?: ReactNode[];
   children?: ReactNode;
 }) {
+  const hasExtra = Boolean(extraCards?.length);
   return (
     <section className="panel">
-      <h3>{title}</h3>
-      {items.length === 0 ? (
+      {headerExtra ? (
+        <div className="section-head-row">
+          <h3>{title}</h3>
+          {headerExtra}
+        </div>
+      ) : (
+        <h3>{title}</h3>
+      )}
+      {items.length === 0 && !hasExtra ? (
         <p className="muted">{empty}</p>
       ) : (
         <div className="holding-cards">
@@ -1435,6 +1468,7 @@ function Section({
               earnings={earningsById?.[h.id]}
             />
           ))}
+          {extraCards}
         </div>
       )}
       {children}
@@ -1946,6 +1980,7 @@ const PORTFOLIO_METALS = 'portfolio:metals';
 
 export function Portfolio() {
   const { enabled: assetEnabled } = useAssetClassPrefs();
+  const cryptoWallets = useCryptoWallets(assetEnabled('crypto'));
   const initialPortfolio = readPageCache<PortfolioBundle>(PORTFOLIO_KEY);
   const initialGm = readPageCache<GominingUiSettings>(PORTFOLIO_GM);
   const [holdings, setHoldings] = useState<Holding[]>(initialPortfolio?.holdings ?? []);
@@ -1993,6 +2028,12 @@ export function Portfolio() {
     initialGm ? { ...initialGm, fxLoading: false } : emptyGmSettings,
   );
   const [savingGm, setSavingGm] = useState(false);
+  const holdingsRef = useRef(holdings);
+  holdingsRef.current = holdings;
+  const gmCurrencyRef = useRef(gmSettings.displayCurrency);
+  gmCurrencyRef.current = gmSettings.displayCurrency;
+  const gmNoteRef = useRef(gmSettings.note);
+  gmNoteRef.current = gmSettings.note;
 
   const load = useCallback(() => {
     const stamp = beginPageRead(PORTFOLIO_KEY);
@@ -2008,21 +2049,40 @@ export function Portfolio() {
         setError(null);
       })
       .catch((e: Error) => {
-        setHoldings((prev) => {
-          if (prev.length > 0) {
-            showQuietToast('Could not refresh portfolio — showing last data.', { kind: 'warn' });
-            return prev;
-          }
-          setError(e.message);
-          return prev;
-        });
+        if (holdingsRef.current.length > 0) {
+          showQuietToast('Could not refresh portfolio — showing last data.', { kind: 'warn' });
+          return;
+        }
+        setError(e.message);
       });
   }, []);
 
   const reloadAfterEdit = useCallback(() => {
-    invalidateFinancial('portfolio', 'dashboard', 'yearly', 'dividends');
+    invalidateFinancial('portfolio', 'dashboard', 'yearly', 'dividends', 'projections');
     return load();
   }, [load]);
+
+  // Net worth includes wallets (KAN-42): refresh the totals when wallet values change
+  // (add / remove / sync), but not for the first wallet load — `load` already covers that.
+  const walletsKey = cryptoWallets.data
+    ? `${cryptoWallets.entries.length}:${cryptoWallets.data.totalNzd}:${cryptoWallets.data.failedWallets}`
+    : null;
+  const lastWalletsKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (walletsKey == null) return;
+    const prev = lastWalletsKey.current;
+    lastWalletsKey.current = walletsKey;
+    if (prev == null || prev === walletsKey) return;
+    invalidateFinancial('dashboard', 'yearly', 'projections');
+    api
+      .netWorth()
+      .then((net) => {
+        const next = net as PortfolioNetWorth;
+        setSummary(next);
+        writePageCache(PORTFOLIO_KEY, { holdings: holdingsRef.current, summary: next });
+      })
+      .catch(() => {});
+  }, [walletsKey]);
 
   const loadGmSettings = () => {
     const stamp = beginPageRead(PORTFOLIO_GM);
@@ -2045,27 +2105,24 @@ export function Portfolio() {
         const fxRaw = raw.fx ?? null;
         const incomeRaw = raw.income ?? null;
         const networkLive = raw.networkHashrate ?? null;
-        let nextSettings: GominingUiSettings | null = null;
-        setGmSettings((prev) => {
-          nextSettings = {
-            discountPct: g.discountPct ?? 0,
-            btcUsd: g.btcUsd != null ? String(g.btcUsd) : '',
-            networkHashrateEhs:
-              g.networkHashrateEhs != null ? String(g.networkHashrateEhs) : '',
-            dailyBtcIssuance:
-              g.dailyBtcIssuance != null ? String(g.dailyBtcIssuance) : '',
-            kWhCostUsd: g.kWhCostUsd != null ? String(g.kWhCostUsd) : '',
-            note: g.defaults?.note ?? '',
-            fx: fxRaw,
-            income: incomeRaw,
-            networkLive,
-            effectiveNetworkEhs: raw.effective?.networkHashrateEhs ?? null,
-            fxLoading: false,
-            displayCurrency: prev.displayCurrency ?? 'ALL',
-          };
-          return nextSettings;
-        });
-        if (nextSettings) commitPageRead(stamp, nextSettings);
+        const nextSettings: GominingUiSettings = {
+          discountPct: g.discountPct ?? 0,
+          btcUsd: g.btcUsd != null ? String(g.btcUsd) : '',
+          networkHashrateEhs:
+            g.networkHashrateEhs != null ? String(g.networkHashrateEhs) : '',
+          dailyBtcIssuance:
+            g.dailyBtcIssuance != null ? String(g.dailyBtcIssuance) : '',
+          kWhCostUsd: g.kWhCostUsd != null ? String(g.kWhCostUsd) : '',
+          note: g.defaults?.note ?? '',
+          fx: fxRaw,
+          income: incomeRaw,
+          networkLive,
+          effectiveNetworkEhs: raw.effective?.networkHashrateEhs ?? null,
+          fxLoading: false,
+          displayCurrency: gmCurrencyRef.current ?? 'ALL',
+        };
+        setGmSettings(nextSettings);
+        commitPageRead(stamp, nextSettings);
       })
       .catch((e: Error) => {
         setGmSettings((prev) => ({ ...prev, fxLoading: false }));
@@ -2144,27 +2201,24 @@ export function Portfolio() {
         defaults?: { note?: string };
       };
       const fxRaw = raw.fx ?? null;
-      let nextSettings: GominingUiSettings | null = null;
-      setGmSettings((prev) => {
-        nextSettings = {
-          discountPct: g.discountPct ?? 0,
-          btcUsd: g.btcUsd != null ? String(g.btcUsd) : '',
-          networkHashrateEhs:
-            g.networkHashrateEhs != null ? String(g.networkHashrateEhs) : '',
-          dailyBtcIssuance:
-            g.dailyBtcIssuance != null ? String(g.dailyBtcIssuance) : '',
-          kWhCostUsd: g.kWhCostUsd != null ? String(g.kWhCostUsd) : '',
-          note: raw.defaults?.note ?? prev.note,
-          fx: fxRaw,
-          income: raw.income ?? null,
-          networkLive: raw.networkHashrate ?? null,
-          effectiveNetworkEhs: raw.effective?.networkHashrateEhs ?? null,
-          fxLoading: false,
-          displayCurrency: prev.displayCurrency,
-        };
-        return nextSettings;
-      });
-      if (nextSettings) commitPageRead(beginPageRead(PORTFOLIO_GM), nextSettings);
+      const nextSettings: GominingUiSettings = {
+        discountPct: g.discountPct ?? 0,
+        btcUsd: g.btcUsd != null ? String(g.btcUsd) : '',
+        networkHashrateEhs:
+          g.networkHashrateEhs != null ? String(g.networkHashrateEhs) : '',
+        dailyBtcIssuance:
+          g.dailyBtcIssuance != null ? String(g.dailyBtcIssuance) : '',
+        kWhCostUsd: g.kWhCostUsd != null ? String(g.kWhCostUsd) : '',
+        note: raw.defaults?.note ?? gmNoteRef.current,
+        fx: fxRaw,
+        income: raw.income ?? null,
+        networkLive: raw.networkHashrate ?? null,
+        effectiveNetworkEhs: raw.effective?.networkHashrateEhs ?? null,
+        fxLoading: false,
+        displayCurrency: gmCurrencyRef.current,
+      };
+      setGmSettings(nextSettings);
+      commitPageRead(beginPageRead(PORTFOLIO_GM), nextSettings);
       setMsg('GoMining discount / network params saved.');
     } catch (err) {
       setMsg((err as Error).message);
@@ -3015,8 +3069,20 @@ export function Portfolio() {
         onRefresh={refresh}
         onDelete={deleteHolding}
         onUpdateQuantity={updateHoldingQuantity}
+        headerExtra={<WalletsTotal state={cryptoWallets} />}
+        extraCards={cryptoWallets.entries.map((e) => (
+          <WalletCard key={`wallet-${e.wallet.id}`} entry={e} state={cryptoWallets} />
+        ))}
       >
-        <InlineAddDetails label="Add crypto">
+        <WalletNotices state={cryptoWallets} />
+        {grouped.crypto.length > 0 && cryptoWallets.entries.length > 0 ? (
+          <p className="muted small">
+            Wallets and manual crypto lines both count toward net worth. If a manual line tracks the same
+            coins as a wallet, remove it so they aren&apos;t counted twice.
+          </p>
+        ) : null}
+        <AddWalletDetails state={cryptoWallets} onUseManual={openManualCrypto} />
+        <InlineAddDetails label="Add crypto" id={MANUAL_CRYPTO_ID}>
           <form className="form-grid" onSubmit={onAddCrypto}>
             <h4>Add crypto (manual / Nexo)</h4>
             <label>

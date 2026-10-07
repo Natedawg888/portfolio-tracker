@@ -30,6 +30,7 @@ import {
   type CategoryType,
 } from '../lib/categoryTypes';
 import { CategoryTypeToggle } from '../components/CategoryTypeToggle';
+import { SecurityPanel } from '../components/SecurityPanel';
 import {
   beginPageRead,
   commitPageRead,
@@ -40,7 +41,7 @@ import {
   txnSyncChanged,
 } from '../lib/pageDataCache';
 
-type SettingsTab = 'account' | 'categories';
+type SettingsTab = 'account' | 'security' | 'categories';
 
 type TxCategory = {
   id: string;
@@ -66,7 +67,11 @@ export function Settings() {
   const tabParam = searchParams.get('tab');
   // Akahu OAuth returns to /settings?akahu=… — open Categories tab so the handler mounts
   const tab: SettingsTab =
-    searchParams.get('akahu') || tabParam === 'categories' ? 'categories' : 'account';
+    searchParams.get('akahu') || tabParam === 'categories'
+      ? 'categories'
+      : tabParam === 'security'
+        ? 'security'
+        : 'account';
 
   const setTab = (next: SettingsTab) => {
     const params = new URLSearchParams(searchParams);
@@ -89,6 +94,14 @@ export function Settings() {
           </button>
           <button
             type="button"
+            className={tab === 'security' ? 'settings-side-link active' : 'settings-side-link'}
+            onClick={() => setTab('security')}
+            aria-current={tab === 'security' ? 'page' : undefined}
+          >
+            Security
+          </button>
+          <button
+            type="button"
             className={tab === 'categories' ? 'settings-side-link active' : 'settings-side-link'}
             onClick={() => setTab('categories')}
             aria-current={tab === 'categories' ? 'page' : undefined}
@@ -98,7 +111,13 @@ export function Settings() {
         </nav>
       </aside>
       <div className="settings-main stack">
-        {tab === 'account' ? <AccountPanel /> : <CategoriesPanel searchParams={searchParams} setSearchParams={setSearchParams} />}
+        {tab === 'account' ? (
+          <AccountPanel />
+        ) : tab === 'security' ? (
+          <SecurityPanel />
+        ) : (
+          <CategoriesPanel searchParams={searchParams} setSearchParams={setSearchParams} />
+        )}
       </div>
     </div>
   );
@@ -770,7 +789,8 @@ function CategoriesPanel({
         `Synced: ${portfolio.cashAccountsUpserted ?? 0} cash, ` +
           `${portfolio.stocksUpserted ?? 0} stocks, ${portfolio.cryptoUpserted ?? 0} crypto, ` +
           `KS ${portfolio.kiwisaverBalanceSynced ? 'yes' : 'no'}; ` +
-          `txns +${txns.inserted ?? 0}/~${txns.updated ?? 0}.`,
+          `txns +${txns.inserted ?? 0}/~${txns.updated ?? 0}` +
+          (txns.categorised ? `, ${txns.categorised} categorised from past transactions.` : '.'),
       );
       await loadAkahu();
       try {

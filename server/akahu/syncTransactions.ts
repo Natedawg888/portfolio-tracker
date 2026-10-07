@@ -14,6 +14,7 @@ import {
   type AkahuTransaction,
 } from './client.ts';
 import { upsertAkahuCashAccounts } from './sync.ts';
+import { createCategoryPredictor } from '../lib/categoryPredict.ts';
 
 /** First calendar day to keep (Auckland date string). */
 export const TXN_SYNC_FROM_DATE = '2026-10-01';
@@ -108,6 +109,8 @@ export type TxnSyncResult = {
   updated: number;
   /** Soft-merged onto bank/manual placeholder (no prior external_id) */
   merged: number;
+  /** Uncategorised rows given a category guessed from the user's past transactions */
+  categorised: number;
   skippedNoAccount: number;
   skippedBeforeDate: number;
   sinceDate: string;
@@ -178,8 +181,20 @@ export async function syncBankTransactionsFromAkahu(
   let inserted = 0;
   let updated = 0;
   let merged = 0;
+  let categorised = 0;
   let skippedNoAccount = 0;
   let skippedBeforeDate = 0;
+  // Category guesses from this user's own history (payee rule, then similar past spend).
+  const predict = createCategoryPredictor(db, userId);
+  /** Fill category only where none is set — a category chosen by the user always stays. */
+  const fillCategory = (id: string, guessFrom: { merchant: string | null; description: string; amount: number }) => {
+    const row = queryOne<{ category_id: string | null }>(db, `SELECT category_id FROM transactions WHERE id = ?`, [id]);
+    if (row?.category_id) return;
+    const guess = predict(guessFrom);
+    if (!guess) return;
+    run(db, `UPDATE transactions SET category_id = ? WHERE id = ? AND category_id IS NULL`, [guess.categoryId, id]);
+    categorised += 1;
+  };
 
   for (const txn of remote) {
     const ymd = aucklandYmd(txn.date);
@@ -233,6 +248,7 @@ export async function syncBankTransactionsFromAkahu(
         ],
       );
       updated += 1;
+      fillCategory(existing.id, { merchant, description, amount });
     } else {
       // Soft-merge: only bank/manual placeholders (no external_id). Prefer a row
       // whose description loosely matches Akahu merchant/description so a same-day
@@ -277,13 +293,16 @@ export async function syncBankTransactionsFromAkahu(
           ],
         );
         merged += 1;
+        fillCategory(pending.id, { merchant, description, amount });
       } else {
+        const guess = predict({ merchant, description, amount });
+        if (guess) categorised += 1;
         run(
           db,
           `INSERT INTO transactions (
              id, user_id, account_id, date, description, amount, kind, category_id,
              currency, external_id, created_at, card_name, merchant, source
-           ) VALUES (?,?,?,?,?,?,?,NULL,?,?,?,?,?,'akahu')`,
+           ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'akahu')`,
           [
             newId('txn'),
             userId,
@@ -292,6 +311,7 @@ export async function syncBankTransactionsFromAkahu(
             description,
             amount,
             kind,
+            guess?.categoryId ?? null,
             currency,
             externalId,
             now,
@@ -310,6 +330,7 @@ export async function syncBankTransactionsFromAkahu(
     inserted,
     updated,
     merged,
+    categorised,
     skippedNoAccount,
     skippedBeforeDate,
     sinceDate,

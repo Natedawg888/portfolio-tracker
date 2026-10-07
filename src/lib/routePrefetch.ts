@@ -5,6 +5,8 @@ const loaders = {
   debts: () => import('../pages/Debts'),
   yearly: () => import('../pages/YearlyReport'),
   portfolio: () => import('../pages/Portfolio'),
+  projections: () => import('../pages/Projections'),
+  news: () => import('../pages/News'),
   kiwisaver: () => import('../pages/KiwiSaver'),
   paye: () => import('../pages/Paye'),
   valueSearch: () => import('../pages/ValueSearch'),
@@ -35,6 +37,10 @@ function exportName(name: PageName): string {
       return 'YearlyReport';
     case 'portfolio':
       return 'Portfolio';
+    case 'projections':
+      return 'Projections';
+    case 'news':
+      return 'News';
     case 'kiwisaver':
       return 'KiwiSaver';
     case 'paye':
@@ -52,6 +58,8 @@ export const SpendingPage = lazyNamed('spending');
 export const DebtsPage = lazyNamed('debts');
 export const YearlyReportPage = lazyNamed('yearly');
 export const PortfolioPage = lazyNamed('portfolio');
+export const ProjectionsPage = lazyNamed('projections');
+export const NewsPage = lazyNamed('news');
 export const KiwiSaverPage = lazyNamed('kiwisaver');
 export const PayePage = lazyNamed('paye');
 export const ValueSearchPage = lazyNamed('valueSearch');
@@ -63,6 +71,8 @@ const NAV_PAGES: Record<string, PageName> = {
   '/debts': 'debts',
   '/yearly': 'yearly',
   '/portfolio': 'portfolio',
+  '/projections': 'projections',
+  '/news': 'news',
   '/kiwisaver': 'kiwisaver',
   '/paye': 'paye',
   '/value-search': 'valueSearch',

@@ -138,6 +138,7 @@ export function formatTxnSyncMsg(r: AkahuTxnSyncResult): string {
     `Bank sync: fetched ${r.fetched}, inserted ${r.inserted}, updated ${r.updated}`,
   ];
   if (merged) parts.push(`merged ${merged}`);
+  if (r.categorised) parts.push(`${r.categorised} categorised from past transactions`);
   if (r.cashAccountsEnsured) parts.push(`${r.cashAccountsEnsured} cash accounts`);
   if (r.skippedNoAccount) parts.push(`${r.skippedNoAccount} skipped (no matching account)`);
   if (r.skippedBeforeDate) parts.push(`${r.skippedBeforeDate} before floor`);

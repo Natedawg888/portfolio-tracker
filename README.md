@@ -78,6 +78,9 @@ Production: `npm run build && npm run start` (serves `dist/` + API; `HOST=0.0.0.
 - **Economic cycle** (educational): calculated phase for New Zealand (default) or the United States, from public Stats NZ, Census, and OECD extracts, with indicator cards, housing activity, and historical asset-class context. `npm run test:economy`
 - **Dividends** (personal record, not advice): payments on your own stock/ETF holdings, with NZD totals, yield, and a forecast taken only from amounts you entered. Shown under Portfolio and Budget. `npm run test:dividends`
 - **Savings goals** (API): a name, NZD target, current amount, and optional deadline. Required weekly and monthly saving, percent complete, and estimated completion are counted from those figures. Not added to net worth. `npm run test:savings-goals`
+- **Donations ledger** (API): date, recipient, NZD amount, notes, and an optional evidence link. Kept separate from charity receipt files. A donation may point at a transaction that already has a receipt. Tax-year totals (1 April–31 March) include an estimated donation tax credit of one third of gifts of $5 or more, without the taxable-income cap. `npm run test:donations`
+- **Projections** (API): `GET /api/projections` extends the signed-in user's net worth and observed monthly saving (income minus spending) over a chosen number of months. Assets compound at a supplied annual return, or at a labelled 0% when none is supplied. Debts step with their saved rate and payment. Missing cashflow stays null. `npm run test:projections`
+- **Portfolio news**: headlines for the signed-in user's holdings (Google News) plus BBC world and politics. Public RSS, so no API key. Shown as **News** in the nav, next to Portfolio. `npm run test:news`
 
 ### Stubbed (clear interfaces — never invent prices)
 

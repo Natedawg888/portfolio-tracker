@@ -1,6 +1,8 @@
 /**
  * Shared net-worth computation for /net-worth and valuation_snapshots.
  * Never invents balances — uses known cash, cost/market when quotes ok, manual vals.
+ * Crypto = manual crypto holdings + read-only wallets (KAN-42); a wallet that can't be
+ * valued is left out and flagged, and unpriced tokens count as 0 (no spam inflation).
  */
 import type { Database } from 'sql.js';
 import { getDb, queryAll, queryOne } from '../db/index.ts';
@@ -23,6 +25,12 @@ import {
 import type { MetalKind, MetalUnit } from '../../src/types/index.ts';
 import { aucklandToday } from '../debts/model.ts';
 import { applyScheduledInterestForUser } from '../debts/store.ts';
+import '../chain/index.ts'; // registers chain adapters for wallet balances
+import { combineValuations, valueWallet, type WalletValuation } from '../chain/valuation.ts';
+import type { WalletRef } from '../chain/service.ts';
+import type { WalletNetwork } from './walletAddress.ts';
+
+export type WalletValuer = (wallet: WalletRef) => Promise<WalletValuation>;
 
 export type HoldingSeriesPoint = {
   id: string;
@@ -41,8 +49,18 @@ export type NetWorthResult = {
   cashLiabilitiesNzd: number;
   stocksNzd: number;
   stocksUseMarket: boolean;
+  /** Manual crypto holdings + wallets. */
   cryptoNzd: number;
   cryptoUseMarket: boolean;
+  /** Manual crypto holdings only (market when quoted, else cost). */
+  cryptoHoldingsNzd: number;
+  /** Read-only wallets that could be valued (priced/stale items only); null when none added. */
+  cryptoWalletsNzd: number | null;
+  /** False when a wallet couldn't be valued or holds an unpriced non-zero asset. */
+  cryptoWalletsComplete: boolean;
+  cryptoWalletsFailed: number;
+  /** Crypto as % of net worth (1 dp); null when there's no crypto or net worth ≤ 0. */
+  cryptoPctOfNetWorth: number | null;
   gominingMinersNzd: number | null;
   artNzd: number | null;
   metalsNzd: number | null;
@@ -79,6 +97,7 @@ export type NetWorthResult = {
     gominingMiners: number;
     kiwisaver: number;
     debtPeople: number;
+    wallets: number;
   };
   breakdown: NetWorthBreakdown;
 };
@@ -125,6 +144,8 @@ function holdingLabel(h: Record<string, unknown>): string {
 export async function computeNetWorth(
   database?: Database,
   userId?: string | null,
+  /** Injectable for tests; defaults to sync-cached chain balances × crypto quotes. */
+  valuer: WalletValuer = (w) => valueWallet(w),
 ): Promise<NetWorthResult> {
   const db = database ?? (await getDb());
   if (!userId) {
@@ -366,6 +387,24 @@ export async function computeNetWorth(
     }
   }
 
+  // Read-only wallets: balances the sync job cached (fetched on a cache miss) × crypto quotes.
+  const wallets = queryAll<{ id: string; name: string; network: string; address: string }>(
+    db,
+    'SELECT id, name, network, address FROM wallets WHERE user_id = ? ORDER BY created_at ASC',
+    [userId],
+  );
+  const walletValuations = await Promise.all(
+    wallets.map((w) => valuer({ network: w.network as WalletNetwork, address: w.address })),
+  );
+  const walletsCombined = combineValuations(walletValuations);
+  wallets.forEach((w, i) => {
+    const v = walletValuations[i];
+    if (v.ok) {
+      holdingPoints.push({ id: `wallet:${w.id}`, label: w.name, assetClass: 'crypto', valueNzd: v.totalNzd });
+    }
+  });
+  const cryptoWalletsNzd = wallets.length ? walletsCombined.totalNzd : null;
+
   const ks = queryAll<{ balance_nzd: number; id: string; name: string }>(
     db,
     'SELECT id, name, balance_nzd FROM kiwisaver_accounts WHERE user_id = ?',
@@ -409,7 +448,8 @@ export async function computeNetWorth(
     : null;
 
   const stocksNzdValue = stocksHaveMarket ? stocksMarket : stocksCost;
-  const cryptoNzdValue = cryptoHaveMarket ? cryptoMarket : cryptoCost;
+  const cryptoHoldingsNzd = cryptoHaveMarket ? cryptoMarket : cryptoCost;
+  const cryptoNzdValue = cryptoHoldingsNzd + (cryptoWalletsNzd ?? 0);
 
   const realEstateEquity = realEstateHas ? realEstateValue - realEstateMortgage : null;
   // Gross property value in assets; mortgage subtracted with personal debt below
@@ -430,6 +470,10 @@ export async function computeNetWorth(
   // Net worth = known assets − personal debt − real-estate mortgages (never invent)
   const totalKnownNzd = assetsKnownNzd - debtOutstandingNzd - (realEstateHas ? realEstateMortgage : 0);
 
+  const hasCrypto = cryptoNzdValue !== 0 || wallets.length > 0 || holdings.some((h) => h.asset_class === 'crypto');
+  const cryptoPctOfNetWorth =
+    hasCrypto && totalKnownNzd > 0 ? Math.round((cryptoNzdValue / totalKnownNzd) * 1000) / 10 : null;
+
   const settings = queryAll<{ key: string; value: string }>(
     db,
     'SELECT key, value FROM app_settings',
@@ -441,6 +485,7 @@ export async function computeNetWorth(
     cashLiabilities: cashLiabilitiesNzd,
     stocks: stocksNzdValue,
     crypto: cryptoNzdValue,
+    cryptoWallets: cryptoWalletsNzd,
     gomining: holdings.some((h) => h.asset_class === 'gomining_miner') ? gominingEst : null,
     art: artHas ? artVal : null,
     metals: metalsNzdValue,
@@ -463,6 +508,11 @@ export async function computeNetWorth(
     stocksUseMarket: stocksHaveMarket,
     cryptoNzd: cryptoNzdValue,
     cryptoUseMarket: cryptoHaveMarket,
+    cryptoHoldingsNzd,
+    cryptoWalletsNzd,
+    cryptoWalletsComplete: walletsCombined.complete,
+    cryptoWalletsFailed: walletsCombined.failedWallets,
+    cryptoPctOfNetWorth,
     gominingMinersNzd: holdings.some((h) => h.asset_class === 'gomining_miner')
       ? gominingEst
       : null,
@@ -503,6 +553,7 @@ export async function computeNetWorth(
       gominingMiners: holdings.filter((h) => h.asset_class === 'gomining_miner').length,
       kiwisaver: ks.length,
       debtPeople: debtPersonCount,
+      wallets: wallets.length,
     },
     breakdown: { byClass, holdings: holdingPoints },
   };

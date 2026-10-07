@@ -110,7 +110,7 @@ export function readTxnBtcMeta(row: Record<string, unknown>): TxnBtcLinkMeta {
 }
 
 /** Reverse a previously applied BTC delta on its holding (idempotent if none). */
-export function reverseBtcDelta(db: Database, meta: TxnBtcLinkMeta): void {
+export function reverseBtcDelta(db: Database, meta: TxnBtcLinkMeta, userId: string): void {
   if (
     meta.btcDeltaApplied == null ||
     meta.btcDeltaApplied === 0 ||
@@ -120,8 +120,8 @@ export function reverseBtcDelta(db: Database, meta: TxnBtcLinkMeta): void {
   }
   const holding = queryOne(
     db,
-    `SELECT id, amount FROM holdings WHERE id=? AND asset_class='crypto'`,
-    [meta.btcHoldingId],
+    `SELECT id, amount FROM holdings WHERE id=? AND asset_class='crypto' AND user_id=?`,
+    [meta.btcHoldingId, userId],
   );
   if (!holding) return;
   const current = Number(holding.amount ?? 0);
@@ -129,8 +129,8 @@ export function reverseBtcDelta(db: Database, meta: TxnBtcLinkMeta): void {
   const now = new Date().toISOString();
   run(
     db,
-    `UPDATE holdings SET amount=?, updated_at=? WHERE id=?`,
-    [next, now, meta.btcHoldingId],
+    `UPDATE holdings SET amount=?, updated_at=? WHERE id=? AND user_id=?`,
+    [next, now, meta.btcHoldingId, userId],
   );
 }
 
@@ -152,6 +152,8 @@ export type ApplyBtcLinkResult =
 export async function applyBtcLink(
   db: Database,
   opts: {
+    /** Only this user's holdings are listed or changed. */
+    userId: string;
     affectsBtc: boolean;
     amountNzd: number;
     kind: string;
@@ -194,7 +196,7 @@ export async function applyBtcLink(
     };
   }
 
-  const holdings = listBtcHoldings(db);
+  const holdings = listBtcHoldings(db, opts.userId);
   if (!holdings.length) {
     return {
       ok: false,
@@ -230,8 +232,8 @@ export async function applyBtcLink(
   const nextAmount = Number(chosen.amount) + delta;
   run(
     db,
-    `UPDATE holdings SET amount=?, updated_at=? WHERE id=?`,
-    [nextAmount, now, chosen.id],
+    `UPDATE holdings SET amount=?, updated_at=? WHERE id=? AND user_id=?`,
+    [nextAmount, now, chosen.id, opts.userId],
   );
 
   return {
@@ -251,7 +253,7 @@ export async function applyBtcLink(
 
 
 /** Re-apply a previously stored signed BTC delta (used to undo a failed re-link). */
-export function restoreStoredBtcDelta(db: Database, meta: TxnBtcLinkMeta): void {
+export function restoreStoredBtcDelta(db: Database, meta: TxnBtcLinkMeta, userId: string): void {
   if (
     meta.btcDeltaApplied == null ||
     meta.btcDeltaApplied === 0 ||
@@ -261,8 +263,8 @@ export function restoreStoredBtcDelta(db: Database, meta: TxnBtcLinkMeta): void 
   }
   const holding = queryOne(
     db,
-    `SELECT id, amount FROM holdings WHERE id=? AND asset_class='crypto'`,
-    [meta.btcHoldingId],
+    `SELECT id, amount FROM holdings WHERE id=? AND asset_class='crypto' AND user_id=?`,
+    [meta.btcHoldingId, userId],
   );
   if (!holding) return;
   const current = Number(holding.amount ?? 0);
@@ -270,8 +272,8 @@ export function restoreStoredBtcDelta(db: Database, meta: TxnBtcLinkMeta): void 
   const now = new Date().toISOString();
   run(
     db,
-    `UPDATE holdings SET amount=?, updated_at=? WHERE id=?`,
-    [next, now, meta.btcHoldingId],
+    `UPDATE holdings SET amount=?, updated_at=? WHERE id=? AND user_id=?`,
+    [next, now, meta.btcHoldingId, userId],
   );
 }
 /** Persist BTC link columns on a transaction row. */

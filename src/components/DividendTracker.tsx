@@ -267,7 +267,7 @@ export function DividendTracker({ placement }: { placement: Placement }) {
       else await api.dividends.create(body);
       resetForm();
       setShowForm(false);
-      invalidateFinancial('dividends', 'spending', 'dashboard', 'paye');
+      invalidateFinancial('dividends', 'spending', 'dashboard', 'paye', 'projections');
       await load();
     } catch (err) {
       setFormError((err as Error).message);
@@ -282,7 +282,7 @@ export function DividendTracker({ placement }: { placement: Placement }) {
     setFormError(null);
     try {
       await api.dividends.remove(event.id);
-      invalidateFinancial('dividends', 'spending', 'dashboard', 'paye');
+      invalidateFinancial('dividends', 'spending', 'dashboard', 'paye', 'projections');
       if (editingId === event.id) {
         resetForm();
         setShowForm(false);
@@ -301,7 +301,7 @@ export function DividendTracker({ placement }: { placement: Placement }) {
     setData((current) => (current ? patchRecordedFlag(current, event.id, next) : current));
     try {
       const result = await api.dividends.setReinvest(event.id, next);
-      invalidateFinancial('dividends', 'spending', 'dashboard', 'paye');
+      invalidateFinancial('dividends', 'spending', 'dashboard', 'paye', 'projections');
       setData((current) => (current ? applyRecorded(current, result) : current));
       if (editingId === result.event.id) {
         setForm((prev) => ({
@@ -332,7 +332,7 @@ export function DividendTracker({ placement }: { placement: Placement }) {
         paymentDate: row.paymentDate,
         reinvested: next,
       });
-      invalidateFinancial('dividends', 'spending', 'dashboard', 'paye');
+      invalidateFinancial('dividends', 'spending', 'dashboard', 'paye', 'projections');
       setData((current) => (current ? applyForecast(current, result) : current));
       await load();
     } catch (err) {
@@ -743,7 +743,8 @@ function DetectedDividendTable({
   onReinvest: (row: DetectedDividend, reinvested: boolean) => void;
 }) {
   return (
-    <div className="table-wrap">
+    // Scrolls inside the forecast panel instead of stretching it (header stays visible).
+    <div className="table-wrap table-wrap--scroll" tabIndex={0} aria-label="Projected dividends">
       <table className="data-table">
         <thead>
           <tr>
@@ -767,10 +768,10 @@ function DetectedDividendTable({
                   {row.symbol} · {row.name}
                 </td>
                 <td className="money">{formatPerShare(row.dividendPerShare, row.currency)}</td>
-                <td className="money">
+                <td>
                   {row.ownedShares}
                   {row.projectedShares !== row.ownedShares ? (
-                    <div className="muted small">Forecast uses {row.projectedShares}</div>
+                    <div className="muted small reinvest-note">Forecast uses {row.projectedShares}</div>
                   ) : null}
                 </td>
                 <td className="money">{moneyOrDash(row.amount, row.currency)}</td>

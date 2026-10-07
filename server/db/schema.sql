@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS budget_categories (
 CREATE TABLE IF NOT EXISTS transactions (
   id            TEXT PRIMARY KEY,
   user_id       TEXT,
-  account_id    TEXT NOT NULL REFERENCES bank_accounts(id) ON DELETE CASCADE,
+  -- Charged bank account; NULL = not charged to one (e.g. crypto Visa debit card spend).
+  account_id    TEXT REFERENCES bank_accounts(id) ON DELETE CASCADE,
   date          TEXT NOT NULL,
   description   TEXT NOT NULL DEFAULT '',
   amount        REAL NOT NULL,
@@ -344,17 +345,73 @@ CREATE TABLE IF NOT EXISTS users (
   display_name    TEXT,
   avatar_url      TEXT,
   preferences_json TEXT,
+  -- 2FA (KAN-16): AES-256-GCM sealed TOTP secrets (server/auth/secretBox.ts), never plaintext.
+  totp_secret_enc  TEXT,
+  totp_pending_enc TEXT,              -- set up but not yet confirmed with a code
+  totp_pending_at  TEXT,
+  totp_enabled_at  TEXT,
+  totp_last_step   INTEGER,           -- last accepted TOTP step (replay protection)
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash   TEXT NOT NULL UNIQUE,
+  expires_at   TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  device_label TEXT,                  -- "Chrome on Windows" (coarse, from User-Agent)
+  last_seen_at TEXT,                  -- updated at most every 10 min
+  persistent   INTEGER NOT NULL DEFAULT 1  -- 0 = "keep me signed in" unticked (browser-session cookie)
+);
+
+-- 2FA backup codes: SHA-256 of a high-entropy code, each usable once.
+CREATE TABLE IF NOT EXISTS user_backup_codes (
+  id         TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash  TEXT NOT NULL,
+  used_at    TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_backup_codes_user ON user_backup_codes(user_id);
+
+-- Password accepted, second factor pending (short-lived, attempt-limited).
+CREATE TABLE IF NOT EXISTS login_challenges (
   id          TEXT PRIMARY KEY,
   user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   token_hash  TEXT NOT NULL UNIQUE,
-  expires_at  TEXT NOT NULL,
-  created_at  TEXT NOT NULL
+  persistent  INTEGER NOT NULL DEFAULT 1,
+  attempts    INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL,
+  expires_at  TEXT NOT NULL
 );
+
+-- "Trust this device": skips the second factor on this browser until expiry.
+CREATE TABLE IF NOT EXISTS trusted_devices (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash   TEXT NOT NULL UNIQUE,
+  label        TEXT,
+  created_at   TEXT NOT NULL,
+  last_used_at TEXT,
+  expires_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_trusted_devices_user ON trusted_devices(user_id);
+
+-- Single sign-on links: one row per provider account (Google / Apple / Microsoft).
+-- subject = the provider's stable user id ("sub"), never the email (emails change).
+CREATE TABLE IF NOT EXISTS user_identities (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider     TEXT NOT NULL,
+  subject      TEXT NOT NULL,
+  email        TEXT,
+  created_at   TEXT NOT NULL,
+  last_used_at TEXT,
+  UNIQUE (provider, subject)
+);
+CREATE INDEX IF NOT EXISTS idx_user_identities_user ON user_identities(user_id);
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
@@ -517,5 +574,55 @@ CREATE TABLE IF NOT EXISTS savings_goals (
 );
 
 CREATE INDEX IF NOT EXISTS idx_savings_goals_user ON savings_goals(user_id);
+
+-- Donations ledger. Separate from transactions and from charity receipt files
+-- (transactions.receipt_path under data/uploads/receipts/). A row may optionally
+-- point at a transaction that already has a receipt. Amounts are NZD. date is
+-- YYYY-MM-DD. Tax-year totals are counted on read (server/donations/model.ts).
+-- No foreign key: sql.js does not keep PRAGMA foreign_keys from this script.
+-- The trigger below clears the pointer when that transaction is deleted.
+CREATE TABLE IF NOT EXISTS donations (
+  id                      TEXT PRIMARY KEY,
+  user_id                 TEXT,
+  date                    TEXT NOT NULL,
+  recipient               TEXT NOT NULL,
+  amount_nzd              REAL NOT NULL,
+  notes                   TEXT,
+  evidence_url            TEXT,
+  receipt_transaction_id  TEXT,
+  created_at              TEXT NOT NULL,
+  updated_at              TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_donations_user ON donations(user_id);
+CREATE INDEX IF NOT EXISTS idx_donations_user_date ON donations(user_id, date);
+
+CREATE TRIGGER IF NOT EXISTS donations_clear_receipt_link
+AFTER DELETE ON transactions
+FOR EACH ROW
+BEGIN
+  UPDATE donations
+  SET receipt_transaction_id = NULL
+  WHERE receipt_transaction_id = OLD.id;
+END;
+-- Read-only crypto wallets: public address only. Never store seed phrases / private keys.
+-- No balance column on purpose: balances come from chain providers at sync time
+-- (balance is never stored as the source of truth here).
+CREATE TABLE IF NOT EXISTS wallets (
+  id              TEXT PRIMARY KEY,
+  user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name            TEXT NOT NULL,
+  network         TEXT NOT NULL,              -- ethereum | polygon | base | arbitrum | bitcoin | solana
+  address         TEXT NOT NULL,              -- normalised (EVM EIP-55 checksummed, bech32 lowercase)
+  status          TEXT NOT NULL DEFAULT 'connected',  -- connected | syncing | error (sync job owns this)
+  status_message  TEXT,
+  last_synced     TEXT,
+  next_sync_at    TEXT,                       -- scheduler: due time (backoff pushes it later)
+  sync_failures   INTEGER NOT NULL DEFAULT 0, -- consecutive failures, drives backoff
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_wallets_user ON wallets(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wallets_user_network_address ON wallets(user_id, network, address);
 
 -- per-user indexes created in migrateSchema after user_id columns exist

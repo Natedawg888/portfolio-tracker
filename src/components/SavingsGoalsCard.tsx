@@ -50,6 +50,8 @@ const SAVINGS_GOALS = 'savings-goals';
 export function SavingsGoalsCard() {
   const [goals, setGoals] = useState<SavingsGoal[] | null>(() => readPageCache<SavingsGoal[]>(SAVINGS_GOALS) ?? null);
   const [error, setError] = useState<string | null>(null);
+  const goalsRef = useRef(goals);
+  goalsRef.current = goals;
   const [dialog, setDialog] = useState<DialogState | null>(null);
 
   const refresh = useCallback(async () => {
@@ -61,11 +63,8 @@ export function SavingsGoalsCard() {
       setError(null);
     } catch (err) {
       if (isUnauthorized(err)) return;
-      setGoals((prev) => {
-        if (prev) return prev;
-        setError(goalsErrorMessage(err, 'Could not load savings goals.'));
-        return prev;
-      });
+      if (goalsRef.current) return;
+      setError(goalsErrorMessage(err, 'Could not load savings goals.'));
     }
   }, []);
 

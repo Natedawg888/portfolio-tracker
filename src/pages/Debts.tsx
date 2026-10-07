@@ -249,7 +249,7 @@ export function Debts() {
       setShowForm(false);
       setEditingId(null);
       setForm(emptyForm());
-      invalidateFinancial('debts', 'dashboard', 'spending', 'yearly');
+      invalidateFinancial('debts', 'dashboard', 'spending', 'yearly', 'projections');
       await load();
     } catch (err) {
       setMsg((err as Error).message);
@@ -270,7 +270,7 @@ export function Debts() {
         setForm(emptyForm());
       }
       setMsg(`Deleted ${debt.name}.`);
-      invalidateFinancial('debts', 'dashboard', 'spending', 'yearly');
+      invalidateFinancial('debts', 'dashboard', 'spending', 'yearly', 'projections');
       await load();
     } catch (err) {
       setMsg((err as Error).message);

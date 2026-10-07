@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, coerceBalance, formatAuckland, formatNzd } from '../api/client';
 import { maybeAutoSyncBankTransactions, maybeAutoSyncPortfolio } from '../lib/akahuTxnAutoSync';
 import {
@@ -25,6 +25,10 @@ type Summary = {
   cashLiabilitiesNzd?: number;
   stocksNzd: number | null;
   cryptoNzd: number | null;
+  cryptoHoldingsNzd?: number;
+  cryptoWalletsNzd?: number | null;
+  cryptoWalletsFailed?: number;
+  cryptoPctOfNetWorth?: number | null;
   gominingMinersNzd: number | null;
   artNzd: number | null;
   metalsNzd: number | null;
@@ -110,6 +114,10 @@ export function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [monthSnapshot, setMonthSnapshot] = useState<HomeMonthSnapshot | null>(initialMonth ?? null);
   const [monthError, setMonthError] = useState<string | null>(null);
+  const summaryRef = useRef(summary);
+  summaryRef.current = summary;
+  const monthRef = useRef(monthSnapshot);
+  monthRef.current = monthSnapshot;
 
   const load = useCallback(() => {
     const stamp = beginPageRead(DASHBOARD_MAIN);
@@ -127,14 +135,11 @@ export function Dashboard() {
         setError(null);
       })
       .catch((e: Error) => {
-        setSummary((prev) => {
-          if (prev) {
-            showQuietToast('Could not refresh dashboard — showing last data.', { kind: 'warn' });
-            return prev;
-          }
-          setError(e.message);
-          return prev;
-        });
+        if (summaryRef.current) {
+          showQuietToast('Could not refresh dashboard — showing last data.', { kind: 'warn' });
+          return;
+        }
+        setError(e.message);
       });
   }, []);
 
@@ -148,15 +153,7 @@ export function Dashboard() {
         setMonthError(null);
       })
       .catch((e: unknown) => {
-        let kept = false;
-        setMonthSnapshot((prev) => {
-          if (prev) {
-            kept = true;
-            return prev;
-          }
-          return null;
-        });
-        if (kept) {
+        if (monthRef.current) {
           showQuietToast('Could not refresh this month — showing last data.', { kind: 'warn' });
           return;
         }
@@ -303,7 +300,9 @@ export function Dashboard() {
             value={summary.stocksNzd}
           />
         ) : null}
-        {assetEnabled('crypto') ? <Bucket title="Crypto" value={summary.cryptoNzd} /> : null}
+        {assetEnabled('crypto') ? (
+          <Bucket title="Crypto" value={summary.cryptoNzd} hint={cryptoHint(summary)} />
+        ) : null}
         {assetEnabled('gomining') ? (
           <Bucket title="GoMining miners" value={summary.gominingMinersNzd} />
         ) : null}
@@ -502,6 +501,21 @@ function MonthSnapshot({
       )}
     </section>
   );
+}
+
+/** "12.5% of net worth · 2 wallets + manual · 1 wallet not valued" (KAN-42). */
+function cryptoHint(s: Summary): string | undefined {
+  const parts: string[] = [];
+  if (s.cryptoPctOfNetWorth != null) parts.push(`${s.cryptoPctOfNetWorth}% of net worth`);
+  else if ((s.cryptoNzd ?? 0) > 0 && s.totalKnownNzd <= 0) parts.push('% of net worth not shown while net worth is zero or below');
+  const wallets = s.counts?.wallets ?? 0;
+  if (wallets > 0) {
+    const manual = (s.cryptoHoldingsNzd ?? 0) > 0 ? ' + manual' : '';
+    parts.push(`${wallets} wallet${wallets === 1 ? '' : 's'}${manual}`);
+  }
+  const failed = s.cryptoWalletsFailed ?? 0;
+  if (failed > 0) parts.push(`${failed} wallet${failed === 1 ? '' : 's'} not valued`);
+  return parts.length ? parts.join(' · ') : undefined;
 }
 
 function Bucket({
