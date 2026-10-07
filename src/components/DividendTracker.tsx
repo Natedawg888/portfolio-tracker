@@ -720,7 +720,8 @@ function DetectedDividendTable({
   onReinvest: (row: DetectedDividend, reinvested: boolean) => void;
 }) {
   return (
-    <div className="table-wrap">
+    // Scrolls inside the forecast panel instead of stretching it (header stays visible).
+    <div className="table-wrap table-wrap--scroll" tabIndex={0} aria-label="Projected dividends">
       <table className="data-table">
         <thead>
           <tr>
