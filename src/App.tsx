@@ -7,6 +7,7 @@ import { Debts } from './pages/Debts';
 import { YearlyReport } from './pages/YearlyReport';
 import { Portfolio } from './pages/Portfolio';
 import { News } from './pages/News';
+import { Projections } from './pages/Projections';
 import { KiwiSaver } from './pages/KiwiSaver';
 import { Paye } from './pages/Paye';
 import { ValueSearch } from './pages/ValueSearch';
@@ -36,6 +37,7 @@ export default function App() {
                 <Route path="yearly" element={<YearlyReport />} />
                 <Route path="economic-cycle" element={<EconomicCycle />} />
                 <Route path="portfolio" element={<Portfolio />} />
+                <Route path="projections" element={<Projections />} />
                 <Route path="news" element={<News />} />
                 <Route path="kiwisaver" element={<KiwiSaver />} />
                 <Route path="paye" element={<Paye />} />
