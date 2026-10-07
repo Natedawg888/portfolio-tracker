@@ -55,15 +55,15 @@ export function News() {
   const hasHoldingSections = data?.sections.some((section) => section.kind === 'holdings') ?? false;
 
   return (
-    <div className="stack">
-      <div>
+    <div className="stack news-page">
+      <section className="hero-card hero-card--centered">
         <h2 className="page-title">News</h2>
         <p className="page-lead">
           Headlines for the holdings on this account, plus world and politics.
           Google News and BBC News are public feeds, so no news API key is required.
           A missing or failed feed stays empty. Nothing is filled in.
         </p>
-      </div>
+      </section>
 
       <section className="panel" aria-label="Portfolio news">
         <div className="panel-heading">
