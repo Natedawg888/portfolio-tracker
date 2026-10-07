@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS budget_categories (
 CREATE TABLE IF NOT EXISTS transactions (
   id            TEXT PRIMARY KEY,
   user_id       TEXT,
-  account_id    TEXT NOT NULL REFERENCES bank_accounts(id) ON DELETE CASCADE,
+  -- Charged bank account; NULL = not charged to one (e.g. crypto Visa debit card spend).
+  account_id    TEXT REFERENCES bank_accounts(id) ON DELETE CASCADE,
   date          TEXT NOT NULL,
   description   TEXT NOT NULL DEFAULT '',
   amount        REAL NOT NULL,

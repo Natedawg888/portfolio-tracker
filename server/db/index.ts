@@ -49,6 +49,47 @@ export function persist() {
 }
 
 
+/**
+ * Existing databases have transactions.account_id NOT NULL. Spend on a crypto Visa debit
+ * card (Nexo, GoMining…) isn't charged to a bank account, so the column becomes nullable.
+ * SQLite can't drop NOT NULL in place: rebuild from the live CREATE statement (keeps every
+ * migrated column), copy rows, swap, and recreate the indexes.
+ */
+function migrateNullableTransactionAccount(database: Database) {
+  const cols = database.exec('PRAGMA table_info(transactions)')[0];
+  if (!cols) return;
+  const nameIdx = cols.columns.indexOf('name');
+  const notNullIdx = cols.columns.indexOf('notnull');
+  const accountCol = cols.values.find((r) => r[nameIdx] === 'account_id');
+  if (!accountCol || Number(accountCol[notNullIdx]) !== 1) return;
+
+  const createSql = String(
+    database.exec(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transactions'`)[0].values[0][0],
+  );
+  const relaxed = createSql
+    .replace(/CREATE TABLE\s+(IF NOT EXISTS\s+)?"?transactions"?/i, 'CREATE TABLE transactions_nullable_acct')
+    .replace(/(account_id\s+TEXT)\s+NOT NULL/i, '$1');
+  if (relaxed === createSql || /account_id\s+TEXT\s+NOT NULL/i.test(relaxed)) {
+    throw new Error('transactions migration: could not relax account_id NOT NULL');
+  }
+  const indexSql = (database.exec(
+    `SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'transactions' AND sql IS NOT NULL`,
+  )[0]?.values ?? []).map((r) => String(r[0]));
+
+  database.run('BEGIN');
+  try {
+    database.run(relaxed);
+    database.run('INSERT INTO transactions_nullable_acct SELECT * FROM transactions');
+    database.run('DROP TABLE transactions');
+    database.run('ALTER TABLE transactions_nullable_acct RENAME TO transactions');
+    for (const sql of indexSql) database.run(sql);
+    database.run('COMMIT');
+  } catch (err) {
+    database.run('ROLLBACK');
+    throw err;
+  }
+}
+
 /** Existing databases were created with cost_basis_nzd NOT NULL DEFAULT 0.
  * Rebuild that table once so a blank cost basis can be stored as SQL NULL. */
 function migrateNullableHoldingCost(database: Database) {
@@ -685,6 +726,7 @@ export async function getDb(): Promise<Database> {
   db.exec(schema);
   migrateSchema(db);
   migrateNullableHoldingCost(db);
+  migrateNullableTransactionAccount(db);
   seedDefaults(db);
   persist();
   return db;

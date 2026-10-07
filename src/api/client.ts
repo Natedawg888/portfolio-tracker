@@ -393,7 +393,8 @@ export const api = {
         primaryId: string | null;
       }>('/accounts/btc-holdings'),
     createTransaction: (body: {
-      accountId: string;
+      /** Null = not charged to a bank account (crypto Visa debit card). */
+      accountId: string | null;
       date: string;
       description: string;
       amount: number;

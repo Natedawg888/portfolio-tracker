@@ -15,7 +15,7 @@
     "denylist:update": "node --import tsx scripts/build-custodial-denylist.ts",
     "auth:reset-2fa": "node --import tsx scripts/reset-2fa.ts",
     "test:metals": "node --import tsx server/quotes/metals.public.test.ts",
-    "test:cash-sync": "node --import tsx server/akahu/sync.cash.test.ts",
+    "test:cash-sync": "node --import tsx server/akahu/sync.cash.test.ts && node --import tsx server/lib/txnBtcLink.test.ts",
     "test:onboarding": "node --import tsx server/auth/registerAkahuOnboarding.test.ts",
     "test:2fa": "node --import tsx server/auth/twoFactor.test.ts && node --import tsx server/auth/accounts.test.ts && node --import tsx server/auth/sso.test.ts",
     "test:prod-routing": "node --import tsx scripts/verify-prod-routing.ts",

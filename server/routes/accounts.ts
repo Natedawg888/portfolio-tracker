@@ -172,13 +172,14 @@ router.post('/transactions', async (req: AuthedRequest, res) => {
   if (!userId) return;
   const db = await getDb();
   const b = req.body ?? {};
-  const accountId = typeof b.accountId === 'string' ? b.accountId : '';
-  if (!accountId) {
-    return res.status(400).json({ ok: false, error: 'accountId is required' });
-  }
-  const acct = queryOne(db, 'SELECT id FROM bank_accounts WHERE id=? AND user_id=?', [accountId, userId]);
-  if (!acct) {
-    return res.status(400).json({ ok: false, error: 'Unknown accountId' });
+  // Charged bank account. Null / omitted = not charged to one (e.g. crypto Visa debit card):
+  // the spend still counts in budgets but no cash account is involved.
+  const accountId = typeof b.accountId === 'string' && b.accountId.trim() ? b.accountId.trim() : null;
+  if (accountId) {
+    const acct = queryOne(db, 'SELECT id FROM bank_accounts WHERE id=? AND user_id=?', [accountId, userId]);
+    if (!acct) {
+      return res.status(400).json({ ok: false, error: 'Unknown accountId' });
+    }
   }
 
   const date =
@@ -262,6 +263,7 @@ router.post('/transactions', async (req: AuthedRequest, res) => {
 
   // Apply BTC holding move before insert metadata (fail closed if quote missing)
   const btcResult = await applyBtcLink(db, {
+    userId,
     affectsBtc,
     amountNzd: amount,
     kind,
@@ -459,7 +461,7 @@ router.patch('/transactions/:id', async (req: AuthedRequest, res) => {
   if (hasAffectsBtc || hasBtcHoldingId) {
     const fresh = queryOne(db, 'SELECT * FROM transactions WHERE id=? AND user_id=?', [id, userId])!;
     const prevMeta = readTxnBtcMeta(fresh);
-    reverseBtcDelta(db, prevMeta);
+    reverseBtcDelta(db, prevMeta, userId);
     clearTxnBtcApplied(db, id);
 
     const nextAffects = hasAffectsBtc
@@ -472,6 +474,7 @@ router.patch('/transactions/:id', async (req: AuthedRequest, res) => {
       : prevMeta.btcHoldingId;
 
     const btcResult = await applyBtcLink(db, {
+      userId,
       affectsBtc: nextAffects,
       amountNzd: Number(fresh.amount),
       kind: String(fresh.kind ?? 'debit'),
@@ -479,7 +482,7 @@ router.patch('/transactions/:id', async (req: AuthedRequest, res) => {
     });
     if (!btcResult.ok) {
       // Put back the exact prior delta (do not re-quote)
-      restoreStoredBtcDelta(db, prevMeta);
+      restoreStoredBtcDelta(db, prevMeta, userId);
       writeTxnBtcColumns(db, id, prevMeta);
       return res.status(btcResult.status).json({ ok: false, error: btcResult.error });
     }
@@ -604,7 +607,7 @@ router.delete('/transactions/:id', async (req: AuthedRequest, res) => {
   }
   const full = queryOne(db, 'SELECT * FROM transactions WHERE id=? AND user_id=?', [id, userId]);
   if (full) {
-    reverseBtcDelta(db, readTxnBtcMeta(full));
+    reverseBtcDelta(db, readTxnBtcMeta(full), userId);
     deleteCharityReceipt((full.receipt_path as string | null) ?? null);
   }
   run(db, 'DELETE FROM transactions WHERE id=? AND user_id=?', [id, userId]);

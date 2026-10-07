@@ -180,6 +180,8 @@ export function Spending() {
   const [formAmount, setFormAmount] = useState('');
   const [formKind, setFormKind] = useState<'debit' | 'credit'>('debit');
   const [formAccountId, setFormAccountId] = useState('');
+  /** Off for crypto Visa debit cards (Nexo, GoMining…): spend not charged to a bank account. */
+  const [formCharged, setFormCharged] = useState(true);
   const [formCardPreset, setFormCardPreset] = useState<string>('Nexo card');
   const [formCardCustom, setFormCardCustom] = useState('');
   const [importAccountId, setImportAccountId] = useState('');
@@ -371,8 +373,8 @@ export function Spending() {
   async function onAddTxn(e: FormEvent) {
     e.preventDefault();
     setMsg(null);
-    if (!formAccountId) {
-      setMsg('Choose the charged account (Kiwibank Main / Debit / etc.).');
+    if (formCharged && !formAccountId) {
+      setMsg('Choose the charged account (Kiwibank Main / Debit / etc.), or turn off “Charged to a bank account”.');
       return;
     }
     if (formSource !== 'bank' && !resolvedCardName) {
@@ -414,14 +416,14 @@ export function Spending() {
             : 'manual';
       const cardName =
         resolvedCardName ||
-        (source === 'bank'
+        (source === 'bank' && formCharged
           ? accounts.find((a) => a.id === formAccountId)?.name || 'Bank'
           : null);
       const description =
         formDesc.trim() ||
         (source === 'bank' ? cardName || '' : cardName || '(manual)');
       const created = (await api.accounts.createTransaction({
-        accountId: formAccountId,
+        accountId: formCharged ? formAccountId : null,
         date: formDate,
         description,
         amount,
@@ -738,6 +740,7 @@ export function Spending() {
     const netFlow = flowTxns
       .filter(
         (t) =>
+          t.accountId !== null &&
           liquidCashIds.has(t.accountId) &&
           t.date >= periodFrom &&
           t.date <= todayYmd,
@@ -1268,7 +1271,8 @@ export function Spending() {
             </div>
             <p className="section-desc">
               Bank: Kiwibank / debit before Akahu posts. Manual: off-Akahu cards (Nexo, GoMining, …).
-              Charged account required so spend ties to a cash balance.
+              Pick the charged account so spend ties to a cash balance, or turn it off for a crypto
+              Visa debit card that spends from crypto rather than a bank account.
             </p>
             <form className="form-grid" onSubmit={onAddTxn}>
             <label>
@@ -1375,6 +1379,22 @@ export function Spending() {
                 />
               </label>
             )}
+            <label className="span-2 row gap" style={{ alignItems: 'center' }}>
+              <input
+                type="checkbox"
+                checked={formCharged}
+                onChange={(e) => {
+                  setFormCharged(e.target.checked);
+                  // A card that spends crypto isn't a bank transaction.
+                  if (!e.target.checked && formSource === 'bank') setFormSource('manual');
+                }}
+              />
+              <span>
+                Charged to a bank account{' '}
+                <span className="muted small">(turn off for crypto Visa debit cards — Nexo, GoMining, …)</span>
+              </span>
+            </label>
+            {formCharged ? (
             <label className="span-2">
               Charged account
               <select
@@ -1400,6 +1420,12 @@ export function Spending() {
                 ))}
               </select>
             </label>
+            ) : (
+              <p className="span-2 muted small">
+                Not charged to a bank account: the spend still counts in budgets and categories, but no
+                cash balance changes. Tick “Pays with BTC” to take it out of a BTC holding instead.
+              </p>
+            )}
             <label className="span-2 row gap" style={{ alignItems: 'center' }}>
               <input
                 type="checkbox"
@@ -2274,7 +2300,7 @@ export function Spending() {
                       {formatNzd(Number(t.amount))}
                     </td>
                     <td className="muted small">{t.cardName || '—'}</td>
-                    <td className="muted small">{t.accountName || t.accountId}</td>
+                    <td className="muted small">{t.accountName || t.accountId || 'Not charged'}</td>
                     <td>
                       <div className="category-cell">
                         <select

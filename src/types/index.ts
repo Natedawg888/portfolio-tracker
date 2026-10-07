@@ -78,7 +78,8 @@ export type TransactionSource = 'akahu' | 'bank' | 'google_wallet' | 'manual' | 
 /** Imported or manually entered bank transaction. */
 export interface Transaction {
   id: string;
-  accountId: string;
+  /** Null when not charged to a bank account (e.g. crypto Visa debit card). */
+  accountId: string | null;
   /** Display name of charged bank_accounts row (join). */
   accountName?: string | null;
   date: string; // YYYY-MM-DD
