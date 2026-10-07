@@ -11,6 +11,28 @@ Portfolio Tracker uses **local accounts** on the machine running the API. No thi
 - **API gate** — all `/api/*` routes except `/api/auth/*` and `/api/health` require a valid session.
 - **UI gate** — unauthenticated users only see `/login` or `/register`.
 
+## Two-factor sign-in, sessions and devices (KAN-16)
+
+**Turn it on:** Settings → Security → Two-factor sign-in → Turn on. Enter your password, scan the QR code with an authenticator app (Google Authenticator, 1Password, Authy, Microsoft Authenticator), then type the 6-digit code it shows. You get **10 backup codes** — save them (Copy / Download .txt); they are shown once.
+
+**Signing in with 2FA:** password first, then the 6-digit code (or a backup code). Tick **Trust this device for 30 days** to skip the code on that browser. Untick **Keep me signed in** on the sign-in page for a session that ends when the browser closes (the server also forgets it after 24 h). The sign-in page remembers the last email used on that browser (never the password); **Use a different email** clears it.
+
+**Lost your phone?** On the code step choose **Use a backup code**. Each works once; when 3 or fewer are left, make a new set under Settings → Security (password + a current code). Then turn 2FA off and on again with your new phone.
+
+**Lost the phone *and* the backup codes:** the server operator confirms it's really you, then runs `npm run auth:reset-2fa -- you@example.com`. That turns 2FA off, removes backup codes and trusted devices, and signs the account out everywhere; the password is unchanged.
+
+**Settings → Security** also lists every signed-in session (device, last active, whether it's kept signed in) with **Sign out** / **Sign out all other sessions**, and trusted devices with **Remove**. Changing your password signs out every other session.
+
+How it's stored:
+
+- TOTP secrets: AES-256-GCM sealed in `users.totp_secret_enc` (pending setup in `totp_pending_enc`, 15 min to confirm). Key: `AUTH_ENCRYPTION_KEY` (32 bytes, 64 hex chars — generate with `openssl rand -hex 32`). Without it a key is generated once at `data/secrets/auth.key` (mode 0600); that protects copies of the `.db` on their own but not a copy of the whole `data/` folder, so set the env var in production and keep it out of backups. Losing the key means 2FA users need `auth:reset-2fa`.
+- Backup codes (`user_backup_codes`), pending sign-ins (`login_challenges`, 5 min, 5 attempts) and trusted devices (`trusted_devices`, cookie `pt_tdev` scoped to `/api/auth`, httpOnly) store **SHA-256 hashes only**, like sessions.
+- A TOTP code is accepted once (`totp_last_step`) and within ±30 s.
+- Sign-in attempts are limited per account (10 failures / 15 min) and per client address (50 / 15 min), counting wrong passwords and wrong codes; memory only, reset on restart.
+- Sessions record a coarse device label (“Chrome on Windows”) and last-active time (written at most every 10 min) — never the raw User-Agent or IP.
+
+Tests: `npm run test:2fa` (RFC 6238 vectors, sealing, replay, backup codes, trusted devices, sessions, rate limits).
+
 ## First signup claims existing data; later users start empty
 
 Finance rows are scoped by `user_id` in `data/portfolio.db`.

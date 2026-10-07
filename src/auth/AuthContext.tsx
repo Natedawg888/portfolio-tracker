@@ -22,7 +22,14 @@ type AuthContextValue = {
   loading: boolean;
   refresh: () => Promise<void>;
   setUser: (user: AuthUser | null) => void;
-  login: (email: string, password: string) => Promise<AuthUser>;
+  /** Password step. With 2FA on (and an untrusted browser) returns a challenge instead of a user. */
+  login: (email: string, password: string, opts?: { remember?: boolean }) => Promise<LoginResult>;
+  /** Second step: authenticator or backup code for the challenge from `login`. */
+  completeTwoFactor: (
+    challenge: string,
+    code: string,
+    trustDevice: boolean,
+  ) => Promise<{ user: AuthUser; usedBackupCode: boolean; backupCodesRemaining: number | null }>;
   register: (
     email: string,
     password: string,
@@ -34,6 +41,10 @@ type AuthContextValue = {
   }>;
   logout: () => Promise<void>;
 };
+
+export type LoginResult =
+  | { kind: 'signedIn'; user: AuthUser }
+  | { kind: 'twoFactor'; challenge: string; expiresAt: string };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
@@ -99,9 +110,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => setUnauthorizedHandler(null);
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const res = await api.auth.login({ email, password });
-    const u = normalizeUser(res.user)!;
+  const signedIn = useCallback(async (raw: AuthUser) => {
+    const u = normalizeUser(raw)!;
     setUserState(u);
     const st = await api.auth.status();
     setStatus({
@@ -112,6 +122,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     return u;
   }, []);
+
+  const login = useCallback(
+    async (email: string, password: string, opts: { remember?: boolean } = {}): Promise<LoginResult> => {
+      const res = await api.auth.login({ email, password, remember: opts.remember ?? true });
+      if (res.twoFactorRequired) return { kind: 'twoFactor', challenge: res.challenge, expiresAt: res.expiresAt };
+      return { kind: 'signedIn', user: await signedIn(res.user) };
+    },
+    [signedIn],
+  );
+
+  const completeTwoFactor = useCallback(
+    async (challenge: string, code: string, trustDevice: boolean) => {
+      const res = await api.auth.loginTwoFactor({ challenge, code, trustDevice });
+      return {
+        user: await signedIn(res.user),
+        usedBackupCode: Boolean(res.usedBackupCode),
+        backupCodesRemaining: res.backupCodesRemaining ?? null,
+      };
+    },
+    [signedIn],
+  );
 
   const register = useCallback(async (
     email: string,
@@ -149,8 +180,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, status, loading, refresh, setUser, login, register, logout }),
-    [user, status, loading, refresh, setUser, login, register, logout],
+    () => ({ user, status, loading, refresh, setUser, login, completeTwoFactor, register, logout }),
+    [user, status, loading, refresh, setUser, login, completeTwoFactor, register, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

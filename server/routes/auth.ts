@@ -1,6 +1,7 @@
 /**
- * Email/password auth — create account, login, logout, session probe,
+ * Email/password auth — create account, login (+ 2FA step, KAN-16), logout, session probe,
  * profile (first/last name / avatar), change email & password.
+ * 2FA setup, sessions and trusted devices live in routes/security.ts.
  * First signup claims existing local finance data; later users get empty scoped ledgers.
  */
 import { Router } from 'express';
@@ -15,15 +16,29 @@ import {
 import {
   SESSION_COOKIE,
   countUsers,
-  createSession,
   destroySessionByToken,
   destroySessionsForUser,
   getUserByEmail,
   parseCookieHeader,
-  sessionCookieHeader,
   clearSessionCookieHeader,
   purgeExpiredSessions,
+  revokeOtherSessions,
 } from '../auth/sessions.ts';
+import { clientKey, parseRemember, startSession } from '../auth/signIn.ts';
+import { clearLoginFailures, loginBlockedSec, recordLoginFailure } from '../auth/loginRateLimit.ts';
+import { deviceLabel } from '../auth/deviceLabel.ts';
+import {
+  TRUSTED_DEVICE_COOKIE,
+  createLoginChallenge,
+  createTrustedDevice,
+  deleteChallenge,
+  isTrustedDevice,
+  isTwoFactorEnabled,
+  parseTrustedCookie,
+  trustedCookieHeader,
+  useChallengeAttempt,
+  verifySecondFactor,
+} from '../auth/twoFactor.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import {
   claimUnscopedRowsForOwner,
@@ -286,8 +301,7 @@ router.post('/register', async (req, res) => {
   seedCategoriesForUser(db, id);
   // Later signups intentionally get empty finance rows (holdings/txns/etc.).
 
-  const { rawToken, expiresAt } = await createSession(id);
-  res.setHeader('Set-Cookie', sessionCookieHeader(rawToken, expiresAt));
+  await startSession(req, res, id, parseRemember(req.body));
   res.status(201).json({
     user: toPublicUser(db, {
       id,
@@ -315,18 +329,42 @@ router.post('/login', async (req, res) => {
     res.status(400).json({ error: 'Email and password are required', code: 'MISSING_FIELDS' });
     return;
   }
+  const client = clientKey(req);
+  const blocked = loginBlockedSec(email, client);
+  if (blocked > 0) {
+    res.setHeader('Retry-After', String(blocked));
+    res.status(429).json({ error: 'Too many sign-in attempts. Try again in a few minutes.', code: 'TOO_MANY_ATTEMPTS' });
+    return;
+  }
 
   const user = await getUserByEmail(email);
   const ok = user ? await verifyPassword(password, user.password_hash) : false;
   if (!user || !ok) {
+    recordLoginFailure(email, client);
     res.status(401).json({ error: 'Invalid email or password', code: 'INVALID_CREDENTIALS' });
     return;
   }
 
   const db = await getDb();
+  const remember = parseRemember(req.body);
+  // 2FA (KAN-16): password alone isn't enough unless this browser is a trusted device.
+  if (isTwoFactorEnabled(db, user.id)) {
+    const trusted = parseTrustedCookie(parseCookieHeader(req.headers.cookie, TRUSTED_DEVICE_COOKIE));
+    if (!isTrustedDevice(db, user.id, trusted)) {
+      const challenge = createLoginChallenge(db, user.id, remember);
+      res.json({
+        twoFactorRequired: true,
+        challenge: challenge.token,
+        expiresAt: challenge.expiresAt,
+        methods: ['totp', 'backup_code'],
+      });
+      return;
+    }
+  }
+  clearLoginFailures(email);
+
   const row = loadUserRow(db, user.id);
-  const { rawToken, expiresAt } = await createSession(user.id);
-  res.setHeader('Set-Cookie', sessionCookieHeader(rawToken, expiresAt));
+  await startSession(req, res, user.id, remember);
   res.json({
     user: toPublicUser(db, {
       id: user.id,
@@ -338,6 +376,66 @@ router.post('/login', async (req, res) => {
       createdAt: user.created_at,
       preferences_json: row?.preferences_json ?? null,
     }),
+  });
+});
+
+/**
+ * Second step of sign-in when 2FA is on. Body: { challenge, code, trustDevice? }.
+ * `code` is a 6-digit authenticator code or a backup code (xxxxx-xxxxx, single use).
+ */
+router.post('/login/2fa', async (req, res) => {
+  const db = await getDb();
+  const c = useChallengeAttempt(db, req.body?.challenge);
+  if (!c.ok) {
+    const message =
+      c.code === 'TOO_MANY_ATTEMPTS'
+        ? 'Too many incorrect codes. Sign in again.'
+        : 'This sign-in has expired. Sign in again.';
+    res.status(401).json({ error: message, code: c.code });
+    return;
+  }
+  const row = loadUserRow(db, c.userId);
+  if (!row) {
+    deleteChallenge(db, c.id);
+    res.status(401).json({ error: 'This sign-in has expired. Sign in again.', code: 'CHALLENGE_INVALID' });
+    return;
+  }
+  const client = clientKey(req);
+  const blocked = loginBlockedSec(row.email, client);
+  if (blocked > 0) {
+    res.setHeader('Retry-After', String(blocked));
+    res.status(429).json({ error: 'Too many sign-in attempts. Try again in a few minutes.', code: 'TOO_MANY_ATTEMPTS' });
+    return;
+  }
+  const v = verifySecondFactor(db, c.userId, req.body?.code);
+  if (!v.ok) {
+    recordLoginFailure(row.email, client);
+    res.status(401).json({ error: 'That code isn’t right. Check your authenticator app and try again.', code: 'INVALID_CODE' });
+    return;
+  }
+  deleteChallenge(db, c.id);
+  clearLoginFailures(row.email);
+
+  await startSession(req, res, row.id, c.persistent);
+  if (req.body?.trustDevice === true) {
+    const existing = parseTrustedCookie(parseCookieHeader(req.headers.cookie, TRUSTED_DEVICE_COOKIE));
+    const token = createTrustedDevice(db, row.id, deviceLabel(req.headers['user-agent']));
+    res.append('Set-Cookie', trustedCookieHeader([...existing, token]));
+  }
+  res.json({
+    user: toPublicUser(db, {
+      id: row.id,
+      email: row.email,
+      firstName: row.first_name,
+      lastName: row.last_name,
+      displayName: row.display_name,
+      avatarUrl: row.avatar_url,
+      createdAt: row.created_at,
+      preferences_json: row.preferences_json,
+    }),
+    ...(v.method === 'backup_code'
+      ? { usedBackupCode: true, backupCodesRemaining: v.backupCodesRemaining ?? 0 }
+      : {}),
   });
 });
 
@@ -561,7 +659,13 @@ router.post('/change-password', async (req: AuthedRequest, res) => {
     now,
     req.user.id,
   ]);
-  res.json({ ok: true, message: 'Password updated.' });
+  // A new password should lock out anyone holding an old session elsewhere.
+  const signedOut = req.user.sessionId ? revokeOtherSessions(db, req.user.id, req.user.sessionId) : 0;
+  res.json({
+    ok: true,
+    signedOutSessions: signedOut,
+    message: signedOut > 0 ? `Password updated. Signed out ${signedOut} other session${signedOut === 1 ? '' : 's'}.` : 'Password updated.',
+  });
 });
 
 /** Change email — requires current password. Auth required. */
@@ -695,8 +799,11 @@ router.post('/delete-account', async (req: AuthedRequest, res) => {
     deleteAvatarFile(row.avatar_url);
   }
 
-  // 4) All sessions for this user
+  // 4) All sessions for this user, plus 2FA backup codes / trusted devices / pending sign-ins
   const sessionsRemoved = destroySessionsForUser(db, userId);
+  run(db, `DELETE FROM user_backup_codes WHERE user_id = ?`, [userId]);
+  run(db, `DELETE FROM trusted_devices WHERE user_id = ?`, [userId]);
+  run(db, `DELETE FROM login_challenges WHERE user_id = ?`, [userId]);
 
   // 5) data_owner_user_id — reassign or clear; never leave a dangling owner id
   if (wasOwner) {

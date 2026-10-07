@@ -344,17 +344,59 @@ CREATE TABLE IF NOT EXISTS users (
   display_name    TEXT,
   avatar_url      TEXT,
   preferences_json TEXT,
+  -- 2FA (KAN-16): AES-256-GCM sealed TOTP secrets (server/auth/secretBox.ts), never plaintext.
+  totp_secret_enc  TEXT,
+  totp_pending_enc TEXT,              -- set up but not yet confirmed with a code
+  totp_pending_at  TEXT,
+  totp_enabled_at  TEXT,
+  totp_last_step   INTEGER,           -- last accepted TOTP step (replay protection)
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash   TEXT NOT NULL UNIQUE,
+  expires_at   TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  device_label TEXT,                  -- "Chrome on Windows" (coarse, from User-Agent)
+  last_seen_at TEXT,                  -- updated at most every 10 min
+  persistent   INTEGER NOT NULL DEFAULT 1  -- 0 = "keep me signed in" unticked (browser-session cookie)
+);
+
+-- 2FA backup codes: SHA-256 of a high-entropy code, each usable once.
+CREATE TABLE IF NOT EXISTS user_backup_codes (
+  id         TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash  TEXT NOT NULL,
+  used_at    TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_backup_codes_user ON user_backup_codes(user_id);
+
+-- Password accepted, second factor pending (short-lived, attempt-limited).
+CREATE TABLE IF NOT EXISTS login_challenges (
   id          TEXT PRIMARY KEY,
   user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   token_hash  TEXT NOT NULL UNIQUE,
-  expires_at  TEXT NOT NULL,
-  created_at  TEXT NOT NULL
+  persistent  INTEGER NOT NULL DEFAULT 1,
+  attempts    INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL,
+  expires_at  TEXT NOT NULL
 );
+
+-- "Trust this device": skips the second factor on this browser until expiry.
+CREATE TABLE IF NOT EXISTS trusted_devices (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash   TEXT NOT NULL UNIQUE,
+  label        TEXT,
+  created_at   TEXT NOT NULL,
+  last_used_at TEXT,
+  expires_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_trusted_devices_user ON trusted_devices(user_id);
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);

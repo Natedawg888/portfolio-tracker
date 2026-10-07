@@ -30,8 +30,9 @@ import {
   type CategoryType,
 } from '../lib/categoryTypes';
 import { CategoryTypeToggle } from '../components/CategoryTypeToggle';
+import { SecurityPanel } from '../components/SecurityPanel';
 
-type SettingsTab = 'account' | 'categories';
+type SettingsTab = 'account' | 'security' | 'categories';
 
 type TxCategory = {
   id: string;
@@ -57,7 +58,11 @@ export function Settings() {
   const tabParam = searchParams.get('tab');
   // Akahu OAuth returns to /settings?akahu=… — open Categories tab so the handler mounts
   const tab: SettingsTab =
-    searchParams.get('akahu') || tabParam === 'categories' ? 'categories' : 'account';
+    searchParams.get('akahu') || tabParam === 'categories'
+      ? 'categories'
+      : tabParam === 'security'
+        ? 'security'
+        : 'account';
 
   const setTab = (next: SettingsTab) => {
     const params = new URLSearchParams(searchParams);
@@ -80,6 +85,14 @@ export function Settings() {
           </button>
           <button
             type="button"
+            className={tab === 'security' ? 'settings-side-link active' : 'settings-side-link'}
+            onClick={() => setTab('security')}
+            aria-current={tab === 'security' ? 'page' : undefined}
+          >
+            Security
+          </button>
+          <button
+            type="button"
             className={tab === 'categories' ? 'settings-side-link active' : 'settings-side-link'}
             onClick={() => setTab('categories')}
             aria-current={tab === 'categories' ? 'page' : undefined}
@@ -89,7 +102,13 @@ export function Settings() {
         </nav>
       </aside>
       <div className="settings-main stack">
-        {tab === 'account' ? <AccountPanel /> : <CategoriesPanel searchParams={searchParams} setSearchParams={setSearchParams} />}
+        {tab === 'account' ? (
+          <AccountPanel />
+        ) : tab === 'security' ? (
+          <SecurityPanel />
+        ) : (
+          <CategoriesPanel searchParams={searchParams} setSearchParams={setSearchParams} />
+        )}
       </div>
     </div>
   );

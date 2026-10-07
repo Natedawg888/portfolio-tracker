@@ -460,6 +460,26 @@ function migrateSchema(database: Database) {
     database.run('ALTER TABLE wallets ADD COLUMN sync_failures INTEGER NOT NULL DEFAULT 0');
   }
 
+  // 2FA + session devices (KAN-16) — users / sessions predate these columns.
+  const totpUserCols = tableColumns(database, 'users');
+  for (const [col, type] of [
+    ['totp_secret_enc', 'TEXT'],
+    ['totp_pending_enc', 'TEXT'],
+    ['totp_pending_at', 'TEXT'],
+    ['totp_enabled_at', 'TEXT'],
+    ['totp_last_step', 'INTEGER'],
+  ] as const) {
+    if (totpUserCols.size > 0 && !totpUserCols.has(col)) database.run(`ALTER TABLE users ADD COLUMN ${col} ${type}`);
+  }
+  const sessionCols = tableColumns(database, 'sessions');
+  for (const [col, type] of [
+    ['device_label', 'TEXT'],
+    ['last_seen_at', 'TEXT'],
+    ['persistent', 'INTEGER NOT NULL DEFAULT 1'],
+  ] as const) {
+    if (sessionCols.size > 0 && !sessionCols.has(col)) database.run(`ALTER TABLE sessions ADD COLUMN ${col} ${type}`);
+  }
+
   // Per-user finance isolation: user_id on scoped tables.
   // First user (data_owner_user_id) keeps existing rows; later users start empty.
   const scopedTables: Array<{ table: string; index?: string }> = [

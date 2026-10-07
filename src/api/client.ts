@@ -91,6 +91,28 @@ export type AuthUser = {
   };
 };
 
+/** Settings → Security (KAN-16). */
+export type AccountSecurity = {
+  twoFactor: { enabled: boolean; enabledAt: string | null; backupCodesRemaining: number };
+  sessions: Array<{
+    id: string;
+    deviceLabel: string | null;
+    createdAt: string;
+    lastSeenAt: string | null;
+    expiresAt: string;
+    persistent: boolean;
+    current: boolean;
+  }>;
+  trustedDevices: Array<{
+    id: string;
+    label: string | null;
+    createdAt: string;
+    lastUsedAt: string | null;
+    expiresAt: string;
+    current: boolean;
+  }>;
+};
+
 export const api = {
   auth: {
     status: () =>
@@ -108,8 +130,33 @@ export const api = {
         claimedExistingData: boolean;
         message: string;
       }>('/auth/register', { method: 'POST', body: JSON.stringify(body) }),
-    login: (body: { email: string; password: string }) =>
-      req<{ user: AuthUser }>('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
+    login: (body: { email: string; password: string; remember?: boolean }) =>
+      req<
+        | { user: AuthUser; twoFactorRequired?: false }
+        | { twoFactorRequired: true; challenge: string; expiresAt: string; methods: Array<'totp' | 'backup_code'> }
+      >('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
+    loginTwoFactor: (body: { challenge: string; code: string; trustDevice: boolean }) =>
+      req<{ user: AuthUser; usedBackupCode?: boolean; backupCodesRemaining?: number }>('/auth/login/2fa', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    security: () => req<AccountSecurity>('/auth/security'),
+    twoFactorSetup: (password: string) =>
+      req<{ secret: string; otpauthUri: string; qrSvg: string }>('/auth/2fa/setup', {
+        method: 'POST',
+        body: JSON.stringify({ password }),
+      }),
+    twoFactorEnable: (code: string) =>
+      req<{ ok: boolean; backupCodes: string[] }>('/auth/2fa/enable', { method: 'POST', body: JSON.stringify({ code }) }),
+    twoFactorDisable: (body: { password: string; code: string }) =>
+      req<{ ok: boolean }>('/auth/2fa/disable', { method: 'POST', body: JSON.stringify(body) }),
+    twoFactorBackupCodes: (body: { password: string; code: string }) =>
+      req<{ ok: boolean; backupCodes: string[] }>('/auth/2fa/backup-codes', { method: 'POST', body: JSON.stringify(body) }),
+    revokeSession: (id: string) => req<{ ok: boolean }>(`/auth/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    revokeOtherSessions: () => req<{ ok: boolean; signedOut: number }>('/auth/sessions/revoke-others', { method: 'POST', body: '{}' }),
+    revokeTrustedDevice: (id: string) =>
+      req<{ ok: boolean }>(`/auth/trusted-devices/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    revokeAllTrustedDevices: () => req<{ ok: boolean; revoked: number }>('/auth/trusted-devices', { method: 'DELETE' }),
     logout: () => req<{ ok: boolean }>('/auth/logout', { method: 'POST', body: '{}' }),
     updateProfile: (body: { firstName?: string | null; lastName?: string | null; displayName?: string | null }) =>
       req<{ user: AuthUser }>('/auth/profile', { method: 'PATCH', body: JSON.stringify(body) }),
