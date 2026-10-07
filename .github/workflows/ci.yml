@@ -28,6 +28,7 @@ jobs:
       - run: npm run test:savings-goals
       - run: npm run test:donations
       - run: npm run test:projections
+      - run: npm run test:net-worth-crypto
       - run: npm run test:wallets
       - run: npm run test:chain
       - run: npm run build

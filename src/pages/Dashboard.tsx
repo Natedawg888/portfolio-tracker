@@ -17,6 +17,10 @@ type Summary = {
   cashLiabilitiesNzd?: number;
   stocksNzd: number | null;
   cryptoNzd: number | null;
+  cryptoHoldingsNzd?: number;
+  cryptoWalletsNzd?: number | null;
+  cryptoWalletsFailed?: number;
+  cryptoPctOfNetWorth?: number | null;
   gominingMinersNzd: number | null;
   artNzd: number | null;
   metalsNzd: number | null;
@@ -260,7 +264,9 @@ export function Dashboard() {
             value={summary.stocksNzd}
           />
         ) : null}
-        {assetEnabled('crypto') ? <Bucket title="Crypto" value={summary.cryptoNzd} /> : null}
+        {assetEnabled('crypto') ? (
+          <Bucket title="Crypto" value={summary.cryptoNzd} hint={cryptoHint(summary)} />
+        ) : null}
         {assetEnabled('gomining') ? (
           <Bucket title="GoMining miners" value={summary.gominingMinersNzd} />
         ) : null}
@@ -459,6 +465,21 @@ function MonthSnapshot({
       )}
     </section>
   );
+}
+
+/** "12.5% of net worth · 2 wallets + manual · 1 wallet not valued" (KAN-42). */
+function cryptoHint(s: Summary): string | undefined {
+  const parts: string[] = [];
+  if (s.cryptoPctOfNetWorth != null) parts.push(`${s.cryptoPctOfNetWorth}% of net worth`);
+  else if ((s.cryptoNzd ?? 0) > 0 && s.totalKnownNzd <= 0) parts.push('% of net worth not shown while net worth is zero or below');
+  const wallets = s.counts?.wallets ?? 0;
+  if (wallets > 0) {
+    const manual = (s.cryptoHoldingsNzd ?? 0) > 0 ? ' + manual' : '';
+    parts.push(`${wallets} wallet${wallets === 1 ? '' : 's'}${manual}`);
+  }
+  const failed = s.cryptoWalletsFailed ?? 0;
+  if (failed > 0) parts.push(`${failed} wallet${failed === 1 ? '' : 's'} not valued`);
+  return parts.length ? parts.join(' · ') : undefined;
 }
 
 function Bucket({

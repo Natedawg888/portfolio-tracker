@@ -2026,6 +2026,23 @@ export function Portfolio() {
       });
   }, []);
 
+  // Net worth includes wallets (KAN-42): refresh the totals when wallet values change
+  // (add / remove / sync), but not for the first wallet load — `load` already covers that.
+  const walletsKey = cryptoWallets.data
+    ? `${cryptoWallets.entries.length}:${cryptoWallets.data.totalNzd}:${cryptoWallets.data.failedWallets}`
+    : null;
+  const lastWalletsKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (walletsKey == null) return;
+    const prev = lastWalletsKey.current;
+    lastWalletsKey.current = walletsKey;
+    if (prev == null || prev === walletsKey) return;
+    api
+      .netWorth()
+      .then((net) => setSummary(net as PortfolioNetWorth))
+      .catch(() => {});
+  }, [walletsKey]);
+
   const loadGmSettings = () => {
     setGmSettings((prev) => ({ ...prev, fxLoading: true }));
     return api.settings
@@ -2998,6 +3015,12 @@ export function Portfolio() {
         ))}
       >
         <WalletNotices state={cryptoWallets} />
+        {grouped.crypto.length > 0 && cryptoWallets.entries.length > 0 ? (
+          <p className="muted small">
+            Wallets and manual crypto lines both count toward net worth. If a manual line tracks the same
+            coins as a wallet, remove it so they aren&apos;t counted twice.
+          </p>
+        ) : null}
         <AddWalletDetails state={cryptoWallets} onUseManual={openManualCrypto} />
         <InlineAddDetails label="Add crypto" id={MANUAL_CRYPTO_ID}>
           <form className="form-grid" onSubmit={onAddCrypto}>
