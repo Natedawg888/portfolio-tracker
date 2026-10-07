@@ -5,7 +5,7 @@
  *   import { bitcoinProvider } from './bitcoin.ts';
  *   registerChainProvider(bitcoinProvider);
  *
- * Adapters: KAN-35 Bitcoin, KAN-36 Ethereum (here); KAN-37 EVM L2s and KAN-38 Solana to follow.
+ * Adapters: KAN-35 Bitcoin, KAN-36/37 EVM (Ethereum, Polygon, Base, Arbitrum); KAN-38 Solana to follow.
  */
 import { bitcoinProvider } from './bitcoin.ts';
 import { evmProvider } from './evm.ts';

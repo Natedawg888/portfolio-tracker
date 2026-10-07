@@ -1,15 +1,17 @@
 /**
- * EVM adapter (KAN-36: Ethereum; KAN-37 extends `supports` to Polygon / Base / Arbitrum).
+ * EVM adapter: Ethereum (KAN-36), Polygon, Base and Arbitrum (KAN-37).
  *
  * Native balance: `eth_getBalance` at `latest` over JSON-RPC (CHAIN_<NETWORK>_RPC_URL).
  *
- * ERC-20 discovery + balances: plain JSON-RPC can't list the tokens an address holds,
- * so they come from a Blockscout API v2 indexer (CHAIN_<NETWORK>_INDEXER_URL, default
- * public eth.blockscout.com): /addresses/:a/tokens?type=ERC-20, 50 per page, capped.
- * Zero balances, malformed rows and tokens Blockscout flags as scam are dropped;
- * symbols/names are sanitised (spam tokens put URLs and junk there). Tokens stay
- * unpriced in valuation until KAN-39, so nothing here can inflate net worth.
- * If discovery fails the native balance is still returned (logged, not thrown).
+ * ERC-20 discovery + balances: plain JSON-RPC can't list the tokens an address holds.
+ * - With a Blockscout API v2 indexer (CHAIN_<NETWORK>_INDEXER_URL; public default for
+ *   Ethereum only — the L2 instances sit behind a browser check): every ERC-20 from
+ *   /addresses/:a/tokens?type=ERC-20, 50 per page, capped. Zero balances, malformed rows
+ *   and tokens Blockscout flags as scam are dropped; symbols/names are sanitised.
+ * - Without one, or when it fails: the well-known tokens in knownTokens.ts, read in one
+ *   Multicall3 `balanceOf` batch over the RPC (keyless, works on every network).
+ * Tokens stay unpriced in valuation until KAN-39, so nothing here can inflate net worth.
+ * If token reads fail entirely the native balance is still returned (logged, not thrown).
  *
  * History: native transactions from /addresses/:a/transactions (newest first). The
  * cursor is the Blockscout page params of the page we stopped in plus how many of its
@@ -20,6 +22,7 @@
 import { WALLET_NETWORKS, toChecksumAddress, type WalletNetwork } from '../lib/walletAddress.ts';
 import { resolveIndexerEndpoint, type ChainEndpoint } from './config.ts';
 import { getJson, jsonRpc } from './http.ts';
+import { KNOWN_TOKENS } from './knownTokens.ts';
 import { NETWORK_CHAIN_INFO } from './networks.ts';
 import {
   ChainProviderError,
@@ -31,8 +34,11 @@ import {
   type TransactionPage,
 } from './types.ts';
 
-/** Networks this adapter serves. KAN-37 adds polygon, base, arbitrum. */
-export const EVM_ADAPTER_NETWORKS: readonly WalletNetwork[] = ['ethereum'];
+/** Networks this adapter serves (every `evm` family network). */
+export const EVM_ADAPTER_NETWORKS: readonly WalletNetwork[] = ['ethereum', 'polygon', 'base', 'arbitrum'];
+
+/** Multicall3: same address on every chain we support (checked with eth_getCode). */
+export const MULTICALL3 = '0xcA11bde05977b3631167028862bE2a173976CA11';
 
 /** Blockscout pages are 50 items; 4 pages = 200 tokens is plenty for a personal wallet. */
 const MAX_TOKEN_PAGES = 4;
@@ -144,15 +150,94 @@ export async function discoverErc20Balances(network: WalletNetwork, address: str
   return [...out.values()];
 }
 
+// --- Multicall3 balanceOf batch (ABI encoded by hand: no ethers/viem dependency) ---------
+
+const word = (hex: string) => hex.padStart(64, '0');
+const BALANCE_OF = '70a08231';
+const AGGREGATE3 = '82ad56cb';
+
+/** aggregate3((address target, bool allowFailure, bytes callData)[]) of balanceOf(owner). */
+export function encodeBalanceOfBatch(owner: string, contracts: readonly string[]): string {
+  const callData = `${BALANCE_OF}${word(owner.slice(2).toLowerCase())}`.padEnd(128, '0'); // 36 bytes → 64
+  const tupleBytes = 32 * 4 + 64; // target, allowFailure, bytes offset, bytes length, padded data
+  let offsets = '';
+  let tuples = '';
+  contracts.forEach((c, i) => {
+    offsets += word((contracts.length * 32 + i * tupleBytes).toString(16));
+    tuples += word(c.slice(2).toLowerCase()) + word('1') + word('60') + word('24') + callData;
+  });
+  return `0x${AGGREGATE3}${word('20')}${word(contracts.length.toString(16))}${offsets}${tuples}`;
+}
+
+/** Decode aggregate3's (bool success, bytes returnData)[]; throws on a malformed payload. */
+export function decodeAggregate3(hex: string): Array<{ success: boolean; data: string }> {
+  if (!/^0x([0-9a-f]{2})*$/i.test(hex)) throw new Error('Multicall3 returned non-hex data');
+  const h = hex.slice(2);
+  const bytes = h.length / 2;
+  const at = (offset: number): number => {
+    if (offset < 0 || offset + 32 > bytes) throw new Error('Multicall3 response is truncated');
+    const v = BigInt(`0x${h.slice(offset * 2, offset * 2 + 64)}`);
+    if (v > BigInt(bytes)) throw new Error('Multicall3 response has an out-of-range offset');
+    return Number(v);
+  };
+  const array = at(0);
+  const n = at(array);
+  const base = array + 32;
+  const out: Array<{ success: boolean; data: string }> = [];
+  for (let i = 0; i < n; i++) {
+    const tuple = base + at(base + i * 32);
+    const success = at(tuple) === 1;
+    const data = tuple + at(tuple + 32);
+    const len = at(data);
+    if (data + 32 + len > bytes) throw new Error('Multicall3 return data is truncated');
+    out.push({ success, data: h.slice((data + 32) * 2, (data + 32 + len) * 2) });
+  }
+  return out;
+}
+
+/** Balances of the well-known tokens for this network, in one eth_call. */
+export async function knownTokenBalances(ctx: ProviderContext, address: string): Promise<ChainBalance[]> {
+  const tokens = KNOWN_TOKENS[ctx.network] ?? [];
+  if (tokens.length === 0) return [];
+  const result = await jsonRpc<string>(ctx.endpoint, 'eth_call', [
+    { to: MULTICALL3, data: encodeBalanceOfBatch(address, tokens.map((t) => t.contract)) },
+    'latest',
+  ]);
+  const rows = decodeAggregate3(result);
+  if (rows.length !== tokens.length) throw new Error('Multicall3 returned the wrong number of results');
+  return rows.flatMap((r, i) => {
+    if (!r.success || r.data.length !== 64) return [];
+    const amount = BigInt(`0x${r.data}`);
+    if (amount === 0n) return [];
+    const t = tokens[i];
+    return [{
+      asset: { kind: 'token' as const, symbol: t.symbol, name: t.name, decimals: t.decimals, contract: t.contract },
+      amountRaw: amount.toString(),
+    }];
+  });
+}
+
+async function tokenBalances(ctx: ProviderContext, address: string): Promise<ChainBalance[]> {
+  if (resolveIndexerEndpoint(ctx.network).ok) {
+    try {
+      return await discoverErc20Balances(ctx.network, address);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.warn(`[chain] ${ctx.network} token indexer failed; using well-known tokens: ${detail}`);
+    }
+  }
+  return knownTokenBalances(ctx, address);
+}
+
 export async function getEvmBalances(ctx: ProviderContext, address: string): Promise<ChainBalance[]> {
   const nativeAsset = NETWORK_CHAIN_INFO[ctx.network].nativeAsset;
   const [weiHex, tokens] = await Promise.all([
     jsonRpc<string>(ctx.endpoint, 'eth_getBalance', [address, 'latest']),
-    discoverErc20Balances(ctx.network, address).catch((err: unknown) => {
+    tokenBalances(ctx, address).catch((err: unknown) => {
       // Tokens are unpriced until KAN-39, so a missing token list never changes a total —
       // keep the native balance rather than failing the whole wallet.
       const detail = err instanceof Error ? err.message : String(err);
-      console.warn(`[chain] ${ctx.network} token discovery failed; native balance only: ${detail}`);
+      console.warn(`[chain] ${ctx.network} token balances failed; native balance only: ${detail}`);
       return [] as ChainBalance[];
     }),
   ]);

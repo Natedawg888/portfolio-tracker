@@ -31,7 +31,9 @@ export const PUBLIC_DEFAULT_URLS: Record<WalletNetwork, string> = {
 
 /**
  * Public keyless Blockscout API v2 bases for EVM token discovery and history (KAN-36).
- * Polygon / Base / Arbitrum arrive with KAN-37.
+ * Ethereum only: polygon/base/arbitrum.blockscout.com answer server requests with a
+ * Cloudflare browser check (HTTP 403) and api.blockscout.com needs a key, so those
+ * networks use the well-known token list unless CHAIN_<NETWORK>_INDEXER_URL is set.
  */
 export const PUBLIC_INDEXER_URLS: Partial<Record<WalletNetwork, string>> = {
   ethereum: 'https://eth.blockscout.com/api/v2',
