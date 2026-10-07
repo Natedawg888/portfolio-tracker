@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { ApiError, type AuthUser } from '../api/client';
 import { showQuietToast } from '../lib/quietToast';
@@ -30,7 +30,10 @@ type Step = { kind: 'password' } | { kind: 'code'; challenge: string };
 export function Login() {
   const { user, loading, login, completeTwoFactor, status } = useAuth();
   const navigate = useNavigate();
-  const [rememberedEmail, setRememberedEmail] = useState(readLastEmail);
+  // "Add another account" from the profile menu: sign in without leaving the current account.
+  const [searchParams] = useSearchParams();
+  const adding = searchParams.get('add') === '1';
+  const [rememberedEmail, setRememberedEmail] = useState(() => (adding ? '' : readLastEmail()));
   const [email, setEmail] = useState(rememberedEmail);
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
@@ -41,7 +44,7 @@ export function Login() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  if (!loading && user) {
+  if (!loading && user && !adding) {
     if (!user.onboardingComplete) return <Navigate to="/register" replace />;
     return <Navigate to="/" replace />;
   }
@@ -49,7 +52,9 @@ export function Login() {
 
   const done = (u: AuthUser) => {
     writeLastEmail(u.email);
-    navigate(u.onboardingComplete ? '/' : '/register', { replace: true });
+    // After adding an account, reload so no page keeps the previous account's data.
+    if (adding) window.location.assign(u.onboardingComplete ? '/' : '/register');
+    else navigate(u.onboardingComplete ? '/' : '/register', { replace: true });
   };
 
   const onPassword = async (e: FormEvent) => {
@@ -109,7 +114,10 @@ export function Login() {
         <p className="eyebrow">Portfolio Tracker</p>
         {step.kind === 'password' ? (
           <>
-            <h2>Sign in</h2>
+            <h2>{adding ? 'Add another account' : 'Sign in'}</h2>
+            {adding && user ? (
+              <p className="muted small">You&apos;ll stay signed in as {user.email} and can switch from the profile menu.</p>
+            ) : null}
             <form className="auth-form" onSubmit={onPassword}>
               <label>
                 Email
@@ -152,7 +160,13 @@ export function Login() {
               </button>
             </form>
             <p className="auth-switch">
-              Need an account? <Link to="/register">Create account</Link>
+              {adding && user ? (
+                <Link to="/">Cancel</Link>
+              ) : (
+                <>
+                  Need an account? <Link to="/register">Create account</Link>
+                </>
+              )}
             </p>
           </>
         ) : (

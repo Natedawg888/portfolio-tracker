@@ -39,7 +39,11 @@ type AuthContextValue = {
     claimedExistingData: boolean;
     message: string;
   }>;
+  /** Signs the active account out; if another account is signed in here, the app reloads as it. */
   logout: () => Promise<void>;
+  logoutAll: () => Promise<void>;
+  /** Make another account signed in on this browser active (reloads the app). */
+  switchAccount: (userId: string) => Promise<void>;
 };
 
 export type LoginResult =
@@ -172,16 +176,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    let next: string | null = null;
     try {
-      await api.auth.logout();
+      next = (await api.auth.logout()).switchedToUserId;
+    } finally {
+      // A full reload drops every cached page of the previous account.
+      if (next) window.location.assign('/');
+      else setUserState(null);
+    }
+  }, []);
+
+  const logoutAll = useCallback(async () => {
+    try {
+      await api.auth.logoutAll();
     } finally {
       setUserState(null);
     }
   }, []);
 
+  const switchAccount = useCallback(async (userId: string) => {
+    await api.auth.switchAccount(userId);
+    window.location.assign('/');
+  }, []);
+
   const value = useMemo(
-    () => ({ user, status, loading, refresh, setUser, login, completeTwoFactor, register, logout }),
-    [user, status, loading, refresh, setUser, login, completeTwoFactor, register, logout],
+    () => ({ user, status, loading, refresh, setUser, login, completeTwoFactor, register, logout, logoutAll, switchAccount }),
+    [user, status, loading, refresh, setUser, login, completeTwoFactor, register, logout, logoutAll, switchAccount],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

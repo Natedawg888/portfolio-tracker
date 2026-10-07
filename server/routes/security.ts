@@ -9,6 +9,7 @@ import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { getDb, queryOne } from '../db/index.ts';
 import { verifyPassword } from '../auth/passwords.ts';
 import { listSessions, parseCookieHeader, revokeOtherSessions, revokeSession } from '../auth/sessions.ts';
+import { listAccounts, switchAccount } from '../auth/accounts.ts';
 import {
   TRUSTED_DEVICE_COOKIE,
   beginTotpSetup,
@@ -162,6 +163,23 @@ router.delete('/trusted-devices', async (req: AuthedRequest, res) => {
   if (!signedIn(req, res)) return;
   const db = await getDb();
   res.json({ ok: true, revoked: revokeTrustedDevices(db, req.user.id, null) });
+});
+
+/** Accounts signed in on this browser (account switcher). */
+router.get('/accounts', async (req: AuthedRequest, res) => {
+  const db = await getDb();
+  res.json({ accounts: listAccounts(db, req, res, req.user?.id ?? null) });
+});
+
+/** Body: { userId } — make another account signed in on this browser the active one. */
+router.post('/accounts/switch', async (req: AuthedRequest, res) => {
+  const userId = typeof req.body?.userId === 'string' ? req.body.userId : '';
+  const db = await getDb();
+  if (!userId || !switchAccount(db, req, res, userId)) {
+    res.status(404).json({ error: 'That account isn’t signed in on this browser any more. Sign in again.', code: 'NOT_FOUND' });
+    return;
+  }
+  res.json({ ok: true, userId });
 });
 
 export default router;

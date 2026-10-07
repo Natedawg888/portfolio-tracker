@@ -27,6 +27,7 @@ import {
 import { clientKey, parseRemember, startSession } from '../auth/signIn.ts';
 import { clearLoginFailures, loginBlockedSec, recordLoginFailure } from '../auth/loginRateLimit.ts';
 import { deviceLabel } from '../auth/deviceLabel.ts';
+import { accountsCookieHeader, allBrowserTokens, promoteNextAccount } from '../auth/accounts.ts';
 import {
   TRUSTED_DEVICE_COOKIE,
   createLoginChallenge,
@@ -439,11 +440,22 @@ router.post('/login/2fa', async (req, res) => {
   });
 });
 
+/** Sign the active account out; another account signed in on this browser takes over. */
 router.post('/logout', async (req, res) => {
   const raw = parseCookieHeader(req.headers.cookie, SESSION_COOKIE);
   await destroySessionByToken(raw);
-  res.setHeader('Set-Cookie', clearSessionCookieHeader());
-  res.json({ ok: true });
+  const next = promoteNextAccount(await getDb(), req, res);
+  if (!next) res.append('Set-Cookie', clearSessionCookieHeader());
+  res.json({ ok: true, switchedToUserId: next });
+});
+
+/** Sign every account on this browser out. */
+router.post('/logout-all', async (req, res) => {
+  const tokens = allBrowserTokens(req);
+  for (const t of tokens) await destroySessionByToken(t);
+  res.append('Set-Cookie', clearSessionCookieHeader());
+  res.append('Set-Cookie', accountsCookieHeader([]));
+  res.json({ ok: true, signedOut: tokens.length });
 });
 
 /** Update first/last name (auth required). Also accepts legacy displayName. */

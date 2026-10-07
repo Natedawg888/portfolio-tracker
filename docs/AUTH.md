@@ -23,6 +23,8 @@ Portfolio Tracker uses **local accounts** on the machine running the API. No thi
 
 **Settings → Security** also lists every signed-in session (device, last active, whether it's kept signed in) with **Sign out** / **Sign out all other sessions**, and trusted devices with **Remove**. Changing your password signs out every other session.
 
+**Several accounts on one browser:** profile menu → **Add another account** signs in without leaving the current one; the menu then lists every account signed in here with **Switch**. **Sign out** ends the active account and the next one takes over; **Sign out of all accounts** ends them all. The active session stays in `pt_sid`; the others' session tokens sit in `pt_accts` (httpOnly, scoped to `/api/auth`, up to 4). They're ordinary sessions, listed and revocable in Settings → Security; a revoked one silently drops out of the menu. Signing the same account in again replaces its old session.
+
 How it's stored:
 
 - TOTP secrets: AES-256-GCM sealed in `users.totp_secret_enc` (pending setup in `totp_pending_enc`, 15 min to confirm). Key: `AUTH_ENCRYPTION_KEY` (32 bytes, 64 hex chars — generate with `openssl rand -hex 32`). Without it a key is generated once at `data/secrets/auth.key` (mode 0600); that protects copies of the `.db` on their own but not a copy of the whole `data/` folder, so set the env var in production and keep it out of backups. Losing the key means 2FA users need `auth:reset-2fa`.

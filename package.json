@@ -17,7 +17,7 @@
     "test:metals": "node --import tsx server/quotes/metals.public.test.ts",
     "test:cash-sync": "node --import tsx server/akahu/sync.cash.test.ts",
     "test:onboarding": "node --import tsx server/auth/registerAkahuOnboarding.test.ts",
-    "test:2fa": "node --import tsx server/auth/twoFactor.test.ts",
+    "test:2fa": "node --import tsx server/auth/twoFactor.test.ts && node --import tsx server/auth/accounts.test.ts",
     "test:prod-routing": "node --import tsx scripts/verify-prod-routing.ts",
     "test:wallets": "node --import tsx server/lib/walletAddress.test.ts && node --import tsx server/lib/custodialDenylist.test.ts",
     "test:chain": "node --import tsx server/chain/chain.test.ts && node --import tsx server/chain/bitcoin.test.ts && node --import tsx server/chain/evm.test.ts && node --import tsx server/chain/valuation.test.ts && node --import tsx server/chain/sync.test.ts",

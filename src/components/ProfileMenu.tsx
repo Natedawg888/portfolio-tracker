@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { api, type RememberedAccount } from '../api/client';
 
 function initials(email: string, displayName: string | null): string {
   const name = (displayName || '').trim();
@@ -14,10 +15,28 @@ function initials(email: string, displayName: string | null): string {
 }
 
 export function ProfileMenu({ triggerClassName }: { triggerClassName?: string }) {
-  const { user, logout } = useAuth();
+  const { user, logout, logoutAll, switchAccount } = useAuth();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [others, setOthers] = useState<RememberedAccount[]>([]);
+  const [switching, setSwitching] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+
+  // Other accounts signed in on this browser (account switcher), refreshed when the menu opens.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    api.auth
+      .accounts()
+      .then((r) => {
+        if (!cancelled) setOthers(r.accounts.filter((a) => !a.current));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -45,13 +64,24 @@ export function ProfileMenu({ triggerClassName }: { triggerClassName?: string })
   const label = display || user.email;
   const initial = initials(user.email, display || null);
 
-  const onLogout = async () => {
+  const onLogout = async (all = false) => {
     setLoggingOut(true);
     try {
-      await logout();
+      await (all ? logoutAll() : logout());
     } finally {
       setLoggingOut(false);
       setOpen(false);
+    }
+  };
+
+  const onSwitch = async (userId: string) => {
+    setSwitching(userId);
+    try {
+      await switchAccount(userId);
+    } catch {
+      // The other session ended — drop it from the list.
+      setOthers((list) => list.filter((a) => a.userId !== userId));
+      setSwitching(null);
     }
   };
 
@@ -82,6 +112,38 @@ export function ProfileMenu({ triggerClassName }: { triggerClassName?: string })
             </div>
           </div>
           <div className="profile-menu-sep" role="separator" />
+          {others.map((a) => (
+            <button
+              key={a.userId}
+              type="button"
+              role="menuitem"
+              className="profile-menu-item profile-menu-account"
+              disabled={switching !== null}
+              onClick={() => void onSwitch(a.userId)}
+              title={`Switch to ${a.email}`}
+            >
+              <span className="profile-avatar-fallback profile-menu-account-avatar" aria-hidden>
+                {initials(a.email, a.displayName)}
+              </span>
+              <span className="profile-menu-account-text">
+                <span>{a.displayName || a.email}</span>
+                {a.displayName ? <span className="muted small">{a.email}</span> : null}
+              </span>
+              {switching === a.userId ? <span className="muted small">Switching…</span> : null}
+            </button>
+          ))}
+          <button
+            type="button"
+            role="menuitem"
+            className="profile-menu-item"
+            onClick={() => {
+              setOpen(false);
+              navigate('/login?add=1');
+            }}
+          >
+            Add another account
+          </button>
+          <div className="profile-menu-sep" role="separator" />
           <Link
             to="/settings?tab=account"
             role="menuitem"
@@ -97,8 +159,19 @@ export function ProfileMenu({ triggerClassName }: { triggerClassName?: string })
             disabled={loggingOut}
             onClick={() => void onLogout()}
           >
-            {loggingOut ? 'Signing out…' : 'Sign out'}
+            {loggingOut ? 'Signing out…' : others.length ? `Sign out of ${user.email}` : 'Sign out'}
           </button>
+          {others.length ? (
+            <button
+              type="button"
+              role="menuitem"
+              className="profile-menu-item danger"
+              disabled={loggingOut}
+              onClick={() => void onLogout(true)}
+            >
+              Sign out of all accounts
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>

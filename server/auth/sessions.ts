@@ -54,6 +54,20 @@ export async function createSession(
   return { id, rawToken, expiresAt, persistent };
 }
 
+export type SessionRef = { id: string; userId: string; expiresAt: string; persistent: boolean };
+
+/** Resolve a raw session token without touching it; null when unknown or expired. */
+export function sessionByToken(database: Database, rawToken: string | null | undefined): SessionRef | null {
+  if (!rawToken) return null;
+  const row = queryOne<{ id: string; user_id: string; expires_at: string; persistent: number }>(
+    database,
+    `SELECT id, user_id, expires_at, persistent FROM sessions WHERE token_hash = ?`,
+    [hashToken(rawToken)],
+  );
+  if (!row || row.expires_at <= new Date().toISOString()) return null;
+  return { id: row.id, userId: row.user_id, expiresAt: row.expires_at, persistent: Number(row.persistent) !== 0 };
+}
+
 export type SessionInfo = {
   id: string;
   deviceLabel: string | null;

@@ -91,6 +91,15 @@ export type AuthUser = {
   };
 };
 
+/** An account signed in on this browser (account switcher). */
+export type RememberedAccount = {
+  userId: string;
+  email: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  current: boolean;
+};
+
 /** Settings → Security (KAN-16). */
 export type AccountSecurity = {
   twoFactor: { enabled: boolean; enabledAt: string | null; backupCodesRemaining: number };
@@ -157,7 +166,11 @@ export const api = {
     revokeTrustedDevice: (id: string) =>
       req<{ ok: boolean }>(`/auth/trusted-devices/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     revokeAllTrustedDevices: () => req<{ ok: boolean; revoked: number }>('/auth/trusted-devices', { method: 'DELETE' }),
-    logout: () => req<{ ok: boolean }>('/auth/logout', { method: 'POST', body: '{}' }),
+    logout: () => req<{ ok: boolean; switchedToUserId: string | null }>('/auth/logout', { method: 'POST', body: '{}' }),
+    logoutAll: () => req<{ ok: boolean; signedOut: number }>('/auth/logout-all', { method: 'POST', body: '{}' }),
+    accounts: () => req<{ accounts: RememberedAccount[] }>('/auth/accounts'),
+    switchAccount: (userId: string) =>
+      req<{ ok: boolean; userId: string }>('/auth/accounts/switch', { method: 'POST', body: JSON.stringify({ userId }) }),
     updateProfile: (body: { firstName?: string | null; lastName?: string | null; displayName?: string | null }) =>
       req<{ user: AuthUser }>('/auth/profile', { method: 'PATCH', body: JSON.stringify(body) }),
     uploadAvatar: (photoBase64: string) =>
