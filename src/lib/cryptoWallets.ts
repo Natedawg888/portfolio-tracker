@@ -47,6 +47,34 @@ export function formatWalletAmount(amount: string): string {
 
 export type WalletEntry = { wallet: Wallet; valuation: WalletValuation | null };
 
+/**
+ * Synced and holding nothing. Often a Nexo / GoMining / exchange deposit address, whose
+ * funds are swept into a shared wallet, so the card suggests a manual holding (KAN-69).
+ */
+export function isEmptyWallet({ wallet, valuation }: WalletEntry): boolean {
+  return Boolean(wallet.lastSynced && valuation?.ok && valuation.items.every((i) => i.amountRaw === '0'));
+}
+
+const KEPT_EMPTY_KEY = 'koru.wallets.keptEmpty';
+
+/** Wallet ids the viewer chose to keep despite the empty-wallet warning (this browser only). */
+export function readKeptEmpty(): string[] {
+  try {
+    const v: unknown = JSON.parse(localStorage.getItem(KEPT_EMPTY_KEY) ?? '[]');
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeKeptEmpty(ids: string[]): void {
+  try {
+    localStorage.setItem(KEPT_EMPTY_KEY, JSON.stringify(ids));
+  } catch {
+    // Storage blocked: the warning just comes back next visit.
+  }
+}
+
 /** A freshly added / syncing wallet is worth re-checking shortly. */
 const needsRefresh = (w: Wallet) => w.status === 'syncing' || (w.status === 'connected' && !w.lastSynced);
 
@@ -56,6 +84,7 @@ export function useCryptoWallets(enabled: boolean) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<{ id: string; action: 'sync' | 'remove' } | null>(null);
+  const [keptEmpty, setKeptEmpty] = useState<string[]>(readKeptEmpty);
 
   const load = useCallback(async () => {
     try {
@@ -136,12 +165,20 @@ export function useCryptoWallets(enabled: boolean) {
     }
   };
 
+  const keepEmpty = (w: Wallet) => {
+    setKeptEmpty((ids) => {
+      const next = ids.includes(w.id) ? ids : [...ids, w.id];
+      writeKeptEmpty(next);
+      return next;
+    });
+  };
+
   const added = (w: Wallet) => {
     setEntries((rows) => [...rows, { wallet: w, valuation: null }]);
     void load();
   };
 
-  return { data, entries, error, notice, busy, syncNow, remove, added };
+  return { data, entries, error, notice, busy, syncNow, remove, added, keptEmpty, keepEmpty };
 }
 
 export type CryptoWalletsState = ReturnType<typeof useCryptoWallets>;

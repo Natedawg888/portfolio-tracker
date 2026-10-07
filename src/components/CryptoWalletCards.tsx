@@ -9,6 +9,7 @@ import {
   NATIVE_SYMBOL,
   NETWORK_LABEL,
   formatWalletAmount as formatAmount,
+  isEmptyWallet,
   relativeTime,
   shortAddress,
   type CryptoWalletsState,
@@ -26,6 +27,7 @@ export function WalletCard({ entry, state }: { entry: Entry; state: CryptoWallet
   const tokens = items.filter((i) => i.asset.kind === 'token');
   const syncing = wallet.status === 'syncing' || (state.busy?.id === wallet.id && state.busy.action === 'sync');
   const removing = state.busy?.id === wallet.id && state.busy.action === 'remove';
+  const warnEmpty = isEmptyWallet(entry) && !state.keptEmpty.includes(wallet.id);
 
   return (
     <article className="holding-card wallet-card" aria-label={`${wallet.name} wallet ${wallet.address}`}>
@@ -81,6 +83,27 @@ export function WalletCard({ entry, state }: { entry: Entry; state: CryptoWallet
 
       {wallet.status === 'error' && wallet.statusMessage ? (
         <p className="muted small holding-card-meta wallet-status--error">{wallet.statusMessage}</p>
+      ) : null}
+      {warnEmpty ? (
+        <div className="wallet-empty-warning" role="note">
+          <p>
+            This address holds nothing right now. If it&apos;s a deposit address from Nexo, GoMining or an
+            exchange, it won&apos;t show your balance there — add that as a manual crypto holding instead.
+          </p>
+          <div className="row gap">
+            <button type="button" className="btn ghost" onClick={() => state.keepEmpty(wallet)}>
+              Keep wallet
+            </button>
+            <button
+              type="button"
+              className="btn danger"
+              onClick={() => void state.remove(wallet)}
+              disabled={removing}
+            >
+              Remove
+            </button>
+          </div>
+        </div>
       ) : null}
       {val?.hasStalePrices && val.pricedAt ? (
         <p className="muted small holding-card-meta">Price from {relativeTime(val.pricedAt)} (live price unavailable).</p>
@@ -152,13 +175,13 @@ export function WalletNotices({ state }: { state: CryptoWalletsState }) {
   );
 }
 
-export function AddWalletDetails({ state }: { state: CryptoWalletsState }) {
+export function AddWalletDetails({ state, onUseManual }: { state: CryptoWalletsState; onUseManual: () => void }) {
   return (
     <details className="section-add">
       <summary className="section-add-summary">
         <span className="section-add-label">Add wallet</span>
       </summary>
-      <AddWalletPanel onAdded={state.added} />
+      <AddWalletPanel onAdded={state.added} onUseManual={onUseManual} />
     </details>
   );
 }

@@ -13,6 +13,8 @@
  * Run: node --import tsx scripts/verify-user-isolation.ts
  */
 import { randomBytes } from 'node:crypto';
+import fs from 'node:fs';
+import { DENYLIST_PATH, type CustodialFile } from '../server/lib/custodialDenylist.ts';
 import { getDb, queryAll, queryOne, run, newId, persist } from '../server/db/index.ts';
 import { getDataOwnerUserId } from '../server/lib/userScope.ts';
 import { resolveAkahuUserToken } from '../server/akahu/connections.ts';
@@ -258,6 +260,20 @@ async function apiChecks() {
       fail(`user B reached user A wallet (get=${getB.status} patch=${patchB.status} delete=${delB.status})`);
     } else {
       ok('wallets isolated (B cannot list/read/edit/delete A wallet)');
+    }
+
+    // Known exchange hot wallets are refused on add and on address change (KAN-69).
+    const custodial = (JSON.parse(fs.readFileSync(DENYLIST_PATH, 'utf8')) as CustodialFile).addresses.find(
+      (e) => e.family === 'evm',
+    );
+    if (custodial) {
+      const addC = await api(jarA, 'POST', '/api/wallets', { network: 'ethereum', address: custodial.address });
+      const patchC = await api(jarA, 'PATCH', `/api/wallets/${walletId}`, { address: custodial.address });
+      if (addC.json?.code !== 'CUSTODIAL_ADDRESS' || patchC.json?.code !== 'CUSTODIAL_ADDRESS') {
+        fail(`custodial address accepted (add=${addC.status} patch=${patchC.status})`);
+      } else {
+        ok(`custodial address rejected on add and edit (${custodial.custodian})`);
+      }
     }
     await api(jarA, 'DELETE', `/api/wallets/${walletId}`);
   }

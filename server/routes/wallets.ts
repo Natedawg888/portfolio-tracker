@@ -16,6 +16,7 @@ import {
   validateWalletAddress,
   type WalletNetwork,
 } from '../lib/walletAddress.ts';
+import { custodialMessage, findCustodialAddress } from '../lib/custodialDenylist.ts';
 import { getDb, queryAll, queryOne, run, newId } from '../db/index.ts';
 import { describeChainConfig, isNetworkSyncable, NETWORK_CHAIN_INFO } from '../chain/index.ts';
 import { combineValuations, valueWallet } from '../chain/valuation.ts';
@@ -69,8 +70,11 @@ function parseAddress(network: WalletNetwork, raw: unknown): { address: string }
     return { status: 400, error: 'address is required', code: 'INVALID_ADDRESS' };
   }
   const r = validateWalletAddress(network, raw);
-  if (r.ok) return { address: r.address };
-  return { status: 400, error: r.error, code: r.secret ? 'SECRET_REJECTED' : 'INVALID_ADDRESS' };
+  if (!r.ok) return { status: 400, error: r.error, code: r.secret ? 'SECRET_REJECTED' : 'INVALID_ADDRESS' };
+  // Pooled exchange wallets would import a balance that isn't the user's (KAN-69).
+  const custodian = findCustodialAddress(network, r.address);
+  if (custodian) return { status: 400, error: custodialMessage(custodian), code: 'CUSTODIAL_ADDRESS' };
+  return { address: r.address };
 }
 
 function networkProblem(): Problem {

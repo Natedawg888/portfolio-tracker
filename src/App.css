@@ -6883,3 +6883,42 @@ html:not([data-theme]) .settings-page :focus-visible {
   justify-content: space-between;
   gap: 0.5rem;
 }
+
+/* --- Custodial / exchange guidance (KAN-69) ---------------------------------- */
+.wallet-security p + p {
+  margin-top: 0.4rem;
+}
+.wallet-network-btn .wallet-custody-hint {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+.wallet-custodial-note,
+.wallet-empty-warning {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  line-height: 1.5;
+}
+.wallet-empty-warning {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+.wallet-custodial-note p,
+.wallet-empty-warning p,
+.add-wallet .auth-error p {
+  margin: 0;
+}
+.add-wallet .auth-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}

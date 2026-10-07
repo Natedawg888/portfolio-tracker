@@ -1374,9 +1374,20 @@ function HoldingCard({
 }
 
 
-function InlineAddDetails({ label, children }: { label: string; children: ReactNode }) {
+const MANUAL_CRYPTO_ID = 'add-crypto-manual';
+
+/** Exchange / app balances (Nexo, GoMining…) go in the manual crypto form (KAN-69). */
+function openManualCrypto() {
+  const el = document.getElementById(MANUAL_CRYPTO_ID);
+  if (!(el instanceof HTMLDetailsElement)) return;
+  el.open = true;
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  el.querySelector('input')?.focus({ preventScroll: true });
+}
+
+function InlineAddDetails({ label, id, children }: { label: string; id?: string; children: ReactNode }) {
   return (
-    <details className="section-add">
+    <details className="section-add" id={id}>
       <summary className="section-add-summary">
         <span className="section-add-label">{label}</span>
       </summary>
@@ -2987,8 +2998,8 @@ export function Portfolio() {
         ))}
       >
         <WalletNotices state={cryptoWallets} />
-        <AddWalletDetails state={cryptoWallets} />
-        <InlineAddDetails label="Add crypto">
+        <AddWalletDetails state={cryptoWallets} onUseManual={openManualCrypto} />
+        <InlineAddDetails label="Add crypto" id={MANUAL_CRYPTO_ID}>
           <form className="form-grid" onSubmit={onAddCrypto}>
             <h4>Add crypto (manual / Nexo)</h4>
             <label>

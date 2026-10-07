@@ -1,0 +1,867 @@
+{
+  "updatedAt": "2026-10-07T21:35:36.827Z",
+  "sources": {
+    "binance-por": {
+      "url": "https://www.binance.com/bapi/apex/v1/public/apex/market/por/address",
+      "fetchedAt": "2026-10-07T21:35:36.827Z"
+    },
+    "manual": {
+      "url": "server/lib/custodialAddresses.manual.json",
+      "fetchedAt": "2026-10-07T21:35:36.827Z"
+    }
+  },
+  "addresses": [
+    {
+      "family": "bitcoin",
+      "address": "12VuUfQHTGqWDvBzm8TBad1mZBm4hjGEzN",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "1DEuKerATHWRfyB14s6QCt4LPkfCTx4zaW",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "1KuPikhUYtHz3fmSQ2UvotpUuN672NuEcm",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "1PJiGp2yDLvUgqeBsuZVCBADArNsk6XEiw",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "1PPWMe42cywnM61nVatkmiggwdRQYLiCyS",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "1Pzaqw98PeRfyHypfqyEgg5yycJRsENrE7",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "31jUs8yQNVc9p6YuUPctWCkdhH7u8UiUba",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "32BgTv3NSYbMsBTwDbNNN2GKZPCTJSkqDv",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "32bhzEniykYRFADVaRM5PYswsjC23cxtes",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "32KqbtrRVxC6GLUJgJhVQtFTaCdq4GrgBb",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "32z4XkTCBMp4QfcoobxaXtJkWngyHqGjHp",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "33TDwJRsFJbtSEwkXGwtJkj3Ey3Gman3TV",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "34HpHYiyQwg69gFmCq2BGHjF1DZnZnBeBP",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "34ryUknRsda7w9yXqzjLhgRPZLPV43rpsd",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "34xp4vRoCGJym3xR7yCVPFHoCNxv4Twseo",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "36BddqksxL9RctZ8D8aFxKRFEbqPnEiDc6",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "36oiSkAi1VVuUpfdv8E2V5fZ2EarHRJpis",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "36yB51gULVXXnvyWmvAoCVjq6igZUiHf3y",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "378GLcve92X2Q4UrCyoMFDL5k5QrzeG7JN",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "395vnFScKQ1ay695C6v7gf89UzoFpx3WuJ",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "39884E3j6KZj82FK4vcCrkUvWYL5MQaS3v",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "39CnKMu9KWvFAabLJ5BYghVfSqHgC2VShe",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3AeUiDpPPUrUBS377584sFCpx8KLfpX9Ry",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3AQ8bAh88TQU7JV1H3ovXrwsuV6s3zYZuN",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3AtnehKDkFPC1bKvdrEVPSRGCtxQH8F1R8",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3BzYxZXkdpkrFTWzKkWGRoWXJMuN2Ko621",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3CySuFKbBS29M7rE5iJakZRNqb3msMeFoN",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3E97AjYaCq9QYnfFMtBCYiCEsN956Rvpj2",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3EVVc8e2rxwUuERtdJCduWig8DnpsUqyA6",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3F1ZmTDAv6q3xrnT3tpm55DkCDzxhstU2Z",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3F9CGMu7JSJnMHA8jFM2KgxuH6hhxtvENP",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3FHNBLobJnbCTFTVakh5TXmEneyf5PT61B",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3FJ9hQuRtzy7pCqKHjeBGRDcY3fJbhHYXD",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3GdMytxx7d2b5ERwWmQttBWtKJmS8bjGj9",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3HdGoUTbcztBnS7UzY4vSPYhwr424CiWAA",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3HkgC2R5PhqyXy6RVFyemvxN1VuFbQiQ5V",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3HkPQSi1xso1Zh1EeqLjkMpura63fr5HRn",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3JFJPpH8Chwo7CDbyYQ4XcfgcjEP1FGRMJ",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3JqPhvKkAPcFB3oLELBT7z2tQdjpnxuDi9",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3KRduELtTmxBtqYpZviPysXoJDxdtdxFLZ",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3Kyo49ThRZPMukuYqPgqPejYeUpHvkA1EM",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3LcgLHzTvjLKBixBvkKGiadtiw2GBSKKqH",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3LQUu4v9z6KNch71j7kbj8GPeAGUo1FW6a",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3M219KR5vEneNb47ewrPfWyb5jQ2DjxRP6",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3M3EtJGx5Dy9nCATLDhyRCrKGc38QC9z2e",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3NjHh71XgjikBoTNYdWgXiNeZcLaKNThgb",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3Nm3c4gqVmvCmeP1sYvDchbb1r4QMu6emn",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3NPL82eaehTFh4r3StpHqVQBTnZJFaGsyy",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3NXCvmLGz9SxYi6TnjbBQfQMcwiZ1iQETa",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3PXBET2GrTwCamkeDzKCx8DeGDyrbuGKoc",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3Q6ZCgJ3e4shasccLHen1VNUpReZTsjmsR",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "3QK5vQ9hucSg8ZC8Vizq83qEWeHFLAWMud",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "bc1p7x4aaws8t8cmmccu39kun6cajglx6ntuta7lhyxjt2cwrw4k89zqn0wley",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "bc1q32lyrhp9zpww22phqjwwmelta0c8a5q990ghs6",
+      "custodian": "Binance (Ceffu)",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "bc1q5n5dy7jgqhmpnmx44d3780qefzaphjreds0z9y",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "bc1q5qvs2dzzydqt4ygfn0k0ertjnv8ctytgcdz7l0",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "bc1q5rsc4uscnmemlwru8xsys26k3xgxewqfnf3k7j",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "bc1q78ufzeu8w8fwvxuphrdlg446xhyptf28fkatu5",
+      "custodian": "Binance (Ceffu)",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "bc1q7t9fxfaakmtk8pj7tdxjvwsng6y9x76czuaf5h",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "bc1q9n7j6a5wwru6tad9xrlncnagresvyjt96pl3en",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "bc1qdtmav38lca8yu3rrcknnqx5242cckgxqws7m72",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "bc1qm34lsc65zpw79lxes69zkqmk6ee3ewf0j77s3h",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "bc1qq393eyjh8hdjvcchy0mxquhh9wx8h3kzlkchfs",
+      "custodian": "Binance (Ceffu)",
+      "source": "binance-por"
+    },
+    {
+      "family": "bitcoin",
+      "address": "bc1qquax5zzensg9mkejdgq3q3h76v34cug96zk0f6",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x030e37ddd7df1b43db172b23916d523f1599c6cb",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x082489a616ab4d46d1947ee3f912e080815b08da",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x18e226459ccf0eec276514a4fd3b226d8961e4d1",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x1b46970cfe6a271e884f636663c257a5a571fb2c",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x1b5b4e441f5a22bfd91b7772c780463f66a74b35",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x21a31ee1afc51d94c2efccaa2092ad1028285549",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x22132139bf7f3921b1cadeab931f4fbf7bf2bc9e",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x25681ab599b4e2ceea31f8b498052c53fc2d74db",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x26bff98f6f37c8d560684eaf2afd1149bf76633e",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x28c6c06298d514db089934071355e5743bf21d60",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x290275e3db66394c52272398959845170e4dcb88",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x2b9ffcd7a44f9afc8770ac1d5e6405410816dab4",
+      "custodian": "Binance (Ceffu)",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x308a2a0712570daeea77c8ba9c27a32cdc4000d4",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x32e11a20337ebc79abd0eeab2d91bafbd9591149",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x3304e22ddaa22bcdc5fca2269b418046ae7b566a",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x38aaef3782910bdd9ea3566c839788af6ff9b200",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x3931dab967c3e2dbb492fe12460a66d0fe4cc857",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x3a3c006053a9b40286b9951a11be4c5808c11dc8",
+      "custodian": "Binance (Ceffu)",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x417850c1cd0fb428eb63649e9dc4c78ede9a34e8",
+      "custodian": "Binance (Ceffu)",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x43684d03d81d3a4c70da68febdd61029d426f042",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x4976a4a02f38326660d17bf34b431dc6e2eb2327",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x4a9e49a45a4b2545cb177f79c7381a30e1dc261f",
+      "custodian": "Binance (Ceffu)",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x4aec0e98fc1fb55b9cc2faaa7a81acca42cb4e96",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x4ed6cf63bd9c009d247ee51224fc1c7041f517f1",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x4fdfe365436b5273a42f135c6a6244a20404271e",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x505e71695e9bc45943c58adec1650577bca68fd9",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x56eddb7aa87536c09ccc2793473599fd21a8b17f",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x5a52e96bacdabb82fd05763e25335261b270efcb",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x5ce4825e2c5d7025b110d7bbeb5b1f03976e1443",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x605d0b92cde1e110d5ae9123969097ea2489d1aa",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x71a7de1bdad3904b312717843597f549d2a79eb8",
+      "custodian": "Binance (Ceffu)",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x756b86fd69914db92229c07c7393d7d9948fed33",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x835678a611b28684005a5e2233695fb6cbbb0007",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x86523c87c8ec98c7539e2c58cd813ee9d1a08d96",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x87433fec6f8d9df13d1e17c4b11364ecd2e93a51",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x9696f59e4d72e237be84ffd425dcad154bf96976",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x98adef6f2ac8572ec48965509d69a8dd5e8bba9d",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0x9dfb9014e88087fba78cc9309c64031d02be9a33",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0xa64b436964e7415c0e70b9989a53e1fb9a90e726",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0xa7c0d36c4698981fab42a7d8c783674c6fe2592d",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0xad354cfbaa4a8572dd6df021514a3931a8329ef5",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0xb38e8c17e38363af6ebdcb3dae12e0243582891d",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0xb75f972af41d6ff0bcc6b2613b832632de1e418b",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0xb93b82f33e2653b544e046128f3cb47879dc917b",
+      "custodian": "Binance (Ceffu)",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0xbe0eb53f46cd790cd13851d5eff43d12404d33e8",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0xc8812d1d1918587924ad84bcf8687bfbb1231f85",
+      "custodian": "Binance (Ceffu)",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0xc8daf809c7d7c27dd62d006196d8901ba57e5eae",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0xd3a22590f8243f8e83ac230d1842c9af0404c4a1",
+      "custodian": "Binance (Ceffu)",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0xd62e55b19135eb3c645573288ee4b6050f86ff54",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0xdfd5293d8e347dfe59e90efd55b2956a1343963d",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0xe1940f578743367f38d3f25c2d2d32d6636929b6",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0xe7804c37c13166ff0b37f5ae0bb07a3aebb6e245",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0xee7ae85f2fe2239e27d9c1e23fffe168d63b4055",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0xf708e1eab1a3651b1c73d1bfa2fc54c148328be4",
+      "custodian": "Binance (Ceffu)",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0xf92402bb795fd7cd08fb83839689db79099c8c9c",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "evm",
+      "address": "0xf977814e90da44bfa03b6295a0616a897441acec",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "solana",
+      "address": "28nYGHJyUVcVdxZtzKByBXEj127XnrUkrE3VaGuWj1ZU",
+      "custodian": "Binance (Ceffu)",
+      "source": "binance-por"
+    },
+    {
+      "family": "solana",
+      "address": "2ojv9BAiHUrvsm9gxDe7fJSzbNZSJcxZvf8dqmWGHG8S",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "solana",
+      "address": "38xCLm9kSExfGU1GdyVuX4vop7SZns9kU2mQyTmmMdUP",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "solana",
+      "address": "3gd3dqgtJ4jWfBfLYTX67DALFetjc5iS72sCgRhCkW2u",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "solana",
+      "address": "3JR4ETCTVqnysiARm9LvuigzuXnDydbWXYYYpgZzzhDi",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "solana",
+      "address": "3yFwqXBfZY4jBVUafQ1YEXw189y2dN3V5KQq9uzBDy1E",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "solana",
+      "address": "5SDrsMNTYdhmApjfqYHDvjoW92f2S42vcc7zNDVcQ9Ej",
+      "custodian": "Binance (Ceffu)",
+      "source": "binance-por"
+    },
+    {
+      "family": "solana",
+      "address": "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "solana",
+      "address": "6oCa9Tz8VXVp63WiFyruE5PD6yXz3pCsv6oGzUGvg9TP",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "solana",
+      "address": "6QJzieMYfp7yr3EdrePaQoG3Ghxs2wM98xSLRu8Xh56U",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "solana",
+      "address": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "solana",
+      "address": "AEkGD1y3LzaXxrh4xYqLkWu9MSYkY1knr2nRt1YPULsx",
+      "custodian": "Binance (Ceffu)",
+      "source": "binance-por"
+    },
+    {
+      "family": "solana",
+      "address": "BZ3kabSsMzbuJUguYxtmkRtzw7ACqw1DUMH8PcbvXiUr",
+      "custodian": "Binance (Ceffu)",
+      "source": "binance-por"
+    },
+    {
+      "family": "solana",
+      "address": "c5f9zfpkKMD9N8uLqJcFeJAAz7v12vDMnup9Y6EeQkk",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "solana",
+      "address": "EPauhjQjjTBCpeBtszS3xGRASLpEJFM1cspSiFRXZa9Z",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "solana",
+      "address": "EtwjSV65xPjZxDmmoNTw78gdYxLa1ayqVo4kXGsjhMiA",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "solana",
+      "address": "ExFUyu3f5C9UW3zLZybVcXv156X2g5AxdZCZJvCh23w4",
+      "custodian": "Binance (Ceffu)",
+      "source": "binance-por"
+    },
+    {
+      "family": "solana",
+      "address": "G9RCBaYb8aBRxoe8QBC2ucGrVqjuZFysRhY8d56cnNT1",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "solana",
+      "address": "GBrURzmtWujJRTA3Bkvo7ZgWuZYLMMwPCwre7BejJXnK",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "solana",
+      "address": "GK35nWN6ZHSGZrRTf8kTQd8RkFCighChPEb41XwSFVAC",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "solana",
+      "address": "H8BgJgae6qhMtf7BM2JtddywSQt11WdxHHxkGLNX5hss",
+      "custodian": "Binance",
+      "source": "binance-por"
+    },
+    {
+      "family": "solana",
+      "address": "HXsKP7wrBWaQ8T2Vtjry3Nj3oUgwYcqq9vrHDM12G664",
+      "custodian": "Binance",
+      "source": "binance-por"
+    }
+  ]
+}
