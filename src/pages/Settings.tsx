@@ -767,7 +767,8 @@ function CategoriesPanel({
         `Synced: ${portfolio.cashAccountsUpserted ?? 0} cash, ` +
           `${portfolio.stocksUpserted ?? 0} stocks, ${portfolio.cryptoUpserted ?? 0} crypto, ` +
           `KS ${portfolio.kiwisaverBalanceSynced ? 'yes' : 'no'}; ` +
-          `txns +${txns.inserted ?? 0}/~${txns.updated ?? 0}.`,
+          `txns +${txns.inserted ?? 0}/~${txns.updated ?? 0}` +
+          (txns.categorised ? `, ${txns.categorised} categorised from past transactions.` : '.'),
       );
       await loadAkahu();
       try {

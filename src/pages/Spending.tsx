@@ -182,6 +182,8 @@ export function Spending() {
   const [formAccountId, setFormAccountId] = useState('');
   /** Off for crypto Visa debit cards (Nexo, GoMining…): spend not charged to a bank account. */
   const [formCharged, setFormCharged] = useState(true);
+  /** '' = automatic: the payee's saved category, else uncategorised. */
+  const [formCategoryId, setFormCategoryId] = useState('');
   const [formCardPreset, setFormCardPreset] = useState<string>('Nexo card');
   const [formCardCustom, setFormCardCustom] = useState('');
   const [importAccountId, setImportAccountId] = useState('');
@@ -432,6 +434,8 @@ export function Spending() {
         source,
         affectsBtc: formUseBtc,
         btcHoldingId: formUseBtc ? formBtcHoldingId || null : null,
+        // Omitted = server applies the payee's saved category.
+        ...(formCategoryId ? { categoryId: formCategoryId } : {}),
       })) as Transaction & {
         btcLink?: {
           applied?: boolean;
@@ -446,14 +450,18 @@ export function Spending() {
           : formUseBtc
             ? ' · Use BTC'
             : '';
-      setMsg(
-        `Saved · ${sourceLabel(source)} · charged ${accounts.find((a) => a.id === formAccountId)?.name ?? formAccountId}${btcNote}`,
-      );
+      const chargedNote = formCharged
+        ? `charged ${accounts.find((a) => a.id === formAccountId)?.name ?? formAccountId}`
+        : 'not charged to a bank account';
+      setMsg(`Saved · ${sourceLabel(source)} · ${chargedNote}${btcNote}`);
       setFormDesc('');
       setFormAmount('');
       setFormUseBtc(false);
+      setFormCategoryId('');
       setShowTxnModal(false);
       await load();
+      // Same as picking Charity in the list: offer the receipt / PAYE link.
+      if (isCharityCategoryId(created.categoryId)) openCharityReceiptModal(created);
     } catch (err) {
       setMsg((err as Error).message);
     } finally {
@@ -1338,8 +1346,24 @@ export function Spending() {
                 ))}
               </datalist>
               <span className="muted small">
-                A saved category for this payee is applied when you save.
+                Leave Category on Automatic to use this payee’s saved category, or one guessed from
+                your past transactions like it.
               </span>
+            </label>
+            <label className="span-2">
+              Category
+              <select value={formCategoryId} onChange={(e) => setFormCategoryId(e.target.value)}>
+                <option value="">Automatic (from this payee or similar past transactions)</option>
+                {categories.map((c) => {
+                  const tag = categoryTypeShortTag(normalizeCategoryType(c.type, c.isIncome));
+                  return (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                      {tag ? ` (${tag})` : ''}
+                    </option>
+                  );
+                })}
+              </select>
             </label>
             <label>
               Card
