@@ -3,13 +3,16 @@
  * A swapped observation field order must not show the neighbouring series.
  * Run: npm run test:economy
  */
+import { readFileSync } from 'node:fs';
 import {
   archiveCaptures,
   archiveLatestRawUrl,
+  C60_SNAPSHOT_PATH,
   NZ_CREDIT_SERIES,
   parseC60PublishedDay,
   parseNzCreditAvailability,
   RBNZ_C60_URL,
+  workbookFrom,
 } from './nzCreditConditions.ts';
 import type { SheetGrid } from './xlsx.ts';
 
@@ -116,6 +119,15 @@ for (const layout of ['series-last', 'series-first'] as const) {
   assert(latest === `https://web.archive.org/web/2999id_/${RBNZ_C60_URL}`, `latest raw url ${latest}`);
   assert(latest.includes('2999id_/'), 'the direct copy is a raw replay, not the HTML wrapper');
   assert(latest.endsWith('/hc60.xlsx'), 'the direct copy is the official C60 workbook');
+  passed += 1;
+}
+
+{
+  // Railway cannot reach rbnz.govt.nz or the Internet Archive; the bundled workbook is what fills the card there.
+  const load = workbookFrom(readFileSync(C60_SNAPSHOT_PATH), C60_SNAPSHOT_PATH, 'snapshot', null);
+  assert(load.rates.length > 0, 'the bundled workbook has credit-availability readings');
+  assert(load.publishedAt != null, 'the bundled workbook carries its Published Date');
+  assert(load.notes.includes('bundled with the app'), `the note says the copy is bundled: ${load.notes}`);
   passed += 1;
 }
 

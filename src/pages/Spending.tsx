@@ -11,6 +11,15 @@ import {
   maybeAutoSyncPortfolio,
 } from '../lib/akahuTxnAutoSync';
 import { showQuietToast } from '../lib/quietToast';
+import {
+  beginPageRead,
+  commitPageRead,
+  invalidateAfterBudgetEdit,
+  invalidateAfterExternalSync,
+  portfolioSyncChanged,
+  readPageCache,
+  txnSyncChanged,
+} from '../lib/pageDataCache';
 import type { DebtCreditorKind, DebtPerson, DebtRepayment, IncomeKind, IncomeMonthSummary, IncomeRecord, PayeeSetting, Transaction, TransactionSource } from '../types';
 import {
   CategorySpendChart,
@@ -69,6 +78,31 @@ type CashAccount = {
   currency?: string;
   notes?: string | null;
 };
+
+type SpendingBundle = {
+  categories: Category[];
+  budgets: Budget[];
+  txns: Transaction[];
+  accounts: CashAccount[];
+  flowTxns: Transaction[];
+  debtPeople: DebtPerson[];
+  debtRepayments: DebtRepayment[];
+  incomeRecords: IncomeRecord[];
+  incomeSummary: IncomeMonthSummary | null;
+  payees: PayeeSetting[];
+  btcHoldings: Array<{ id: string; name: string; asset: string; amount: number }>;
+  btcPrimaryId: string | null;
+};
+
+function spendingCacheKey(month: YearMonth): string {
+  return `spending:${yearMonthKey(month)}`;
+}
+
+function payeeDraftFrom(payees: PayeeSetting[]): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const payee of payees) next[payee.name] = payee.categoryId ?? '';
+  return next;
+}
 
 /** Match server liquid-cash filter (net-worth Cash / Dashboard). */
 const LIQUID_CASH_TYPES = new Set(['cheque', 'savings', 'wallet', 'term_deposit']);
@@ -138,34 +172,39 @@ function incomeCategoryIdFromList(
 }
 
 export function Spending() {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [budgets, setBudgets] = useState<Budget[]>([]);
-  const [txns, setTxns] = useState<Transaction[]>([]);
-  const [accounts, setAccounts] = useState<CashAccount[]>([]);
+  const initialSpend = readPageCache<SpendingBundle>(spendingCacheKey(DEFAULT_MONTH));
+  const initialCash = initialSpend?.accounts[0];
+  const [categories, setCategories] = useState<Category[]>(initialSpend?.categories ?? []);
+  const [budgets, setBudgets] = useState<Budget[]>(initialSpend?.budgets ?? []);
+  const [txns, setTxns] = useState<Transaction[]>(initialSpend?.txns ?? []);
+  const [accounts, setAccounts] = useState<CashAccount[]>(initialSpend?.accounts ?? []);
   /** Txns from selected month start through today (Auckland) — for start-of-month cash back-calc. */
-  const [flowTxns, setFlowTxns] = useState<Transaction[]>([]);
+  const [flowTxns, setFlowTxns] = useState<Transaction[]>(initialSpend?.flowTxns ?? []);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showTxnModal, setShowTxnModal] = useState(false);
 
   // Income
-  const [incomeRecords, setIncomeRecords] = useState<IncomeRecord[]>([]);
-  const [incomeSummary, setIncomeSummary] = useState<IncomeMonthSummary | null>(null);
+  const [incomeRecords, setIncomeRecords] = useState<IncomeRecord[]>(initialSpend?.incomeRecords ?? []);
+  const [incomeSummary, setIncomeSummary] = useState<IncomeMonthSummary | null>(initialSpend?.incomeSummary ?? null);
   const [showIncomeModal, setShowIncomeModal] = useState(false);
   const [incomeSaving, setIncomeSaving] = useState(false);
   const [incDate, setIncDate] = useState(todayAucklandYmd);
   const [incAmount, setIncAmount] = useState('');
   const [incKind, setIncKind] = useState<IncomeKind>('cash');
   const [incDesc, setIncDesc] = useState('');
-  const [incAccountId, setIncAccountId] = useState('');
+  const [incAccountId, setIncAccountId] = useState(initialCash?.id ?? '');
   const [incCryptoAsset, setIncCryptoAsset] = useState('');
   const [incCryptoAmount, setIncCryptoAmount] = useState('');
   const [incNotes, setIncNotes] = useState('');
   const [incCategoryId, setIncCategoryId] = useState('cat-income');
-  const [payees, setPayees] = useState<PayeeSetting[]>([]);
-  const [payeeCategoryDraft, setPayeeCategoryDraft] = useState<Record<string, string>>({});
+  const [payees, setPayees] = useState<PayeeSetting[]>(initialSpend?.payees ?? []);
+  const [payeeCategoryDraft, setPayeeCategoryDraft] = useState<Record<string, string>>(() =>
+    payeeDraftFrom(initialSpend?.payees ?? []),
+  );
   const [payeeSavingName, setPayeeSavingName] = useState<string | null>(null);
+  const [payeeSettingsOpen, setPayeeSettingsOpen] = useState(false);
   const [planIncomeCategoryId, setPlanIncomeCategoryId] = useState('');
   const [planIncomeAmount, setPlanIncomeAmount] = useState('');
   const [planIncomeSaving, setPlanIncomeSaving] = useState(false);
@@ -173,15 +212,21 @@ export function Spending() {
   const [editIncomePlanAmount, setEditIncomePlanAmount] = useState('');
 
   // Manual / Wallet form state
-  const [formSource, setFormSource] = useState<'bank' | 'manual' | 'google_wallet'>('bank');
+  const [formSource, setFormSource] = useState<'bank' | 'manual' | 'google_wallet'>(
+    initialCash ? (isBankishAccount(initialCash) ? 'bank' : 'manual') : 'bank',
+  );
   const [formDate, setFormDate] = useState(todayAucklandYmd);
   const [formDesc, setFormDesc] = useState('');
   const [formAmount, setFormAmount] = useState('');
   const [formKind, setFormKind] = useState<'debit' | 'credit'>('debit');
-  const [formAccountId, setFormAccountId] = useState('');
+  const [formAccountId, setFormAccountId] = useState(initialCash?.id ?? '');
+  /** Off for crypto Visa debit cards (Nexo, GoMining…): spend not charged to a bank account. */
+  const [formCharged, setFormCharged] = useState(true);
+  /** '' = automatic: the payee's saved category, else uncategorised. */
+  const [formCategoryId, setFormCategoryId] = useState('');
   const [formCardPreset, setFormCardPreset] = useState<string>('Nexo card');
   const [formCardCustom, setFormCardCustom] = useState('');
-  const [importAccountId, setImportAccountId] = useState('');
+  const [importAccountId, setImportAccountId] = useState(initialCash?.id ?? '');
   const [importing, setImporting] = useState(false);
   const [categorySavingId, setCategorySavingId] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<YearMonth>(DEFAULT_MONTH);
@@ -193,15 +238,17 @@ export function Spending() {
   const [charitySaving, setCharitySaving] = useState(false);
   /** Explicit Use BTC / Pays with BTC — off by default; never auto from category. */
   const [formUseBtc, setFormUseBtc] = useState(false);
-  const [formBtcHoldingId, setFormBtcHoldingId] = useState('');
+  const [formBtcHoldingId, setFormBtcHoldingId] = useState(
+    initialSpend?.btcPrimaryId || initialSpend?.btcHoldings[0]?.id || '',
+  );
   const [btcHoldings, setBtcHoldings] = useState<
     Array<{ id: string; name: string; asset: string; amount: number }>
-  >([]);
-  const [btcPrimaryId, setBtcPrimaryId] = useState<string | null>(null);
+  >(initialSpend?.btcHoldings ?? []);
+  const [btcPrimaryId, setBtcPrimaryId] = useState<string | null>(initialSpend?.btcPrimaryId ?? null);
 
   // Debt / I owe
-  const [debtPeople, setDebtPeople] = useState<DebtPerson[]>([]);
-  const [debtRepayments, setDebtRepayments] = useState<DebtRepayment[]>([]);
+  const [debtPeople, setDebtPeople] = useState<DebtPerson[]>(initialSpend?.debtPeople ?? []);
+  const [debtRepayments, setDebtRepayments] = useState<DebtRepayment[]>(initialSpend?.debtRepayments ?? []);
   const [showAddPerson, setShowAddPerson] = useState(false);
   const [personName, setPersonName] = useState('');
   const [personKind, setPersonKind] = useState<DebtCreditorKind>('person');
@@ -260,9 +307,41 @@ export function Spending() {
     return formCardPreset.trim();
   }, [formCardPreset, formCardCustom]);
 
-  const formAccountSeeded = useRef(false);
+  const spendKey = spendingCacheKey(selectedMonth);
+  const [appliedSpendKey, setAppliedSpendKey] = useState(spendKey);
+  if (appliedSpendKey !== spendKey) {
+    setAppliedSpendKey(spendKey);
+    const next = readPageCache<SpendingBundle>(spendKey);
+    if (next) {
+      setCategories(next.categories);
+      setBudgets(next.budgets);
+      setTxns(next.txns);
+      setAccounts(next.accounts);
+      setFlowTxns(next.flowTxns);
+      setDebtPeople(next.debtPeople);
+      setDebtRepayments(next.debtRepayments);
+      setIncomeRecords(next.incomeRecords);
+      setIncomeSummary(next.incomeSummary);
+      setPayees(next.payees);
+      setBtcHoldings(next.btcHoldings);
+      setBtcPrimaryId(next.btcPrimaryId);
+      setError(null);
+    }
+  }
+
+  const formAccountSeeded = useRef(Boolean(initialCash));
+  const monthRef = useRef(selectedMonth);
+  const txnsRef = useRef(txns);
+  useEffect(() => {
+    monthRef.current = selectedMonth;
+  }, [selectedMonth]);
+  useEffect(() => {
+    txnsRef.current = txns;
+  }, [txns]);
 
   const load = useCallback(async () => {
+    const requested = selectedMonth;
+    const stamp = beginPageRead(spendingCacheKey(requested));
     const todayYmd = todayAucklandYmd();
     const [cats, buds, list, accts, btc, people, repayments, incomeList, incomeSum, payeeList] = await Promise.all([
       api.budgets.categories(),
@@ -276,14 +355,43 @@ export function Spending() {
       api.income.summary(yearMonthKey(selectedMonth)).catch(() => null),
       api.payees.list().catch(() => []),
     ]);
-    setCategories(cats as Category[]);
-    setBudgets(buds as Budget[]);
-    setTxns(list as Transaction[]);
-    setDebtPeople(people as DebtPerson[]);
-    setDebtRepayments(repayments as DebtRepayment[]);
-    setIncomeRecords(incomeList as IncomeRecord[]);
-    setIncomeSummary(incomeSum as IncomeMonthSummary | null);
     const nextPayees = payeeList as PayeeSetting[];
+    const cash = (accts as CashAccount[]).slice().sort((a, b) => a.name.localeCompare(b.name));
+    // Start-of-month cash = current liquid − net liquid flows from month start through today.
+    // Never invent: future months (periodFrom > today) leave flowTxns empty → UI shows em dash.
+    let flows: Transaction[];
+    if (periodFrom > todayYmd) {
+      flows = [];
+    } else if (periodTo >= todayYmd) {
+      // Current month: month txn fetch already covers [periodFrom, today] (no future-dated needed).
+      flows = list as Transaction[];
+    } else {
+      // Past month: need flows after periodTo as well to back out from current balances.
+      flows = (await api.accounts.transactions(periodFrom, todayYmd).catch(() => [])) as Transaction[];
+    }
+    const bundle: SpendingBundle = {
+      categories: cats as Category[],
+      budgets: buds as Budget[],
+      txns: list as Transaction[],
+      accounts: cash,
+      flowTxns: flows,
+      debtPeople: people as DebtPerson[],
+      debtRepayments: repayments as DebtRepayment[],
+      incomeRecords: incomeList as IncomeRecord[],
+      incomeSummary: incomeSum as IncomeMonthSummary | null,
+      payees: nextPayees,
+      btcHoldings: btc.holdings ?? [],
+      btcPrimaryId: btc.primaryId ?? null,
+    };
+    if (!commitPageRead(stamp, bundle)) return;
+    if (monthRef.current !== requested) return;
+    setCategories(bundle.categories);
+    setBudgets(bundle.budgets);
+    setTxns(bundle.txns);
+    setDebtPeople(bundle.debtPeople);
+    setDebtRepayments(bundle.debtRepayments);
+    setIncomeRecords(bundle.incomeRecords);
+    setIncomeSummary(bundle.incomeSummary);
     setPayees(nextPayees);
     setPayeeCategoryDraft((prev) => {
       const next = { ...prev };
@@ -292,22 +400,10 @@ export function Spending() {
       }
       return next;
     });
-    const cash = (accts as CashAccount[]).slice().sort((a, b) => a.name.localeCompare(b.name));
     setAccounts(cash);
-    // Start-of-month cash = current liquid − net liquid flows from month start through today.
-    // Never invent: future months (periodFrom > today) leave flowTxns empty → UI shows em dash.
-    if (periodFrom > todayYmd) {
-      setFlowTxns([]);
-    } else if (periodTo >= todayYmd) {
-      // Current month: month txn fetch already covers [periodFrom, today] (no future-dated needed).
-      setFlowTxns(list as Transaction[]);
-    } else {
-      // Past month: need flows after periodTo as well to back out from current balances.
-      const flows = (await api.accounts.transactions(periodFrom, todayYmd).catch(() => [])) as Transaction[];
-      setFlowTxns(flows);
-    }
-    setBtcHoldings(btc.holdings ?? []);
-    setBtcPrimaryId(btc.primaryId ?? null);
+    setFlowTxns(flows);
+    setBtcHoldings(bundle.btcHoldings);
+    setBtcPrimaryId(bundle.btcPrimaryId);
     // Seed form defaults via functional updates so `load` identity stays stable.
     // (Previously depending on formAccountId etc. recreated `load` on first paint,
     // cancelled the in-flight auto-sync effect after debounce was marked, and the
@@ -322,22 +418,27 @@ export function Spending() {
       setFormAccountId(firstCash.id);
       setFormSource(isBankishAccount(firstCash) ? 'bank' : 'manual');
     }
+    setError(null);
   }, [periodFrom, periodTo, selectedMonth]);
 
+  const reloadAfterEdit = useCallback(async () => {
+    invalidateAfterBudgetEdit();
+    await load();
+  }, [load]);
+
   const loadRef = useRef(load);
-  loadRef.current = load;
+  useEffect(() => {
+    loadRef.current = load;
+  }, [load]);
 
 
   useEffect(() => {
     load().catch((e: Error) => {
-      setTxns((prev) => {
-        if (Array.isArray(prev) && prev.length > 0) {
-          showQuietToast('Could not refresh budget — showing last data.', { kind: 'warn' });
-          return prev;
-        }
-        setError(e.message);
-        return prev;
-      });
+      if (txnsRef.current.length > 0) {
+        showQuietToast('Could not refresh budget — showing last data.', { kind: 'warn' });
+        return;
+      }
+      setError(e.message);
     });
   }, [load]);
 
@@ -348,11 +449,17 @@ export function Spending() {
     let cancelled = false;
     (async () => {
       try {
-        await Promise.all([
+        const [txn, port] = await Promise.all([
           maybeAutoSyncBankTransactions(),
           maybeAutoSyncPortfolio(),
         ]);
         if (cancelled) return;
+        if (
+          (txn.ran && txn.result.ok && txnSyncChanged(txn.result)) ||
+          (port.ran && port.result.ok && portfolioSyncChanged(port.result))
+        ) {
+          invalidateAfterExternalSync();
+        }
         // Always refresh UI after the attempt settles. Sync may have been
         // debounced while another page's sync already wrote new txns; or this
         // run inserted rows — either way the Transactions table must catch up.
@@ -370,8 +477,8 @@ export function Spending() {
   async function onAddTxn(e: FormEvent) {
     e.preventDefault();
     setMsg(null);
-    if (!formAccountId) {
-      setMsg('Choose the charged account (Kiwibank Main / Debit / etc.).');
+    if (formCharged && !formAccountId) {
+      setMsg('Choose the charged account (Kiwibank Main / Debit / etc.), or turn off “Charged to a bank account”.');
       return;
     }
     if (formSource !== 'bank' && !resolvedCardName) {
@@ -413,14 +520,14 @@ export function Spending() {
             : 'manual';
       const cardName =
         resolvedCardName ||
-        (source === 'bank'
+        (source === 'bank' && formCharged
           ? accounts.find((a) => a.id === formAccountId)?.name || 'Bank'
           : null);
       const description =
         formDesc.trim() ||
         (source === 'bank' ? cardName || '' : cardName || '(manual)');
       const created = (await api.accounts.createTransaction({
-        accountId: formAccountId,
+        accountId: formCharged ? formAccountId : null,
         date: formDate,
         description,
         amount,
@@ -429,6 +536,8 @@ export function Spending() {
         source,
         affectsBtc: formUseBtc,
         btcHoldingId: formUseBtc ? formBtcHoldingId || null : null,
+        // Omitted = server applies the payee's saved category.
+        ...(formCategoryId ? { categoryId: formCategoryId } : {}),
       })) as Transaction & {
         btcLink?: {
           applied?: boolean;
@@ -443,14 +552,18 @@ export function Spending() {
           : formUseBtc
             ? ' · Use BTC'
             : '';
-      setMsg(
-        `Saved · ${sourceLabel(source)} · charged ${accounts.find((a) => a.id === formAccountId)?.name ?? formAccountId}${btcNote}`,
-      );
+      const chargedNote = formCharged
+        ? `charged ${accounts.find((a) => a.id === formAccountId)?.name ?? formAccountId}`
+        : 'not charged to a bank account';
+      setMsg(`Saved · ${sourceLabel(source)} · ${chargedNote}${btcNote}`);
       setFormDesc('');
       setFormAmount('');
       setFormUseBtc(false);
+      setFormCategoryId('');
       setShowTxnModal(false);
-      await load();
+      await reloadAfterEdit();
+      // Same as picking Charity in the list: offer the receipt / PAYE link.
+      if (isCharityCategoryId(created.categoryId)) openCharityReceiptModal(created);
     } catch (err) {
       setMsg((err as Error).message);
     } finally {
@@ -477,7 +590,7 @@ export function Spending() {
           (errN ? `, ${errN} parse warnings` : '') +
           ` -> ${r.accountName}`,
       );
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     } finally {
@@ -588,6 +701,7 @@ export function Spending() {
       if (isCharityCategoryId(next)) {
         openCharityReceiptModal({ ...prev!, ...updated, categoryId: next });
       }
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
       await load();
@@ -607,6 +721,7 @@ export function Spending() {
       }
       setTxns((prev) => prev.filter((x) => x.id !== t.id));
       setMsg(`Deleted ${t.id}`);
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
       await load();
@@ -737,6 +852,7 @@ export function Spending() {
     const netFlow = flowTxns
       .filter(
         (t) =>
+          t.accountId !== null &&
           liquidCashIds.has(t.accountId) &&
           t.date >= periodFrom &&
           t.date <= todayYmd,
@@ -798,7 +914,7 @@ export function Spending() {
       const name = categories.find((c) => c.id === planCategoryId)?.name ?? planCategoryId;
       setMsg(`Budget plan · ${name} · ${formatNzd(amount)} for ${monthLong}`);
       setPlanAmount('');
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     } finally {
@@ -824,7 +940,7 @@ export function Spending() {
       });
       setMsg(`Updated plan · ${formatNzd(amount)}`);
       cancelEditPlan();
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     } finally {
@@ -844,7 +960,7 @@ export function Spending() {
       await api.budgets.remove(budgetId);
       setMsg(`Cleared plan · ${name}`);
       if (editingPlanId === budgetId) cancelEditPlan();
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     } finally {
@@ -876,7 +992,7 @@ export function Spending() {
         incomeCategories.find((c) => c.id === planIncomeCategoryId)?.name ?? planIncomeCategoryId;
       setMsg(`Planned ${catName} · ${formatNzd(amount)} for ${monthLong}`);
       setPlanIncomeAmount('');
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     } finally {
@@ -900,7 +1016,7 @@ export function Spending() {
       });
       setEditingIncomePlanId(null);
       setMsg(`Updated planned income · ${formatNzd(amount)}`);
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     } finally {
@@ -916,7 +1032,7 @@ export function Spending() {
       await api.income.removePlan(planId);
       setMsg(`Cleared planned ${categoryName} · ${monthLong}`);
       setEditingIncomePlanId(null);
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     } finally {
@@ -1023,7 +1139,7 @@ export function Spending() {
       setIncCryptoAmount('');
       setIncNotes('');
       setShowIncomeModal(false);
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     } finally {
@@ -1042,7 +1158,7 @@ export function Spending() {
     try {
       await api.income.remove(rec.id);
       setMsg(`Deleted income ${rec.id}`);
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     }
@@ -1076,7 +1192,7 @@ export function Spending() {
       setShowAddPerson(false);
       const kindLabel = personKind === 'corporation' ? 'Corporation' : 'Person';
       setMsg(`Added debt · ${kindLabel} · ${name} · ${formatNzd(outstanding)} outstanding`);
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     } finally {
@@ -1106,7 +1222,7 @@ export function Spending() {
       if (historyPersonId === p.id) setHistoryPersonId(null);
       if (repayPersonId === p.id) setRepayPersonId('');
       setMsg(`Deleted creditor · ${kind} · ${p.name}`);
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
       await load();
@@ -1146,7 +1262,7 @@ export function Spending() {
       setRepayNotes('');
       setRepayTxnId('');
       setShowRepayForm(false);
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     } finally {
@@ -1172,7 +1288,7 @@ export function Spending() {
           <strong>1 Oct 2026</strong>. Sync Kiwibank via Akahu; off-Akahu cards (Nexo, GoMining, …)
           — add manually with card name and charged cash account.
         </p>
-        <div className="period-pager" role="navigation" aria-label="Spending month">
+        <div className="period-pager" role="navigation" aria-label="Budget month">
           <button
             type="button"
             className="btn"
@@ -1180,7 +1296,7 @@ export function Spending() {
             aria-label="Previous month"
             onClick={() => setSelectedMonth((m) => addMonths(m, -1))}
           >
-            {'<- Prev'}
+            {'← Prev'}
           </button>
           <div className="period-pager-label">
             <strong>{monthLong}</strong>
@@ -1194,7 +1310,7 @@ export function Spending() {
             aria-label="Next month"
             onClick={() => setSelectedMonth((m) => addMonths(m, 1))}
           >
-            {'Next ->'}
+            {'Next →'}
           </button>
         </div>
         <div
@@ -1267,7 +1383,8 @@ export function Spending() {
             </div>
             <p className="section-desc">
               Bank: Kiwibank / debit before Akahu posts. Manual: off-Akahu cards (Nexo, GoMining, …).
-              Charged account required so spend ties to a cash balance.
+              Pick the charged account so spend ties to a cash balance, or turn it off for a crypto
+              Visa debit card that spends from crypto rather than a bank account.
             </p>
             <form className="form-grid" onSubmit={onAddTxn}>
             <label>
@@ -1333,8 +1450,24 @@ export function Spending() {
                 ))}
               </datalist>
               <span className="muted small">
-                A saved category for this payee is applied when you save.
+                Leave Category on Automatic to use this payee’s saved category, or one guessed from
+                your past transactions like it.
               </span>
+            </label>
+            <label className="span-2">
+              Category
+              <select value={formCategoryId} onChange={(e) => setFormCategoryId(e.target.value)}>
+                <option value="">Automatic (from this payee or similar past transactions)</option>
+                {categories.map((c) => {
+                  const tag = categoryTypeShortTag(normalizeCategoryType(c.type, c.isIncome));
+                  return (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                      {tag ? ` (${tag})` : ''}
+                    </option>
+                  );
+                })}
+              </select>
             </label>
             <label>
               Card
@@ -1374,6 +1507,22 @@ export function Spending() {
                 />
               </label>
             )}
+            <label className="span-2 row gap" style={{ alignItems: 'center' }}>
+              <input
+                type="checkbox"
+                checked={formCharged}
+                onChange={(e) => {
+                  setFormCharged(e.target.checked);
+                  // A card that spends crypto isn't a bank transaction.
+                  if (!e.target.checked && formSource === 'bank') setFormSource('manual');
+                }}
+              />
+              <span>
+                Charged to a bank account{' '}
+                <span className="muted small">(turn off for crypto Visa debit cards — Nexo, GoMining, …)</span>
+              </span>
+            </label>
+            {formCharged ? (
             <label className="span-2">
               Charged account
               <select
@@ -1399,6 +1548,12 @@ export function Spending() {
                 ))}
               </select>
             </label>
+            ) : (
+              <p className="span-2 muted small">
+                Not charged to a bank account: the spend still counts in budgets and categories, but no
+                cash balance changes. Tick “Pays with BTC” to take it out of a BTC holding instead.
+              </p>
+            )}
             <label className="span-2 row gap" style={{ alignItems: 'center' }}>
               <input
                 type="checkbox"
@@ -1450,7 +1605,7 @@ export function Spending() {
         <h3 id="budget-plan-anchor">Budget plan · {monthLabel}</h3>
         <p className="section-desc">
           Plan income and spending for {monthLong} (Pacific/Auckland). Income compares{' '}
-          <strong>planned vs received</strong>; spending compares <strong>planned vs spent</strong>
+          <strong>planned vs received</strong>; spending compares <strong>planned vs spent</strong>{' '}
           (outflows; Debt = repayments only).
         </p>
 
@@ -1488,6 +1643,17 @@ export function Spending() {
                   : '—'}
             </p>
           </div>
+          {incomeSummary?.expectedPay ? (
+            <div className="card">
+              <p className="eyebrow">Expected from saved pay</p>
+              <p className="stat-value">{formatNzd(incomeSummary.expectedPay.monthlyNetNzd)}</p>
+              <p className="muted small">
+                {formatNzd(incomeSummary.expectedPay.weeklyNetNzd)}/wk ·{' '}
+                {incomeSummary.expectedPay.sources.map((src) => src.name).join(', ')} · set on{' '}
+                <Link to="/paye">PAYE</Link>
+              </p>
+            </div>
+          ) : null}
         </div>
 
         {incomeCompareRows.length === 0 ? (
@@ -1942,70 +2108,6 @@ export function Spending() {
       </section>
 
       <section className="panel">
-        <h3>Payee settings</h3>
-        <p className="section-desc">
-          A payee you have used, including a dividend payer, can keep a category you already have.
-          That category is filled in the next time you use the payee. Income uses it when the
-          category is an income category. Transactions use it when the payee is the description.
-          This is a personal record, not advice.
-        </p>
-        {payees.length === 0 ? (
-          <p className="muted">
-            No payees yet. Record income, a transaction, or a dividend and the name is listed here.
-          </p>
-        ) : (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Payee</th>
-                  <th>Category</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {payees.map((payee) => (
-                  <tr key={payee.name}>
-                    <td>{payee.name}</td>
-                    <td>
-                      <select
-                        aria-label={`Category for ${payee.name}`}
-                        value={payeeCategoryDraft[payee.name] ?? payee.categoryId ?? ''}
-                        onChange={(e) =>
-                          setPayeeCategoryDraft((prev) => ({ ...prev, [payee.name]: e.target.value }))
-                        }
-                      >
-                        <option value="">No saved category</option>
-                        {categories.map((c) => {
-                          const tag = categoryTypeShortTag(normalizeCategoryType(c.type, c.isIncome));
-                          return (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                              {tag ? ` (${tag})` : ''}
-                            </option>
-                          );
-                        })}
-                      </select>
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="btn small"
-                        disabled={payeeSavingName === payee.name}
-                        onClick={() => onSavePayee(payee.name)}
-                      >
-                        {payeeSavingName === payee.name ? 'Saving…' : 'Save'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="panel">
         <h3>Spend by category · {monthLabel}</h3>
         <CategorySpendChart
           rows={categorySpend}
@@ -2337,7 +2439,7 @@ export function Spending() {
                       {formatNzd(Number(t.amount))}
                     </td>
                     <td className="muted small">{t.cardName || '—'}</td>
-                    <td className="muted small">{t.accountName || t.accountId}</td>
+                    <td className="muted small">{t.accountName || t.accountId || 'Not charged'}</td>
                     <td>
                       <div className="category-cell">
                         <select
@@ -2498,7 +2600,7 @@ export function Spending() {
       <section className="panel">
         <h3>Import Google Wallet CSV</h3>
         <p className="section-desc">
-          Optional — no live Wallet API. CSV columns: date, amount, description, card_name
+          Optional — no live Wallet API. CSV columns: date, amount, description, card_name{' '}
           (see docs/IMPORT_FORMATS.md). Prefer bank sync + manual for Nexo/GoMining.
         </p>
         <div className="form-grid">
@@ -2701,6 +2803,86 @@ export function Spending() {
           </div>
         </div>
       )}
+
+      <section className={`panel payee-settings-panel${payeeSettingsOpen ? ' is-open' : ''}`}>
+        <h3>
+          <button
+            type="button"
+            className="payee-settings-toggle"
+            aria-expanded={payeeSettingsOpen}
+            aria-controls="payee-settings-body"
+            onClick={() => setPayeeSettingsOpen((open) => !open)}
+          >
+            <span className="payee-settings-title">
+              Payee settings
+              <span className="payee-settings-count muted">({payees.length})</span>
+            </span>
+            <span className="payee-settings-chevron" aria-hidden="true" />
+          </button>
+        </h3>
+        <div id="payee-settings-body" hidden={!payeeSettingsOpen}>
+          <p className="section-desc">
+            A payee you have used, including a dividend payer, can keep a category you already have.
+            That category is filled in the next time you use the payee. Income uses it when the
+            category is an income category. Transactions use it when the payee is the description.
+            This is a personal record, not advice.
+          </p>
+          {payees.length === 0 ? (
+            <p className="muted">
+              No payees yet. Record income, a transaction, or a dividend and the name is listed here.
+            </p>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Payee</th>
+                    <th>Category</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payees.map((payee) => (
+                    <tr key={payee.name}>
+                      <td>{payee.name}</td>
+                      <td>
+                        <select
+                          aria-label={`Category for ${payee.name}`}
+                          value={payeeCategoryDraft[payee.name] ?? payee.categoryId ?? ''}
+                          onChange={(e) =>
+                            setPayeeCategoryDraft((prev) => ({ ...prev, [payee.name]: e.target.value }))
+                          }
+                        >
+                          <option value="">No saved category</option>
+                          {categories.map((c) => {
+                            const tag = categoryTypeShortTag(normalizeCategoryType(c.type, c.isIncome));
+                            return (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                                {tag ? ` (${tag})` : ''}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn small"
+                          disabled={payeeSavingName === payee.name}
+                          onClick={() => onSavePayee(payee.name)}
+                        >
+                          {payeeSavingName === payee.name ? 'Saving…' : 'Save'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </section>
 
     </div>
   );

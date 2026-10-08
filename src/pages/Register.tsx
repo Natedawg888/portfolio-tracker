@@ -5,10 +5,12 @@ import { useAuth } from '../auth/AuthContext';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import { ApiError, api } from '../api/client';
 import { AssetClassToggles } from '../components/AssetClassToggles';
+import { AddWalletPanel } from '../components/AddWalletPanel';
 import {
   defaultAssetClassPrefs,
   type AssetClassPrefs,
 } from '../lib/assetClassPrefs';
+import { invalidateAfterAkahuLinkChange } from '../lib/pageDataCache';
 import {
   akahuConnect,
   akahuStatus,
@@ -25,7 +27,7 @@ import {
 import { CategoryTypeToggle } from '../components/CategoryTypeToggle';
 import { akahuOnboardingRequiredForEmail } from '../lib/onboardingPrefs';
 
-type Step = 'credentials' | 'assets' | 'budgets' | 'connect';
+type Step = 'credentials' | 'assets' | 'wallets' | 'budgets' | 'connect';
 
 type TxCategory = {
   id: string;
@@ -78,6 +80,7 @@ export function Register() {
   const [newCatType, setNewCatType] = useState<CategoryType>('spending');
 
   const [akahu, setAkahu] = useState<AkahuConnectionStatus | null>(null);
+  const [walletsAdded, setWalletsAdded] = useState<string[]>([]);
 
   // Resume incomplete onboarding after refresh / login redirect.
   useEffect(() => {
@@ -239,7 +242,8 @@ export function Register() {
     try {
       await savePrefs(prefs);
       await refresh();
-      setStep('budgets');
+      // Optional wallet step only when Crypto is turned on.
+      setStep(prefs.crypto ? 'wallets' : 'budgets');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not save asset preferences');
     } finally {
@@ -356,12 +360,13 @@ export function Register() {
             ? 'Open Akahu to link or manage your accounts, then return here and use “Sync & finish”.'
             : st.sharedTokenConfigured
               ? 'This Personal App token is available only to the first account. You can still skip this optional step, or configure Full App OAuth later.'
-              : 'Akahu OAuth is not configured yet. You can skip this optional step and connect later in Settings.',
+              : 'Akahu OAuth is not configured yet. You can skip this optional step and connect later in the account menu → Settings.',
         );
         return;
       }
       const r = await akahuConnect();
       if (r.authorizeUrl) {
+        invalidateAfterAkahuLinkChange();
         window.location.href = r.authorizeUrl;
         return;
       }
@@ -381,7 +386,7 @@ export function Register() {
       const st = await akahuStatus();
       setAkahu(st);
       if (!st.canSync) {
-        setInfo('Akahu is not connected for this account. Use “Skip / do later”, or connect in Settings later.');
+        setInfo('Akahu is not connected for this account. Use “Skip / do later”, or connect later in the account menu → Settings.');
         return;
       }
       await akahuSync();
@@ -400,7 +405,7 @@ export function Register() {
 
   const catsByType = (t: CategoryType) =>
     categories.filter((c) => normalizeCategoryType(c.type, c.isIncome) === t);
-  const wide = step === 'assets' || step === 'budgets' || step === 'connect';
+  const wide = step === 'assets' || step === 'wallets' || step === 'budgets' || step === 'connect';
 
   if (loading || !resumed) {
     return (
@@ -512,7 +517,7 @@ export function Register() {
             <h2>Choose asset classes</h2>
             <p className="page-lead">
               Toggle which asset types you want in Portfolio and related views. You can change this
-              later in Settings. Disabled classes are hidden (data stays on disk). This step is
+              later in the account menu → Settings. Disabled classes are hidden (data stays on disk). This step is
               required before you can open the app.
             </p>
             {info ? <p className="auth-info" role="status">{info}</p> : null}
@@ -524,14 +529,35 @@ export function Register() {
               </button>
             </form>
           </>
+        ) : step === 'wallets' ? (
+          <>
+            <h2>Connect crypto wallets</h2>
+            <p className="page-lead">
+              Add the public address of any wallet you want tracked in Portfolio. This step is
+              optional — you can add or remove wallets later in Portfolio → Crypto.
+            </p>
+            {walletsAdded.length > 0 ? (
+              <p className="auth-info" role="status">
+                Added: {walletsAdded.join(', ')}
+              </p>
+            ) : null}
+            <AddWalletPanel
+              onAdded={(w) => setWalletsAdded((names) => [...names, w.name])}
+              onSkip={() => {
+                setError(null);
+                setStep('budgets');
+              }}
+              skipLabel={walletsAdded.length > 0 ? 'Continue' : 'Skip for now'}
+            />
+          </>
         ) : step === 'budgets' ? (
           <>
             <h2>Set budget categories</h2>
             <p className="page-lead">
-              Review categories by type for the Spending page and budget plans. Choose type with the
+              Review categories by type for the Budget page and budget plans. Choose type with the
               toggle when adding (spending, income, transfer out, transfer in). Only spending counts
               as Budget spend; transfer in is not income. Required before opening the app — edit
-              later in Settings.
+              later in the account menu → Settings.
             </p>
             <form className="auth-form account-form" onSubmit={onAddCategory}>
               <CategoryTypeToggle
@@ -616,7 +642,7 @@ export function Register() {
               Connect <em>your</em> NZ banks, Sharesies, Hatch, and KiwiSaver through{' '}
               <strong>Akahu</strong>. This checkpoint keeps setup explicit: you can connect and sync
               now, or choose <strong>Skip / do later</strong> to open an empty portfolio. You can
-              connect anytime under <strong>Settings → Connect accounts</strong>.
+              connect anytime in the account menu → <strong>Settings → Connect accounts</strong>.
             </p>
             {info ? <p className="auth-info" role="status">{info}</p> : null}
             {error ? <p className="auth-error" role="alert">{error}</p> : null}

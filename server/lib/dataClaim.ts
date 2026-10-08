@@ -21,6 +21,12 @@ export const FINANCE_CLAIM_TABLES = [
   'valuation_snapshots',
   'payee_settings',
   'akahu_connections',
+  'wallets',
+  'savings_goals',
+  'donations',
+  'pay_sources',
+  'invoices',
+  'invoice_clients',
 ] as const;
 
 export function existingDataClaimAllowed(): boolean {

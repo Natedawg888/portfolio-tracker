@@ -1,18 +1,28 @@
 
+import { Suspense } from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
-import { Spending } from './pages/Spending';
-import { Debts } from './pages/Debts';
-import { YearlyReport } from './pages/YearlyReport';
-import { Portfolio } from './pages/Portfolio';
-import { KiwiSaver } from './pages/KiwiSaver';
-import { Paye } from './pages/Paye';
-import { ValueSearch } from './pages/ValueSearch';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
-import { Settings } from './pages/Settings';
-import { EconomicCycle } from './pages/EconomicCycle';
+import { NotFoundRoute } from './pages/NotFound';
+import {
+  DebtsPage,
+  EconomicCyclePage,
+  KiwiSaverPage,
+  NewsPage,
+  PayePage,
+  InvoicesPage,
+  InvoiceEditorPage,
+  InvoiceDetailPage,
+  PublicInvoicePage,
+  PortfolioPage,
+  ProjectionsPage,
+  SettingsPage,
+  SpendingPage,
+  ValueSearchPage,
+  YearlyReportPage,
+} from './lib/routePrefetch';
 import { AuthProvider } from './auth/AuthContext';
 import { AssetClassPrefsProvider } from './auth/AssetClassPrefsContext';
 import { RequireAuth } from './auth/RequireAuth';
@@ -26,20 +36,35 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route
+              path="/i/:token"
+              element={
+                <Suspense fallback={null}>
+                  <PublicInvoicePage />
+                </Suspense>
+              }
+            />
             <Route element={<RequireAuth />}>
               <Route element={<Layout />}>
                 <Route index element={<Dashboard />} />
-                <Route path="spending" element={<Spending />} />
-                <Route path="debts" element={<Debts />} />
-                <Route path="yearly" element={<YearlyReport />} />
-                <Route path="economic-cycle" element={<EconomicCycle />} />
-                <Route path="portfolio" element={<Portfolio />} />
-                <Route path="kiwisaver" element={<KiwiSaver />} />
-                <Route path="paye" element={<Paye />} />
-                <Route path="value-search" element={<ValueSearch />} />
-                <Route path="settings" element={<Settings />} />
+                <Route path="spending" element={<SpendingPage />} />
+                <Route path="debts" element={<DebtsPage />} />
+                <Route path="yearly" element={<YearlyReportPage />} />
+                <Route path="economic-cycle" element={<EconomicCyclePage />} />
+                <Route path="portfolio" element={<PortfolioPage />} />
+                <Route path="projections" element={<ProjectionsPage />} />
+                <Route path="news" element={<NewsPage />} />
+                <Route path="kiwisaver" element={<KiwiSaverPage />} />
+                <Route path="paye" element={<PayePage />} />
+                <Route path="invoices" element={<InvoicesPage />} />
+                <Route path="invoices/new" element={<InvoiceEditorPage />} />
+                <Route path="invoices/:id" element={<InvoiceDetailPage />} />
+                <Route path="invoices/:id/edit" element={<InvoiceEditorPage />} />
+                <Route path="value-search" element={<ValueSearchPage />} />
+                <Route path="settings" element={<SettingsPage />} />
               </Route>
             </Route>
+            <Route path="*" element={<NotFoundRoute />} />
           </Routes>
         </BrowserRouter>
       </AssetClassPrefsProvider>

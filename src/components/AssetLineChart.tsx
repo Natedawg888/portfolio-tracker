@@ -99,6 +99,11 @@ type Props = {
   showResolutionNote?: boolean;
   /** Stretch SVG to full panel width (no max-width cap). */
   fullWidth?: boolean;
+  /**
+   * Series key painted last (on top). Other charts leave this unset, so their
+   * draw order stays the series order. Legend order is always the series order.
+   */
+  foregroundKey?: string;
 };
 
 function parseAt(at: string): number {
@@ -129,10 +134,18 @@ function axisLabel(at: string, resolution: ChartResolution): string {
 /**
  * Auto Y domain padded around data min/max.
  * Only anchors to 0 when values cross or sit near zero — not when balances are large.
+ * A series that never goes below 0 does not get a negative axis (a 0 starting
+ * point used to count as "crossing" zero and was padded downward).
+ * A line that is exactly 0 uses a zero-height domain so the axis can show one 0.
  */
 export function computeYDomain(values: number[]): { vMin: number; vMax: number } {
-  const dataMin = Math.min(...values);
-  const dataMax = Math.max(...values);
+  const finite = values.filter((v) => Number.isFinite(v));
+  if (finite.length === 0) return { vMin: 0, vMax: 1 };
+
+  const dataMin = Math.min(...finite);
+  const dataMax = Math.max(...finite);
+  if (dataMin === 0 && dataMax === 0) return { vMin: 0, vMax: 0 };
+
   const rawSpan = dataMax - dataMin;
   const magnitude = Math.max(Math.abs(dataMin), Math.abs(dataMax), 1);
   const padBase = Math.max(rawSpan, magnitude * 0.02, 1);
@@ -141,7 +154,7 @@ export function computeYDomain(values: number[]): { vMin: number; vMax: number }
   let vMin = dataMin - pad;
   let vMax = dataMax + pad;
 
-  const crossesZero = dataMin <= 0 && dataMax >= 0;
+  const crossesZero = dataMin < 0 && dataMax > 0;
   const nearZeroFromAbove = dataMin > 0 && dataMin <= padBase * 0.5;
   const nearZeroFromBelow = dataMax < 0 && dataMax >= -padBase * 0.5;
 
@@ -153,10 +166,65 @@ export function computeYDomain(values: number[]): { vMin: number; vMax: number }
     vMax = 0;
   }
 
+  if (dataMin >= 0) vMin = Math.max(0, vMin);
+
   if (vMax <= vMin) {
     vMax = vMin + Math.max(magnitude * 0.02, 1);
   }
   return { vMin, vMax };
+}
+
+/** Same rounding as the axis text, before hide-amounts masking, so identical labels can collapse. */
+export function axisTickKey(n: number): string {
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (abs >= 10_000) return `${(n / 1_000).toFixed(0)}k`;
+  if (abs >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(Math.round(n));
+}
+
+/**
+ * Three ticks across the domain, unless they would print as the same text
+ * (three "0"s on a flat zero line). Then a single tick.
+ */
+export function computeYTicks(vMin: number, vMax: number): number[] {
+  if (!Number.isFinite(vMin) || !Number.isFinite(vMax)) return [0];
+  const span = vMax - vMin;
+  if (!(span > 0)) return [vMin <= 0 && vMax >= 0 ? 0 : vMin];
+
+  const mid = vMin + span / 2;
+  const candidates = [vMin, mid, vMax];
+  const labels = candidates.map((v) => axisTickKey(v));
+  if (new Set(labels).size === 1) {
+    if (vMin <= 0 && vMax >= 0) return [0];
+    return [mid];
+  }
+
+  const seen = new Set<string>();
+  const ticks: number[] = [];
+  for (const item of [
+    { v: vMin, label: labels[0] },
+    { v: vMax, label: labels[2] },
+    { v: mid, label: labels[1] },
+  ]) {
+    if (seen.has(item.label)) continue;
+    seen.add(item.label);
+    ticks.push(item.v);
+  }
+  ticks.sort((a, b) => a - b);
+  return ticks;
+}
+
+/** Draw `foregroundKey` last so that series stays visible when lines overlap. Legend order is unchanged. */
+export function seriesPaintOrder<T extends { key: string }>(series: T[], foregroundKey?: string): T[] {
+  if (!foregroundKey) return series;
+  let front: T | undefined;
+  const rest: T[] = [];
+  for (const item of series) {
+    if (item.key === foregroundKey && front == null) front = item;
+    else rest.push(item);
+  }
+  return front ? [...rest, front] : series;
 }
 
 export function AssetLineChart({
@@ -167,6 +235,7 @@ export function AssetLineChart({
   resolution = 'day',
   showResolutionNote = false,
   fullWidth = false,
+  foregroundKey,
 }: Props) {
   const resampled = resampleSeries(series, resolution);
   const active = resampled.filter((s) => s.points.length > 0);
@@ -193,7 +262,7 @@ export function AssetLineChart({
   const tMax = Math.max(...times);
   const { vMin, vMax } = computeYDomain(values);
   const tSpan = Math.max(tMax - tMin, 1);
-  const vSpan = Math.max(vMax - vMin, 1);
+  const vSpan = vMax - vMin;
 
   const padL = 52;
   const padR = 12;
@@ -207,13 +276,15 @@ export function AssetLineChart({
     return padL + ((parseAt(at) - tMin) / tSpan) * plotW;
   }
   function yOf(v: number): number {
+    if (!(vSpan > 0)) return padT + plotH / 2;
     return padT + (1 - (v - vMin) / vSpan) * plotH;
   }
 
   const tickStep = Math.max(1, Math.ceil(uniqueTimes.length / 6));
   const xTicks = uniqueTimes.filter((_, i) => i % tickStep === 0 || i === uniqueTimes.length - 1);
 
-  const yTicks = [vMin, vMin + vSpan / 2, vMax];
+  const yTicks = computeYTicks(vMin, vMax);
+  const painted = seriesPaintOrder(active, foregroundKey);
 
   return (
     <div className={'line-chart' + (fewPoints ? ' line-chart-compact' : '') + (fullWidth ? ' line-chart-full' : '')}>
@@ -249,19 +320,20 @@ export function AssetLineChart({
             </text>
           </g>
         ))}
-        {xTicks.map((at) => (
+        {xTicks.map((at, i) => (
           <text
             key={at}
             x={xOf(at)}
             y={chartH - 8}
-            textAnchor="middle"
+            // The last label sits on the right edge: anchor it there so it isn't clipped.
+            textAnchor={i === xTicks.length - 1 && xTicks.length > 1 ? 'end' : 'middle'}
             className="line-chart-axis"
           >
             {axisLabel(at, resolution)}
           </text>
         ))}
 
-        {active.map((s) => {
+        {painted.map((s) => {
           const sorted = [...s.points].sort((a, b) => parseAt(a.at) - parseAt(b.at));
           if (sorted.length === 1) {
             const p = sorted[0];
@@ -308,9 +380,5 @@ export function AssetLineChart({
 
 function compactNzd(n: number): string {
   if (isMoneyHidden()) return MONEY_MASK;
-  const abs = Math.abs(n);
-  if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (abs >= 10_000) return `${(n / 1_000).toFixed(0)}k`;
-  if (abs >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(Math.round(n));
+  return axisTickKey(n);
 }

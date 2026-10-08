@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS budget_categories (
 CREATE TABLE IF NOT EXISTS transactions (
   id            TEXT PRIMARY KEY,
   user_id       TEXT,
-  account_id    TEXT NOT NULL REFERENCES bank_accounts(id) ON DELETE CASCADE,
+  -- Charged bank account; NULL = not charged to one (e.g. crypto Visa debit card spend).
+  account_id    TEXT REFERENCES bank_accounts(id) ON DELETE CASCADE,
   date          TEXT NOT NULL,
   description   TEXT NOT NULL DEFAULT '',
   amount        REAL NOT NULL,
@@ -311,7 +312,9 @@ CREATE TABLE IF NOT EXISTS income_records (
   notes            TEXT,
   created_at       TEXT NOT NULL,
   -- Set when this row mirrors one paid dividend. One income row per dividend per user.
-  dividend_event_id TEXT
+  dividend_event_id TEXT,
+  -- Set when this row mirrors one invoice payment (KAN-71).
+  invoice_payment_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_income_records_date ON income_records(date);
@@ -344,17 +347,73 @@ CREATE TABLE IF NOT EXISTS users (
   display_name    TEXT,
   avatar_url      TEXT,
   preferences_json TEXT,
+  -- 2FA (KAN-16): AES-256-GCM sealed TOTP secrets (server/auth/secretBox.ts), never plaintext.
+  totp_secret_enc  TEXT,
+  totp_pending_enc TEXT,              -- set up but not yet confirmed with a code
+  totp_pending_at  TEXT,
+  totp_enabled_at  TEXT,
+  totp_last_step   INTEGER,           -- last accepted TOTP step (replay protection)
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash   TEXT NOT NULL UNIQUE,
+  expires_at   TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  device_label TEXT,                  -- "Chrome on Windows" (coarse, from User-Agent)
+  last_seen_at TEXT,                  -- updated at most every 10 min
+  persistent   INTEGER NOT NULL DEFAULT 1  -- 0 = "keep me signed in" unticked (browser-session cookie)
+);
+
+-- 2FA backup codes: SHA-256 of a high-entropy code, each usable once.
+CREATE TABLE IF NOT EXISTS user_backup_codes (
+  id         TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash  TEXT NOT NULL,
+  used_at    TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_backup_codes_user ON user_backup_codes(user_id);
+
+-- Password accepted, second factor pending (short-lived, attempt-limited).
+CREATE TABLE IF NOT EXISTS login_challenges (
   id          TEXT PRIMARY KEY,
   user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   token_hash  TEXT NOT NULL UNIQUE,
-  expires_at  TEXT NOT NULL,
-  created_at  TEXT NOT NULL
+  persistent  INTEGER NOT NULL DEFAULT 1,
+  attempts    INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL,
+  expires_at  TEXT NOT NULL
 );
+
+-- "Trust this device": skips the second factor on this browser until expiry.
+CREATE TABLE IF NOT EXISTS trusted_devices (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash   TEXT NOT NULL UNIQUE,
+  label        TEXT,
+  created_at   TEXT NOT NULL,
+  last_used_at TEXT,
+  expires_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_trusted_devices_user ON trusted_devices(user_id);
+
+-- Single sign-on links: one row per provider account (Google / Apple / Microsoft).
+-- subject = the provider's stable user id ("sub"), never the email (emails change).
+CREATE TABLE IF NOT EXISTS user_identities (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider     TEXT NOT NULL,
+  subject      TEXT NOT NULL,
+  email        TEXT,
+  created_at   TEXT NOT NULL,
+  last_used_at TEXT,
+  UNIQUE (provider, subject)
+);
+CREATE INDEX IF NOT EXISTS idx_user_identities_user ON user_identities(user_id);
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
@@ -498,5 +557,207 @@ CREATE TABLE IF NOT EXISTS payee_settings (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_payee_settings_user_key
   ON payee_settings(user_id, name_key);
+
+-- Savings goals. target / current / deadline are stored. Weekly and monthly
+-- saving, percent complete, and estimated completion are counted on read
+-- (server/savings/model.ts). Amounts are NZD. deadline is YYYY-MM-DD or NULL.
+-- current_amount_nzd is the user's figure for this goal. It is not a bank
+-- balance and is not added to net worth.
+CREATE TABLE IF NOT EXISTS savings_goals (
+  id                  TEXT PRIMARY KEY,
+  user_id             TEXT,
+  name                TEXT NOT NULL,
+  notes               TEXT,
+  target_nzd          REAL NOT NULL,
+  current_amount_nzd  REAL NOT NULL DEFAULT 0,
+  deadline            TEXT,
+  -- Bank account holding this saving: when set, amount saved = that account's balance.
+  account_id          TEXT,
+  created_at          TEXT NOT NULL,
+  updated_at          TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_savings_goals_user ON savings_goals(user_id);
+
+-- Donations ledger. Separate from transactions and from charity receipt files
+-- (transactions.receipt_path under data/uploads/receipts/). A row may optionally
+-- point at a transaction that already has a receipt. Amounts are NZD. date is
+-- YYYY-MM-DD. Tax-year totals are counted on read (server/donations/model.ts).
+-- No foreign key: sql.js does not keep PRAGMA foreign_keys from this script.
+-- The trigger below clears the pointer when that transaction is deleted.
+CREATE TABLE IF NOT EXISTS donations (
+  id                      TEXT PRIMARY KEY,
+  user_id                 TEXT,
+  date                    TEXT NOT NULL,
+  recipient               TEXT NOT NULL,
+  amount_nzd              REAL NOT NULL,
+  notes                   TEXT,
+  evidence_url            TEXT,
+  receipt_transaction_id  TEXT,
+  created_at              TEXT NOT NULL,
+  updated_at              TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_donations_user ON donations(user_id);
+CREATE INDEX IF NOT EXISTS idx_donations_user_date ON donations(user_id, date);
+
+CREATE TRIGGER IF NOT EXISTS donations_clear_receipt_link
+AFTER DELETE ON transactions
+FOR EACH ROW
+BEGIN
+  UPDATE donations
+  SET receipt_transaction_id = NULL
+  WHERE receipt_transaction_id = OLD.id;
+END;
+-- Saved pay calculations (KAN-70): piece rate, contract (schedular), share of catch.
+-- inputs_json holds the calculator inputs; weekly figures are recomputed from them on
+-- save (src/lib/outputPayCalc.ts). weekly_net_nzd feeds the budget, home snapshot and
+-- projections as expected income. Amounts are NZD.
+CREATE TABLE IF NOT EXISTS pay_sources (
+  id               TEXT PRIMARY KEY,
+  user_id          TEXT,
+  name             TEXT NOT NULL,
+  pay_type         TEXT NOT NULL,
+  tax_year         INTEGER NOT NULL,
+  inputs_json      TEXT NOT NULL,
+  weekly_gross_nzd REAL NOT NULL,
+  weekly_net_nzd   REAL NOT NULL,
+  created_at       TEXT NOT NULL,
+  updated_at       TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_pay_sources_user ON pay_sources(user_id);
+
+-- Invoices (KAN-71). Business details, clients, invoices, lines, payments and send log,
+-- all per user. Totals are recomputed from the lines on every save (src/lib/invoiceCalc.ts).
+-- status stores draft | sent | void; partly paid / paid / overdue are counted on read.
+-- business_json / client_* snapshot who the invoice was from and to when it was saved,
+-- so later edits to settings or the client don't change an invoice already sent.
+CREATE TABLE IF NOT EXISTS business_profiles (
+  user_id        TEXT PRIMARY KEY,
+  business_name  TEXT NOT NULL DEFAULT '',
+  address        TEXT NOT NULL DEFAULT '',
+  email          TEXT NOT NULL DEFAULT '',
+  phone          TEXT NOT NULL DEFAULT '',
+  bank_account   TEXT NOT NULL DEFAULT '',
+  gst_registered INTEGER NOT NULL DEFAULT 0,
+  gst_number     TEXT NOT NULL DEFAULT '',
+  nzbn           TEXT NOT NULL DEFAULT '',
+  invoice_prefix TEXT NOT NULL DEFAULT 'INV-',
+  updated_at     TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS invoice_clients (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT,
+  name        TEXT NOT NULL,
+  email       TEXT NOT NULL DEFAULT '',
+  address     TEXT NOT NULL DEFAULT '',
+  reference   TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_invoice_clients_user ON invoice_clients(user_id);
+
+CREATE TABLE IF NOT EXISTS invoices (
+  id                   TEXT PRIMARY KEY,
+  user_id              TEXT,
+  number               TEXT NOT NULL,
+  number_key           TEXT NOT NULL,
+  status               TEXT NOT NULL DEFAULT 'draft',
+  client_id            TEXT,
+  client_name          TEXT NOT NULL DEFAULT '',
+  client_email         TEXT NOT NULL DEFAULT '',
+  client_address       TEXT NOT NULL DEFAULT '',
+  client_reference     TEXT NOT NULL DEFAULT '',
+  issue_date           TEXT NOT NULL,
+  due_preset           TEXT NOT NULL DEFAULT 'days_14',
+  due_date             TEXT NOT NULL,
+  reference            TEXT NOT NULL DEFAULT '',
+  gst_mode             TEXT NOT NULL DEFAULT 'none',
+  withholding_rate_pct REAL,
+  notes                TEXT NOT NULL DEFAULT '',
+  payment_instructions TEXT NOT NULL DEFAULT '',
+  business_json        TEXT NOT NULL DEFAULT '{}',
+  subtotal_nzd         REAL NOT NULL DEFAULT 0,
+  gst_nzd              REAL NOT NULL DEFAULT 0,
+  total_nzd            REAL NOT NULL DEFAULT 0,
+  withholding_nzd      REAL NOT NULL DEFAULT 0,
+  amount_due_nzd       REAL NOT NULL DEFAULT 0,
+  share_token          TEXT,
+  sent_at              TEXT,
+  voided_at            TEXT,
+  created_at           TEXT NOT NULL,
+  updated_at           TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_invoices_user ON invoices(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_user_number ON invoices(user_id, number_key);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_share_token ON invoices(share_token);
+
+CREATE TABLE IF NOT EXISTS invoice_lines (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT,
+  invoice_id  TEXT NOT NULL,
+  position    INTEGER NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  quantity    REAL NOT NULL DEFAULT 0,
+  unit        TEXT NOT NULL DEFAULT '',
+  rate        REAL NOT NULL DEFAULT 0,
+  line_total  REAL NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_invoice_lines_invoice ON invoice_lines(invoice_id, position);
+CREATE INDEX IF NOT EXISTS idx_invoice_lines_user ON invoice_lines(user_id);
+
+CREATE TABLE IF NOT EXISTS invoice_payments (
+  id               TEXT PRIMARY KEY,
+  user_id          TEXT,
+  invoice_id       TEXT NOT NULL,
+  date             TEXT NOT NULL,
+  amount_nzd       REAL NOT NULL,
+  method           TEXT NOT NULL DEFAULT '',
+  notes            TEXT NOT NULL DEFAULT '',
+  income_record_id TEXT,
+  created_at       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_invoice_payments_invoice ON invoice_payments(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_invoice_payments_user ON invoice_payments(user_id);
+
+-- Every send (invoice or reminder), successful or not. channel: resend (sent by the app,
+-- the only channel the send rate limit counts) | email_app (user's own mail app) | share (share sheet).
+CREATE TABLE IF NOT EXISTS invoice_sends (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT,
+  invoice_id  TEXT NOT NULL,
+  kind        TEXT NOT NULL,
+  channel     TEXT NOT NULL DEFAULT 'resend',
+  recipients  TEXT NOT NULL,
+  subject     TEXT NOT NULL DEFAULT '',
+  status      TEXT NOT NULL,
+  provider_id TEXT,
+  error       TEXT,
+  sent_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_invoice_sends_user_time ON invoice_sends(user_id, sent_at);
+CREATE INDEX IF NOT EXISTS idx_invoice_sends_invoice ON invoice_sends(invoice_id);
+
+-- Read-only crypto wallets: public address only. Never store seed phrases / private keys.
+-- No balance column on purpose: balances come from chain providers at sync time
+-- (balance is never stored as the source of truth here).
+CREATE TABLE IF NOT EXISTS wallets (
+  id              TEXT PRIMARY KEY,
+  user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name            TEXT NOT NULL,
+  network         TEXT NOT NULL,              -- ethereum | polygon | base | arbitrum | bitcoin | solana
+  address         TEXT NOT NULL,              -- normalised (EVM EIP-55 checksummed, bech32 lowercase)
+  status          TEXT NOT NULL DEFAULT 'connected',  -- connected | syncing | error (sync job owns this)
+  status_message  TEXT,
+  last_synced     TEXT,
+  next_sync_at    TEXT,                       -- scheduler: due time (backoff pushes it later)
+  sync_failures   INTEGER NOT NULL DEFAULT 0, -- consecutive failures, drives backoff
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_wallets_user ON wallets(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wallets_user_network_address ON wallets(user_id, network, address);
 
 -- per-user indexes created in migrateSchema after user_id columns exist

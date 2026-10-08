@@ -28,16 +28,20 @@ function isBtcAsset(asset: unknown): boolean {
   return a === 'BTC' || a === 'XBT' || a === 'BITCOIN';
 }
 
-/** List this user's crypto holdings with asset BTC (or XBT). Never global. */
-export function listBtcHoldings(db: Database, userId: string): BtcHoldingOption[] {
-  if (!userId) return [];
+/** List crypto holdings with asset BTC (or XBT). */
+export function listBtcHoldings(db: Database, userId?: string | null): BtcHoldingOption[] {
   const rows = queryAll(
     db,
-    `SELECT id, name, asset, amount, source, notes
+    userId
+      ? `SELECT id, name, asset, amount, source, notes
      FROM holdings
      WHERE asset_class = 'crypto' AND user_id = ?
+     ORDER BY name`
+      : `SELECT id, name, asset, amount, source, notes
+     FROM holdings
+     WHERE asset_class = 'crypto'
      ORDER BY name`,
-    [userId],
+    userId ? [userId] : [],
   );
   return rows
     .filter((r) => isBtcAsset(r.asset))
@@ -105,35 +109,7 @@ export function readTxnBtcMeta(row: Record<string, unknown>): TxnBtcLinkMeta {
   };
 }
 
-/**
- * Add `delta` BTC to a holding only when it belongs to userId.
- * Returns false when the row is missing or owned by someone else.
- */
-function adjustScopedBtcHolding(
-  db: Database,
-  userId: string,
-  holdingId: string,
-  delta: number,
-): boolean {
-  if (!userId || !holdingId || !Number.isFinite(delta) || delta === 0) return false;
-  const holding = queryOne(
-    db,
-    `SELECT id, amount, asset FROM holdings
-     WHERE id=? AND user_id=? AND asset_class='crypto'`,
-    [holdingId, userId],
-  );
-  if (!holding || !isBtcAsset(holding.asset)) return false;
-  const next = Number(holding.amount ?? 0) + delta;
-  const now = new Date().toISOString();
-  run(
-    db,
-    `UPDATE holdings SET amount=?, updated_at=? WHERE id=? AND user_id=? AND asset_class='crypto'`,
-    [next, now, holdingId, userId],
-  );
-  return true;
-}
-
-/** Reverse a previously applied BTC delta on the caller's holding (no-op if none or not theirs). */
+/** Reverse a previously applied BTC delta on its holding (idempotent if none). */
 export function reverseBtcDelta(db: Database, meta: TxnBtcLinkMeta, userId: string): void {
   if (
     meta.btcDeltaApplied == null ||
@@ -142,7 +118,20 @@ export function reverseBtcDelta(db: Database, meta: TxnBtcLinkMeta, userId: stri
   ) {
     return;
   }
-  adjustScopedBtcHolding(db, userId, meta.btcHoldingId, -meta.btcDeltaApplied);
+  const holding = queryOne(
+    db,
+    `SELECT id, amount FROM holdings WHERE id=? AND asset_class='crypto' AND user_id=?`,
+    [meta.btcHoldingId, userId],
+  );
+  if (!holding) return;
+  const current = Number(holding.amount ?? 0);
+  const next = current - meta.btcDeltaApplied;
+  const now = new Date().toISOString();
+  run(
+    db,
+    `UPDATE holdings SET amount=?, updated_at=? WHERE id=? AND user_id=?`,
+    [next, now, meta.btcHoldingId, userId],
+  );
 }
 
 export type ApplyBtcLinkResult =
@@ -163,6 +152,7 @@ export type ApplyBtcLinkResult =
 export async function applyBtcLink(
   db: Database,
   opts: {
+    /** Only this user's holdings are listed or changed. */
     userId: string;
     affectsBtc: boolean;
     amountNzd: number;
@@ -195,34 +185,6 @@ export async function applyBtcLink(
     };
   }
 
-  if (!opts.userId) {
-    return {
-      ok: false,
-      error: 'Authentication required',
-      status: 401,
-    };
-  }
-
-  // Resolve the caller's holding before any quote or write so another user's
-  // row can never be selected or named.
-  const holdings = listBtcHoldings(db, opts.userId);
-  if (!holdings.length) {
-    return {
-      ok: false,
-      error: 'No BTC crypto holding found — add a BTC holding first',
-      status: 400,
-    };
-  }
-
-  const chosen = pickPrimaryBtcHolding(holdings, opts.btcHoldingId ?? null);
-  if (!chosen || (opts.btcHoldingId && chosen.id !== opts.btcHoldingId)) {
-    return {
-      ok: false,
-      error: 'Unknown or non-BTC btcHoldingId',
-      status: 400,
-    };
-  }
-
   const fx = await fetchBtcFx();
   if (fx.status !== 'ok' || fx.btcNzd == null || !(fx.btcNzd > 0)) {
     return {
@@ -234,6 +196,31 @@ export async function applyBtcLink(
     };
   }
 
+  const holdings = listBtcHoldings(db, opts.userId);
+  if (!holdings.length) {
+    return {
+      ok: false,
+      error: 'No BTC crypto holding found — add a BTC holding first',
+      status: 400,
+    };
+  }
+
+  const chosen = pickPrimaryBtcHolding(holdings, opts.btcHoldingId ?? null);
+  if (!chosen) {
+    return {
+      ok: false,
+      error: 'Could not resolve a BTC holding',
+      status: 400,
+    };
+  }
+  if (opts.btcHoldingId && chosen.id !== opts.btcHoldingId) {
+    return {
+      ok: false,
+      error: 'Unknown or non-BTC btcHoldingId',
+      status: 400,
+    };
+  }
+
   const btcQty = absNzd / fx.btcNzd;
   // Spend (debit / negative amount) reduces BTC; income (credit) increases.
   const isDebit =
@@ -242,14 +229,12 @@ export async function applyBtcLink(
   const delta = isDebit ? -btcQty : btcQty;
 
   const now = new Date().toISOString();
-  const adjusted = adjustScopedBtcHolding(db, opts.userId, chosen.id, delta);
-  if (!adjusted) {
-    return {
-      ok: false,
-      error: 'Unknown or non-BTC btcHoldingId',
-      status: 400,
-    };
-  }
+  const nextAmount = Number(chosen.amount) + delta;
+  run(
+    db,
+    `UPDATE holdings SET amount=?, updated_at=? WHERE id=? AND user_id=?`,
+    [nextAmount, now, chosen.id, opts.userId],
+  );
 
   return {
     ok: true,
@@ -276,9 +261,22 @@ export function restoreStoredBtcDelta(db: Database, meta: TxnBtcLinkMeta, userId
   ) {
     return;
   }
-  adjustScopedBtcHolding(db, userId, meta.btcHoldingId, meta.btcDeltaApplied);
+  const holding = queryOne(
+    db,
+    `SELECT id, amount FROM holdings WHERE id=? AND asset_class='crypto' AND user_id=?`,
+    [meta.btcHoldingId, userId],
+  );
+  if (!holding) return;
+  const current = Number(holding.amount ?? 0);
+  const next = current + meta.btcDeltaApplied;
+  const now = new Date().toISOString();
+  run(
+    db,
+    `UPDATE holdings SET amount=?, updated_at=? WHERE id=? AND user_id=?`,
+    [next, now, meta.btcHoldingId, userId],
+  );
 }
-/** Persist BTC link columns on the caller's transaction row. */
+/** Persist BTC link columns on one of the user's transaction rows. */
 export function writeTxnBtcColumns(
   db: Database,
   txnId: string,

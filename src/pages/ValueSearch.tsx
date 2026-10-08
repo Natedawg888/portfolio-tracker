@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api, formatAuckland, formatMoney, formatNzd } from '../api/client';
+import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import { CurrencyPicker, type CurrencyOption } from '../components/CurrencyPicker';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
@@ -21,6 +22,16 @@ import {
   nzdPerOzToDisplay,
   type MetalDisplayUnit,
 } from '../lib/metalUnits';
+
+type MetalsCache = {
+  configured: boolean;
+  quotes: MetalQuote[];
+  quotaBlocked: boolean;
+  quotaMessage: string | null;
+};
+
+const METALS_KEY = 'value-search:metals';
+const FX_CURRENCIES_KEY = 'value-search:fx';
 
 type MetalQuote = {
   metal: string;
@@ -98,13 +109,14 @@ export function ValueSearch() {
     VALUE_SEARCH_PREF_KEYS.some((k) => enabled(k)) || showCurrencyExchanger;
 
   // --- Metals ---
-  const [configured, setConfigured] = useState<boolean | null>(null);
-  const [quotes, setQuotes] = useState<MetalQuote[]>([]);
+  const initialMetals = readPageCache<MetalsCache>(METALS_KEY);
+  const [configured, setConfigured] = useState<boolean | null>(initialMetals?.configured ?? null);
+  const [quotes, setQuotes] = useState<MetalQuote[]>(initialMetals?.quotes ?? []);
   const [msg, setMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [metalUnit, setMetalUnit] = useState<MetalDisplayUnit>(() => loadMetalDisplayUnit());
-  const [quotaBlocked, setQuotaBlocked] = useState(false);
-  const [quotaMessage, setQuotaMessage] = useState<string | null>(null);
+  const [quotaBlocked, setQuotaBlocked] = useState(initialMetals?.quotaBlocked ?? false);
+  const [quotaMessage, setQuotaMessage] = useState<string | null>(initialMetals?.quotaMessage ?? null);
 
   // --- Diamond ---
   const [diamondForm, setDiamondForm] = useState({
@@ -160,7 +172,9 @@ export function ValueSearch() {
 
   // --- FX (any → any) ---
   const [fxForm, setFxForm] = useState({ from: 'NZD', to: 'JPY', amount: '100' });
-  const [fxCurrencies, setFxCurrencies] = useState<CurrencyOption[]>([]);
+  const [fxCurrencies, setFxCurrencies] = useState<CurrencyOption[]>(
+    () => readPageCache<CurrencyOption[]>(FX_CURRENCIES_KEY) ?? [],
+  );
   const [fxCurrenciesMsg, setFxCurrenciesMsg] = useState<string | null>(null);
   const [fxLoading, setFxLoading] = useState(false);
   const [fxMsg, setFxMsg] = useState<string | null>(null);
@@ -179,19 +193,25 @@ export function ValueSearch() {
   const [minerDisplay, setMinerDisplay] = useState<EarningsDisplayCurrency>('NZD');
 
   const loadMetals = useCallback(async (force = false) => {
-    setLoading(true);
+    const stamp = beginPageRead(METALS_KEY);
+    if (force || readPageCache<MetalsCache>(METALS_KEY) == null) setLoading(true);
     setMsg(null);
     try {
       const status = await api.quotes.metalsStatus();
-      setConfigured(status.configured);
-      setQuotaBlocked(Boolean((status as { quotaBlocked?: boolean }).quotaBlocked));
-      setQuotaMessage((status as { quotaMessage?: string | null }).quotaMessage ?? null);
       const data = force
         ? await api.quotes.refreshMetals()
         : await api.quotes.metals(false);
-      setQuotes(data.quotes);
       const qb = Boolean((data as { quotaBlocked?: boolean }).quotaBlocked);
       const qm = (data as { quotaMessage?: string | null }).quotaMessage ?? null;
+      const bundle: MetalsCache = {
+        configured: status.configured,
+        quotes: data.quotes,
+        quotaBlocked: qb,
+        quotaMessage: qm,
+      };
+      if (!commitPageRead(stamp, bundle)) return;
+      setConfigured(bundle.configured);
+      setQuotes(bundle.quotes);
       setQuotaBlocked(qb);
       setQuotaMessage(qm);
       if (force) {
@@ -233,10 +253,12 @@ export function ValueSearch() {
   useEffect(() => {
     if (!showCurrencyExchanger) return;
     let cancelled = false;
+    const stamp = beginPageRead(FX_CURRENCIES_KEY);
     (async () => {
       try {
         const data = await api.quotes.fxCurrencies(false);
         if (cancelled) return;
+        if (!commitPageRead(stamp, data.currencies)) return;
         setFxCurrencies(data.currencies);
         if (data.message) setFxCurrenciesMsg(data.message);
       } catch (err) {
@@ -544,8 +566,8 @@ export function ValueSearch() {
           <h2 className="page-title">Value search</h2>
           <p className="page-lead">
             No lookup tools are visible — enable asset classes (stocks, crypto, GoMining,
-            metals, precious stones, or collectables) or the currency exchanger in{' '}
-            <Link to="/settings">Settings</Link>.
+            metals, precious stones, or collectables) or the currency exchanger in the account
+            menu → <Link to="/settings">Settings</Link>.
           </p>
         </section>
       </div>
@@ -558,8 +580,8 @@ export function ValueSearch() {
         <h2 className="page-title">Value search</h2>
         <p className="page-lead">
           Preview-only lookups from live quote APIs — never invents prices. Showing tools for
-          your enabled classes: <strong>{enabledLabels.join(', ')}</strong>. Change visibility in{' '}
-          <Link to="/settings">Settings</Link>.
+          your enabled classes: <strong>{enabledLabels.join(', ')}</strong>. Change visibility in the
+          account menu → <Link to="/settings">Settings</Link>.
         </p>
       </section>
 
@@ -797,7 +819,7 @@ export function ValueSearch() {
             <a href="https://www.frankfurter.app/docs/" target="_blank" rel="noreferrer">
               Frankfurter
             </a>{' '}
-            (ECB) rates for all supported currencies. Search dropdowns by country or currency name
+            (ECB) rates for all supported currencies. Search dropdowns by country or currency name{' '}
             (e.g. Japan → JPY). USD→NZD falls back to BTC FX ratio when needed. Never invents rates.
           </p>
           <form className="form-grid" onSubmit={onFxConvert}>
@@ -894,7 +916,7 @@ export function ValueSearch() {
           <h2>GoMining miner output calculator</h2>
           <p className="section-desc">
             Model estimate: Net = PR + GBP − C1 − C2 (sat/TH/day × TH). Uses live GoMining income
-            feed + BTC FX from Settings — labelled estimate, not market price. Never invents
+            feed + BTC FX from the account menu → Settings — labelled estimate, not market price. Never invents
             sat/TH or FX.
           </p>
           <form className="form-grid" onSubmit={onMinerCalc}>
@@ -1124,7 +1146,7 @@ export function ValueSearch() {
           </div>
           <p className="muted small" style={{ marginTop: '0.75rem' }}>
             Stored as NZD/oz t (grams = ÷ 31.1034768). Default source is gold-api.com NZD.
-            Metals.Dev is used only when its key is set; a quota miss keeps the last good price
+            Metals.Dev is used only when its key is set; a quota miss keeps the last good price{' '}
             (never invent).
           </p>
         </section>

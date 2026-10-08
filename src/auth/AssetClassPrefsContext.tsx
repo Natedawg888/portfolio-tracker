@@ -4,10 +4,12 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 import { api } from '../api/client';
+import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import {
   defaultAssetClassPrefs,
   isAssetClassEnabled,
@@ -36,30 +38,62 @@ type Ctx = {
 
 const AssetClassPrefsContext = createContext<Ctx | null>(null);
 
+type AssetClassCache = { prefs: AssetClassPrefs; valueSearch: ValueSearchPrefs };
+
+const ASSET_CLASSES_KEY = 'asset-classes';
+
 export function AssetClassPrefsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  const userId = user?.id ?? null;
+  const [boundUser, setBoundUser] = useState<string | null>(null);
   const [prefs, setPrefs] = useState<AssetClassPrefs>(defaultAssetClassPrefs);
   const [valueSearch, setValueSearch] = useState<ValueSearchPrefs>(defaultValueSearchPrefs);
-  const [loading, setLoading] = useState(false);
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
+
+  if (userId !== boundUser) {
+    setBoundUser(userId);
+    if (!userId) {
+      setPrefs(defaultAssetClassPrefs());
+      setValueSearch(defaultValueSearchPrefs());
+      setLoadedFor(null);
+    } else {
+      const cached = readPageCache<AssetClassCache>(ASSET_CLASSES_KEY);
+      setPrefs(cached?.prefs ?? defaultAssetClassPrefs());
+      setValueSearch(cached?.valueSearch ?? defaultValueSearchPrefs());
+      setLoadedFor(cached ? userId : null);
+    }
+  }
+
+  const loading = Boolean(userId) && loadedFor !== userId;
+  const loadedForRef = useRef(loadedFor);
+  useEffect(() => {
+    loadedForRef.current = loadedFor;
+  }, [loadedFor]);
 
   const refresh = useCallback(async () => {
-    if (!user) {
+    if (!userId) {
       setPrefs(defaultAssetClassPrefs());
       setValueSearch(defaultValueSearchPrefs());
+      setLoadedFor(null);
       return;
     }
-    setLoading(true);
+    const stamp = beginPageRead(ASSET_CLASSES_KEY);
     try {
       const r = await api.settings.getAssetClasses();
-      setPrefs(normalizeAssetClassPrefs(r.enabled));
-      setValueSearch(normalizeValueSearchPrefs(r.valueSearch));
+      const savedPrefs = normalizeAssetClassPrefs(r.enabled);
+      const savedVs = normalizeValueSearchPrefs(r.valueSearch);
+      if (!commitPageRead(stamp, { prefs: savedPrefs, valueSearch: savedVs })) return;
+      setPrefs(savedPrefs);
+      setValueSearch(savedVs);
+      setLoadedFor(userId);
     } catch {
-      setPrefs(defaultAssetClassPrefs());
-      setValueSearch(defaultValueSearchPrefs());
-    } finally {
-      setLoading(false);
+      if (loadedForRef.current !== userId) {
+        setPrefs(defaultAssetClassPrefs());
+        setValueSearch(defaultValueSearchPrefs());
+      }
+      setLoadedFor(userId);
     }
-  }, [user]);
+  }, [userId]);
 
   useEffect(() => {
     void refresh();
@@ -72,6 +106,8 @@ export function AssetClassPrefsProvider({ children }: { children: ReactNode }) {
       const r = await api.settings.setAssetClasses(normalized, vs);
       const savedPrefs = normalizeAssetClassPrefs(r.enabled);
       const savedVs = normalizeValueSearchPrefs(r.valueSearch);
+      const stamp = beginPageRead(ASSET_CLASSES_KEY);
+      commitPageRead(stamp, { prefs: savedPrefs, valueSearch: savedVs });
       setPrefs(savedPrefs);
       setValueSearch(savedVs);
       return { prefs: savedPrefs, valueSearch: savedVs };

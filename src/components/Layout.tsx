@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { cloneElement, isValidElement, Suspense, useEffect, useState, type ReactNode } from 'react';
+import { NavLink, useLocation, useOutlet } from 'react-router-dom';
 import { applyTheme, resolveTheme, setTheme, type Theme } from '../lib/theme';
 import {
   MoneyHiddenProvider,
@@ -11,6 +11,9 @@ import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
 import { ProfileMenu } from './ProfileMenu';
 import { QuietToast } from './QuietToast';
+import { api } from '../api/client';
+import { metalProviderFooter } from '../lib/metalSpotCopy';
+import { prefetchNavTarget, schedulePrefetchAppRoutes } from '../lib/routePrefetch';
 
 /** Prefs that unlock at least one Value Search tool. */
 const VALUE_SEARCH_NAV_PREFS: AssetClassPrefKey[] = [
@@ -35,8 +38,11 @@ const links: Array<{
   { to: '/spending', label: 'Budget' },
   { to: '/debts', label: 'Debts' },
   { to: '/portfolio', label: 'Portfolio' },
+  { to: '/projections', label: 'Projections' },
+  { to: '/news', label: 'News' },
   { to: '/kiwisaver', label: 'KiwiSaver', requirePref: 'kiwisaver' },
   { to: '/paye', label: 'PAYE' },
+  { to: '/invoices', label: 'Invoices' },
   { to: '/yearly', label: 'History' },
   { to: '/economic-cycle', label: 'Economic cycle' },
   { to: '/value-search', label: 'Value search', requireAnyPref: VALUE_SEARCH_NAV_PREFS },
@@ -87,12 +93,18 @@ function MenuIcon() {
   );
 }
 
-export function Layout() {
+export function Layout({ children }: { children?: ReactNode }) {
   const { enabled } = useAssetClassPrefs();
   const location = useLocation();
   const [theme, setThemeState] = useState<Theme>(() => resolveTheme());
   const [navOpen, setNavOpen] = useState(false);
+  const [metalProvider, setMetalProvider] = useState<string | null>(null);
   const moneyHidden = useMoneyHidden();
+  const outlet = useOutlet();
+  const routed = children ?? outlet;
+  const painted = isValidElement(routed)
+    ? cloneElement(routed, { moneyHidden } as { moneyHidden: boolean })
+    : routed;
   const visibleLinks = links.filter((l) => {
     if (l.requireAnyPref?.length) return l.requireAnyPref.some((k) => enabled(k));
     if (l.requirePref) return enabled(l.requirePref);
@@ -102,6 +114,23 @@ export function Layout() {
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  useEffect(() => schedulePrefetchAppRoutes(), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.quotes
+      .metalsStatus()
+      .then((status) => {
+        if (!cancelled) setMetalProvider(status.provider);
+      })
+      .catch(() => {
+        if (!cancelled) setMetalProvider(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     setNavOpen(false);
@@ -220,6 +249,9 @@ export function Layout() {
               end={l.end}
               className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
               onClick={closeNav}
+              onMouseEnter={() => prefetchNavTarget(l.to)}
+              onFocus={() => prefetchNavTarget(l.to)}
+              onTouchStart={() => prefetchNavTarget(l.to)}
             >
               {l.label}
             </NavLink>
@@ -276,12 +308,14 @@ export function Layout() {
       </header>
       <main className="app-main">
         <MoneyHiddenProvider>
-          <Outlet />
+          <Suspense fallback={<div className="panel"><p className="muted">Loading…</p></div>}>
+            {painted}
+          </Suspense>
         </MoneyHiddenProvider>
       </main>
       <QuietToast />
       <footer className="app-footer">
-        Local-first · email/password · metals via Metals.Dev when keyed (never invented) · sync failures stay quiet
+        Local-first · email/password · {metalProviderFooter(metalProvider)} · sync failures stay quiet
       </footer>
     </div>
   );

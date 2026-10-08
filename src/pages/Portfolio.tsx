@@ -3,6 +3,17 @@ import type { FormEvent, ReactNode } from 'react';
 import { api, formatNzd, formatAuckland } from '../api/client';
 import { maybeAutoSyncBankTransactions, maybeAutoSyncPortfolio } from '../lib/akahuTxnAutoSync';
 import { showQuietToast } from '../lib/quietToast';
+import {
+  abandonPageRead,
+  beginPageRead,
+  commitPageRead,
+  invalidateAfterExternalSync,
+  invalidateFinancial,
+  portfolioSyncChanged,
+  readPageCache,
+  txnSyncChanged,
+  writePageCache,
+} from '../lib/pageDataCache';
 import { AssetBreakdownChart, type AssetBreakdownRow } from '../components/AssetBreakdownChart';
 import { HoldingPriceChart } from '../components/HoldingPriceChart';
 import {
@@ -24,8 +35,16 @@ import { CollectablesPanel } from '../components/CollectablesPanel';
 import { isApiCardGame, isManualCollectableGame } from '../lib/collectables';
 import type { MtgColour } from '../types';
 import { DividendTracker } from '../components/DividendTracker';
+import {
+  AddWalletDetails,
+  WalletCard,
+  WalletNotices,
+  WalletsTotal,
+} from '../components/CryptoWalletCards';
+import { useCryptoWallets } from '../lib/cryptoWallets';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
+import { metalSpotHint, type MetalSpotSource, type MetalSpotStatus } from '../lib/metalSpotCopy';
 
 type Holding = {
   id: string;
@@ -1218,7 +1237,7 @@ function HoldingCard({
         <p className="muted small holding-card-meta">
           {holding.spotPriceNzdPerOzT != null
             ? `Spot ${formatNzd(holding.spotPriceNzdPerOzT)}/oz t`
-            : 'No spot NZD — cost / — (gold-api.com unavailable)'}
+            : 'No spot NZD — cost / — (spot unavailable)'}
           {holding.spotAsOf && <> · {formatAuckland(holding.spotAsOf)}</>}
         </p>
       )}
@@ -1366,9 +1385,20 @@ function HoldingCard({
 }
 
 
-function InlineAddDetails({ label, children }: { label: string; children: ReactNode }) {
+const MANUAL_CRYPTO_ID = 'add-crypto-manual';
+
+/** Exchange / app balances (Nexo, GoMining…) go in the manual crypto form (KAN-69). */
+function openManualCrypto() {
+  const el = document.getElementById(MANUAL_CRYPTO_ID);
+  if (!(el instanceof HTMLDetailsElement)) return;
+  el.open = true;
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  el.querySelector('input')?.focus({ preventScroll: true });
+}
+
+function InlineAddDetails({ label, id, children }: { label: string; id?: string; children: ReactNode }) {
   return (
-    <details className="section-add">
+    <details className="section-add" id={id}>
       <summary className="section-add-summary">
         <span className="section-add-label">{label}</span>
       </summary>
@@ -1386,6 +1416,8 @@ function Section({
   onUpdateQuantity,
   onUpdateArt,
   earningsById,
+  headerExtra,
+  extraCards,
   children,
 }: {
   title: string;
@@ -1405,12 +1437,24 @@ function Section({
     },
   ) => Promise<void>;
   earningsById?: Record<string, GoMiningEarningsEstimate>;
+  /** Shown beside the title (e.g. a section total). */
+  headerExtra?: ReactNode;
+  /** Extra cards rendered in the same grid after the holdings (e.g. crypto wallets). */
+  extraCards?: ReactNode[];
   children?: ReactNode;
 }) {
+  const hasExtra = Boolean(extraCards?.length);
   return (
     <section className="panel">
-      <h3>{title}</h3>
-      {items.length === 0 ? (
+      {headerExtra ? (
+        <div className="section-head-row">
+          <h3>{title}</h3>
+          {headerExtra}
+        </div>
+      ) : (
+        <h3>{title}</h3>
+      )}
+      {items.length === 0 && !hasExtra ? (
         <p className="muted">{empty}</p>
       ) : (
         <div className="holding-cards">
@@ -1425,6 +1469,7 @@ function Section({
               earnings={earningsById?.[h.id]}
             />
           ))}
+          {extraCards}
         </div>
       )}
       {children}
@@ -1616,7 +1661,7 @@ function GoMiningMinersSection({
         )}
       </div>
       <p className="muted small">
-        Card Value / Return use estimated NZD from public primary generative list
+        Card Value / Return use estimated NZD from public primary generative list{' '}
         (priceUsdt ÷ TH × BTC FX). Live generative EE bands are typically{' '}
         <strong>12 and 15 W/TH only</strong>. Miners outside those bands (~19–23
         W/TH) get an <strong>estimate extrapolated from primary 12/15 W/TH</strong>{' '}
@@ -1923,12 +1968,24 @@ type PortfolioNetWorth = {
   totalKnownNzd: number;
   asOf: string;
   quoteNote?: string;
+  metalsConfigured?: boolean;
+  metalsSpotStatus?: MetalSpotStatus;
+  metalsSpotSource?: MetalSpotSource | null;
 };
+
+type PortfolioBundle = { holdings: Holding[]; summary: PortfolioNetWorth };
+
+const PORTFOLIO_KEY = 'portfolio';
+const PORTFOLIO_GM = 'portfolio:gomining';
+const PORTFOLIO_METALS = 'portfolio:metals';
 
 export function Portfolio() {
   const { enabled: assetEnabled } = useAssetClassPrefs();
-  const [holdings, setHoldings] = useState<Holding[]>([]);
-  const [summary, setSummary] = useState<PortfolioNetWorth | null>(null);
+  const cryptoWallets = useCryptoWallets(assetEnabled('crypto'));
+  const initialPortfolio = readPageCache<PortfolioBundle>(PORTFOLIO_KEY);
+  const initialGm = readPageCache<GominingUiSettings>(PORTFOLIO_GM);
+  const [holdings, setHoldings] = useState<Holding[]>(initialPortfolio?.holdings ?? []);
+  const [summary, setSummary] = useState<PortfolioNetWorth | null>(initialPortfolio?.summary ?? null);
   const [form, setForm] = useState(emptyMiner);
   const [cryptoForm, setCryptoForm] = useState(emptyCrypto);
   const [stockForm, setStockForm] = useState(emptyStock);
@@ -1962,34 +2019,84 @@ export function Portfolio() {
     note: string | null;
     failures: Array<{ minerName: string; ee: string; reason: string }>;
   } | null>(null);
-  const [metalsConfigured, setMetalsConfigured] = useState<boolean | null>(null);
+  const [metalsConfigured, setMetalsConfigured] = useState<boolean | null>(
+    () => readPageCache<boolean>(PORTFOLIO_METALS) ?? null,
+  );
   const [refreshingMetals, setRefreshingMetals] = useState(false);
   const [refreshingForex, setRefreshingForex] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [gmSettings, setGmSettings] = useState<GominingUiSettings>(emptyGmSettings);
+  const [gmSettings, setGmSettings] = useState<GominingUiSettings>(
+    initialGm ? { ...initialGm, fxLoading: false } : emptyGmSettings,
+  );
   const [savingGm, setSavingGm] = useState(false);
+  const holdingsRef = useRef(holdings);
+  const gmCurrencyRef = useRef(gmSettings.displayCurrency);
+  const gmNoteRef = useRef(gmSettings.note);
+  useEffect(() => {
+    holdingsRef.current = holdings;
+  }, [holdings]);
+  useEffect(() => {
+    gmCurrencyRef.current = gmSettings.displayCurrency;
+  }, [gmSettings.displayCurrency]);
+  useEffect(() => {
+    gmNoteRef.current = gmSettings.note;
+  }, [gmSettings.note]);
 
   const load = useCallback(() => {
+    const stamp = beginPageRead(PORTFOLIO_KEY);
     return Promise.all([api.holdings.list(), api.netWorth()])
       .then(([h, net]) => {
-        setHoldings(h as Holding[]);
-        setSummary(net as PortfolioNetWorth);
+        const bundle: PortfolioBundle = {
+          holdings: h as Holding[],
+          summary: net as PortfolioNetWorth,
+        };
+        if (!commitPageRead(stamp, bundle)) return;
+        setHoldings(bundle.holdings);
+        setSummary(bundle.summary);
         setError(null);
       })
       .catch((e: Error) => {
-        setHoldings((prev) => {
-          if (prev.length > 0) {
-            showQuietToast('Could not refresh portfolio — showing last data.', { kind: 'warn' });
-            return prev;
-          }
-          setError(e.message);
-          return prev;
-        });
+        abandonPageRead(stamp);
+        if (holdingsRef.current.length > 0) {
+          showQuietToast('Could not refresh portfolio — showing last data.', { kind: 'warn' });
+          return;
+        }
+        setError(e.message);
       });
   }, []);
 
+  const reloadAfterEdit = useCallback(() => {
+    invalidateFinancial('portfolio', 'dashboard', 'yearly', 'dividends', 'projections');
+    return load();
+  }, [load]);
+
+  // Net worth includes wallets (KAN-42): refresh the totals when wallet values change
+  // (add / remove / sync), but not for the first wallet load — `load` already covers that.
+  const walletsKey = cryptoWallets.data
+    ? `${cryptoWallets.entries.length}:${cryptoWallets.data.totalNzd}:${cryptoWallets.data.failedWallets}`
+    : null;
+  const lastWalletsKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (walletsKey == null) return;
+    const prev = lastWalletsKey.current;
+    lastWalletsKey.current = walletsKey;
+    if (prev == null || prev === walletsKey) return;
+    invalidateFinancial('dashboard', 'yearly', 'projections');
+    api
+      .netWorth()
+      .then((net) => {
+        const next = net as PortfolioNetWorth;
+        setSummary(next);
+        writePageCache(PORTFOLIO_KEY, { holdings: holdingsRef.current, summary: next });
+      })
+      .catch(() => {});
+  }, [walletsKey]);
+
   const loadGmSettings = () => {
-    setGmSettings((prev) => ({ ...prev, fxLoading: true }));
+    const stamp = beginPageRead(PORTFOLIO_GM);
+    if (readPageCache<GominingUiSettings>(PORTFOLIO_GM) == null) {
+      setGmSettings((prev) => ({ ...prev, fxLoading: true }));
+    }
     return api.settings
       .getGomining()
       .then((g) => {
@@ -2006,7 +2113,7 @@ export function Portfolio() {
         const fxRaw = raw.fx ?? null;
         const incomeRaw = raw.income ?? null;
         const networkLive = raw.networkHashrate ?? null;
-        setGmSettings((prev) => ({
+        const nextSettings: GominingUiSettings = {
           discountPct: g.discountPct ?? 0,
           btcUsd: g.btcUsd != null ? String(g.btcUsd) : '',
           networkHashrateEhs:
@@ -2020,8 +2127,10 @@ export function Portfolio() {
           networkLive,
           effectiveNetworkEhs: raw.effective?.networkHashrateEhs ?? null,
           fxLoading: false,
-          displayCurrency: prev.displayCurrency ?? 'ALL',
-        }));
+          displayCurrency: gmCurrencyRef.current ?? 'ALL',
+        };
+        setGmSettings(nextSettings);
+        commitPageRead(stamp, nextSettings);
       })
       .catch((e: Error) => {
         setGmSettings((prev) => ({ ...prev, fxLoading: false }));
@@ -2032,26 +2141,40 @@ export function Portfolio() {
   useEffect(() => {
     load();
     loadGmSettings();
+    const metalStamp = beginPageRead(PORTFOLIO_METALS);
     api.quotes
       .metalsStatus()
-      .then((s) => setMetalsConfigured(s.configured))
-      .catch(() => setMetalsConfigured(false));
+      .then((s) => {
+        if (!commitPageRead(metalStamp, s.configured)) return;
+        setMetalsConfigured(s.configured);
+      })
+      .catch(() => {
+        if (readPageCache<boolean>(PORTFOLIO_METALS) == null) setMetalsConfigured(false);
+      });
   }, [load]);
 
   // Silent background Akahu auto-sync on open / refresh (banks + holdings).
   // Mount-only + loadRef so Strict Mode remount / stable load identity never
   // cancels a completed sync before the UI reloads (same pattern as Budget).
   const portfolioLoadRef = useRef(load);
-  portfolioLoadRef.current = load;
+  useEffect(() => {
+    portfolioLoadRef.current = load;
+  }, [load]);
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        await Promise.all([
+        const [txn, port] = await Promise.all([
           maybeAutoSyncBankTransactions(),
           maybeAutoSyncPortfolio(),
         ]);
         if (cancelled) return;
+        if (
+          (txn.ran && txn.result.ok && txnSyncChanged(txn.result)) ||
+          (port.ran && port.result.ok && portfolioSyncChanged(port.result))
+        ) {
+          invalidateAfterExternalSync();
+        }
         await portfolioLoadRef.current();
       } catch {
         showQuietToast('Sync paused — showing last holdings.', { kind: 'warn' });
@@ -2088,7 +2211,7 @@ export function Portfolio() {
         defaults?: { note?: string };
       };
       const fxRaw = raw.fx ?? null;
-      setGmSettings((prev) => ({
+      const nextSettings: GominingUiSettings = {
         discountPct: g.discountPct ?? 0,
         btcUsd: g.btcUsd != null ? String(g.btcUsd) : '',
         networkHashrateEhs:
@@ -2096,14 +2219,16 @@ export function Portfolio() {
         dailyBtcIssuance:
           g.dailyBtcIssuance != null ? String(g.dailyBtcIssuance) : '',
         kWhCostUsd: g.kWhCostUsd != null ? String(g.kWhCostUsd) : '',
-        note: raw.defaults?.note ?? prev.note,
+        note: raw.defaults?.note ?? gmNoteRef.current,
         fx: fxRaw,
         income: raw.income ?? null,
         networkLive: raw.networkHashrate ?? null,
         effectiveNetworkEhs: raw.effective?.networkHashrateEhs ?? null,
         fxLoading: false,
-        displayCurrency: prev.displayCurrency,
-      }));
+        displayCurrency: gmCurrencyRef.current,
+      };
+      setGmSettings(nextSettings);
+      commitPageRead(beginPageRead(PORTFOLIO_GM), nextSettings);
       setMsg('GoMining discount / network params saved.');
     } catch (err) {
       setMsg((err as Error).message);
@@ -2148,7 +2273,7 @@ export function Portfolio() {
           ? 'Forex amount updated.'
           : 'Crypto amount updated.',
     );
-    await load();
+    await reloadAfterEdit();
   }
 
   async function deleteHolding(id: string) {
@@ -2172,7 +2297,7 @@ export function Portfolio() {
     try {
       await api.holdings.remove(id);
       setMsg(`Deleted ${label}.`);
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     }
@@ -2284,7 +2409,7 @@ export function Portfolio() {
         ? 'Miner TH / EE / Est. NZD updated.'
         : 'Miner TH / EE updated.',
     );
-    await load();
+    await reloadAfterEdit();
   }
 
   async function onAddMiner(e: FormEvent) {
@@ -2308,7 +2433,7 @@ export function Portfolio() {
       });
       setForm(emptyMiner);
       setMsg('Miner added.');
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     }
@@ -2344,7 +2469,7 @@ export function Portfolio() {
           ? `Merged into existing ${name} (${ticker}): amount + cost basis updated (weighted NZD).`
           : `Added ${name} (${ticker}).`,
       );
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     }
@@ -2379,7 +2504,7 @@ export function Portfolio() {
           ? `Merged into existing ${name} (${ticker}): shares + cost basis updated (weighted NZD).`
           : `Added ${name} (${ticker}).`,
       );
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     }
@@ -2403,7 +2528,7 @@ export function Portfolio() {
       });
       setMetalForm(emptyMetal);
       setMsg(`Added ${name}.`);
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     }
@@ -2438,7 +2563,7 @@ export function Portfolio() {
       });
       setForexForm(emptyForex);
       setMsg(`Added ${currency} (${source}) · Frankfurter → NZD on create.`);
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     }
@@ -2495,7 +2620,7 @@ export function Portfolio() {
           ? `Added ${name} — OpenFacet diamond quote (or manual fallback if live failed).`
           : `Added ${name} — manual estimated NZD (no live gem API).`,
       );
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     }
@@ -2516,7 +2641,7 @@ export function Portfolio() {
             ? ` · holding ${formatNzd(r.marketValueNzd)}`
             : ''),
       );
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     }
@@ -2566,7 +2691,7 @@ export function Portfolio() {
           failSummary +
           (r.note ? ` · ${r.note}` : ''),
       );
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     } finally {
@@ -2597,7 +2722,7 @@ export function Portfolio() {
       });
       setRealEstateForm(emptyRealEstate);
       setMsg('Real estate added (manual value − mortgage = equity on Dashboard)');
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     }
@@ -2691,7 +2816,7 @@ export function Portfolio() {
         setMsg('Physical art added (appraisal + optional photo — never invent values)');
       }
       setArtForm(emptyArt);
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     }
@@ -2710,7 +2835,7 @@ export function Portfolio() {
     setMsg(null);
     await api.holdings.update(id, patch);
     setMsg('Art valuation updated (manual — never invent)');
-    await load();
+    await reloadAfterEdit();
   }
 
   async function refreshMetalsAll() {
@@ -2730,7 +2855,7 @@ export function Portfolio() {
             ? `gold-api.com: ${ok}/${r.quotes.length} NZD spots refreshed · reload holdings`
             : 'gold-api.com returned no NZD spots. Metal value stays cost / —. Not inventing prices.',
       );
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     } finally {
@@ -2747,7 +2872,7 @@ export function Portfolio() {
         `Forex FX: ${r.appliedCount}/${r.totalCurrencies} currencies refreshed via Frankfurter → NZD` +
           (r.failedCount ? ` · ${r.failedCount} unavailable (never invent)` : ''),
       );
-      await load();
+      await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
     } finally {
@@ -2834,7 +2959,7 @@ export function Portfolio() {
             subtitle="NZD totals · classes enabled in portfolio preferences"
             centerLabel="Assets"
             barTitle="By class"
-            note="Values come from known quotes and recorded balances — never invented. Toggle classes under Settings."
+            note="Values come from known quotes and recorded balances — never invented. Toggle classes in the account menu → Settings."
             headingId="portfolio-asset-breakdown-title"
             showPie={false}
             showTotal={false}
@@ -2855,12 +2980,12 @@ export function Portfolio() {
           <div className="row gap" style={{ marginTop: 0 }}>
             <span className="muted small">
               Value = Akahu market × live FX (Frankfurter; USD fallback BTC FX) → NZD.
-              Connect / re-link under Settings; initial sync is during signup.
+              Connect / re-link in the account menu → Settings; initial sync is during signup.
             </span>
           </div>
         </div>
         {grouped.stocks.length === 0 ? (
-          <p className="muted">No stock holdings yet. Connect Akahu during signup/Settings or add manually below (ticker required).</p>
+          <p className="muted">No stock holdings yet. Connect Akahu during signup, or later in the account menu → Settings, or add manually below (ticker required).</p>
         ) : (
           <div className="holding-cards" style={{ marginTop: '0.75rem' }}>
             {grouped.stocks.map((h) => (
@@ -2954,8 +3079,20 @@ export function Portfolio() {
         onRefresh={refresh}
         onDelete={deleteHolding}
         onUpdateQuantity={updateHoldingQuantity}
+        headerExtra={<WalletsTotal state={cryptoWallets} />}
+        extraCards={cryptoWallets.entries.map((e) => (
+          <WalletCard key={`wallet-${e.wallet.id}`} entry={e} state={cryptoWallets} />
+        ))}
       >
-        <InlineAddDetails label="Add crypto">
+        <WalletNotices state={cryptoWallets} />
+        {grouped.crypto.length > 0 && cryptoWallets.entries.length > 0 ? (
+          <p className="muted small">
+            Wallets and manual crypto lines both count toward net worth. If a manual line tracks the same
+            coins as a wallet, remove it so they aren&apos;t counted twice.
+          </p>
+        ) : null}
+        <AddWalletDetails state={cryptoWallets} onUseManual={openManualCrypto} />
+        <InlineAddDetails label="Add crypto" id={MANUAL_CRYPTO_ID}>
           <form className="form-grid" onSubmit={onAddCrypto}>
             <h4>Add crypto (manual / Nexo)</h4>
             <label>
@@ -3125,11 +3262,17 @@ export function Portfolio() {
           <h3>Metals</h3>
           <div className="row gap" style={{ marginTop: 0 }}>
             <span className="muted small">
-              {metalsConfigured == null
-                ? 'Checking Metals.Dev…'
-                : metalsConfigured
-                  ? 'METALS_API_KEY set · NZD/oz t (quota miss → last-good stale, never invent)'
-                  : 'Live NZD/oz t via gold-api.com (no key)'}
+              {summary?.metalsSpotStatus
+                ? metalSpotHint({
+                    status: summary.metalsSpotStatus,
+                    source: summary.metalsSpotSource,
+                    configured: summary.metalsConfigured,
+                  })
+                : metalsConfigured == null
+                  ? 'Checking metal spots…'
+                  : metalsConfigured
+                    ? 'Metals.Dev spot NZD'
+                    : 'Live NZD/oz t via gold-api.com (no key)'}
             </span>
             <button
               type="button"
@@ -3434,7 +3577,7 @@ export function Portfolio() {
 {assetEnabled('collectable') ? (
       <CollectablesPanel
         holdings={grouped.collectables}
-        onChanged={load}
+        onChanged={reloadAfterEdit}
         onBanner={setMsg}
         renderCard={(h) => (
           <HoldingCard

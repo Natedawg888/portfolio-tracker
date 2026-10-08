@@ -20,10 +20,22 @@ import quotesRouter from './routes/quotes.ts';
 import settingsRouter from './routes/settings.ts';
 import debtsRouter from './routes/debts.ts';
 import incomeRouter from './routes/income.ts';
+import homeRouter from './routes/home.ts';
 import dividendsRouter from './routes/dividends.ts';
 import payeesRouter from './routes/payees.ts';
+import savingsGoalsRouter from './routes/savingsGoals.ts';
+import donationsRouter from './routes/donations.ts';
+import paySourcesRouter from './routes/paySources.ts';
+import invoicesRouter from './routes/invoices.ts';
+import publicInvoicesRouter from './routes/publicInvoices.ts';
+import projectionsRouter from './routes/projections.ts';
+import walletsRouter from './routes/wallets.ts';
+import { startWalletSyncScheduler } from './chain/index.ts';
 import authRouter from './routes/auth.ts';
+import securityRouter from './routes/security.ts';
+import ssoRouter from './routes/sso.ts';
 import economyRouter from './routes/economy.ts';
+import newsRouter from './routes/news.ts';
 import { loadDotEnv } from './akahu/loadEnv.ts';
 import { ensureUploadDirs, uploadsGate } from './lib/uploads.ts';
 import { attachUser, requireAuth, isPublicApiPath } from './middleware/requireAuth.ts';
@@ -105,6 +117,8 @@ async function main() {
   });
 
   app.use('/api/auth', authRouter);
+  app.use('/api/auth', securityRouter);
+  app.use('/api/auth', ssoRouter);
   // Uploads are files under /api. GET/HEAD only so a POST cannot 405 here.
   app.use('/api/uploads', uploadsGate());
 
@@ -118,9 +132,18 @@ async function main() {
   app.use('/api/settings', settingsRouter);
   app.use('/api/debts', debtsRouter);
   app.use('/api/income', incomeRouter);
+  app.use('/api/home', homeRouter);
   app.use('/api/dividends', dividendsRouter);
   app.use('/api/payees', payeesRouter);
+  app.use('/api/savings-goals', savingsGoalsRouter);
+  app.use('/api/donations', donationsRouter);
+  app.use('/api/pay-sources', paySourcesRouter);
+  app.use('/api/invoices', invoicesRouter);
+  app.use('/api/public', publicInvoicesRouter);
+  app.use('/api/projections', projectionsRouter);
   app.use('/api/economy', economyRouter);
+  app.use('/api/news', newsRouter);
+  app.use('/api/wallets', walletsRouter);
 
   // Unmatched /api stops here (JSON). It must not fall through to the SPA.
   app.use('/api', apiNotFound);
@@ -149,6 +172,8 @@ async function main() {
       console.error('[portfolio-tracker] Failed to start API:', err);
       process.exit(1);
     }
+    const stopWalletSync = startWalletSyncScheduler();
+    server.once('close', stopWalletSync);
     logger.info('api_listening', {
       host: HOST,
       port: PORT,

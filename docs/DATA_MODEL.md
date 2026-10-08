@@ -25,6 +25,11 @@ holdings  (polymorphic by asset_class)
   └── forex            (Revolut etc. foreign cash → NZD via Frankfurter)
 
 kiwisaver_accounts  (Sharesies via Akahu + bank-held manual/CSV)
+savings_goals          (target, current amount, optional deadline; progress counted on read)
+donations               (date, recipient, NZD amount; optional evidence URL;
+                         optional pointer to a transaction that already has a receipt.
+                         Not a receipt file and not a transactions row.)
+wallets             (read-only crypto wallets — public address only)
 price_quotes        (cache; stub providers write status=stubbed)
 valuation_snapshots (net-worth history)
 app_settings / meta
@@ -35,7 +40,7 @@ app_settings / meta
 | Entity | Purpose |
 |--------|---------|
 | `bank_accounts` | Cash / credit / etc. Balances in account currency (default NZD). **No passwords.** |
-| `transactions` | Imported or manual. Signed `amount`; optional `category_id`, `external_id` for dedupe. `source`: `akahu` \| `bank` \| `google_wallet` \| `manual` \| `csv`. Optional explicit **Use BTC** (`affects_btc`) adjusts a BTC crypto holding via live BTC/NZD quote — never auto from category; stores `btc_holding_id` + `btc_delta_applied` for idempotent reverse. |
+| `transactions` | Imported or manual. `account_id` is the charged bank account, or NULL when not charged to one (crypto Visa debit card — the Add transaction toggle *Charged to a bank account*); such spend still counts in budgets but not in cash flow. `category_id` is chosen on Add transaction, or left on *Automatic*: `server/lib/categoryPredict.ts` uses the payee's saved category, else the user's own categorised transactions in the same direction with the same merchant (store numbers / locations / card words ignored), else similar wording — only when ≥ 60 % of that history (recent weighted) agrees. Bank sync and CSV import use the same guess for new rows and fill only uncategorised rows (never overwrite); the sync result reports `categorised`. Signed `amount`; optional `category_id`, `external_id` for dedupe. `source`: `akahu` \| `bank` \| `google_wallet` \| `manual` \| `csv`. Optional explicit **Use BTC** (`affects_btc`) adjusts one of the user's own BTC crypto holdings via live BTC/NZD quote (spend NZD ÷ BTC/NZD comes off the holding, credit adds) — never auto from category; stores `btc_holding_id` + `btc_delta_applied` for idempotent reverse. |
 | `budget_categories` | Categories with `type`: `spending` \| `income` \| `transfer_out` \| `transfer_in` (seeded). Only **spending** counts toward Budget spend charts; **transfer_in** is never income; **transfer_out** is never spend. `is_income` stays 1 iff `type=income`. Charity remains a spending category. |
 | `budgets` | Period amount (NZD) per category. Seeded categories include **Debt** (`cat-debt`) and **Charity** (`cat-charity`). Charity txns may store `receipt_path` (IR526) under `data/uploads/receipts/` and link amounts into PAYE charity donation credits. |
 | `debt_people` | People Nathan owes: `name`, optional `notes`, `outstanding_nzd`. Sum of outstanding is a **liability** on Dashboard / net worth (`assets − debt`). |
@@ -133,7 +138,141 @@ Table: `kiwisaver_accounts` (+ `kiwisaver_balance_history`).
 - **Sharesies:** Akahu sync (`connection_status=akahu`). `POST /api/kiwisaver/import-sharesies-csv` remains a stub.
 - **Bank-held:** IRD/Akahu bank KS not available → KiwiSaver tab **manual form** + `POST /api/kiwisaver/import-bank-csv`. Honest UI labels: Manual / Manual (CSV) vs Akahu (Sharesies). History point on each save.
 
-Employee contribution **rate** (not a dollar amount) is stored per user at `users.preferences_json.kiwiSaverEmployeeRatePct`. When none is saved, the PAYE page offers **3%**. The calculator multiplies the gross pay the user enters by that rate. `GET/PUT /api/settings/kiwisaver-employee-rate`.
+Employee contribution **rate** (not a dollar amount) is stored per user at `users.preferences_json.kiwiSaverEmployeeRatePct`. When none is saved, the PAYE page offers **3.5%** (the statutory minimum from 1 April 2026). The calculator multiplies the gross pay the user enters by that rate. `GET/PUT /api/settings/kiwisaver-employee-rate`.
+
+## Savings goals
+
+Table: `savings_goals`. One row per goal for the signed-in user. Amounts are **NZD**. Dates are calendar dates. `asOf` on each response is **today in Pacific/Auckland**.
+
+`current_amount_nzd` is the figure the user entered for this goal. It is **not** a bank balance and is **not** added to net worth (that money may already sit on an account).
+
+| Stored | API field | Notes |
+|--------|-----------|--------|
+| `name` | `name` | Required |
+| `target_nzd` | `targetNzd` | Goal amount, NZD. Must be greater than 0 after rounding to cents |
+| `current_amount_nzd` | `currentAmountNzd` | Saved so far, NZD. Defaults to 0. Must be ≥ 0 |
+| `deadline` | `deadline` | `YYYY-MM-DD`, or null when no date is set |
+| `notes` | `notes` | Optional |
+
+Progress is **not stored**. It is counted on every read from `targetNzd`, `currentAmountNzd`, and `deadline`. No interest and no separate savings rate are assumed, because neither is stored.
+
+Let `remaining = max(0, target − current)` in NZD, rounded to cents. A week is 7 days. A mean month is `365.25 / 12` days (30.4375). `daysRemaining` is the whole calendar days from `asOf` to `deadline` (negative when the deadline is already past, null when no deadline is set).
+
+| Response field | Formula |
+|----------------|---------|
+| `remainingNzd` | `max(0, round(targetNzd − currentAmountNzd))` |
+| `percentComplete` | `currentAmountNzd / targetNzd × 100`, rounded to 2 decimals. **A percent, not a fraction** (25 means 25%). May exceed 100 |
+| `requiredWeeklySavingNzd` | See below. NZD per week |
+| `requiredMonthlySavingNzd` | See below. NZD per month, using the 30.4375-day month |
+| `estimatedCompletion` | `YYYY-MM-DD` or null. See below |
+| `daysRemaining` | `deadline − asOf` in whole days, or null |
+| `currency` | Always `NZD` |
+| `timezone` | Always `Pacific/Auckland` |
+
+**Required weekly and monthly saving**
+
+- `remaining` is 0: both are **0**. The goal is already met.
+- No deadline, or `daysRemaining < 0`: both are **null**. A past date cannot define a future weekly or monthly amount, and no other pace is stored.
+- `daysRemaining` is 0: both **equal `remaining`**. The gap is due today, so it is not spread across a later week or month.
+- `daysRemaining > 0`:
+  - weekly = `remaining × 7 / daysRemaining`
+  - monthly = `remaining × (365.25 / 12) / daysRemaining`
+  - each rounded to the nearest cent.
+
+A 365-day deadline is a little longer than 12 mean months, so a goal of 12000 NZD due in 365 days needs **1000.68 NZD per month**, not 1000.
+
+**Estimated completion**
+
+- `remaining` is 0: **`asOf`**. The goal is already met. The day it was first reached is not stored.
+- Deadline is today or later, and a gap is still open: **the deadline**. That is the date the required weekly or monthly amount finishes the goal.
+- Otherwise **null**. A missed deadline does not invent a later date, and a goal with no deadline has no completion date.
+
+Worked example, counted on 2026-10-05, target 10000, current 2500, deadline 2027-04-05 (182 days):
+
+- `remainingNzd` 7500
+- `percentComplete` 25
+- `requiredWeeklySavingNzd` 288.46
+- `requiredMonthlySavingNzd` 1254.29
+- `estimatedCompletion` `2027-04-05`
+
+`GET/POST /api/savings-goals`, `GET/PATCH/DELETE /api/savings-goals/:id`. Session cookie, same as the rest of `/api`. Another user's id is `404`. Deleting the account deletes that user's `savings_goals` only.
+
+## Donations ledger
+
+Table: `donations`. One row per gift for the signed-in user. Amounts are **NZD**. Dates are calendar dates. This ledger is **not** a receipt and it is **not** a `transactions` row. Charity receipt files stay on `transactions.receipt_path` under `data/uploads/receipts/`.
+
+| Stored | API field | Notes |
+|--------|-----------|--------|
+| `date` | `date` | `YYYY-MM-DD`. Required |
+| `recipient` | `recipient` | Charity or other recipient. Required |
+| `amount_nzd` | `amountNzd` | NZD, greater than 0 after rounding to cents |
+| `notes` | `notes` | Optional |
+| `evidence_url` | `evidenceUrl` | Optional `http` or `https` link to supporting evidence. Not a stored file |
+| `receipt_transaction_id` | `receiptTransactionId` | Optional. A transaction **this user** already attached a receipt to. Null clears it |
+
+`receiptPath` and `receiptUrl` are read from that transaction. They are not copied into `donations`. Deleting the transaction clears the pointer and leaves the donation. Deleting the donation leaves the transaction and its receipt file.
+
+The NZ tax year is counted on read. It runs from **1 April through 31 March** and is labelled by the year it ends. The 2027 tax year is `2026-04-01` through `2027-03-31`. A date in April–December belongs to the tax year ending the next 31 March. A date in January–March belongs to the tax year ending that 31 March.
+
+`GET /api/donations/summary` totals the signed-in user's donations. `?taxYear=2027` selects that year; omitting it selects the tax year that contains today in Pacific/Auckland.
+
+| Response field | Formula |
+|----------------|---------|
+| `totalAmountNzd` | Sum of `amountNzd` for donations in the tax year, in cents |
+| `eligibleAmountNzd` | Sum of those donations whose `amountNzd` is **at least 5**. Gifts under $5 are not added together to reach $5 |
+| `belowMinimumAmountNzd` | Sum of donations under $5 |
+| `estimatedTaxCreditNzd` | `eligibleAmountNzd / 3`, rounded to the nearest cent. **An estimate** (`estimateLabel` is `"estimate"`) |
+
+The one-third is taken **once** on the summed eligible amount. Two gifts of $5 are $10 eligible, and the estimate is **3.33 NZD**, not 1.67 + 1.67.
+
+This is the standard IRD donation tax credit: **33.33 cents per dollar** of donations of $5 or more, claimed after year-end (IR526) with receipts. IRD also caps the credit at **one third of taxable income**. Taxable income is not stored here, so `incomeCapApplied` is **false** and the cap is not applied. Payroll giving is already credited each pay and is not part of this estimate. Approved-donee status is not checked, and the estimate does not require `evidenceUrl` or `receiptTransactionId`. The full wording is returned as `estimateNote`.
+
+`GET/POST /api/donations`, `GET /api/donations/summary`, `GET/PATCH/DELETE /api/donations/:id`. Session cookie `pt_sid`, same gate as the rest of `/api`. Another user's id is `404`. Deleting the account deletes that user's `donations` only.
+## Crypto wallets (`wallets`)
+
+Read-only, per-user (`user_id`) public wallet addresses. **Never** stores seed phrases, private keys or passwords, and has **no balance column** — balances come from chain providers at sync time, never stored as source of truth.
+
+| Field | Notes |
+|-------|-------|
+| `name` | ≤ 80 chars; defaults to "<Network> wallet" |
+| `network` | `ethereum` \| `polygon` \| `base` \| `arbitrum` \| `bitcoin` \| `solana` |
+| `address` | Validated + normalised per network (see below). Unique per `(user_id, network, address)` |
+| `status` / `status_message` | `connected` \| `syncing` \| `error` — owned by the sync job; reset to `connected` when the address changes |
+| `last_synced` | ISO timestamp set by the sync job; null until first sync (cleared when the address changes) |
+
+**Address validation** (`server/lib/walletAddress.ts`): EVM — `0x` + 40 hex, mixed case must match EIP-55 (stored checksummed); Bitcoin mainnet — base58check P2PKH/P2SH or bech32 (v0) / bech32m (v1+, taproot), stored lowercase; Solana — base58 decoding to 32 bytes.
+
+**Secret rejection:** `address` and `name` are checked first for BIP39-style phrases (any language; in `name` only an exact 12/15/18/21/24 single-case word list counts, so descriptive names pass), 64-hex keys, WIF, `xprv`/`Zprv`-family keys, and Solana secret keys (base58 seed+pubkey pair verified via Ed25519, or a JSON byte array). Rejected with `400 { code: "SECRET_REJECTED" }` and a "never share this" message; the input is never echoed, logged or stored.
+
+APIs: `GET /api/wallets`, `GET /api/wallets/:id`, `POST /api/wallets` `{ network, address, name? }`, `PATCH /api/wallets/:id` `{ name?, network?, address? }`, `DELETE /api/wallets/:id`. Error codes: `INVALID_NETWORK`, `INVALID_ADDRESS`, `INVALID_NAME`, `SECRET_REJECTED`, `CUSTODIAL_ADDRESS`, `DUPLICATE_WALLET` (409). Tests: `npm run test:wallets`.
+
+**Custodial denylist** (KAN-69, `server/lib/custodialDenylist.ts`): add and address edits reject known exchange / custodian hot wallets (`CUSTODIAL_ADDRESS`, message names the custodian and points to a manual crypto holding), since a pooled wallet's balance isn't the user's. The list is data, not code: `server/lib/custodialAddresses.json`, regenerated by `npm run denylist:update` from Binance's published proof-of-reserves addresses plus hand-checked entries in `custodialAddresses.manual.json` (review the diff, then commit). Entries are keyed by address family, so one EVM entry covers Ethereum, Polygon, Base and Arbitrum; every entry must pass the same validators as Add Wallet or loading fails. Addresses only. Per-user deposit addresses (Nexo, GoMining, exchanges) can't be listed: Add Wallet asks "Where is this crypto?" first and sends "An exchange or app" to the manual crypto form, and a synced wallet holding nothing shows a dismissible warning (Keep wallet is remembered per browser).
+
+### Wallet sync (`server/chain/sync.ts`)
+
+A scheduler (started with the API; `WALLET_SYNC_DISABLED=1` turns it off) checks every minute for due wallets (`next_sync_at` null or past, up to 10 per pass, one at a time) and syncs each through the chain service. Success → `status=connected`, `status_message` null, `last_synced` = fetch time, `sync_failures` 0, next sync after `WALLET_SYNC_INTERVAL_MIN` (default 30). Failure → `status=error` with a user-safe, redacted `status_message`; provider errors back off exponentially (2 min doubling, ±20% jitter, max 6 h, never shorter than `Retry-After`); unsupported / misconfigured networks retry after 6 h. A provider rate limit also opens a per-network window: other wallets on that network are deferred (not counted as failures). Calls to one network are spaced by `WALLET_SYNC_MIN_GAP_MS` (default 1500). Rows stuck in `syncing` > 10 min (restart) are picked up again; results are discarded if the wallet's address changed mid-sync. New wallets (and address edits) sync once in the background immediately. Balances are never persisted — fresh ones prime the 60 s valuation cache.
+
+`POST /api/wallets/:id/sync` (Sync now): 200 `{ synced, wallet }` when it ran (an error status explains a failed sync); 429 `SYNC_COOLDOWN` within 30 s of the last sync, or `RATE_LIMITED` during a provider window, with `Retry-After`.
+
+### Chain providers (`server/chain/`)
+
+Balances and transactions come from chain adapters, never from the `wallets` table. Portfolio / sync code calls only `fetchWalletBalances` / `fetchWalletTransactions` (`server/chain/service.ts`); it looks up the registered `ChainProvider` whose `supports(network)` is true and passes it the resolved endpoint. Adding a network = `WALLET_NETWORKS` entry + `NETWORK_CHAIN_INFO` (native asset, EVM chain id) + public default URL + an adapter that supports it — no aggregation change. Adapters register in `server/chain/index.ts` (KAN-35 Bitcoin, KAN-36/37 EVM, KAN-38 Solana).
+
+Amounts are smallest-unit integer strings (`amountRaw`) + `decimals`; `formatUnits` converts without float rounding.
+
+Endpoints come from env (`CHAIN_<NETWORK>_RPC_URL`, optional `CHAIN_<NETWORK>_API_KEY`), https only (http for loopback), falling back to public keyless endpoints. Keys stay server-side: requests refuse redirects, every failure is a `ChainProviderError` (`unsupported_network`, `not_configured`, `rate_limited` + `retryAfterSec`, `timeout`, `upstream_error`, `network_error`) whose message passes through `redactChainSecrets`, and the only client view is `GET /api/wallets/networks` (labels, native symbol, `syncable` / `configured` booleans — no URLs or hosts). Tests: `npm run test:chain`.
+
+**Bitcoin adapter** (`server/chain/bitcoin.ts`, provider `bitcoin-esplora`): Esplora REST (`CHAIN_BITCOIN_RPC_URL`, default blockstream.info; mempool.space or a self-hosted Esplora also work). Balance is **confirmed only** (`chain_stats` funded − spent). History is newest-first: unconfirmed txs on the first page only, then confirmed txs; the cursor is the last confirmed txid. Each tx is from the wallet's view — `in` (amount received), `out` (amount that left, excluding change and the fee; fee in `feeRaw` when the wallet funded every input), `self` (amount 0, fee only); coinjoin-style partial funding reports the net change with `feeRaw` null. xpub watching (stretch) is not implemented. `CHAIN_LIVE=1 npm run test:chain` adds checks against the public endpoint.
+
+**Ethereum adapter** (KAN-36, `server/chain/evm.ts`, provider `evm-rpc-blockscout`): ETH balance from JSON-RPC `eth_getBalance` at `latest` (`CHAIN_ETHEREUM_RPC_URL`, default publicnode). JSON-RPC can't list an address's tokens, so ERC-20 discovery and balances come from a Blockscout API v2 indexer (`CHAIN_ETHEREUM_INDEXER_URL`, default `https://eth.blockscout.com/api/v2`; the RPC key is never sent there): `/addresses/:a/tokens?type=ERC-20`, up to 4 pages of 50. Zero balances, malformed rows, unknown/absurd decimals and tokens Blockscout flags `scam` are dropped; contracts are checksummed; symbols (≤ 24) and names (≤ 64) are stripped of control/zero-width characters. If the indexer fails the ETH balance is still returned (logged). History is native transactions from `/addresses/:a/transactions` (in / out / self, failed = no value but gas paid, pending without timestamp); the cursor holds the Blockscout page params plus an offset so any `limit` resumes exactly. ERC-20 transfers aren't in history yet. `CHAIN_LIVE=1 npm run test:chain` adds live checks.
+
+**EVM L2s** (KAN-37): the same adapter serves Polygon (native POL), Base and Arbitrum. Their public Blockscout instances answer server requests with a Cloudflare browser check and Blockscout's multichain API needs a key, so without `CHAIN_<NETWORK>_INDEXER_URL` these networks read the well-known tokens in `server/chain/knownTokens.ts` (USDC, USDC.e, USDT, WETH, WBTC, DAI, LINK, chain tokens such as WPOL / ARB / AERO / GMX — every contract, symbol and decimals checked on-chain) with one Multicall3 `balanceOf` batch over the RPC (`0xcA11…CA11`, ABI encoded by hand). Ethereum uses the same list when Blockscout fails. Other tokens on L2s aren't discovered until an indexer is configured, and L2 history needs one (`not_configured` otherwise).
+
+**NZD valuation** (`server/chain/valuation.ts`): live chain balances × the crypto quote engine (`server/quotes/crypto.ts` — CoinGecko NZD, else CoinGecko/Coinbase/Kraken USD × USD→NZD FX; 10-min memory cache, `price_quotes` persistence, last-good reuse ≤ 24 h; never invented). Each item returns `status` (`priced` \| `stale` \| `unpriced`), `priceNzd`, `valueNzd` (cents), `pricedAt` (when the unit price was observed) and `priceSource`. Prices older than 30 min are still used but flagged `stale`. **Totals only include priced/stale items** and report `complete: false` when a non-zero holding is unpriced or a wallet fetch failed (that wallet is returned with its error code and excluded). Tokens (ERC-20/SPL) stay unpriced until KAN-39 maps contracts → assets, so spam tokens can't inflate totals. Balances are cached in memory for 60 s only — never persisted. APIs: `GET /api/wallets/valuation` (per wallet + combined `totalNzd`, `complete`, `pricedAt`, `failedWallets`), `GET /api/wallets/:id/valuation`. Balances are read from what the sync job last fetched (memory cache up to 35 min); a network inside a provider rate-limit window is never fetched on page load.
+
+**Net worth** (KAN-42, `server/lib/netWorth.ts`): `cryptoNzd` = manual crypto holdings (`cryptoHoldingsNzd`) + wallets (`cryptoWalletsNzd`, null with no wallets), so wallets count toward Total Assets, Net Worth, the allocation charts, Portfolio's total, snapshots (one `wallet:<id>` crypto line each) and projections. Wallets are valued with the same sync-cached balances × crypto quotes as `/api/wallets/valuation`; a wallet that can't be valued is left out (`cryptoWalletsFailed`, `cryptoWalletsComplete: false`) and tokens stay unpriced, so spam tokens add 0. `cryptoPctOfNetWorth` (1 dp) is null with no crypto or when net worth ≤ 0; the Dashboard Crypto card shows it with the wallet count. Manual lines and wallets for the same coins would double count — Portfolio says so when both exist. Tests: `npm run test:net-worth-crypto`.
+
+**Portfolio → Crypto** shows each wallet as a card in the crypto holding-card grid, titled by its short address (full address on hover) with name · network, holdings, NZD value, unit price, last synced, status/error, Sync now and Remove; the section header shows the **Wallets total** (wallet values only) and notes wallets that couldn't be valued.
 
 ## Quotes & snapshots
 
@@ -158,6 +297,56 @@ Employee contribution **rate** (not a dollar amount) is stored per user at `user
 Cash + stocks (cost) + crypto (cost) + **GoMining miners** (est. value or cost) + art + **metals** (spot NZD when quotes exist, else cost) + stones (**known only**) + **forex** (Frankfurter → NZD) + **KiwiSaver** (Sharesies Akahu + bank-held manual/CSV).
 
 Timezone for display: **Pacific/Auckland**. Currency default: **NZD**.
+
+## Forward projections
+
+`GET /api/projections` projects the signed-in user's net worth and savings. Same session cookie as the rest of `/api`. Signed out: `401` `{ error: "Authentication required", code: "UNAUTHORIZED" }`. Every read is filtered by `user_id`.
+
+Query parameters (all optional):
+
+| Param | Default | Bounds |
+|-------|---------|--------|
+| `months` | 12 | whole number 1–360. 12, 60, and 120 are one, five, and ten years |
+| `savingWindowMonths` | 3 | whole number 1–24 |
+| `annualReturnPercent` | 0 | number from -50 to 50. `5` means 5% a year |
+| `monthlySavingNzd` | observed, or null | number from -10000000 to 10000000, rounded to cents |
+
+Out of range is `400` `{ error }`. Amounts in the body are **NZD**, rounded to cents. Dates are **YYYY-MM-DD** in **Pacific/Auckland**. Month 0 is today. Later points are the same calendar day, clamped to the last day of the month (31 January → 28 February, or 29 in a leap year). `points` has `months + 1` entries.
+
+The starting balances come from the same net-worth computation as `GET /api/net-worth` (`server/lib/netWorth.ts`). Debt steps use `advanceDebtOneMonth` in `server/debts/model.ts`, which is the month inside `projectPayoff`.
+
+**Compounding assets** are the known asset total minus signed bank-account liabilities (credit and loan). That includes cash, holdings at the value net worth already uses, gross property value, and the KiwiSaver balance. Those balances compound together. Bank liabilities and property mortgages stay at the recorded amount because the account and the holding do not store a rate or a payment.
+
+**Each month, in order:**
+
+1. `compoundingAssets = round(compoundingAssets × (1 + annualReturnPercent / 100 / 12))`
+2. Add `monthlySavingNzd` when that amount is known.
+3. Add the observed KiwiSaver contribution when activity rows exist.
+4. For each debt that can be stepped: add scheduled interest, then subtract `actualPaymentNzd`. Monthly interest is `balance × rate / 100 / 12` at the start of every projected month. Yearly interest is `balance × rate / 100` on projected months 1, 13, 25, and so on. A payment that covers the balance clears it. A debt with no saved payment, or with recurring interest but no usable rate, is held. A payment that does not cover interest is still stepped, so the balance can rise; `paysDown` is false.
+
+**Net worth** at each point:
+
+`compoundingAssets + bankLiabilities − debtOutstanding − propertyMortgage`
+
+**Monthly saving** when `monthlySavingNzd` is omitted:
+
+`(income − spending) / savingWindowMonths`
+
+over the complete calendar months before today. Income and spending match the home snapshot (`income_records` plus unlinked income-category credits, minus spending-category outflows and unlinked debt repayments). A month with no rows counts as zero in the divisor. If every month in the window is empty, `monthlySavingNzd.value` is **null** and `savings.points` is **null**. No amount is filled in, and that null saving is not added to assets.
+
+Debt repayments are already inside spending. The projection does not subtract the payment from assets a second time when the debt balance falls.
+
+**KiwiSaver.** The balance is inside compounding assets, so it grows at the same assumed return. `kiwisaver_activity` amounts in the window are averaged over the window length and added on top each month. If there are no rows, the contribution is **null**. `users.preferences_json.kiwiSaverEmployeeRatePct` is a percent and is not turned into dollars.
+
+**Dividends.** Cash already recorded as income is inside the saving figure. No future dividend amount is added.
+
+**Savings goals** are not an input. They are targets, not a cashflow history.
+
+**Inflation** is not applied. `assumptions.inflationPercent.value` is null.
+
+`assumptions.*.source` is `user_data`, `default`, or `query`. `default` on the annual return means 0% because no rate was supplied and none is taken from prices. `query` means the caller passed `annualReturnPercent` or `monthlySavingNzd`. The response `note` says this is an educational projection, not a price forecast.
+
+`npm run test:projections`.
 
 ## Economic cycle (country macro, not per-user)
 

@@ -25,6 +25,11 @@ type Props = {
   showPie?: boolean;
   /** When false, hide the header total (e.g. Portfolio hero already shows it). Default true. */
   showTotal?: boolean;
+  /**
+   * When set, the bar chart is replaced with this quiet line if there are no
+   * rows or every bucket is zero. Asset charts omit it so zero buckets stay.
+   */
+  barEmptyLabel?: string;
 };
 
 /** Asset-allocation pie and vertical bar charts. Zero rows stay visible in the legend. */
@@ -43,15 +48,21 @@ export function AssetBreakdownChart({
   chartLabel = 'assets by class',
   showPie = true,
   showTotal = true,
+  barEmptyLabel,
 }: Props) {
   const total = useMemo(
     () => rows.reduce((sum, row) => sum + (Number.isFinite(row.value) ? Math.max(0, row.value) : 0), 0),
     [rows],
   );
+  const barEmpty =
+    Boolean(barEmptyLabel) && !rows.some((row) => Number.isFinite(row.value) && row.value > 0);
+  // An all-zero debt chart draws a blank donut and a $0 header. Leave the quiet line on its own.
+  const pieVisible = showPie && !barEmpty;
+  const totalVisible = showTotal && !barEmpty;
 
   return (
     <section
-      className={`panel asset-breakdown${showPie ? '' : ' asset-breakdown--bar-only'}`}
+      className={`panel asset-breakdown${pieVisible ? '' : ' asset-breakdown--bar-only'}`}
       aria-labelledby={headingId}
     >
       <div className="asset-breakdown-head">
@@ -62,7 +73,7 @@ export function AssetBreakdownChart({
             {asOf ? ` · as of ${asOf}` : ''}
           </p>
         </div>
-        {showTotal ? (
+        {totalVisible ? (
           <p className="asset-breakdown-total">
             <span className="muted small">{totalLabel}</span>
             <strong>{formatNzd(total)}</strong>
@@ -74,7 +85,7 @@ export function AssetBreakdownChart({
       </div>
 
       <div className="asset-breakdown-grid">
-        {showPie ? (
+        {pieVisible ? (
           <div className="asset-chart">
             <h3>{pieTitle}</h3>
             <PieChart rows={rows} total={total} centerLabel={centerLabel} chartLabel={chartLabel} />
@@ -82,22 +93,28 @@ export function AssetBreakdownChart({
         ) : null}
         <div className="asset-chart">
           <h3>{barTitle}</h3>
-          <BarChart rows={rows} chartLabel={chartLabel} />
+          {barEmpty ? (
+            <p className="muted small asset-bar-empty">{barEmptyLabel}</p>
+          ) : (
+            <BarChart rows={rows} chartLabel={chartLabel} />
+          )}
         </div>
       </div>
 
-      <ul className="asset-breakdown-legend" aria-label={legendLabel}>
-        {rows.map((row) => (
-          <li key={row.key}>
-            <span className="spend-swatch" style={{ background: row.colour }} aria-hidden />
-            <span className="asset-legend-name">{row.name}</span>
-            <strong>{formatNzd(row.value)}</strong>
-            <span className="muted small">
-              {total > 0 ? `${((Math.max(0, row.value) / total) * 100).toFixed(0)}%` : '0%'}
-            </span>
-          </li>
-        ))}
-      </ul>
+      {barEmpty ? null : (
+        <ul className="asset-breakdown-legend" aria-label={legendLabel}>
+          {rows.map((row) => (
+            <li key={row.key}>
+              <span className="spend-swatch" style={{ background: row.colour }} aria-hidden />
+              <span className="asset-legend-name">{row.name}</span>
+              <strong>{formatNzd(row.value)}</strong>
+              <span className="muted small">
+                {total > 0 ? `${((Math.max(0, row.value) / total) * 100).toFixed(0)}%` : '0%'}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
       {note && <p className="muted small asset-breakdown-note">{note}</p>}
     </section>
   );
@@ -109,14 +126,16 @@ function BarChart({ rows, chartLabel }: { rows: AssetBreakdownRow[]; chartLabel:
   const n = Math.max(rows.length, 1);
   const chartW = 560;
   const topPad = 28;
-  const bottomPad = 52;
-  const leftPad = 8;
-  const rightPad = 8;
+  const longestLabel = rows.reduce((longest, row) => Math.max(longest, row.name.length), 0);
+  // Vertical labels need room for the full name. Cap very long creditor names.
+  const bottomPad = Math.max(56, Math.min(220, Math.min(longestLabel, 28) * 7 + 18));
+  const leftPad = 16;
+  const rightPad = 16;
   const plotH = 200;
   const chartH = topPad + plotH + bottomPad;
   const plotW = chartW - leftPad - rightPad;
   const slot = plotW / n;
-  const barW = Math.min(48, Math.max(18, slot * 0.55));
+  const barW = Math.min(48, Math.max(14, slot * 0.55));
   const baseline = topPad + plotH;
 
   return (
@@ -139,7 +158,9 @@ function BarChart({ rows, chartLabel }: { rows: AssetBreakdownRow[]; chartLabel:
         const cx = leftPad + slot * index + slot / 2;
         const x = cx - barW / 2;
         const y = baseline - height;
-        const label = truncate(row.name, 12);
+        const label = row.name.length > 28 ? `${row.name.slice(0, 27)}…` : row.name;
+        const labelY = baseline + 6;
+        const showValue = slot >= 36;
         return (
           <g key={row.key}>
             <title>{`${row.name}: ${formatNzd(row.value)}`}</title>
@@ -152,19 +173,22 @@ function BarChart({ rows, chartLabel }: { rows: AssetBreakdownRow[]; chartLabel:
               fill={row.colour}
               opacity={0.9}
             />
+            {showValue ? (
+              <text
+                x={cx}
+                y={Math.min(y - 8, baseline - 8)}
+                textAnchor="middle"
+                className="spend-svg-value"
+              >
+                {formatNzd(row.value)}
+              </text>
+            ) : null}
             <text
               x={cx}
-              y={y - 8}
-              textAnchor="middle"
-              className="spend-svg-value"
-            >
-              {formatNzd(row.value)}
-            </text>
-            <text
-              x={cx}
-              y={baseline + 16}
-              textAnchor="middle"
-              className="spend-svg-label"
+              y={labelY}
+              textAnchor="end"
+              transform={`rotate(-90 ${cx} ${labelY})`}
+              className="spend-svg-label asset-bar-label"
             >
               {label}
             </text>
@@ -283,6 +307,3 @@ function round(n: number): string {
   return (Math.round(n * 100) / 100).toFixed(2);
 }
 
-function truncate(value: string, length: number): string {
-  return value.length <= length ? value : `${value.slice(0, length - 1)}…`;
-}

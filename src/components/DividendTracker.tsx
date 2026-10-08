@@ -6,8 +6,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api, formatMoney, formatNzd } from '../api/client';
+import { beginPageRead, commitPageRead, invalidateFinancial, readPageCache } from '../lib/pageDataCache';
 import { todayAucklandYmd } from '../lib/period';
-import type { DetectedDividend, DividendDashboard, DividendEvent, DividendWriteBody } from '../types/dividends';
+import type {
+  DetectedDividend,
+  DividendDashboard,
+  DividendEvent,
+  DividendReinvestResponse,
+  DividendReinvestment,
+  DividendWriteBody,
+  ForecastReinvestResponse,
+} from '../types/dividends';
 
 type Placement = 'portfolio' | 'budget';
 
@@ -63,24 +72,114 @@ function cadencePhrase(months: number | null): string {
   return 'the published dates';
 }
 
+/** Reinvestment gains on small holdings are fractions of a cent: keep up to 4 decimals below $1. */
+function smallNzd(value: number): string {
+  if (Math.abs(value) >= 1) return formatNzd(value);
+  return new Intl.NumberFormat('en-NZ', {
+    style: 'currency',
+    currency: 'NZD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  }).format(value);
+}
+
+function shareCount(value: number): string {
+  return Number(value.toFixed(5)).toString();
+}
+
+function reinvestNote(reinvestment: DividendReinvestment | null | undefined): string | null {
+  const note = reinvestment?.note?.trim() ?? '';
+  return note || null;
+}
+
+/** Replace one holding's forecast rows with the rows the toggle returned. Other holdings stay. */
+function mergeDetected(
+  current: DetectedDividend[],
+  holdingId: string | null,
+  next: DetectedDividend[],
+): DetectedDividend[] {
+  if (!holdingId) return current;
+  const rest = current.filter((row) => row.holdingId !== holdingId);
+  return [...rest, ...next].sort(
+    (a, b) => a.paymentDate.localeCompare(b.paymentDate) || a.name.localeCompare(b.name),
+  );
+}
+
+function patchRecordedFlag(dashboard: DividendDashboard, id: string, reinvested: boolean): DividendDashboard {
+  const mapRow = (row: DividendEvent) => (row.id === id ? { ...row, reinvested } : row);
+  return {
+    ...dashboard,
+    upcoming: dashboard.upcoming.map(mapRow),
+    history: dashboard.history.map(mapRow),
+  };
+}
+
+function patchForecastFlag(dashboard: DividendDashboard, id: string, reinvested: boolean): DividendDashboard {
+  return {
+    ...dashboard,
+    forecast: {
+      ...dashboard.forecast,
+      detected: dashboard.forecast.detected.map((row) => (row.id === id ? { ...row, reinvested } : row)),
+    },
+  };
+}
+
+function applyRecorded(dashboard: DividendDashboard, result: DividendReinvestResponse): DividendDashboard {
+  const mapRow = (row: DividendEvent) => (row.id === result.event.id ? result.event : row);
+  return {
+    ...dashboard,
+    upcoming: dashboard.upcoming.map(mapRow),
+    history: dashboard.history.map(mapRow),
+    forecast: {
+      ...dashboard.forecast,
+      detected: mergeDetected(dashboard.forecast.detected, result.event.holdingId, result.detected),
+    },
+  };
+}
+
+function applyForecast(dashboard: DividendDashboard, result: ForecastReinvestResponse): DividendDashboard {
+  return {
+    ...dashboard,
+    forecast: {
+      ...dashboard.forecast,
+      detected: mergeDetected(dashboard.forecast.detected, result.holdingId, result.detected),
+    },
+  };
+}
+
+function dividendKey(year: number): string {
+  return `dividends:${year}`;
+}
+
 export function DividendTracker({ placement }: { placement: Placement }) {
   const [year, setYear] = useState(() => Number(todayAucklandYmd().slice(0, 4)));
-  const [data, setData] = useState<DividendDashboard | null>(null);
+  const initialDividends = readPageCache<DividendDashboard>(dividendKey(Number(todayAucklandYmd().slice(0, 4))));
+  const [data, setData] = useState<DividendDashboard | null>(initialDividends ?? null);
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initialDividends == null);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [reinvestError, setReinvestError] = useState<{ id: string; message: string } | null>(null);
+  const [pendingReinvest, setPendingReinvest] = useState<string | null>(null);
   const requestRef = useRef(0);
+  const reinvestLock = useRef(false);
 
   const load = useCallback(() => {
     const ticket = ++requestRef.current;
+    const stamp = beginPageRead(dividendKey(year));
+    const cached = readPageCache<DividendDashboard>(dividendKey(year));
+    if (cached) {
+      setData(cached);
+      setLoading(false);
+    }
     return api.dividends
       .dashboard(year)
       .then((payload) => {
         if (ticket !== requestRef.current) return;
+        if (!commitPageRead(stamp, payload)) return;
         setData(payload);
         setError(null);
       })
@@ -98,7 +197,13 @@ export function DividendTracker({ placement }: { placement: Placement }) {
   }, [load]);
 
   function changeYear(next: number) {
-    setLoading(true);
+    const cached = readPageCache<DividendDashboard>(dividendKey(next));
+    if (cached) {
+      setData(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setYear(next);
   }
 
@@ -177,6 +282,7 @@ export function DividendTracker({ placement }: { placement: Placement }) {
       else await api.dividends.create(body);
       resetForm();
       setShowForm(false);
+      invalidateFinancial('dividends', 'spending', 'dashboard', 'paye', 'projections');
       await load();
     } catch (err) {
       setFormError((err as Error).message);
@@ -191,6 +297,7 @@ export function DividendTracker({ placement }: { placement: Placement }) {
     setFormError(null);
     try {
       await api.dividends.remove(event.id);
+      invalidateFinancial('dividends', 'spending', 'dashboard', 'paye', 'projections');
       if (editingId === event.id) {
         resetForm();
         setShowForm(false);
@@ -198,6 +305,74 @@ export function DividendTracker({ placement }: { placement: Placement }) {
       await load();
     } catch (err) {
       setFormError((err as Error).message);
+    }
+  }
+
+  async function onRecordedReinvest(event: DividendEvent, next: boolean) {
+    if (reinvestLock.current) return;
+    reinvestLock.current = true;
+    setReinvestError(null);
+    setPendingReinvest(event.id);
+    setData((current) => (current ? patchRecordedFlag(current, event.id, next) : current));
+    try {
+      const result = await api.dividends.setReinvest(event.id, next);
+      invalidateFinancial('dividends', 'spending', 'dashboard', 'paye', 'projections');
+      setData((current) => (current ? applyRecorded(current, result) : current));
+      if (editingId === result.event.id) {
+        setForm((prev) => ({
+          ...prev,
+          reinvested: result.event.reinvested,
+          reinvestedAmount: result.event.reinvestedAmount == null ? '' : String(result.event.reinvestedAmount),
+        }));
+      }
+      await load();
+    } catch (err) {
+      setData((current) => (current ? patchRecordedFlag(current, event.id, event.reinvested) : current));
+      setReinvestError({ id: event.id, message: (err as Error).message });
+    } finally {
+      reinvestLock.current = false;
+      setPendingReinvest(null);
+    }
+  }
+
+  async function onForecastReinvest(row: DetectedDividend, next: boolean) {
+    if (reinvestLock.current) return;
+    reinvestLock.current = true;
+    setReinvestError(null);
+    setPendingReinvest(row.id);
+    setData((current) => (current ? patchForecastFlag(current, row.id, next) : current));
+    try {
+      const result = await api.dividends.setForecastReinvest({
+        holdingId: row.holdingId,
+        paymentDate: row.paymentDate,
+        reinvested: next,
+      });
+      invalidateFinancial('dividends', 'spending', 'dashboard', 'paye', 'projections');
+      setData((current) => (current ? applyForecast(current, result) : current));
+      await load();
+    } catch (err) {
+      setData((current) => (current ? patchForecastFlag(current, row.id, row.reinvested) : current));
+      setReinvestError({ id: row.id, message: (err as Error).message });
+    } finally {
+      reinvestLock.current = false;
+      setPendingReinvest(null);
+    }
+  }
+
+  /** Reinvest every predicted payment of one holding, or go back to per-payment choices. */
+  async function onReinvestAll(holdingId: string, next: boolean) {
+    if (reinvestLock.current) return;
+    reinvestLock.current = true;
+    setReinvestError(null);
+    setPendingReinvest(`all:${holdingId}`);
+    try {
+      await api.dividends.setForecastReinvestAll({ holdingId, reinvested: next });
+      await load();
+    } catch (err) {
+      setReinvestError({ id: `all:${holdingId}`, message: (err as Error).message });
+    } finally {
+      reinvestLock.current = false;
+      setPendingReinvest(null);
     }
   }
 
@@ -228,6 +403,7 @@ export function DividendTracker({ placement }: { placement: Placement }) {
     <div className="stack" aria-label="Dividends">
       <section className="hero-card">
         {error ? <p className="banner">{error}</p> : null}
+        {reinvestError ? <p className="banner">{reinvestError.message}</p> : null}
         <p className="eyebrow">{data.year} dividend income</p>
         {yearHasTotal ? (
           <p className="hero-value">{formatNzd(data.yearIncomeNzd)}</p>
@@ -376,17 +552,30 @@ export function DividendTracker({ placement }: { placement: Placement }) {
                 </p>
                 <p className="muted small">
                   {data.forecast.detectedCount === 0
-                    ? 'No stock or ETF you hold has a published dividend to project.'
-                    : `${data.forecast.detectedCount} next payment${data.forecast.detectedCount === 1 ? '' : 's'} from published dividend history`}
-                  {data.forecast.detectedUnconvertedCount > 0
-                    ? ` · ${data.forecast.detectedUnconvertedCount} without an FX rate`
-                    : ''}
-                  . Not a market forecast.
+                    ? 'No stock or ETF you hold has a published dividend to project. Not a market forecast.'
+                    : data.forecast.detectedUnconvertedCount > 0
+                      ? `12-month total of gross cash from published dividend history. Tax is not estimated. ${data.forecast.detectedUnconvertedCount} published rows still need an FX rate before they join this NZD total. Not a market forecast.`
+                      : '12-month total of gross cash from published dividend history. Tax is not estimated. Not a market forecast.'}
                 </p>
               </div>
             </div>
             {data.forecast.detected.length > 0 ? (
-              <DetectedDividendTable rows={data.forecast.detected} />
+              <>
+                <ReinvestPlanSummary
+                  rows={data.forecast.detected}
+                  reinvestAll={new Set(data.forecast.reinvestAllHoldingIds ?? [])}
+                  pendingId={pendingReinvest}
+                  error={reinvestError}
+                  onToggle={onReinvestAll}
+                />
+                <DetectedDividendTable
+                  rows={data.forecast.detected}
+                  reinvestAll={new Set(data.forecast.reinvestAllHoldingIds ?? [])}
+                  pendingId={pendingReinvest}
+                  error={reinvestError}
+                  onReinvest={onForecastReinvest}
+                />
+              </>
             ) : null}
           </>
         )}
@@ -397,7 +586,14 @@ export function DividendTracker({ placement }: { placement: Placement }) {
         {data.upcoming.length === 0 ? (
           <p className="muted">No upcoming dividends. A future payment date is one you enter yourself.</p>
         ) : (
-          <DividendTable rows={data.upcoming} onEdit={openEdit} onDelete={onDelete} />
+          <DividendTable
+            rows={data.upcoming}
+            pendingId={pendingReinvest}
+            error={reinvestError}
+            onEdit={openEdit}
+            onDelete={onDelete}
+            onReinvest={onRecordedReinvest}
+          />
         )}
       </section>
 
@@ -406,7 +602,14 @@ export function DividendTracker({ placement }: { placement: Placement }) {
         {data.history.length === 0 ? (
           <p className="muted">No paid dividends recorded yet.</p>
         ) : (
-          <DividendTable rows={data.history} onEdit={openEdit} onDelete={onDelete} />
+          <DividendTable
+            rows={data.history}
+            pendingId={pendingReinvest}
+            error={reinvestError}
+            onEdit={openEdit}
+            onDelete={onDelete}
+            onReinvest={onRecordedReinvest}
+          />
         )}
       </section>
 
@@ -570,40 +773,150 @@ export function DividendTracker({ placement }: { placement: Placement }) {
   );
 }
 
-function DetectedDividendTable({ rows }: { rows: DetectedDividend[] }) {
+/**
+ * One line per holding: switch on "reinvest every payment" and see what it adds over the
+ * forecast — each payment buys more of the same holding, so later payments grow.
+ */
+function ReinvestPlanSummary({
+  rows,
+  reinvestAll,
+  pendingId,
+  error,
+  onToggle,
+}: {
+  rows: DetectedDividend[];
+  reinvestAll: Set<string>;
+  pendingId: string | null;
+  error: { id: string; message: string } | null;
+  onToggle: (holdingId: string, reinvested: boolean) => void;
+}) {
+  const byHolding = new Map<string, DetectedDividend[]>();
+  for (const row of rows) byHolding.set(row.holdingId, [...(byHolding.get(row.holdingId) ?? []), row]);
   return (
-    <div className="table-wrap">
+    <ul className="security-list reinvest-plans" aria-label="Reinvest by holding">
+      {[...byHolding].map(([holdingId, list]) => {
+        const sorted = [...list].sort((a, b) => a.paymentDate.localeCompare(b.paymentDate));
+        const first = sorted[0];
+        const last = sorted[sorted.length - 1];
+        const all = reinvestAll.has(holdingId);
+        const totalNzd = sorted.reduce((sum, r) => sum + (r.amountNzd ?? 0), 0);
+        const extraNzd = sorted.reduce((sum, r) => sum + (r.reinvestExtraNzd ?? 0), 0);
+        const lastAdded = last.reinvestment.status === 'applied' ? last.reinvestment.sharesAdded ?? 0 : 0;
+        const endShares = last.projectedShares + lastAdded;
+        const addedShares = endShares - first.ownedShares;
+        const growth = first.amount > 0 ? (last.amount / first.amount - 1) * 100 : 0;
+        const unavailable = sorted.find((r) => r.reinvested && r.reinvestment.status === 'unavailable');
+        return (
+          <li key={holdingId}>
+            <div>
+              <strong>{first.symbol}</strong> <span className="muted small">· {first.name}</span>
+              <div className="muted small">
+                {sorted.length} payment{sorted.length === 1 ? '' : 's'} over the next 12 months · {smallNzd(totalNzd)} gross
+              </div>
+              {extraNzd > 0 || addedShares > 1e-9 ? (
+                <div className="small reinvest-gain">
+                  Reinvesting adds {smallNzd(extraNzd)} over 12 months: each payment grows from{' '}
+                  {formatPerShare(first.amount, first.currency)} to {formatPerShare(last.amount, last.currency)}
+                  {growth > 0.005 ? ` (+${growth.toFixed(1)}%)` : ''}, ending with {shareCount(endShares)} shares
+                  (+{shareCount(addedShares)}).
+                </div>
+              ) : null}
+              {unavailable ? <div className="muted small">{unavailable.reinvestment.note}</div> : null}
+              {error?.id === `all:${holdingId}` ? <p className="banner reinvest-note">{error.message}</p> : null}
+            </div>
+            <div className="reinvest-plan-toggle">
+              <ReinvestToggle
+                checked={all}
+                disabled={pendingId !== null}
+                label={`Reinvest every ${first.symbol} payment`}
+                onChange={(next) => onToggle(holdingId, next)}
+              />
+              <span className="muted small">every payment</span>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function DetectedDividendTable({
+  rows,
+  reinvestAll,
+  pendingId,
+  error,
+  onReinvest,
+}: {
+  rows: DetectedDividend[];
+  reinvestAll: Set<string>;
+  pendingId: string | null;
+  error: { id: string; message: string } | null;
+  onReinvest: (row: DetectedDividend, reinvested: boolean) => void;
+}) {
+  return (
+    // Scrolls inside the forecast panel instead of stretching it (header stays visible).
+    <div className="table-wrap table-wrap--scroll" tabIndex={0} aria-label="Projected dividends">
       <table className="data-table">
         <thead>
           <tr>
             <th>Next date</th>
             <th>Holding</th>
             <th>Per share</th>
-            <th>Shares</th>
-            <th>Cash amount</th>
+            <th>Shares you own</th>
+            <th>Gross cash</th>
             <th>NZD</th>
+            <th>Reinvest</th>
             <th>Where this comes from</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.holdingId}>
-              <td className="muted small">{row.paymentDate}</td>
-              <td>
-                {row.symbol} · {row.name}
-              </td>
-              <td className="money">{formatPerShare(row.dividendPerShare, row.currency)}</td>
-              <td className="money">{row.sharesHeld}</td>
-              <td className="money">{moneyOrDash(row.amount, row.currency)}</td>
-              <td className="amt-in money">{row.amountNzd == null ? '—' : formatNzd(row.amountNzd)}</td>
-              <td className="muted small">
-                {row.basis === 'published'
-                  ? `Yahoo Finance published this date and this cash amount (${row.historyCount} published dividend${row.historyCount === 1 ? '' : 's'} on file).`
-                  : `Projected by repeating ${cadencePhrase(row.intervalMonths)} across ${row.historyCount} published dividends. Last cash dividend ${formatPerShare(row.dividendPerShare, row.currency)} on ${row.lastPaidDate}.`}
-                {' '}Tax is not estimated. Not a market forecast.
-              </td>
-            </tr>
-          ))}
+          {rows.map((row) => {
+            const note = reinvestNote(row.reinvestment);
+            return (
+              <tr key={row.id}>
+                <td className="muted small">{row.paymentDate}</td>
+                <td>
+                  {row.symbol} · {row.name}
+                </td>
+                <td className="money">{formatPerShare(row.dividendPerShare, row.currency)}</td>
+                <td>
+                  {row.ownedShares}
+                  {row.projectedShares !== row.ownedShares ? (
+                    <div className="muted small reinvest-note">
+                      Forecast uses {shareCount(row.projectedShares)}
+                      {row.reinvestExtraShares > 1e-9 ? ` (+${shareCount(row.reinvestExtraShares)} from reinvesting)` : ''}
+                    </div>
+                  ) : null}
+                </td>
+                <td className="money">{moneyOrDash(row.amount, row.currency)}</td>
+                <td className="amt-in money">
+                  {row.amountNzd == null ? '—' : smallNzd(row.amountNzd)}
+                  {row.reinvestExtraNzd != null && row.reinvestExtraNzd > 0 ? (
+                    <div className="muted small reinvest-note">+{smallNzd(row.reinvestExtraNzd)} from reinvesting</div>
+                  ) : null}
+                </td>
+                <td>
+                  <ReinvestToggle
+                    checked={row.reinvested}
+                    disabled={pendingId !== null || reinvestAll.has(row.holdingId)}
+                    label={`Reinvest ${row.symbol} ${row.paymentDate}`}
+                    onChange={(next) => onReinvest(row, next)}
+                  />
+                  {reinvestAll.has(row.holdingId) ? (
+                    <p className="muted small reinvest-note">Every {row.symbol} payment is reinvested (switch above).</p>
+                  ) : null}
+                  {note ? <p className="muted small reinvest-note">{note}</p> : null}
+                  {error?.id === row.id ? <p className="banner reinvest-note">{error.message}</p> : null}
+                </td>
+                <td className="muted small">
+                  {row.basis === 'published'
+                    ? `Yahoo Finance published this date and this gross cash (${row.historyCount} published dividend${row.historyCount === 1 ? '' : 's'} on file).`
+                    : `Projected by repeating ${cadencePhrase(row.intervalMonths)} across ${row.historyCount} published dividends. Last cash dividend ${formatPerShare(row.dividendPerShare, row.currency)} on ${row.lastPaidDate}.`}
+                  {' '}Tax is not estimated. Not a market forecast.
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -612,12 +925,18 @@ function DetectedDividendTable({ rows }: { rows: DetectedDividend[] }) {
 
 function DividendTable({
   rows,
+  pendingId,
+  error,
   onEdit,
   onDelete,
+  onReinvest,
 }: {
   rows: DividendEvent[];
+  pendingId: string | null;
+  error: { id: string; message: string } | null;
   onEdit: (event: DividendEvent) => void;
   onDelete: (event: DividendEvent) => void;
+  onReinvest: (event: DividendEvent, reinvested: boolean) => void;
 }) {
   return (
     <div className="table-wrap">
@@ -634,45 +953,86 @@ function DividendTable({
             <th>Net</th>
             <th>FX to NZD</th>
             <th>Net NZD</th>
-            <th>Reinvested</th>
+            <th>Reinvest</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.id}>
-              <td className="muted small">{row.paymentDate}</td>
-              <td>
-                {row.symbol ? `${row.symbol} · ` : ''}
-                {row.companyName}
-              </td>
-              <td className="money">{row.sharesHeld}</td>
-              <td className="money">{moneyOrDash(row.dividendPerShare, row.currency)}</td>
-              <td className="money">{moneyOrDash(row.grossDividend, row.currency)}</td>
-              <td className="money">{moneyOrDash(row.taxWithholding, row.currency)}</td>
-              <td className="money">{moneyOrDash(row.imputationCredits, row.currency)}</td>
-              <td className="money">{moneyOrDash(row.netDividend, row.currency)}</td>
-              <td className="muted small">{row.fxRateToNzd == null ? '—' : row.fxRateToNzd}</td>
-              <td className="amt-in money">{row.netNzd == null ? '—' : formatNzd(row.netNzd)}</td>
-              <td className="muted small">
-                {row.reinvested
-                  ? `Yes${row.reinvestedAmount != null ? ` · ${moneyOrDash(row.reinvestedAmount, row.currency)}` : ''}`
-                  : 'No'}
-              </td>
-              <td>
-                <div className="row gap" style={{ marginTop: 0 }}>
-                  <button type="button" className="btn small" onClick={() => onEdit(row)}>
-                    Edit
-                  </button>
-                  <button type="button" className="btn small danger" onClick={() => onDelete(row)}>
-                    Delete
-                  </button>
-                </div>
-              </td>
-            </tr>
-          ))}
+          {rows.map((row) => {
+            const note = reinvestNote(row.reinvestment);
+            const label = row.symbol ? `${row.symbol} · ${row.companyName}` : row.companyName;
+            return (
+              <tr key={row.id}>
+                <td className="muted small">{row.paymentDate}</td>
+                <td>
+                  {row.symbol ? `${row.symbol} · ` : ''}
+                  {row.companyName}
+                </td>
+                <td className="money">{row.sharesHeld}</td>
+                <td className="money">{moneyOrDash(row.dividendPerShare, row.currency)}</td>
+                <td className="money">{moneyOrDash(row.grossDividend, row.currency)}</td>
+                <td className="money">{moneyOrDash(row.taxWithholding, row.currency)}</td>
+                <td className="money">{moneyOrDash(row.imputationCredits, row.currency)}</td>
+                <td className="money">{moneyOrDash(row.netDividend, row.currency)}</td>
+                <td className="muted small">{row.fxRateToNzd == null ? '—' : row.fxRateToNzd}</td>
+                <td className="amt-in money">{row.netNzd == null ? '—' : formatNzd(row.netNzd)}</td>
+                <td>
+                  <ReinvestToggle
+                    checked={row.reinvested}
+                    disabled={pendingId !== null}
+                    label={`Reinvest ${label} ${row.paymentDate}`}
+                    onChange={(next) => onReinvest(row, next)}
+                  />
+                  {row.reinvestedAmount != null ? (
+                    <p className="muted small reinvest-note">{moneyOrDash(row.reinvestedAmount, row.currency)}</p>
+                  ) : null}
+                  {note ? <p className="muted small reinvest-note">{note}</p> : null}
+                  {error?.id === row.id ? <p className="banner reinvest-note">{error.message}</p> : null}
+                </td>
+                <td>
+                  <div className="row gap" style={{ marginTop: 0 }}>
+                    <button type="button" className="btn small" onClick={() => onEdit(row)}>
+                      Edit
+                    </button>
+                    <button type="button" className="btn small danger" onClick={() => onDelete(row)}>
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
+  );
+}
+
+function ReinvestToggle({
+  checked,
+  disabled,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  label: string;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={checked ? 'reinvest-toggle on' : 'reinvest-toggle'}
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+    >
+      <span>Reinvest</span>
+      <span className="reinvest-toggle-track" aria-hidden="true">
+        <span className="reinvest-toggle-knob" />
+      </span>
+    </button>
   );
 }

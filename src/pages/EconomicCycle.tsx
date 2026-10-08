@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, formatAuckland } from '../api/client';
+import { abandonPageRead, beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
+import { usePageCacheValue } from '../lib/usePageCache';
 import { PhaseNews } from '../components/PhaseNews';
 import type { EconomicCycleResponse, EconomicIndicatorCard } from '../types/economy';
 import { isCurrentCycleRequest, nextCycleLoad, shouldApplyCyclePayload } from './cycleLoad';
@@ -97,13 +99,23 @@ function nextQuarter(period: string): string | null {
   return `${year}-Q${quarter}`;
 }
 
+function economyKey(country: string): string {
+  return `economy:${country}`;
+}
+
 export function EconomicCycle() {
   const [country, setCountry] = useState('NZ');
-  const [data, setData] = useState<EconomicCycleResponse | null>(null);
+  const initialCycle = readPageCache<EconomicCycleResponse>(economyKey('NZ'));
+  const cachedCycle = usePageCacheValue<EconomicCycleResponse>(economyKey(country));
+  const [data, setData] = useState<EconomicCycleResponse | null>(initialCycle ?? null);
+  const resolved =
+    (data?.country === country ? data : null) ??
+    (cachedCycle?.country === country ? cachedCycle : null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initialCycle == null);
   const requestSeq = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
 
   const load = useCallback((refresh = false) => {
     const ticket = nextCycleLoad(requestSeq.current, country);
@@ -111,10 +123,20 @@ export function EconomicCycle() {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    const stamp = beginPageRead(economyKey(ticket.country));
+    const cached = readPageCache<EconomicCycleResponse>(economyKey(ticket.country));
+    if (!refresh && cached?.country === ticket.country) {
+      setData(cached);
+      setLoading(false);
+    }
     return api.economy
       .cycle({ refresh, country: ticket.country, signal: controller.signal })
       .then((payload) => {
-        if (!isCurrentCycleRequest(ticket, requestSeq.current)) return;
+        // Keep the extract even if this page has unmounted or a newer load
+        // started. Leaving the page must not throw the response away.
+        if (payload.country === ticket.country) commitPageRead(stamp, payload);
+        else abandonPageRead(stamp);
+        if (!mountedRef.current || !isCurrentCycleRequest(ticket, requestSeq.current)) return;
         if (!shouldApplyCyclePayload(ticket, requestSeq.current, payload.country)) {
           setError('The extract was for a different country, so it was not shown.');
           return;
@@ -123,23 +145,24 @@ export function EconomicCycle() {
         setError(null);
       })
       .catch((err: Error) => {
-        if (!isCurrentCycleRequest(ticket, requestSeq.current) || controller.signal.aborted) return;
+        abandonPageRead(stamp);
+        if (!mountedRef.current || !isCurrentCycleRequest(ticket, requestSeq.current) || controller.signal.aborted) return;
         setError(err.message);
       })
       .finally(() => {
-        if (isCurrentCycleRequest(ticket, requestSeq.current)) setLoading(false);
+        if (mountedRef.current && isCurrentCycleRequest(ticket, requestSeq.current)) setLoading(false);
       });
   }, [country]);
 
   useEffect(() => {
+    mountedRef.current = true;
     void load(false);
     return () => {
-      requestSeq.current += 1;
-      abortRef.current?.abort();
+      mountedRef.current = false;
     };
   }, [load]);
 
-  if (error && !data) {
+  if (error && !resolved) {
     return (
       <div className="panel warn econ-page">
         <h2 className="page-title">Economic cycle</h2>
@@ -148,14 +171,14 @@ export function EconomicCycle() {
     );
   }
 
-  const options = data?.countries?.length
-    ? data.countries
+  const options = resolved?.countries?.length
+    ? resolved.countries
     : [
         { code: 'NZ', name: 'New Zealand' },
         { code: 'US', name: 'United States' },
       ];
   const selectedName = options.find((option) => option.code === country)?.name ?? country;
-  const showing = data && data.country === country ? data : null;
+  const showing = resolved;
 
   if (!showing) {
     return (
@@ -165,7 +188,13 @@ export function EconomicCycle() {
           options={options}
           disabled={loading}
           onChange={(next) => {
-            setLoading(true);
+            const cached = readPageCache<EconomicCycleResponse>(economyKey(next));
+            if (cached?.country === next) {
+              setData(cached);
+              setLoading(false);
+            } else {
+              setLoading(true);
+            }
             setCountry(next);
           }}
         />
@@ -205,7 +234,13 @@ export function EconomicCycle() {
           options={options}
           disabled={loading}
           onChange={(next) => {
-            setLoading(true);
+            const cached = readPageCache<EconomicCycleResponse>(economyKey(next));
+            if (cached?.country === next) {
+              setData(cached);
+              setLoading(false);
+            } else {
+              setLoading(true);
+            }
             setCountry(next);
           }}
         />

@@ -33,7 +33,13 @@ export type CharityDonationLink = {
   receiptUrl?: string | null;
 };
 
+/** Pay type selector on the PAYE page. Output-paid types are KAN-70. */
+export type PayePayType = 'salary' | 'hourly' | 'piece' | 'schedular' | 'share_of_catch';
+
+const PAY_TYPES: PayePayType[] = ['salary', 'hourly', 'piece', 'schedular', 'share_of_catch'];
+
 export type PayePrefs = {
+  payType: PayePayType;
   amount: string;
   frequency: PayFrequency;
   hoursPerWeek: string;
@@ -73,6 +79,7 @@ export function defaultInvestingCreditDrafts(): PersistedCreditDraft[] {
 
 export function defaultPayePrefs(): PayePrefs {
   return {
+    payType: 'salary',
     amount: '75000',
     frequency: 'year',
     hoursPerWeek: String(PAYE_DEFAULT_HOURS_PER_WEEK),
@@ -128,6 +135,12 @@ export function normalizePayePrefs(raw: unknown): PayePrefs {
   const freqs: PayFrequency[] = ['hour', 'week', 'fortnight', 'month', 'year'];
   if (typeof o.frequency === 'string' && freqs.includes(o.frequency as PayFrequency)) {
     base.frequency = o.frequency as PayFrequency;
+  }
+  if (typeof o.payType === 'string' && PAY_TYPES.includes(o.payType as PayePayType)) {
+    base.payType = o.payType as PayePayType;
+  } else {
+    // Saved before the pay type selector: an hourly frequency meant hourly pay.
+    base.payType = base.frequency === 'hour' ? 'hourly' : 'salary';
   }
   if (typeof o.hoursPerWeek === 'string') base.hoursPerWeek = o.hoursPerWeek;
   if (o.employment === 'primary' || o.employment === 'secondary') base.employment = o.employment;

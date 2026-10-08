@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, formatNzd } from '../api/client';
+import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import {
   calculatePaye,
   periodiseBreakdown,
@@ -12,14 +13,19 @@ import {
   mergePortfolioInvestingCredits,
   PAYE_TAX_YEAR_END,
   PAYE_TAX_YEAR_START,
+  type PortfolioIncomeLike,
 } from '../lib/payeInvestingFromPortfolio';
 import {
   loadPayePrefs,
   savePayePrefs,
+  type PayePayType,
   type CharityDonationLink,
   type PersistedCreditDraft,
 } from '../lib/payePrefs';
 import { charityLinksTotal } from '../lib/charityPayeLink';
+import { OutputPayInputs, OutputPayResults, SavedPaySources } from '../components/OutputPay';
+import type { OutputPayType, PieceRatePayeOptions } from '../lib/outputPayCalc';
+import { loadOutputPayPrefs, saveOutputPayPrefs, type OutputPayPrefs } from '../lib/outputPayPrefs';
 import {
   ACC_MAX_EARNINGS,
   ACC_MAX_LEVY,
@@ -36,12 +42,26 @@ import {
   INVESTING_CREDIT_KIND_OPTIONS,
   RATE_SOURCES,
   STUDENT_LOAN_ANNUAL_THRESHOLD,
+  SCHEDULAR_SOURCES,
   STUDENT_LOAN_RATE,
+  payTaxYearRates,
   type InvestingCreditKind,
 } from '../lib/payeRates';
 
+const PAY_TYPES: { value: PayePayType; label: string }[] = [
+  { value: 'salary', label: 'Salary / wages' },
+  { value: 'hourly', label: 'Hourly' },
+  { value: 'piece', label: 'Piece rate (employee)' },
+  { value: 'schedular', label: 'Contract (schedular)' },
+  { value: 'share_of_catch', label: 'Share of catch' },
+];
+
+function isOutputPayType(t: PayePayType): t is OutputPayType {
+  return t === 'piece' || t === 'schedular' || t === 'share_of_catch';
+}
+
+/** Salary frequencies; hourly pay has its own pay type. */
 const FREQUENCIES: { value: PayFrequency; label: string }[] = [
-  { value: 'hour', label: 'Hourly' },
   { value: 'week', label: 'Weekly' },
   { value: 'fortnight', label: 'Fortnightly' },
   { value: 'month', label: 'Monthly' },
@@ -175,6 +195,16 @@ function CharityLinksFromBudget() {
 export function Paye() {
 
   const initial = useMemo(() => loadPayePrefs(), []);
+  const rates = payTaxYearRates();
+
+  const [payType, setPayType] = useState<PayePayType>(initial.payType);
+  const [outputPrefs, setOutputPrefs] = useState<OutputPayPrefs>(() => loadOutputPayPrefs());
+  useEffect(() => saveOutputPayPrefs(outputPrefs), [outputPrefs]);
+  const setOutput = <K extends keyof OutputPayPrefs>(key: K, value: OutputPayPrefs[K]) =>
+    setOutputPrefs((prev) => ({ ...prev, [key]: value }));
+  const outputType = isOutputPayType(payType) ? payType : null;
+  // Contractors and share fishers are not on PAYE: no KiwiSaver / PAYE deductions sections.
+  const showPayeSections = outputType == null || outputType === 'piece';
 
   const [amount, setAmount] = useState(initial.amount);
   const [frequency, setFrequency] = useState<PayFrequency>(initial.frequency);
@@ -184,9 +214,18 @@ export function Paye() {
   const [otherAnnual, setOtherAnnual] = useState(initial.otherAnnual);
 
   const [kiwiSaverOptIn, setKiwiSaverOptIn] = useState(initial.kiwiSaverOptIn);
-  const [ksRate, setKsRate] = useState(initial.ksRate);
-  const [ksCustom, setKsCustom] = useState(initial.ksCustom);
-  const [ksRateReady, setKsRateReady] = useState(false);
+  const [ksRate, setKsRate] = useState(() => {
+    const cached = readPageCache<{ employeeRatePct: number }>('paye:ks-rate');
+    return cached ? String(cached.employeeRatePct) : initial.ksRate;
+  });
+  const [ksCustom, setKsCustom] = useState(() => {
+    const cached = readPageCache<{ employeeRatePct: number }>('paye:ks-rate');
+    if (!cached) return initial.ksCustom;
+    return !KIWISAVER_EMPLOYEE_RATE_CHOICES.some((choice) => choice === cached.employeeRatePct);
+  });
+  const [ksRateReady, setKsRateReady] = useState(
+    () => readPageCache<{ employeeRatePct: number }>('paye:ks-rate') != null,
+  );
   const [ksEmployerRate, setKsEmployerRate] = useState(initial.ksEmployerRate);
   const [salarySacrifice, setSalarySacrifice] = useState(initial.salarySacrifice);
 
@@ -198,7 +237,11 @@ export function Paye() {
   const [charityDonationsAnnual, setCharityDonationsAnnual] = useState(
     initial.charityDonationsAnnual,
   );
-  const [extraCreditDrafts, setExtraCreditDrafts] = useState<CreditDraft[]>(initial.extraCredits);
+  const [extraCreditDrafts, setExtraCreditDrafts] = useState<CreditDraft[]>(() => {
+    const rows = readPageCache<PortfolioIncomeLike[]>('paye:income');
+    if (!rows) return initial.extraCredits;
+    return mergePortfolioInvestingCredits(initial.extraCredits, investingCreditsFromPortfolioIncome(rows));
+  });
   const [showSources, setShowSources] = useState(false);
 
   // Persist last inputs (incl. investing + charity credits) and re-apply on next load.
@@ -206,6 +249,7 @@ export function Paye() {
   useEffect(() => {
     const existing = loadPayePrefs();
     savePayePrefs({
+      payType,
       amount,
       frequency,
       hoursPerWeek,
@@ -227,6 +271,7 @@ export function Paye() {
       extraCredits: extraCreditDrafts,
     });
   }, [
+    payType,
     amount,
     frequency,
     hoursPerWeek,
@@ -247,14 +292,16 @@ export function Paye() {
     extraCreditDrafts,
   ]);
 
-  // Saved employee rate for this account. 3% is the starting choice when none is saved.
+  // Saved employee rate for this account. The statutory minimum is the starting choice when none is saved.
   useEffect(() => {
     let cancelled = false;
+    const stamp = beginPageRead('paye:ks-rate');
     api.settings
       .getKiwiSaverEmployeeRate()
       .then((row) => {
         if (cancelled) return;
         const rate = row.employeeRatePct;
+        if (!commitPageRead(stamp, { employeeRatePct: rate })) return;
         const offered = KIWISAVER_EMPLOYEE_RATE_CHOICES.some((choice) => choice === rate);
         setKsRate(String(rate));
         setKsCustom(!offered);
@@ -284,10 +331,12 @@ export function Paye() {
   // Plain income without explicit credit wording → add nothing (never invent RWT).
   useEffect(() => {
     let cancelled = false;
+    const stamp = beginPageRead('paye:income');
     api.income
       .list({ from: PAYE_TAX_YEAR_START, to: PAYE_TAX_YEAR_END })
       .then((rows) => {
         if (cancelled) return;
+        if (!commitPageRead(stamp, rows)) return;
         const suggested = investingCreditsFromPortfolioIncome(rows);
         setExtraCreditDrafts((prev) => mergePortfolioInvestingCredits(prev, suggested));
       })
@@ -307,12 +356,12 @@ export function Paye() {
     ? Number(ksRate) || 0
     : Number(ksRate) || KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE;
 
-  const result = useMemo(() => {
-    if (!hasIncome) return null;
-    return calculatePaye({
-      amount: amountNum,
-      frequency,
-      hoursPerWeek: hours,
+  const effectiveFrequency: PayFrequency =
+    payType === 'hourly' ? 'hour' : frequency === 'hour' ? 'year' : frequency;
+
+  // Everything the PAYE engine needs except the pay amount; shared with piece rate.
+  const payeOptions = useMemo<PieceRatePayeOptions>(
+    () => ({
       employment,
       secondaryTotalAnnualIncome: Number(secondaryTotal) || 0,
       otherAnnualGross: Number(otherAnnual) || 0,
@@ -325,27 +374,34 @@ export function Paye() {
       payrollGivingAnnual: payrollGivingOn ? Number(payrollGivingAnnual) || 0 : 0,
       charityDonationsAnnual: charityDonationsOn ? Number(charityDonationsAnnual) || 0 : 0,
       extraCredits: draftsToExtraCredits(extraCreditDrafts),
+    }),
+    [
+      employment,
+      secondaryTotal,
+      otherAnnual,
+      kiwiSaverOptIn,
+      employeeRatePct,
+      ksEmployerRate,
+      salarySacrifice,
+      studentLoan,
+      ietc,
+      payrollGivingOn,
+      payrollGivingAnnual,
+      charityDonationsOn,
+      charityDonationsAnnual,
+      extraCreditDrafts,
+    ],
+  );
+
+  const result = useMemo(() => {
+    if (!hasIncome || outputType) return null;
+    return calculatePaye({
+      ...payeOptions,
+      amount: amountNum,
+      frequency: effectiveFrequency,
+      hoursPerWeek: hours,
     });
-  }, [
-    hasIncome,
-    amountNum,
-    frequency,
-    hours,
-    employment,
-    secondaryTotal,
-    otherAnnual,
-    kiwiSaverOptIn,
-    employeeRatePct,
-    ksEmployerRate,
-    salarySacrifice,
-    studentLoan,
-    ietc,
-    payrollGivingOn,
-    payrollGivingAnnual,
-    charityDonationsOn,
-    charityDonationsAnnual,
-    extraCreditDrafts,
-  ]);
+  }, [hasIncome, outputType, amountNum, effectiveFrequency, hours, payeOptions]);
 
   const periods = result ? periodiseBreakdown(result, hours) : null;
 
@@ -366,11 +422,30 @@ export function Paye() {
             paye.net.nz
           </a>
           ; UI matches this app. Annual progressive model — IRD weekly tables can differ slightly.
+          Paid by output? Choose piece rate, contract (schedular) or share of catch.
         </p>
 
         <div className="form-grid">
           <label>
-            Gross income
+            Pay type
+            <select
+              value={payType}
+              onChange={(e) => {
+                const next = e.target.value as PayePayType;
+                setPayType(next);
+                if (next === 'salary' && frequency === 'hour') setFrequency('year');
+              }}
+            >
+              {PAY_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {outputType == null && (
+          <label>
+            {payType === 'hourly' ? 'Hourly rate' : 'Gross income'}
             <input
               type="number"
               min={0}
@@ -378,13 +453,15 @@ export function Paye() {
               inputMode="decimal"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              placeholder="e.g. 75000"
+              placeholder={payType === 'hourly' ? 'e.g. 32' : 'e.g. 75000'}
             />
           </label>
+          )}
+          {payType === 'salary' && (
           <label>
             Frequency
             <select
-              value={frequency}
+              value={effectiveFrequency}
               onChange={(e) => setFrequency(e.target.value as PayFrequency)}
             >
               {FREQUENCIES.map((f) => (
@@ -394,6 +471,8 @@ export function Paye() {
               ))}
             </select>
           </label>
+          )}
+          {outputType == null && (
           <label>
             Hours / week
             <input
@@ -405,6 +484,8 @@ export function Paye() {
               onChange={(e) => setHoursPerWeek(e.target.value)}
             />
           </label>
+          )}
+          {showPayeSections && (
           <label>
             Employment
             <select
@@ -415,9 +496,14 @@ export function Paye() {
               <option value="secondary">Secondary</option>
             </select>
           </label>
+          )}
         </div>
 
-        {employment === 'secondary' && (
+        {outputType && (
+          <OutputPayInputs payType={outputType} prefs={outputPrefs} set={setOutput} rates={rates} />
+        )}
+
+        {showPayeSections && employment === 'secondary' && (
           <div className="form-grid" style={{ marginTop: '0.75rem' }}>
             <label className="span-2">
               Estimated annual income from <strong>all</strong> sources
@@ -447,6 +533,8 @@ export function Paye() {
         )}
       </section>
 
+      {showPayeSections && (
+      <>
       <section className="panel">
         <h3>KiwiSaver</h3>
         <label className="field checkbox-field" style={{ marginTop: '0.5rem' }}>
@@ -513,7 +601,7 @@ export function Paye() {
               />
               <span className="muted small">
                 Statutory minimum {KIWISAVER_EMPLOYER_MIN_RATE}% from 1 Apr 2026 (not deducted from
-                take-home unless salary sacrifice). Your employee rate is saved for this account.
+                take-home unless salary sacrifice). Your employee rate is saved for this account.{' '}
                 {KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE}% is the starting choice. The contribution
                 is the gross pay you enter times that rate. Not advice.
               </span>
@@ -648,7 +736,7 @@ export function Paye() {
         </div>
         <p className="muted small" style={{ marginTop: '0.35rem' }}>
           IRD has <strong>no payday PAYE “investing credit”</strong> field. Imputation, RWT, PIE,
-          and foreign tax credits from investments offset tax on your <em>annual assessment</em>
+          and foreign tax credits from investments offset tax on your <em>annual assessment</em>{' '}
           (refund / less tax to pay). Enter annual NZD from statements or myIR — we do not invent
           amounts. Credits you apply are <strong>persisted</strong>; portfolio/income only
           auto-fills from savings interest or dividends only when a real income/transaction record
@@ -757,7 +845,10 @@ export function Paye() {
         })}
       </section>
 
-      {!hasIncome && (
+      </>
+      )}
+
+      {outputType == null && !hasIncome && (
         <section className="panel">
           <p className="muted" style={{ margin: 0 }}>
             Enter a gross income above to calculate take-home pay.
@@ -863,6 +954,20 @@ export function Paye() {
         </>
       )}
 
+      {outputType && (
+        <>
+          <OutputPayResults payType={outputType} prefs={outputPrefs} payeOptions={payeOptions} rates={rates} />
+          <SavedPaySources
+            payType={outputType}
+            prefs={outputPrefs}
+            setPrefs={setOutputPrefs}
+            payeOptions={payeOptions}
+            rates={rates}
+            onLoadPayType={setPayType}
+          />
+        </>
+      )}
+
       <section className="panel">
         <div className="panel-heading">
           <h3>Rates in use</h3>
@@ -901,15 +1006,17 @@ export function Paye() {
         </div>
         <p className="muted small" style={{ marginTop: '0.75rem' }}>
           ACC {(ACC_RATE * 100).toFixed(2)}% on liable earnings up to {money(ACC_MAX_EARNINGS)}{' '}
-          (max levy {money(ACC_MAX_LEVY)}). KiwiSaver employee rate saved for this account
+          (max levy {money(ACC_MAX_LEVY)}). KiwiSaver employee rate saved for this account{' '}
           (starting choice {KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE}%). Statutory rates from 1 April
           2026: {KIWISAVER_EMPLOYEE_RATES.map((r) => `${r}%`).join(', ')} (IRD minimum{' '}
-          {KIWISAVER_DEFAULT_EMPLOYEE_RATE}%). Full notes in{' '}
+          {KIWISAVER_DEFAULT_EMPLOYEE_RATE}%). Adult minimum wage {money(rates.minimumWageAdultHourly)}/h;
+          holiday pay with wages {Math.round(rates.holidayPayPaygRate * 100)}%; schedular withholding from IRD&apos;s
+          IR330C. Full notes in{' '}
           <code>docs/PAYE_RATES.md</code>.
         </p>
         {showSources && (
           <ul className="muted small" style={{ marginTop: '0.75rem', paddingLeft: '1.1rem' }}>
-            {RATE_SOURCES.map((s) => (
+            {[...RATE_SOURCES, ...SCHEDULAR_SOURCES].map((s) => (
               <li key={s.url}>
                 <a href={s.url} target="_blank" rel="noreferrer">
                   {s.label}

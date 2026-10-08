@@ -30,8 +30,20 @@ import {
   type CategoryType,
 } from '../lib/categoryTypes';
 import { CategoryTypeToggle } from '../components/CategoryTypeToggle';
+import { SecurityPanel } from '../components/SecurityPanel';
+import { BusinessDetailsPanel } from '../components/BusinessDetailsPanel';
+import {
+  beginPageRead,
+  commitPageRead,
+  invalidateAfterAkahuLinkChange,
+  invalidateAfterExternalSync,
+  invalidateFinancial,
+  portfolioSyncChanged,
+  readPageCache,
+  txnSyncChanged,
+} from '../lib/pageDataCache';
 
-type SettingsTab = 'account' | 'categories';
+type SettingsTab = 'account' | 'security' | 'business' | 'categories';
 
 type TxCategory = {
   id: string;
@@ -57,7 +69,13 @@ export function Settings() {
   const tabParam = searchParams.get('tab');
   // Akahu OAuth returns to /settings?akahu=… — open Categories tab so the handler mounts
   const tab: SettingsTab =
-    searchParams.get('akahu') || tabParam === 'categories' ? 'categories' : 'account';
+    searchParams.get('akahu') || tabParam === 'categories'
+      ? 'categories'
+      : tabParam === 'security'
+        ? 'security'
+        : tabParam === 'business'
+          ? 'business'
+          : 'account';
 
   const setTab = (next: SettingsTab) => {
     const params = new URLSearchParams(searchParams);
@@ -80,6 +98,22 @@ export function Settings() {
           </button>
           <button
             type="button"
+            className={tab === 'security' ? 'settings-side-link active' : 'settings-side-link'}
+            onClick={() => setTab('security')}
+            aria-current={tab === 'security' ? 'page' : undefined}
+          >
+            Security
+          </button>
+          <button
+            type="button"
+            className={tab === 'business' ? 'settings-side-link active' : 'settings-side-link'}
+            onClick={() => setTab('business')}
+            aria-current={tab === 'business' ? 'page' : undefined}
+          >
+            Business
+          </button>
+          <button
+            type="button"
             className={tab === 'categories' ? 'settings-side-link active' : 'settings-side-link'}
             onClick={() => setTab('categories')}
             aria-current={tab === 'categories' ? 'page' : undefined}
@@ -89,7 +123,15 @@ export function Settings() {
         </nav>
       </aside>
       <div className="settings-main stack">
-        {tab === 'account' ? <AccountPanel /> : <CategoriesPanel searchParams={searchParams} setSearchParams={setSearchParams} />}
+        {tab === 'account' ? (
+          <AccountPanel />
+        ) : tab === 'security' ? (
+          <SecurityPanel />
+        ) : tab === 'business' ? (
+          <BusinessDetailsPanel />
+        ) : (
+          <CategoriesPanel searchParams={searchParams} setSearchParams={setSearchParams} />
+        )}
       </div>
     </div>
   );
@@ -446,7 +488,7 @@ function AccountPanel() {
         <h3>Delete account</h3>
         <p className="muted small">
           Permanently removes this local account, your sessions, profile picture, preferences, and
-          finance data scoped to you. Other users&apos; data is not touched. Shared app data
+          finance data scoped to you. Other users&apos; data is not touched. Shared app data{' '}
           (transaction categories, GoMining settings, quote cache) stays until per-user isolation
           covers those tables — see docs/AUTH.md.
         </p>
@@ -539,13 +581,19 @@ function CategoriesPanel({
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const [akahu, setAkahu] = useState<AkahuConnectionStatus | null>(null);
+  const [akahu, setAkahu] = useState<AkahuConnectionStatus | null>(
+    () => readPageCache<AkahuConnectionStatus>('settings:akahu') ?? null,
+  );
   const [akahuBusy, setAkahuBusy] = useState(false);
   const [akahuMsg, setAkahuMsg] = useState<string | null>(null);
   const [akahuError, setAkahuError] = useState<string | null>(null);
-  const [institutions, setInstitutions] = useState<AkahuInstitution[]>([]);
+  const [institutions, setInstitutions] = useState<AkahuInstitution[]>(
+    () => readPageCache<AkahuConnectionStatus>('settings:akahu')?.institutions ?? [],
+  );
 
-  const [categories, setCategories] = useState<TxCategory[]>([]);
+  const [categories, setCategories] = useState<TxCategory[]>(
+    () => readPageCache<TxCategory[]>('categories') ?? [],
+  );
   const [catBusy, setCatBusy] = useState(false);
   const [catMsg, setCatMsg] = useState<string | null>(null);
   const [catError, setCatError] = useState<string | null>(null);
@@ -565,8 +613,10 @@ function CategoriesPanel({
   }, [refresh]);
 
   const loadCategories = useCallback(async () => {
+    const stamp = beginPageRead('categories');
     try {
       const rows = await api.budgets.categories();
+      if (!commitPageRead(stamp, rows)) return;
       setCategories(rows);
     } catch (err) {
       setCatError(err instanceof ApiError ? err.message : 'Could not load categories');
@@ -578,8 +628,10 @@ function CategoriesPanel({
   }, [loadCategories]);
 
   const loadAkahu = useCallback(async () => {
+    const stamp = beginPageRead('settings:akahu');
     try {
       const st = await akahuStatus();
+      if (!commitPageRead(stamp, st)) return;
       setAkahu(st);
       setInstitutions(st.institutions ?? []);
     } catch (err) {
@@ -596,6 +648,7 @@ function CategoriesPanel({
     if (!flag) return;
     const message = searchParams.get('message');
     if (flag === 'connected') {
+      invalidateAfterAkahuLinkChange();
       setAkahuMsg('Connected to Akahu. Your accounts are ready to sync.');
       void loadAkahu();
       void (async () => {
@@ -609,6 +662,7 @@ function CategoriesPanel({
         }
       })();
     } else if (flag === 'revoked') {
+      invalidateAfterAkahuLinkChange();
       setAkahuMsg('Akahu was disconnected. You can connect again anytime.');
       void loadAkahu();
     } else if (flag === 'error') {
@@ -656,6 +710,7 @@ function CategoriesPanel({
       setNewCatName('');
       setNewCatType('spending');
       setCatMsg(`Added “${name}” (${CATEGORY_TYPE_LABELS[createdType].toLowerCase()}).`);
+      invalidateFinancial('categories', 'spending');
       await loadCategories();
     } catch (err) {
       setCatError(err instanceof ApiError ? err.message : 'Could not add category');
@@ -678,6 +733,7 @@ function CategoriesPanel({
     try {
       await api.budgets.deleteCategory(cat.id);
       setCatMsg(`Removed “${cat.name}”.`);
+      invalidateFinancial('categories', 'spending', 'dashboard');
       await loadCategories();
     } catch (err) {
       setCatError(err instanceof ApiError ? err.message : 'Could not remove category');
@@ -693,6 +749,7 @@ function CategoriesPanel({
     try {
       const r = await akahuConnect();
       if (r.authorizeUrl) {
+        invalidateAfterAkahuLinkChange();
         window.location.href = r.authorizeUrl;
         return;
       }
@@ -713,6 +770,7 @@ function CategoriesPanel({
     setAkahuError(null);
     try {
       const r = await akahuDisconnect();
+      invalidateAfterAkahuLinkChange();
       setAkahuMsg(r.message || (r.disconnected ? 'Disconnected from Akahu.' : 'Nothing to disconnect.'));
       await loadAkahu();
       setInstitutions([]);
@@ -744,11 +802,13 @@ function CategoriesPanel({
     try {
       const portfolio = await akahuSync();
       const txns = await akahuSyncTransactions();
+      if (portfolioSyncChanged(portfolio) || txnSyncChanged(txns)) invalidateAfterExternalSync();
       setAkahuMsg(
         `Synced: ${portfolio.cashAccountsUpserted ?? 0} cash, ` +
           `${portfolio.stocksUpserted ?? 0} stocks, ${portfolio.cryptoUpserted ?? 0} crypto, ` +
           `KS ${portfolio.kiwisaverBalanceSynced ? 'yes' : 'no'}; ` +
-          `txns +${txns.inserted ?? 0}/~${txns.updated ?? 0}.`,
+          `txns +${txns.inserted ?? 0}/~${txns.updated ?? 0}` +
+          (txns.categorised ? `, ${txns.categorised} categorised from past transactions.` : '.'),
       );
       await loadAkahu();
       try {
@@ -829,7 +889,7 @@ function CategoriesPanel({
       <section className="panel">
         <h2>Transaction categories</h2>
         <p className="page-lead">
-          Add or remove categories by type (spending, income, transfer out, transfer in) for the Spending page and budget plans.
+          Add or remove categories by type (spending, income, transfer out, transfer in) for the Budget page and budget plans.
         </p>
 
         <form className="auth-form account-form" onSubmit={onAddCategory}>

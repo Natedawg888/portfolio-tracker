@@ -4,6 +4,9 @@
  * Never invent live prices, miner secondary-market values, or stone valuations.
  */
 
+import type { OutputPaySourceInputs, OutputPayType } from '../lib/outputPayCalc';
+import type { DuePreset, GstMode, InvoiceStatus, InvoiceStoredStatus } from '../lib/invoiceCalc';
+
 export type CurrencyCode = 'NZD' | 'USD' | 'AUD' | 'EUR' | 'GBP';
 
 export type AccountType =
@@ -78,7 +81,8 @@ export type TransactionSource = 'akahu' | 'bank' | 'google_wallet' | 'manual' | 
 /** Imported or manually entered bank transaction. */
 export interface Transaction {
   id: string;
-  accountId: string;
+  /** Null when not charged to a bank account (e.g. crypto Visa debit card). */
+  accountId: string | null;
   /** Display name of charged bank_accounts row (join). */
   accountName?: string | null;
   date: string; // YYYY-MM-DD
@@ -194,6 +198,184 @@ export interface DebtRepayment {
   createdAt: string;
 }
 
+/**
+ * Named NZD savings goal for the signed-in user.
+ * Stored: name, targetNzd, currentAmountNzd, deadline.
+ * Counted on read from those figures: remainingNzd, percentComplete,
+ * requiredWeeklySavingNzd, requiredMonthlySavingNzd, estimatedCompletion.
+ * currentAmountNzd is not added to net worth.
+ */
+export interface SavingsGoal {
+  id: string;
+  name: string;
+  notes: string | null;
+  /** Goal amount, NZD. */
+  targetNzd: number;
+  /** Amount saved toward the goal so far, NZD. */
+  currentAmountNzd: number;
+  /** YYYY-MM-DD, or null when no deadline is set. */
+  deadline: string | null;
+  /** Savings account linked to this goal (its balance is the amount saved), or null. */
+  accountId: string | null;
+  /** "Name · Institution" of the linked account. */
+  accountName: string | null;
+  /** 'account' when currentAmountNzd is the linked account's balance; 'manual' when typed. */
+  amountSource: 'account' | 'manual';
+  currency: 'NZD';
+  timezone: 'Pacific/Auckland';
+  /** Pacific/Auckland calendar date the progress figures were counted on. */
+  asOf: string;
+  /** max(0, targetNzd − currentAmountNzd), NZD. */
+  remainingNzd: number;
+  /**
+   * currentAmountNzd / targetNzd × 100.
+   * A percent, not a fraction: 25 means 25%. May exceed 100.
+   */
+  percentComplete: number;
+  /**
+   * Whole calendar days from asOf to deadline.
+   * Negative when the deadline has passed. Null when deadline is null.
+   */
+  daysRemaining: number | null;
+  /**
+   * NZD to save each week to finish by the deadline.
+   * Null when that pace is not defined. 0 when nothing remains.
+   */
+  requiredWeeklySavingNzd: number | null;
+  /**
+   * NZD to save each month to finish by the deadline.
+   * A month is 365.25 / 12 days. Null when that pace is not defined.
+   */
+  requiredMonthlySavingNzd: number | null;
+  /**
+   * YYYY-MM-DD the goal is met at the required pace, or null.
+   * Today (asOf) once currentAmountNzd has reached targetNzd.
+   * The deadline while a gap is still open and the deadline is today or later.
+   */
+  estimatedCompletion: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Fields the user can save on a savings goal. */
+export interface SavingsGoalWriteBody {
+  name?: string;
+  notes?: string | null;
+  targetNzd?: number;
+  currentAmountNzd?: number;
+  /** YYYY-MM-DD, null, or '' to clear. */
+  deadline?: string | null;
+  /** NZD bank account id, or null to unlink. */
+  accountId?: string | null;
+}
+
+/**
+ * One donation in the signed-in user's ledger (NZD).
+ * Stored on its own. It is not a transaction and it is not a receipt file.
+ * Tax-year fields are counted from `date` on read.
+ */
+export interface Donation {
+  id: string;
+  /** YYYY-MM-DD. Calendar date the gift was made. */
+  date: string;
+  /** Charity or other recipient. */
+  recipient: string;
+  /** Gift amount in NZD, rounded to cents. Greater than 0. */
+  amountNzd: number;
+  notes: string | null;
+  /** http(s) link to supporting evidence, or null. Not a stored receipt file. */
+  evidenceUrl: string | null;
+  /**
+   * Optional id of this user's transaction that already has a receipt.
+   * The receipt file stays on that transaction.
+   */
+  receiptTransactionId: string | null;
+  /** Receipt path copied from the linked transaction, or null. */
+  receiptPath: string | null;
+  /** `/api/uploads/...` for receiptPath, or null. */
+  receiptUrl: string | null;
+  currency: 'NZD';
+  timezone: 'Pacific/Auckland';
+  /** NZ tax year the date falls in, labelled by the year ending 31 March. */
+  taxYear: number;
+  /** Inclusive start, YYYY-MM-DD (1 April). */
+  taxYearStart: string;
+  /** Inclusive end, YYYY-MM-DD (31 March). */
+  taxYearEnd: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Fields the user can save on a donation. */
+export interface DonationWriteBody {
+  /** YYYY-MM-DD. */
+  date?: string;
+  recipient?: string;
+  /** NZD. */
+  amountNzd?: number;
+  notes?: string | null;
+  /** http(s) URL, null, or '' to clear. */
+  evidenceUrl?: string | null;
+  /** Transaction id, null, or '' to clear. */
+  receiptTransactionId?: string | null;
+}
+
+/**
+ * Counted totals for one NZ tax year (1 April–31 March).
+ * Amounts are NZD.
+ */
+export interface DonationTaxYearTotals {
+  taxYear: number;
+  taxYearStart: string;
+  taxYearEnd: string;
+  /** Donations whose date falls in this tax year. */
+  count: number;
+  /** Sum of amountNzd for those donations. */
+  totalAmountNzd: number;
+  /** Donations with amountNzd of at least 5. */
+  eligibleCount: number;
+  /** Sum of donations of at least $5. Donations under $5 are not pooled. */
+  eligibleAmountNzd: number;
+  /** Donations with amountNzd under 5. */
+  belowMinimumCount: number;
+  /** Sum of donations under $5. */
+  belowMinimumAmountNzd: number;
+  /**
+   * Estimate of the IR526 credit: eligibleAmountNzd / 3, rounded to cents.
+   * Not reduced by the taxable-income cap. See DonationSummary.estimateNote.
+   */
+  estimatedTaxCreditNzd: number;
+  estimateLabel: 'estimate';
+  /** A donation below this (NZD) is excluded from the credit estimate. */
+  minimumDonationNzd: 5;
+  creditRate: '1/3';
+  /** Taxable income is not stored, so the one-third income cap is not applied. */
+  incomeCapApplied: false;
+}
+
+/** Tax-year donation totals for the signed-in user. */
+export interface DonationSummary {
+  currency: 'NZD';
+  timezone: 'Pacific/Auckland';
+  /** Pacific/Auckland date the summary was counted on. */
+  asOf: string;
+  /** Tax year that contains asOf. */
+  currentTaxYear: number;
+  /** Tax year described by `selected`. From ?taxYear=, or currentTaxYear. */
+  taxYear: number;
+  estimateLabel: 'estimate';
+  /** Plain-language rule for estimatedTaxCreditNzd. */
+  estimateNote: string;
+  /** How the 1 April–31 March label is chosen. */
+  taxYearNote: string;
+  minimumDonationNzd: 5;
+  creditRate: '1/3';
+  incomeCapApplied: false;
+  selected: DonationTaxYearTotals;
+  /** Newest tax year first. Includes years with donations, the current year, and `taxYear`. */
+  years: DonationTaxYearTotals[];
+}
+
 export interface DebtSummary {
   outstandingTotalNzd: number;
   /** Total creditors (people + corporations). */
@@ -288,6 +470,8 @@ export interface IncomeMonthSummary {
   plan: IncomePlan | null;
   plans?: IncomePlan[];
   categories?: IncomeCategorySummary[];
+  /** Expected monthly income from saved pay sources (KAN-70). Null when none are saved. */
+  expectedPay?: PaySourcesExpected | null;
 }
 
 export interface Budget {
@@ -299,6 +483,161 @@ export interface Budget {
   notes?: string;
   /** YYYY-MM when this row is a calendar-month plan */
   yearMonth?: string | null;
+}
+
+/**
+ * Home-screen month from budget rows already stored for the signed-in user.
+ * Amounts are NZD. `savingsRate` is a fraction of income, same kind of ratio as
+ * `debtToIncome`: 0.25 means 25%, not 25. Null when income is zero or negative.
+ */
+export interface HomeMonthSnapshot {
+  /** Calendar month in Pacific/Auckland, YYYY-MM. */
+  yearMonth: string;
+  /** Inclusive first day, YYYY-MM-DD. */
+  periodStart: string;
+  /** Inclusive last day, YYYY-MM-DD. */
+  periodEnd: string;
+  currency: 'NZD';
+  timezone: 'Pacific/Auckland';
+  /** Received income: income records plus unlinked income-category credits. */
+  incomeNzd: number;
+  /** Spending-category outflows plus unlinked debt repayments. Transfers are excluded. */
+  spendingNzd: number;
+  /** incomeNzd − spendingNzd. */
+  savingsNzd: number;
+  /**
+   * savingsNzd / incomeNzd.
+   * A fraction of income, not a percent. Null when incomeNzd is not positive.
+   */
+  savingsRate: number | null;
+  /** Expected monthly income from saved pay sources (KAN-70). Null when none are saved. */
+  expectedPay?: PaySourcesExpected | null;
+}
+
+/** A pay calculation saved as an income source (piece rate, contract, share of catch). */
+export interface PaySource {
+  id: string;
+  name: string;
+  payType: OutputPayType;
+  /** Tax year (start year) whose rates were used. */
+  taxYear: number;
+  inputs: OutputPaySourceInputs | null;
+  weeklyGrossNzd: number;
+  /** Typical weekly amount that lands in your pocket. */
+  weeklyNetNzd: number;
+  /** weeklyNetNzd × 52 ÷ 12. */
+  monthlyNetNzd: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Saved pay sources added up as expected income. */
+export interface PaySourcesExpected {
+  count: number;
+  weeklyNetNzd: number;
+  monthlyNetNzd: number;
+  sources: Array<{ id: string; name: string; payType: OutputPayType; weeklyNetNzd: number }>;
+}
+
+/** Where a projection figure came from. */
+export type ProjectionAssumptionSource = 'user_data' | 'default' | 'query';
+
+export interface ProjectionAssumption {
+  value: number | null;
+  source: ProjectionAssumptionSource;
+  reason: string | null;
+}
+
+/** One month of the forward projection. Amounts are NZD. `date` is YYYY-MM-DD. */
+export interface ProjectionPoint {
+  date: string;
+  monthIndex: number;
+  netWorthNzd: number;
+  compoundingAssetsNzd: number;
+  /** Cumulative budget saving added. Null when no monthly saving is known. */
+  savingsAddedNzd: number | null;
+  /** Cumulative KiwiSaver contributions added. Null when none were observed. */
+  kiwiSaverContributionsAddedNzd: number | null;
+  debtOutstandingNzd: number;
+  bankLiabilitiesNzd: number;
+  propertyMortgageNzd: number;
+}
+
+export interface ProjectionDebtPath {
+  id: string;
+  name: string;
+  startingBalanceNzd: number;
+  endingBalanceNzd: number;
+  annualRatePercent: number | null;
+  interestPeriod: 'month' | 'year' | null;
+  actualPaymentNzd: number | null;
+  stepped: boolean;
+  paysDown: boolean | null;
+  reason: string | null;
+}
+
+/**
+ * Educational forward view of the signed-in user's net worth and savings.
+ * Month 0 is today in Pacific/Auckland. Later points are monthly.
+ * Formulas are on `formula`. Every rate that is not taken from stored rows
+ * is named in `assumptions` with its source.
+ */
+export interface ProjectionResponse {
+  currency: 'NZD';
+  timezone: 'Pacific/Auckland';
+  asOf: string;
+  horizonMonths: number;
+  note: string;
+  formula: {
+    netWorth: string;
+    compoundingAssets: string;
+    monthlySaving: string;
+    debt: string;
+  };
+  starting: {
+    netWorthNzd: number;
+    compoundingAssetsNzd: number;
+    bankLiabilitiesNzd: number;
+    debtOutstandingNzd: number;
+    propertyMortgageNzd: number;
+    kiwiSaverNzd: number | null;
+  };
+  assumptions: {
+    annualReturnPercent: ProjectionAssumption & { compounding: 'monthly' };
+    monthlySavingNzd: ProjectionAssumption & {
+      windowMonths: number;
+      windowStart: string;
+      windowEnd: string;
+      incomeNzd: number | null;
+      spendingNzd: number | null;
+      monthsWithActivity: number;
+      observedMonthlyNzd: number | null;
+      /** Monthly take-home from saved pay sources, used when the window has no recorded income. */
+      expectedPayMonthlyNzd?: number | null;
+      /** True when expectedPayMonthlyNzd stood in for recorded income. */
+      usedExpectedPay?: boolean;
+    };
+    inflationPercent: ProjectionAssumption;
+    kiwiSaverContributionMonthlyNzd: ProjectionAssumption;
+    dividends: ProjectionAssumption;
+    savingsGoals: ProjectionAssumption;
+  };
+  debts: ProjectionDebtPath[];
+  propertyMortgage: {
+    balanceNzd: number;
+    stepped: false;
+    reason: string;
+  };
+  bankLiabilities: {
+    balanceNzd: number;
+    stepped: false;
+    reason: string;
+  };
+  points: ProjectionPoint[];
+  savings: {
+    monthlyNzd: number | null;
+    points: Array<{ date: string; monthIndex: number; cumulativeNzd: number }> | null;
+  };
 }
 
 export interface HoldingBase {
@@ -748,4 +1087,205 @@ export interface NewsSection {
 export interface NewsFeedResponse {
   fetchedAt: string;
   sections: NewsSection[];
+}
+
+/** Read-only crypto wallet (public address only — never keys or recovery phrases). */
+export type WalletNetwork = 'ethereum' | 'polygon' | 'base' | 'arbitrum' | 'bitcoin' | 'solana';
+
+export type Wallet = {
+  id: string;
+  name: string;
+  network: WalletNetwork;
+  address: string;
+  status: 'connected' | 'syncing' | 'error';
+  statusMessage: string | null;
+  lastSynced: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WalletNetworkInfo = {
+  network: WalletNetwork;
+  label: string;
+  family: 'evm' | 'bitcoin' | 'solana';
+  nativeSymbol: string;
+  syncable: boolean;
+  configured: boolean;
+};
+
+export type WalletValuationItem = {
+  asset: { kind: 'native' | 'token'; symbol: string; name: string; decimals: number; contract: string | null };
+  amountRaw: string;
+  amount: string;
+  status: 'priced' | 'stale' | 'unpriced';
+  priceNzd: number | null;
+  valueNzd: number | null;
+  pricedAt: string | null;
+  priceSource: string | null;
+  message: string | null;
+};
+
+export type WalletValuation =
+  | {
+      ok: true;
+      fetchedAt: string;
+      currency: 'NZD';
+      items: WalletValuationItem[];
+      totalNzd: number;
+      complete: boolean;
+      pricedAt: string | null;
+      hasStalePrices: boolean;
+    }
+  | { ok: false; error: string; code: string; retryAfterSec: number | null };
+
+export type WalletsValuationResponse = {
+  currency: 'NZD';
+  totalNzd: number;
+  complete: boolean;
+  pricedAt: string | null;
+  hasStalePrices: boolean;
+  failedWallets: number;
+  wallets: Array<{ wallet: Wallet; valuation: WalletValuation }>;
+};
+
+/** Business details printed on the user's invoices (KAN-71). */
+export interface BusinessProfile {
+  businessName: string;
+  address: string;
+  email: string;
+  phone: string;
+  bankAccount: string;
+  gstRegistered: boolean;
+  gstNumber: string;
+  nzbn: string;
+  invoicePrefix: string;
+}
+
+export interface InvoiceClient {
+  id: string;
+  name: string;
+  email: string;
+  address: string;
+  reference: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InvoiceLine {
+  id: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  rate: number;
+  lineTotalNzd: number;
+}
+
+export interface InvoicePayment {
+  id: string;
+  date: string;
+  amountNzd: number;
+  method: string;
+  notes: string;
+  /** Income record this payment added to the budget, when it was added. */
+  incomeRecordId: string | null;
+  createdAt: string;
+}
+
+export type InvoiceSendChannel = 'resend' | 'email_app' | 'share';
+
+export interface InvoiceSendLog {
+  id: string;
+  kind: 'invoice' | 'reminder';
+  /** resend = sent by the app; email_app / share = the user sent it themselves. */
+  channel: InvoiceSendChannel;
+  recipients: string[];
+  subject: string;
+  status: 'sent' | 'failed';
+  error: string | null;
+  sentAt: string;
+}
+
+/** One row of the invoice list. */
+export interface InvoiceSummary {
+  id: string;
+  number: string;
+  status: InvoiceStatus;
+  storedStatus: InvoiceStoredStatus;
+  clientId: string | null;
+  clientName: string;
+  issueDate: string;
+  dueDate: string;
+  totalNzd: number;
+  amountDueNzd: number;
+  paidNzd: number;
+  balanceNzd: number;
+  sentAt: string | null;
+}
+
+export interface Invoice extends InvoiceSummary {
+  clientEmail: string;
+  clientAddress: string;
+  clientReference: string;
+  duePreset: DuePreset;
+  reference: string;
+  gstMode: GstMode;
+  withholdingRatePct: number | null;
+  notes: string;
+  paymentInstructions: string;
+  /** Business details as printed on this invoice. */
+  business: BusinessProfile;
+  lines: InvoiceLine[];
+  subtotalNzd: number;
+  gstNzd: number;
+  withholdingNzd: number;
+  /** Title printed on the invoice: "Tax invoice" when GST registered. */
+  title: 'Tax invoice' | 'Invoice';
+  shareUrl: string | null;
+  payments: InvoicePayment[];
+  sends: InvoiceSendLog[];
+  voidedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InvoiceListResponse {
+  invoices: InvoiceSummary[];
+  totals: {
+    outstandingNzd: number;
+    overdueNzd: number;
+    paidThisMonthNzd: number;
+    paidTaxYearNzd: number;
+    /** NZ tax year start (YYYY-04-01) used for paidTaxYearNzd. */
+    taxYearStart: string;
+  };
+  nextNumber: string;
+  /** False when email sending isn't configured on this server. */
+  emailEnabled: boolean;
+}
+
+/** What a share link shows: the invoice itself and nothing else. */
+export interface PublicInvoice {
+  number: string;
+  title: 'Tax invoice' | 'Invoice';
+  status: InvoiceStatus;
+  business: BusinessProfile;
+  clientName: string;
+  clientEmail: string;
+  clientAddress: string;
+  clientReference: string;
+  issueDate: string;
+  dueDate: string;
+  reference: string;
+  gstMode: GstMode;
+  lines: InvoiceLine[];
+  subtotalNzd: number;
+  gstNzd: number;
+  totalNzd: number;
+  withholdingRatePct: number | null;
+  withholdingNzd: number;
+  amountDueNzd: number;
+  paidNzd: number;
+  balanceNzd: number;
+  notes: string;
+  paymentInstructions: string;
 }

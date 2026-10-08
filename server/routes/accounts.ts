@@ -5,11 +5,12 @@ import { Router } from 'express';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { requireUserId } from '../lib/userScope.ts';
 import { CHARITY_SLUG, resolveCategoryIdOrSlug } from '../lib/categories.ts';
-import { categoryForPayee } from '../payees/store.ts';
+import { createCategoryPredictor } from '../lib/categoryPredict.ts';
 import { getDb, queryAll, queryOne, run, newId } from '../db/index.ts';
 import { coerceAkahuBalance } from '../akahu/sync.ts';
 import { TXN_SYNC_FROM_DATE } from '../akahu/syncTransactions.ts';
 import { parseWalletCsv } from '../../src/imports/walletCsv.ts';
+import { linkInvoicePaymentsToBankCredits } from '../invoices/store.ts';
 import {
   applyBtcLink,
   clearTxnBtcApplied,
@@ -172,13 +173,14 @@ router.post('/transactions', async (req: AuthedRequest, res) => {
   if (!userId) return;
   const db = await getDb();
   const b = req.body ?? {};
-  const accountId = typeof b.accountId === 'string' ? b.accountId : '';
-  if (!accountId) {
-    return res.status(400).json({ ok: false, error: 'accountId is required' });
-  }
-  const acct = queryOne(db, 'SELECT id FROM bank_accounts WHERE id=? AND user_id=?', [accountId, userId]);
-  if (!acct) {
-    return res.status(400).json({ ok: false, error: 'Unknown accountId' });
+  // Charged bank account. Null / omitted = not charged to one (e.g. crypto Visa debit card):
+  // the spend still counts in budgets but no cash account is involved.
+  const accountId = typeof b.accountId === 'string' && b.accountId.trim() ? b.accountId.trim() : null;
+  if (accountId) {
+    const acct = queryOne(db, 'SELECT id FROM bank_accounts WHERE id=? AND user_id=?', [accountId, userId]);
+    if (!acct) {
+      return res.status(400).json({ ok: false, error: 'Unknown accountId' });
+    }
   }
 
   const date =
@@ -232,15 +234,12 @@ router.post('/transactions', async (req: AuthedRequest, res) => {
   const currency = typeof b.currency === 'string' ? b.currency : 'NZD';
   const categoryProvided = typeof b.categoryId === 'string' && b.categoryId.trim() !== '';
   let categoryId = categoryProvided ? b.categoryId.trim() : null;
+  if (categoryId && !queryOne(db, 'SELECT id FROM budget_categories WHERE id=? AND user_id=?', [categoryId, userId])) {
+    return res.status(400).json({ ok: false, error: 'Unknown categoryId' });
+  }
   if (!categoryProvided) {
-    const names = [merchant, description].filter((name): name is string => Boolean(name && name.trim()));
-    for (const name of names) {
-      const saved = categoryForPayee(db, userId, name);
-      if (saved) {
-        categoryId = saved;
-        break;
-      }
-    }
+    // "Automatic": payee's saved category, else a guess from similar past transactions.
+    categoryId = createCategoryPredictor(db, userId)({ merchant, description, amount })?.categoryId ?? null;
   }
   const externalId =
     typeof b.externalId === 'string' && b.externalId.trim()
@@ -665,6 +664,8 @@ router.post('/transactions/import-wallet-csv', async (req: AuthedRequest, res) =
   let skippedDup = 0;
   let skippedBefore = 0;
 
+  const predict = createCategoryPredictor(db, userId);
+
   for (const item of parsed.items) {
     if (item.date < TXN_SYNC_FROM_DATE) {
       skippedBefore += 1;
@@ -690,7 +691,7 @@ router.post('/transactions/import-wallet-csv', async (req: AuthedRequest, res) =
       `INSERT INTO transactions (
          id, user_id, account_id, date, description, amount, kind, category_id,
          currency, external_id, created_at, card_name, merchant, source
-       ) VALUES (?,?,?,?,?,?,?,NULL,?,?,?,?,NULL,?)`,
+       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NULL,?)`,
       [
         newId('txn'),
         userId,
@@ -699,6 +700,7 @@ router.post('/transactions/import-wallet-csv', async (req: AuthedRequest, res) =
         item.description,
         item.amount,
         item.kind,
+        predict({ description: item.description, amount: item.amount })?.categoryId ?? null,
         item.currency || 'NZD',
         item.externalId,
         now,
@@ -708,6 +710,8 @@ router.post('/transactions/import-wallet-csv', async (req: AuthedRequest, res) =
     );
     inserted += 1;
   }
+  // An imported deposit may be an invoice payment already counted as income (KAN-71).
+  if (inserted > 0) linkInvoicePaymentsToBankCredits(db, userId);
 
   res.json({
     ok: true,

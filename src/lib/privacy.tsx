@@ -62,16 +62,15 @@ export function useMoneyHidden(): boolean {
 const MoneyHiddenContext = createContext<boolean>(false);
 
 /**
- * Provides money-hidden state and remounts children when the flag flips.
- * Needed because React Router's <Outlet /> returns a stable element reference;
- * a Layout-only re-render would otherwise bail out and leave formatNzd() stale.
+ * Provides money-hidden state. Masking is applied in formatNzd during render,
+ * so this must not remount children or touch the page cache. Layout passes a
+ * changing moneyHidden prop into the routed page so that render runs again.
  */
 export function MoneyHiddenProvider({ children }: { children: ReactNode }) {
   const hidden = useMoneyHidden();
   return (
     <MoneyHiddenContext.Provider value={hidden}>
       <div
-        key={hidden ? 'money-hidden' : 'money-visible'}
         className="money-privacy-root"
         data-money-hidden={hidden ? '1' : '0'}
         style={{ display: 'contents' }}

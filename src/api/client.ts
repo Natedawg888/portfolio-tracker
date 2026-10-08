@@ -7,7 +7,31 @@ import type {
   DividendWriteBody,
   ForecastReinvestResponse,
 } from '../types/dividends.ts';
-import type { DebtPerson, DebtSummary, DebtWriteBody, PayeeSetting } from '../types/index.ts';
+import type {
+  DebtPerson,
+  DebtSummary,
+  DebtWriteBody,
+  Donation,
+  DonationSummary,
+  DonationWriteBody,
+  HomeMonthSnapshot,
+  NewsFeedResponse,
+  ProjectionResponse,
+  PayeeSetting,
+  PaySource,
+  BusinessProfile,
+  Invoice,
+  InvoiceClient,
+  InvoiceListResponse,
+  PublicInvoice,
+  SavingsGoal,
+  SavingsGoalWriteBody,
+  Wallet,
+  WalletNetwork,
+  WalletNetworkInfo,
+  WalletsValuationResponse,
+} from '../types/index.ts';
+import type { OutputPaySourceInputs } from '../lib/outputPayCalc.ts';
 
 const BASE = '/api';
 
@@ -39,6 +63,25 @@ let onUnauthorized: AuthUnauthorizedHandler | null = null;
 export function setUnauthorizedHandler(handler: AuthUnauthorizedHandler | null) {
   onUnauthorized = handler;
 }
+
+/** Draft invoice fields sent to the API. Totals are always computed by the server. */
+export type InvoiceWriteBody = {
+  number?: string;
+  clientId: string | null;
+  clientName: string;
+  clientEmail: string;
+  clientAddress: string;
+  clientReference: string;
+  issueDate: string;
+  duePreset: string;
+  dueDate: string | null;
+  reference: string;
+  gstMode: 'none' | 'exclusive' | 'inclusive';
+  withholdingRatePct: number | null;
+  notes: string;
+  paymentInstructions: string;
+  lines: { description: string; quantity: number; unit: string; rate: number }[];
+};
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
@@ -74,6 +117,42 @@ export type AuthUser = {
   };
 };
 
+/** An account signed in on this browser (account switcher). */
+export type RememberedAccount = {
+  userId: string;
+  email: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  current: boolean;
+};
+
+/** Settings → Security (KAN-16). */
+export type SsoProvider = { id: 'google' | 'apple' | 'microsoft'; label: string };
+
+export type AccountSecurity = {
+  hasPassword: boolean;
+  identities: Array<{ id: string; provider: string; label: string; email: string | null; createdAt: string; lastUsedAt: string | null }>;
+  ssoProviders: SsoProvider[];
+  twoFactor: { enabled: boolean; enabledAt: string | null; backupCodesRemaining: number };
+  sessions: Array<{
+    id: string;
+    deviceLabel: string | null;
+    createdAt: string;
+    lastSeenAt: string | null;
+    expiresAt: string;
+    persistent: boolean;
+    current: boolean;
+  }>;
+  trustedDevices: Array<{
+    id: string;
+    label: string | null;
+    createdAt: string;
+    lastUsedAt: string | null;
+    expiresAt: string;
+    current: boolean;
+  }>;
+};
+
 export const api = {
   auth: {
     status: () =>
@@ -91,9 +170,40 @@ export const api = {
         claimedExistingData: boolean;
         message: string;
       }>('/auth/register', { method: 'POST', body: JSON.stringify(body) }),
-    login: (body: { email: string; password: string }) =>
-      req<{ user: AuthUser }>('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
-    logout: () => req<{ ok: boolean }>('/auth/logout', { method: 'POST', body: '{}' }),
+    login: (body: { email: string; password: string; remember?: boolean }) =>
+      req<
+        | { user: AuthUser; twoFactorRequired?: false }
+        | { twoFactorRequired: true; challenge: string; expiresAt: string; methods: Array<'totp' | 'backup_code'> }
+      >('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
+    loginTwoFactor: (body: { challenge: string; code: string; trustDevice: boolean }) =>
+      req<{ user: AuthUser; usedBackupCode?: boolean; backupCodesRemaining?: number }>('/auth/login/2fa', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    security: () => req<AccountSecurity>('/auth/security'),
+    ssoProviders: () => req<{ providers: SsoProvider[] }>('/auth/sso/providers'),
+    disconnectIdentity: (id: string) => req<{ ok: boolean }>(`/auth/identities/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    twoFactorSetup: (password: string) =>
+      req<{ secret: string; otpauthUri: string; qrSvg: string }>('/auth/2fa/setup', {
+        method: 'POST',
+        body: JSON.stringify({ password }),
+      }),
+    twoFactorEnable: (code: string) =>
+      req<{ ok: boolean; backupCodes: string[] }>('/auth/2fa/enable', { method: 'POST', body: JSON.stringify({ code }) }),
+    twoFactorDisable: (body: { password: string; code: string }) =>
+      req<{ ok: boolean }>('/auth/2fa/disable', { method: 'POST', body: JSON.stringify(body) }),
+    twoFactorBackupCodes: (body: { password: string; code: string }) =>
+      req<{ ok: boolean; backupCodes: string[] }>('/auth/2fa/backup-codes', { method: 'POST', body: JSON.stringify(body) }),
+    revokeSession: (id: string) => req<{ ok: boolean }>(`/auth/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    revokeOtherSessions: () => req<{ ok: boolean; signedOut: number }>('/auth/sessions/revoke-others', { method: 'POST', body: '{}' }),
+    revokeTrustedDevice: (id: string) =>
+      req<{ ok: boolean }>(`/auth/trusted-devices/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    revokeAllTrustedDevices: () => req<{ ok: boolean; revoked: number }>('/auth/trusted-devices', { method: 'DELETE' }),
+    logout: () => req<{ ok: boolean; switchedToUserId: string | null }>('/auth/logout', { method: 'POST', body: '{}' }),
+    logoutAll: () => req<{ ok: boolean; signedOut: number }>('/auth/logout-all', { method: 'POST', body: '{}' }),
+    accounts: () => req<{ accounts: RememberedAccount[] }>('/auth/accounts'),
+    switchAccount: (userId: string) =>
+      req<{ ok: boolean; userId: string }>('/auth/accounts/switch', { method: 'POST', body: JSON.stringify({ userId }) }),
     updateProfile: (body: { firstName?: string | null; lastName?: string | null; displayName?: string | null }) =>
       req<{ user: AuthUser }>('/auth/profile', { method: 'PATCH', body: JSON.stringify(body) }),
     uploadAvatar: (photoBase64: string) =>
@@ -133,6 +243,43 @@ export const api = {
   },
   health: () => req<{ ok: boolean }>('/health'),
   netWorth: () => req<Record<string, unknown>>('/net-worth'),
+  home: {
+    /**
+     * This month's budget income, spending, savings, and savings rate.
+     * Omit month for the current Pacific/Auckland month. savingsRate is a fraction of income.
+     */
+    snapshot: (month?: string) =>
+      req<HomeMonthSnapshot>(
+        month ? `/home/snapshot?month=${encodeURIComponent(month)}` : '/home/snapshot',
+      ),
+  },
+  /**
+   * Forward net worth and savings from this user's balances and cashflow.
+   * months defaults to 12 (1–360). annualReturnPercent and monthlySavingNzd
+   * are optional; omitted values are labelled in assumptions.
+   */
+  projections: {
+    get: (query?: {
+      months?: number;
+      savingWindowMonths?: number;
+      annualReturnPercent?: number;
+      monthlySavingNzd?: number;
+    }) => {
+      const params = new URLSearchParams();
+      if (query?.months != null) params.set('months', String(query.months));
+      if (query?.savingWindowMonths != null) {
+        params.set('savingWindowMonths', String(query.savingWindowMonths));
+      }
+      if (query?.annualReturnPercent != null) {
+        params.set('annualReturnPercent', String(query.annualReturnPercent));
+      }
+      if (query?.monthlySavingNzd != null) {
+        params.set('monthlySavingNzd', String(query.monthlySavingNzd));
+      }
+      const qs = params.toString();
+      return req<ProjectionResponse>(`/projections${qs ? `?${qs}` : ''}`);
+    },
+  },
   snapshots: {
     list: (year?: number) =>
       req<
@@ -272,7 +419,8 @@ export const api = {
         primaryId: string | null;
       }>('/accounts/btc-holdings'),
     createTransaction: (body: {
-      accountId: string;
+      /** Null = not charged to a bank account (crypto Visa debit card). */
+      accountId: string | null;
       date: string;
       description: string;
       amount: number;
@@ -393,6 +541,107 @@ export const api = {
       }),
     deleteRepayment: (id: string) =>
       req<{ ok: boolean; id: string }>(`/debts/repayments/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      }),
+  },
+  invoices: {
+    list: (filters: { status?: string; clientId?: string; from?: string; to?: string } = {}) => {
+      const q = new URLSearchParams(Object.entries(filters).filter(([, v]) => v) as [string, string][]);
+      const qs = q.toString();
+      return req<InvoiceListResponse>(`/invoices${qs ? `?${qs}` : ''}`);
+    },
+    get: (id: string) => req<Invoice>(`/invoices/${encodeURIComponent(id)}`),
+    create: (body: InvoiceWriteBody) => req<Invoice>('/invoices', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: InvoiceWriteBody) =>
+      req<Invoice>(`/invoices/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    remove: (id: string) => req<{ ok: boolean; id: string }>(`/invoices/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    action: (id: string, action: 'mark-sent' | 'void' | 'duplicate') =>
+      req<Invoice>(`/invoices/${encodeURIComponent(id)}/${action}`, { method: 'POST' }),
+    share: (id: string) => req<Invoice>(`/invoices/${encodeURIComponent(id)}/share`, { method: 'POST' }),
+    unshare: (id: string) => req<Invoice>(`/invoices/${encodeURIComponent(id)}/share`, { method: 'DELETE' }),
+    addPayment: (id: string, body: { date: string; amountNzd: number; method: string; notes?: string; addToIncome: boolean }) =>
+      req<Invoice>(`/invoices/${encodeURIComponent(id)}/payments`, { method: 'POST', body: JSON.stringify(body) }),
+    removePayment: (id: string, paymentId: string) =>
+      req<Invoice>(`/invoices/${encodeURIComponent(id)}/payments/${encodeURIComponent(paymentId)}`, { method: 'DELETE' }),
+    emailDraft: (id: string, kind: 'invoice' | 'reminder') =>
+      req<{ to: string[]; subject: string; message: string; kind: string; emailEnabled: boolean; problem: string | null }>(
+        `/invoices/${encodeURIComponent(id)}/email-draft?kind=${kind}`,
+      ),
+    send: (id: string, body: { kind: 'invoice' | 'reminder'; to: string[]; subject: string; message: string; includeLink: boolean }) =>
+      req<Invoice>(`/invoices/${encodeURIComponent(id)}/send`, {
+        method: 'POST',
+        body: JSON.stringify({ ...body, confirm: true }),
+      }),
+    recordSend: (id: string, body: { kind: 'invoice' | 'reminder'; channel: 'email_app' | 'share'; to: string[]; subject: string }) =>
+      req<Invoice>(`/invoices/${encodeURIComponent(id)}/record-send`, { method: 'POST', body: JSON.stringify(body) }),
+    pdfUrl: (id: string, inline = false) => `${BASE}/invoices/${encodeURIComponent(id)}/pdf${inline ? '?inline=1' : ''}`,
+    csvUrl: () => `${BASE}/invoices/export.csv`,
+    business: () => req<BusinessProfile>('/invoices/business'),
+    saveBusiness: (body: BusinessProfile) =>
+      req<BusinessProfile>('/invoices/business', { method: 'PUT', body: JSON.stringify(body) }),
+    clients: () => req<InvoiceClient[]>('/invoices/clients'),
+    createClient: (body: { name: string; email: string; address: string; reference: string }) =>
+      req<InvoiceClient>('/invoices/clients', { method: 'POST', body: JSON.stringify(body) }),
+    updateClient: (id: string, body: { name: string; email: string; address: string; reference: string }) =>
+      req<InvoiceClient>(`/invoices/clients/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    removeClient: (id: string) =>
+      req<{ ok: boolean; id: string }>(`/invoices/clients/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    publicView: (token: string) => req<PublicInvoice>(`/public/invoices/${encodeURIComponent(token)}`),
+    publicPdfUrl: (token: string) => `${BASE}/public/invoices/${encodeURIComponent(token)}/pdf`,
+  },
+  paySources: {
+    list: () => req<PaySource[]>('/pay-sources'),
+    create: (body: { name: string; taxYear?: number; inputs: OutputPaySourceInputs }) =>
+      req<PaySource>('/pay-sources', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: { name: string; taxYear?: number; inputs: OutputPaySourceInputs }) =>
+      req<PaySource>(`/pay-sources/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    remove: (id: string) =>
+      req<{ ok: boolean; id: string }>(`/pay-sources/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  },
+  savingsGoals: {
+    list: () => req<SavingsGoal[]>('/savings-goals'),
+    get: (id: string) => req<SavingsGoal>(`/savings-goals/${encodeURIComponent(id)}`),
+    create: (body: SavingsGoalWriteBody & { name: string; targetNzd: number }) =>
+      req<SavingsGoal>('/savings-goals', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: SavingsGoalWriteBody) =>
+      req<SavingsGoal>(`/savings-goals/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+    remove: (id: string) =>
+      req<{ ok: boolean; id: string }>(`/savings-goals/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      }),
+  },
+  wallets: {
+    list: () => req<Wallet[]>('/wallets'),
+    networks: () => req<WalletNetworkInfo[]>('/wallets/networks'),
+    valuation: () => req<WalletsValuationResponse>('/wallets/valuation'),
+    create: (body: { network: WalletNetwork; address: string; name?: string }) =>
+      req<Wallet>('/wallets', { method: 'POST', body: JSON.stringify(body) }),
+    remove: (id: string) =>
+      req<{ ok: boolean; id: string }>(`/wallets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    sync: (id: string) =>
+      req<{ synced: boolean; wallet: Wallet; error?: string; code?: string }>(
+        `/wallets/${encodeURIComponent(id)}/sync`,
+        { method: 'POST' },
+      ),
+  },
+  donations: {
+    list: (taxYear?: number) =>
+      req<Donation[]>(`/donations${taxYear != null ? `?taxYear=${taxYear}` : ''}`),
+    summary: (taxYear?: number) =>
+      req<DonationSummary>(`/donations/summary${taxYear != null ? `?taxYear=${taxYear}` : ''}`),
+    get: (id: string) => req<Donation>(`/donations/${encodeURIComponent(id)}`),
+    create: (body: DonationWriteBody & { date: string; recipient: string; amountNzd: number }) =>
+      req<Donation>('/donations', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: DonationWriteBody) =>
+      req<Donation>(`/donations/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+    remove: (id: string) =>
+      req<{ ok: boolean; id: string }>(`/donations/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       }),
   },
@@ -1150,6 +1399,12 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify(body),
       }),
+    /** Reinvest every predicted payment of a holding (dividend reinvestment plan). */
+    setForecastReinvestAll: (body: { holdingId: string; reinvested: boolean }) =>
+      req<{ holdingId: string; reinvested: boolean }>('/dividends/forecast-reinvest-all', {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      }),
   },
   economy: {
     cycle: (opts?: { refresh?: boolean; country?: string; signal?: AbortSignal }) => {
@@ -1168,6 +1423,14 @@ export const api = {
       if (opts?.refresh) q.set('refresh', '1');
       const search = q.toString();
       return req<PhaseNewsResponse>(`/economy/news${search ? `?${search}` : ''}`);
+    },
+  },
+  news: {
+    feed: (opts?: { refresh?: boolean }) => {
+      const q = new URLSearchParams();
+      if (opts?.refresh) q.set('refresh', '1');
+      const search = q.toString();
+      return req<NewsFeedResponse>(`/news${search ? `?${search}` : ''}`);
     },
   },
 };

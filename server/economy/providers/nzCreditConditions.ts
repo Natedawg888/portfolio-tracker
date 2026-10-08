@@ -5,7 +5,13 @@
  * workbook is downloaded from the Internet Archive's public copy of that file.
  * The latest raw capture is requested directly. The CDX index is only a backup:
  * it is slow, and a failed index lookup used to leave the series empty.
+ * Railway cannot reach the Internet Archive either, so a copy of the official
+ * workbook ships with the app as the last fallback. Refresh it from a machine
+ * that can reach the archive with `npm run economy:c60-snapshot`.
  */
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { quarterOfMonth, quarterRange } from '../periods.ts';
 import { attachPrevious, type DatedValue, type WithPrevious } from './derive.ts';
 import { fetchDownload, fetchText } from './http.ts';
@@ -23,6 +29,9 @@ export const RBNZ_C60_PAGE = 'https://www.rbnz.govt.nz/statistics/series/lending
  * institutional loans. This is the survey's business-lending availability index.
  */
 export const NZ_CREDIT_SERIES = 'CCS.Q99_AV';
+
+/** Official C60 workbook bundled with the app. */
+export const C60_SNAPSHOT_PATH = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../snapshots/hc60.xlsx');
 
 const ARCHIVE_CDX = 'https://web.archive.org/cdx/search/cdx';
 
@@ -43,6 +52,9 @@ export type NzCreditLoad = {
 };
 
 type ArchiveCapture = { timestamp: string; original: string };
+
+/** Where the workbook bytes came from. */
+type C60Origin = 'rbnz' | 'archive' | 'snapshot';
 
 export function parseNzCreditAvailability(grid: SheetGrid, seriesId: string): DatedValue[] {
   let headerRow = 0;
@@ -128,12 +140,15 @@ export function archiveCaptures(payload: unknown, fileName: string): ArchiveCapt
   return found.sort((a, b) => (a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : 0));
 }
 
-function creditNotes(viaArchive: boolean, publishedAt: string | null, fromWorkbook: boolean): string {
+function creditNotes(origin: C60Origin, publishedAt: string | null, fromWorkbook: boolean): string {
   const meaning =
     'Published credit-availability index for corporate and institutional loans over the past six months. The Reserve Bank score runs from -100 to 100, and a higher number means easier credit. The survey is six-monthly; each observation is stored on the quarter its date falls in.';
-  const fetched = viaArchive
-    ? `rbnz.govt.nz returns HTTP 403 to this app, so the workbook is the Internet Archive copy of the official file ${RBNZ_C60_URL}.`
-    : 'Downloaded from the Reserve Bank C60 workbook.';
+  const fetched =
+    origin === 'rbnz'
+      ? 'Downloaded from the Reserve Bank C60 workbook.'
+      : origin === 'archive'
+        ? `rbnz.govt.nz returns HTTP 403 to this app, so the workbook is the Internet Archive copy of the official file ${RBNZ_C60_URL}.`
+        : `Neither rbnz.govt.nz nor the Internet Archive could be reached, so this is the copy of the official file ${RBNZ_C60_URL} bundled with the app.`;
   const published = fromWorkbook
     ? 'published_at is the Published Date in the workbook.'
     : publishedAt
@@ -142,7 +157,7 @@ function creditNotes(viaArchive: boolean, publishedAt: string | null, fromWorkbo
   return `${meaning} ${fetched} ${published}`;
 }
 
-function workbookFrom(body: Buffer, sourceUrl: string, viaArchive: boolean, lastModified: string | null): NzCreditLoad {
+export function workbookFrom(body: Buffer, sourceUrl: string, origin: C60Origin, lastModified: string | null): NzCreditLoad {
   if (body[0] !== 0x50 || body[1] !== 0x4b) {
     throw new Error(`The C60 download from ${sourceUrl} was not a workbook.`);
   }
@@ -152,18 +167,18 @@ function workbookFrom(body: Buffer, sourceUrl: string, viaArchive: boolean, last
   const rates = attachPrevious(parseNzCreditAvailability(data, NZ_CREDIT_SERIES));
   if (rates.length === 0) throw new Error(`The C60 workbook did not include ${NZ_CREDIT_SERIES}.`);
   const fromWorkbook = parseC60PublishedDay(sheets.get('Table Description'));
-  const publishedAt = fromWorkbook ?? (viaArchive ? null : publishedDay(lastModified));
+  const publishedAt = fromWorkbook ?? (origin === 'rbnz' ? publishedDay(lastModified) : null);
   return {
     rates,
     publishedAt,
     sourceUrl: RBNZ_C60_PAGE,
-    notes: creditNotes(viaArchive, publishedAt, fromWorkbook != null),
+    notes: creditNotes(origin, publishedAt, fromWorkbook != null),
   };
 }
 
 async function loadCapture(sourceUrl: string): Promise<NzCreditLoad> {
-  const download = await fetchDownload(sourceUrl, { timeoutMs: 45_000, maxBytes: 2_000_000 });
-  return workbookFrom(download.body, sourceUrl, true, download.lastModified);
+  const download = await fetchDownload(sourceUrl, { timeoutMs: 20_000, maxBytes: 2_000_000 });
+  return workbookFrom(download.body, sourceUrl, 'archive', download.lastModified);
 }
 
 /** CDX is the backup when the direct latest-capture URL does not return the workbook. */
@@ -173,7 +188,7 @@ async function loadFromArchiveIndex(): Promise<NzCreditLoad> {
   cdx.searchParams.set('output', 'json');
   cdx.searchParams.set('fl', 'timestamp,original,statuscode');
   cdx.searchParams.append('filter', 'statuscode:200');
-  const payload = JSON.parse(await fetchText(cdx.toString(), { timeoutMs: 45_000, maxBytes: 2_000_000 })) as unknown;
+  const payload = JSON.parse(await fetchText(cdx.toString(), { timeoutMs: 20_000, maxBytes: 2_000_000 })) as unknown;
   const captures = archiveCaptures(payload, 'hc60.xlsx');
   if (captures.length === 0) {
     throw new Error('The Internet Archive has no public copy of the RBNZ C60 workbook.');
@@ -206,18 +221,25 @@ async function loadFromArchive(): Promise<NzCreditLoad> {
 }
 
 export async function loadNzCreditConditions(): Promise<NzCreditLoad> {
+  let message: string;
   try {
     const download = await fetchDownload(RBNZ_C60_URL, { timeoutMs: 20_000, maxBytes: 2_000_000 });
-    return workbookFrom(download.body, RBNZ_C60_URL, false, download.lastModified);
+    return workbookFrom(download.body, RBNZ_C60_URL, 'rbnz', download.lastModified);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    try {
-      return await loadFromArchive();
-    } catch (archiveErr) {
-      const archiveMessage = archiveErr instanceof Error ? archiveErr.message : String(archiveErr);
-      throw new Error(
-        `The Reserve Bank C60 workbook could not be read (${message}), and the Internet Archive copy of that file could not be read either (${archiveMessage}).`,
-      );
-    }
+    message = err instanceof Error ? err.message : String(err);
+  }
+  let archiveMessage: string;
+  try {
+    return await loadFromArchive();
+  } catch (archiveErr) {
+    archiveMessage = archiveErr instanceof Error ? archiveErr.message : String(archiveErr);
+  }
+  try {
+    return workbookFrom(await readFile(C60_SNAPSHOT_PATH), C60_SNAPSHOT_PATH, 'snapshot', null);
+  } catch (snapshotErr) {
+    const snapshotMessage = snapshotErr instanceof Error ? snapshotErr.message : String(snapshotErr);
+    throw new Error(
+      `The Reserve Bank C60 workbook could not be read (${message}), the Internet Archive copy could not be read (${archiveMessage}), and the bundled copy could not be read (${snapshotMessage}).`,
+    );
   }
 }
