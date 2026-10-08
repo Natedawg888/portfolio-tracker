@@ -8078,3 +8078,75 @@ html:not([data-theme]) .bills-page :focus-visible {
 }
 .bills-page .page-lead { margin-left: auto; margin-right: auto; }.bills-page .bills-inactive td { opacity: 0.6; }
 .bills-page .bills-back { padding-left: 0.4rem; }
+
+/* Financial health score card (KAN-55), styled like the "This month" card. */
+.dashboard-page .health-score {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.health-score-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.health-score-band {
+  font-size: 0.78rem;
+  font-weight: 650;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+.health-score-band--strong,
+.health-score-band--good { color: var(--accent-deep); }
+.health-score-band--fair { color: #b07a1f; }
+.health-score-band--needs_attention { color: var(--danger); }
+.health-score-main {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.health-score-value {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.health-score-out-of {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--muted);
+  margin-left: 0.15rem;
+}
+.health-score-summary {
+  margin: 0;
+  flex: 1 1 16rem;
+  font-size: 0.92rem;
+}
+.health-score-bar {
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+.health-score-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.health-score-toggle { align-self: flex-start; }
+.health-score-checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+.health-score-check-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}

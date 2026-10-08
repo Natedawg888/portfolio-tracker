@@ -17,6 +17,7 @@ import { showQuietToast } from '../lib/quietToast';
 import { AssetBreakdownChart, type AssetBreakdownRow } from '../components/AssetBreakdownChart';
 import { DebtBreakdownChart, type DebtBreakdownPerson } from '../components/DebtBreakdownChart';
 import { SavingsGoalsCard } from '../components/SavingsGoalsCard';
+import { HealthScoreCard } from '../components/HealthScoreCard';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
 import { metalSpotHint, type MetalSpotSource, type MetalSpotStatus } from '../lib/metalSpotCopy';
@@ -212,11 +213,13 @@ export function Dashboard() {
 
   const monthRow = <MonthSnapshot snapshot={monthSnapshot} error={monthError} />;
   const goalsCard = <SavingsGoalsCard />;
+  const healthCard = <HealthScoreCard />;
 
   if (error) {
     return (
       <div className="stack dashboard-page">
         {monthRow}
+        {healthCard}
         {goalsCard}
         <div className="panel warn">
           <h2 className="page-title">Dashboard</h2>
@@ -230,6 +233,7 @@ export function Dashboard() {
     return (
       <div className="stack dashboard-page">
         {monthRow}
+        {healthCard}
         {goalsCard}
         <div className="panel">Loading net worth…</div>
       </div>
@@ -287,6 +291,7 @@ export function Dashboard() {
   return (
     <div className="stack dashboard-page">
       {monthRow}
+      {healthCard}
       {goalsCard}
       <section className="hero-card">
         <p className="eyebrow page-title">Net worth · assets − debt outstanding</p>
