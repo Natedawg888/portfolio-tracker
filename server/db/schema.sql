@@ -722,12 +722,14 @@ CREATE TABLE IF NOT EXISTS invoice_payments (
 CREATE INDEX IF NOT EXISTS idx_invoice_payments_invoice ON invoice_payments(invoice_id);
 CREATE INDEX IF NOT EXISTS idx_invoice_payments_user ON invoice_payments(user_id);
 
--- Every email send (invoice or reminder), successful or not. Also the source of the send rate limit.
+-- Every send (invoice or reminder), successful or not. channel: resend (sent by the app,
+-- the only channel the send rate limit counts) | email_app (user's own mail app) | share (share sheet).
 CREATE TABLE IF NOT EXISTS invoice_sends (
   id          TEXT PRIMARY KEY,
   user_id     TEXT,
   invoice_id  TEXT NOT NULL,
   kind        TEXT NOT NULL,
+  channel     TEXT NOT NULL DEFAULT 'resend',
   recipients  TEXT NOT NULL,
   subject     TEXT NOT NULL DEFAULT '',
   status      TEXT NOT NULL,

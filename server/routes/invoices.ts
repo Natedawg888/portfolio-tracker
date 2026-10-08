@@ -12,6 +12,9 @@
  *   POST     /:id/payments, DELETE /:id/payments/:paymentId
  *   GET      /:id/email-draft?kind=invoice|reminder   prefilled email for the preview
  *   POST     /:id/send                 { kind, to, subject, message, includeLink, confirm: true }
+ *   POST     /:id/record-send          { kind, channel: email_app | share, to?, subject? } — the user
+ *                                      sent it from their own email app or share sheet; logs it and
+ *                                      marks the invoice sent
  *
  * Nothing is emailed without an explicit send request carrying confirm: true.
  */
@@ -23,7 +26,7 @@ import { getDb, queryOne } from '../db/index.ts';
 import { aucklandToday } from '../debts/model.ts';
 import { isYmd, INVOICE_STATUS_LABELS } from '../../src/lib/invoiceCalc.ts';
 import type { Invoice } from '../../src/types/index.ts';
-import { parseBusinessProfile, parseClient, parseInvoice, parsePayment, parseSend } from '../invoices/model.ts';
+import { parseBusinessProfile, parseClient, parseExternalSend, parseInvoice, parsePayment, parseSend } from '../invoices/model.ts';
 import {
   addPayment,
   createClient,
@@ -294,13 +297,13 @@ export function defaultEmail(inv: Invoice, kind: EmailKind): { to: string[]; sub
     return {
       to: inv.clientEmail ? [inv.clientEmail] : [],
       subject: `Reminder: ${inv.title.toLowerCase()} ${inv.number} from ${from}`,
-      message: `${greeting}\n\nThis is a friendly reminder that ${inv.title.toLowerCase()} ${inv.number} was due on ${formatDate(inv.dueDate)}. The balance still owing is ${formatMoney(inv.balanceNzd)}. A copy is attached.\n\nIf you've already paid, thank you, and please ignore this email.\n\nNgā mihi,\n${from}`,
+      message: `${greeting}\n\nThis is a friendly reminder that ${inv.title.toLowerCase()} ${inv.number} was due on ${formatDate(inv.dueDate)}. The balance still owing is ${formatMoney(inv.balanceNzd)}.\n\nIf you've already paid, thank you, and please ignore this email.\n\nNgā mihi,\n${from}`,
     };
   }
   return {
     to: inv.clientEmail ? [inv.clientEmail] : [],
     subject: `${inv.title} ${inv.number} from ${from}`,
-    message: `${greeting}\n\nPlease find attached ${inv.title.toLowerCase()} ${inv.number} for ${formatMoney(inv.amountDueNzd)}, due ${due}.\n\nNgā mihi,\n${from}`,
+    message: `${greeting}\n\nHere is ${inv.title.toLowerCase()} ${inv.number} for ${formatMoney(inv.amountDueNzd)}, due ${due}.\n\nNgā mihi,\n${from}`,
   };
 }
 
@@ -323,6 +326,36 @@ router.get('/:id/email-draft', async (req, res) => {
   }
   const kind = emailKind(req.query.kind);
   res.json({ ...defaultEmail(inv, kind), kind, emailEnabled: emailEnabled(), problem: kind === 'reminder' ? reminderProblem(inv) : sendProblem(inv) });
+});
+
+router.post('/:id/record-send', async (req, res) => {
+  const userId = uid(req);
+  const db = await getDb();
+  const today = aucklandToday();
+  const base = shareBase(req);
+  const inv = getInvoice(db, userId, req.params.id, today, base);
+  if (!inv) {
+    res.status(404).json({ error: 'Invoice not found' });
+    return;
+  }
+  const parsed = parseExternalSend(req.body);
+  if (!parsed.ok) {
+    res.status(400).json({ error: parsed.error });
+    return;
+  }
+  if (inv.storedStatus === 'void') {
+    res.status(409).json({ error: 'This invoice is void' });
+    return;
+  }
+  const { kind, channel, to, subject } = parsed.value;
+  const problem = kind === 'reminder' ? reminderProblem(inv) : sendProblem(inv);
+  if (problem) {
+    res.status(400).json({ error: problem });
+    return;
+  }
+  logSend(db, userId, inv.id, { kind, channel, recipients: to, subject, status: 'sent' });
+  const after = kind === 'invoice' ? markSent(db, userId, inv.id, today, base) : null;
+  res.json(after && after.ok ? after.value : getInvoice(db, userId, inv.id, today, base));
 });
 
 router.post('/:id/send', async (req, res) => {

@@ -42,6 +42,7 @@ const links: Array<{
   { to: '/news', label: 'News' },
   { to: '/kiwisaver', label: 'KiwiSaver', requirePref: 'kiwisaver' },
   { to: '/paye', label: 'PAYE' },
+  { to: '/invoices', label: 'Invoices' },
   { to: '/yearly', label: 'History' },
   { to: '/economic-cycle', label: 'Economic cycle' },
   { to: '/value-search', label: 'Value search', requireAnyPref: VALUE_SEARCH_NAV_PREFS },

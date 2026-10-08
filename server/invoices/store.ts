@@ -305,7 +305,7 @@ function payments(db: Database, userId: string, invoiceId: string): InvoicePayme
 }
 
 function sends(db: Database, userId: string, invoiceId: string): InvoiceSendLog[] {
-  return queryAll<{ id: string; kind: string; recipients: string; subject: string; status: string; error: string | null; sent_at: string }>(
+  return queryAll<{ id: string; kind: string; channel: string; recipients: string; subject: string; status: string; error: string | null; sent_at: string }>(
     db,
     `SELECT * FROM invoice_sends WHERE invoice_id = ? AND user_id = ? ORDER BY sent_at DESC`,
     [invoiceId, userId],
@@ -319,6 +319,7 @@ function sends(db: Database, userId: string, invoiceId: string): InvoiceSendLog[
     return {
       id: s.id,
       kind: s.kind === 'reminder' ? 'reminder' : 'invoice',
+      channel: s.channel === 'email_app' || s.channel === 'share' ? s.channel : 'resend',
       recipients,
       subject: s.subject,
       status: s.status === 'sent' ? 'sent' : 'failed',
@@ -814,23 +815,38 @@ export function logSend(
   db: Database,
   userId: string,
   invoiceId: string,
-  entry: { kind: 'invoice' | 'reminder'; recipients: string[]; subject: string; status: 'sent' | 'failed'; providerId?: string | null; error?: string | null },
+  entry: {
+    kind: 'invoice' | 'reminder';
+    channel?: 'resend' | 'email_app' | 'share';
+    recipients: string[];
+    subject: string;
+    status: 'sent' | 'failed';
+    providerId?: string | null;
+    error?: string | null;
+  },
 ): void {
   run(
     db,
-    `INSERT INTO invoice_sends (id, user_id, invoice_id, kind, recipients, subject, status, provider_id, error, sent_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO invoice_sends (id, user_id, invoice_id, kind, channel, recipients, subject, status, provider_id, error, sent_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     [
-      newId('isnd'), userId, invoiceId, entry.kind, JSON.stringify(entry.recipients), entry.subject, entry.status,
+      newId('isnd'), userId, invoiceId, entry.kind, entry.channel ?? 'resend', JSON.stringify(entry.recipients), entry.subject, entry.status,
       entry.providerId ?? null, entry.error ?? null, new Date().toISOString(),
     ],
   );
 }
 
-/** Email send attempts (sent or failed) by this user since a time. Failed attempts count too. */
+/**
+ * Emails the app sent (or tried to) for this user since a time. Failed attempts count;
+ * sends the user made from their own email app or share sheet don't.
+ */
 export function sendsSince(db: Database, userId: string, sinceIso: string): number {
   return Number(
-    queryOne<{ c?: number }>(db, `SELECT COUNT(*) AS c FROM invoice_sends WHERE user_id = ? AND sent_at >= ?`, [userId, sinceIso])?.c ?? 0,
+    queryOne<{ c?: number }>(
+      db,
+      `SELECT COUNT(*) AS c FROM invoice_sends WHERE user_id = ? AND sent_at >= ? AND channel = 'resend'`,
+      [userId, sinceIso],
+    )?.c ?? 0,
   );
 }
 

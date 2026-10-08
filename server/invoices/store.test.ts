@@ -312,6 +312,22 @@ try {
   const limited = await call('POST', `/api/invoices/${id1}/send`, A, { kind: 'reminder', to: ['accounts@matai.nz'], subject: 'Reminder 3', confirm: true });
   assert(limited.status === 429 && sentMail.length === 3, 'send rate limit');
 
+  // Sent from the user's own email app / share sheet: logged, marks sent, not rate limited.
+  const manual = await call('POST', '/api/invoices', A, { ...draft, issueDate: today, lines: [{ description: 'Mowing', quantity: 1, unit: 'job', rate: 80 }] });
+  const badChannel = await call('POST', `/api/invoices/${manual.json.id}/record-send`, A, { channel: 'fax' });
+  assert(badChannel.status === 400, 'unknown channel refused');
+  assert((await call('POST', `/api/invoices/${manual.json.id}/record-send`, B, { channel: 'email_app' })).status === 404, 'user B cannot record A’s send');
+  const viaApp = await call('POST', `/api/invoices/${manual.json.id}/record-send`, A, {
+    channel: 'email_app', to: ['accounts@matai.nz'], subject: 'Tax invoice',
+  });
+  assert(viaApp.status === 200 && viaApp.json.storedStatus === 'sent', 'email-app send marks sent even while app sending is rate limited');
+  assert(viaApp.json.sends[0].channel === 'email_app' && viaApp.json.sends[0].recipients[0] === 'accounts@matai.nz', 'email-app send logged');
+  const viaShare = await call('POST', `/api/invoices/${manual.json.id}/record-send`, A, { kind: 'reminder', channel: 'share' });
+  assert(viaShare.status === 200 && viaShare.json.sends[0].channel === 'share', 'share-sheet reminder logged');
+  assert(sentMail.length === 3, 'recording a manual send emails nothing');
+  const noLines = await call('POST', `/api/invoices/${id3}/record-send`, A, { channel: 'share' });
+  assert(noLines.status === 400, 'manual send still needs a complete invoice');
+
   // Failures are logged and count toward the limit.
   setEmailFetchForTest(async () => ({ ok: false, status: 422, json: async () => ({ message: 'Invalid domain' }) }));
   const bSend = await call('POST', `/api/invoices/${invB.json.id}/send`, B, { to: ['x@example.com'], subject: 'x', confirm: true });

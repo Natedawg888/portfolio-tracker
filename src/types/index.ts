@@ -1191,9 +1191,13 @@ export interface InvoicePayment {
   createdAt: string;
 }
 
+export type InvoiceSendChannel = 'resend' | 'email_app' | 'share';
+
 export interface InvoiceSendLog {
   id: string;
   kind: 'invoice' | 'reminder';
+  /** resend = sent by the app; email_app / share = the user sent it themselves. */
+  channel: InvoiceSendChannel;
   recipients: string[];
   subject: string;
   status: 'sent' | 'failed';

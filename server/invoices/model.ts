@@ -190,6 +190,23 @@ export function parsePayment(raw: unknown, today: string): Parsed<PaymentDraft> 
   };
 }
 
+export type ExternalSendDraft = { kind: 'invoice' | 'reminder'; channel: 'email_app' | 'share'; to: string[]; subject: string };
+
+/** A send the user made themselves (email app or share sheet). Recipients are optional. */
+export function parseExternalSend(raw: unknown): Parsed<ExternalSendDraft> {
+  const o = obj(raw);
+  if (!o) return { ok: false, error: 'Body is required' };
+  if (o.channel !== 'email_app' && o.channel !== 'share') return { ok: false, error: 'channel must be email_app or share' };
+  const list = Array.isArray(o.to) ? o.to : [];
+  const to = [...new Set(list.map((v) => (typeof v === 'string' ? v.trim().toLowerCase() : '')).filter(Boolean))].slice(0, MAX_RECIPIENTS);
+  const bad = to.find((e) => !isValidEmail(e));
+  if (bad) return { ok: false, error: `${bad} is not a valid email address` };
+  return {
+    ok: true,
+    value: { kind: o.kind === 'reminder' ? 'reminder' : 'invoice', channel: o.channel, to, subject: text(o, 'subject', 200).replace(/[\r\n]+/g, ' ') },
+  };
+}
+
 export type SendDraft = { to: string[]; subject: string; message: string };
 
 export function parseSend(raw: unknown): Parsed<SendDraft> {

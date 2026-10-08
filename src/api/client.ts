@@ -572,6 +572,8 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ ...body, confirm: true }),
       }),
+    recordSend: (id: string, body: { kind: 'invoice' | 'reminder'; channel: 'email_app' | 'share'; to: string[]; subject: string }) =>
+      req<Invoice>(`/invoices/${encodeURIComponent(id)}/record-send`, { method: 'POST', body: JSON.stringify(body) }),
     pdfUrl: (id: string, inline = false) => `${BASE}/invoices/${encodeURIComponent(id)}/pdf${inline ? '?inline=1' : ''}`,
     csvUrl: () => `${BASE}/invoices/export.csv`,
     business: () => req<BusinessProfile>('/invoices/business'),
