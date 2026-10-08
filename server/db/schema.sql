@@ -740,6 +740,36 @@ CREATE TABLE IF NOT EXISTS invoice_sends (
 CREATE INDEX IF NOT EXISTS idx_invoice_sends_user_time ON invoice_sends(user_id, sent_at);
 CREATE INDEX IF NOT EXISTS idx_invoice_sends_invoice ON invoice_sends(invoice_id);
 
+-- Bills and subscriptions (KAN-26). Saved items (confirmed from detection or added by hand).
+-- next_due is an anchor; reads roll it forward to the first due date on or after today.
+-- merchant_key links a confirmed item to its transactions (src/lib/recurring.ts merchantKey).
+CREATE TABLE IF NOT EXISTS recurring_items (
+  id            TEXT PRIMARY KEY,
+  user_id       TEXT,
+  name          TEXT NOT NULL,
+  merchant_key  TEXT,
+  kind          TEXT NOT NULL DEFAULT 'bill',
+  amount_nzd    REAL NOT NULL,
+  cadence       TEXT NOT NULL,
+  next_due      TEXT NOT NULL,
+  category_id   TEXT,
+  status        TEXT NOT NULL DEFAULT 'active',
+  source        TEXT NOT NULL DEFAULT 'manual',
+  notes         TEXT NOT NULL DEFAULT '',
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_recurring_items_user ON recurring_items(user_id);
+
+-- Detected suggestions the user said are not bills; they are not suggested again.
+CREATE TABLE IF NOT EXISTS recurring_dismissed (
+  id            TEXT PRIMARY KEY,
+  user_id       TEXT,
+  merchant_key  TEXT NOT NULL,
+  dismissed_at  TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_recurring_dismissed_user_key ON recurring_dismissed(user_id, merchant_key);
+
 -- Read-only crypto wallets: public address only. Never store seed phrases / private keys.
 -- No balance column on purpose: balances come from chain providers at sync time
 -- (balance is never stored as the source of truth here).

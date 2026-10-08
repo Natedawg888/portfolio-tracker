@@ -19,6 +19,8 @@ import type {
   ProjectionResponse,
   PayeeSetting,
   PaySource,
+  RecurringItem,
+  RecurringListResponse,
   BusinessProfile,
   Invoice,
   InvoiceClient,
@@ -72,6 +74,16 @@ let onUnauthorized: AuthUnauthorizedHandler | null = null;
 export function setUnauthorizedHandler(handler: AuthUnauthorizedHandler | null) {
   onUnauthorized = handler;
 }
+
+export type RecurringWriteBody = {
+  name: string;
+  kind: RecurringItem['kind'];
+  amountNzd: number;
+  cadence: RecurringItem['cadence'];
+  nextDue: string;
+  categoryId: string | null;
+  notes: string;
+};
 
 /** Draft invoice fields sent to the API. Totals are always computed by the server. */
 export type InvoiceWriteBody = {
@@ -569,6 +581,17 @@ export const api = {
       req<{ ok: boolean; id: string }>(`/debts/repayments/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       }),
+  },
+  recurring: {
+    list: () => req<RecurringListResponse>('/recurring'),
+    create: (body: RecurringWriteBody & { merchantKey?: string | null; source?: 'detected' | 'manual' }) =>
+      req<RecurringItem>('/recurring', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: Partial<RecurringWriteBody> & { status?: RecurringItem['status'] }) =>
+      req<RecurringItem>(`/recurring/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    remove: (id: string) => req<{ ok: boolean; id: string }>(`/recurring/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    dismiss: (merchantKey: string) =>
+      req<{ ok: boolean; merchantKey: string }>('/recurring/dismiss', { method: 'POST', body: JSON.stringify({ merchantKey }) }),
+    restoreDismissed: () => req<{ ok: boolean; restored: number }>('/recurring/dismissed/restore', { method: 'POST' }),
   },
   invoices: {
     list: (filters: { status?: string; clientId?: string; from?: string; to?: string } = {}) => {

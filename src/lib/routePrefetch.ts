@@ -13,6 +13,7 @@ const loaders = {
   invoiceEditor: () => import('../pages/InvoiceEditor'),
   invoiceDetail: () => import('../pages/InvoiceDetail'),
   publicInvoice: () => import('../pages/PublicInvoice'),
+  bills: () => import('../pages/Bills'),
   valueSearch: () => import('../pages/ValueSearch'),
   settings: () => import('../pages/Settings'),
   economicCycle: () => import('../pages/EconomicCycle'),
@@ -57,6 +58,8 @@ function exportName(name: PageName): string {
       return 'InvoiceDetail';
     case 'publicInvoice':
       return 'PublicInvoice';
+    case 'bills':
+      return 'Bills';
     case 'valueSearch':
       return 'ValueSearch';
     case 'settings':
@@ -78,6 +81,7 @@ export const InvoicesPage = lazyNamed('invoices');
 export const InvoiceEditorPage = lazyNamed('invoiceEditor');
 export const InvoiceDetailPage = lazyNamed('invoiceDetail');
 export const PublicInvoicePage = lazyNamed('publicInvoice');
+export const BillsPage = lazyNamed('bills');
 export const ValueSearchPage = lazyNamed('valueSearch');
 export const SettingsPage = lazyNamed('settings');
 export const EconomicCyclePage = lazyNamed('economicCycle');
@@ -92,6 +96,7 @@ const NAV_PAGES: Record<string, PageName> = {
   '/kiwisaver': 'kiwisaver',
   '/paye': 'paye',
   '/invoices': 'invoices',
+  '/bills': 'bills',
   '/value-search': 'valueSearch',
   '/settings': 'settings',
   '/economic-cycle': 'economicCycle',
