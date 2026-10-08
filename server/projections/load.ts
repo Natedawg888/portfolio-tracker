@@ -181,7 +181,7 @@ function miningFlows(mining: ProjectionMining): MiningFlows | null {
 const INVESTMENTS_SLUG = 'cat-investments';
 
 /** Net money moved into the Investments category (out minus back in) over the window. */
-function investmentsMoved(db: Database, userId: string, from: string, to: string): { total: number; count: number } {
+export function investmentsMoved(db: Database, userId: string, from: string, to: string): { total: number; count: number } {
   const categoryId = resolveCategoryId(db, userId, INVESTMENTS_SLUG);
   if (!categoryId) return { total: 0, count: 0 };
   const row = queryAll<{ total?: number; c?: number }>(
@@ -319,7 +319,7 @@ export function buildClassInputs(opts: {
   });
 }
 
-function kiwiSaverAmounts(
+export function kiwiSaverAmounts(
   db: Database,
   userId: string,
   from: string,

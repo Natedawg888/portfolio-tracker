@@ -1375,3 +1375,10 @@ export interface RecurringListResponse {
     activeCount: number;
   };
 }
+
+/** GET /api/health-score (KAN-55). */
+export type HealthScoreResponse = import('../lib/healthScore').HealthScore & {
+  asOf: string;
+  windowStart: string | null;
+  windowEnd: string | null;
+};

@@ -20,6 +20,7 @@ import type {
   PayeeSetting,
   PaySource,
   RecurringItem,
+  HealthScoreResponse,
   RecurringListResponse,
   BusinessProfile,
   Invoice,
@@ -584,6 +585,9 @@ export const api = {
       req<{ ok: boolean; id: string }>(`/debts/repayments/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       }),
+  },
+  healthScore: {
+    get: () => req<HealthScoreResponse>('/health-score'),
   },
   recurring: {
     list: () => req<RecurringListResponse>('/recurring'),
