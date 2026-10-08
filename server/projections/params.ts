@@ -13,12 +13,25 @@ import {
   MIN_ANNUAL_RETURN_PERCENT,
 } from './model.ts';
 import { roundMoney } from '../debts/model.ts';
+import {
+  ADD_LIMIT,
+  PROJECTION_CLASS_KEYS,
+  PROJECTION_CLASS_LABELS,
+  RETURN_LIMITS,
+  addParam,
+  returnParam,
+  type ProjectionClassValues,
+} from '../../src/lib/projectionClasses.ts';
 
 export type ProjectionQuery = {
   months: number;
   savingWindowMonths: number;
   annualReturnPercent: number | null;
   monthlySavingNzd: number | null;
+  /** Per-class yearly returns (returnShares=7 …). Missing classes fall back to saved, then the default. */
+  classReturns: ProjectionClassValues;
+  /** Per-class monthly additions (addShares=500 …). Missing classes fall back to saved, then observed. */
+  classAdditions: ProjectionClassValues;
 };
 
 function oneString(
@@ -97,6 +110,30 @@ export function parseProjectionQuery(
     monthlySavingNzd = roundMoney(n);
   }
 
+  const classReturns: ProjectionClassValues = {};
+  const classAdditions: ProjectionClassValues = {};
+  for (const key of PROJECTION_CLASS_KEYS) {
+    const label = PROJECTION_CLASS_LABELS[key];
+    const r = oneString(query[returnParam(key)], returnParam(key));
+    if (!r.ok) return r;
+    if (r.value != null) {
+      const n = Number(r.value);
+      if (!Number.isFinite(n) || n < RETURN_LIMITS[0] || n > RETURN_LIMITS[1]) {
+        return { ok: false, error: `${label} return must be a number from ${RETURN_LIMITS[0]} to ${RETURN_LIMITS[1]}` };
+      }
+      classReturns[key] = Math.round(n * 10000) / 10000;
+    }
+    const a = oneString(query[addParam(key)], addParam(key));
+    if (!a.ok) return a;
+    if (a.value != null) {
+      const n = Number(a.value);
+      if (!Number.isFinite(n) || Math.abs(n) > ADD_LIMIT) {
+        return { ok: false, error: `${label} monthly addition must be a number from -${ADD_LIMIT} to ${ADD_LIMIT}` };
+      }
+      classAdditions[key] = roundMoney(n);
+    }
+  }
+
   return {
     ok: true,
     value: {
@@ -104,6 +141,8 @@ export function parseProjectionQuery(
       savingWindowMonths: savingWindowMonths.value,
       annualReturnPercent,
       monthlySavingNzd,
+      classReturns,
+      classAdditions,
     },
   };
 }

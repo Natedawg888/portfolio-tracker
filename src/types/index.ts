@@ -6,6 +6,7 @@
 
 import type { OutputPaySourceInputs, OutputPayType } from '../lib/outputPayCalc';
 import type { DuePreset, GstMode, InvoiceStatus, InvoiceStoredStatus } from '../lib/invoiceCalc';
+import type { ProjectionClassKey } from '../lib/projectionClasses';
 
 export type CurrencyCode = 'NZD' | 'USD' | 'AUD' | 'EUR' | 'GBP';
 
@@ -539,6 +540,21 @@ export interface PaySourcesExpected {
   sources: Array<{ id: string; name: string; payType: OutputPayType; weeklyNetNzd: number }>;
 }
 
+export interface ProjectionAssetClass {
+  key: ProjectionClassKey;
+  label: string;
+  startNzd: number;
+  endNzd: number;
+  annualReturnPercent: number;
+  /** saved = the user's saved default for this class. */
+  returnSource: 'user_data' | 'default' | 'query' | 'saved';
+  monthlyAdditionNzd: number | null;
+  additionSource: 'user_data' | 'default' | 'query' | 'saved';
+  additionReason: string | null;
+  addedNzd: number;
+  growthNzd: number;
+}
+
 /** Where a projection figure came from. */
 export type ProjectionAssumptionSource = 'user_data' | 'default' | 'query';
 
@@ -561,6 +577,8 @@ export interface ProjectionPoint {
   debtOutstandingNzd: number;
   bankLiabilitiesNzd: number;
   propertyMortgageNzd: number;
+  /** Value of each asset class at this point. */
+  byClassNzd?: Partial<Record<ProjectionClassKey, number>>;
 }
 
 export interface ProjectionDebtPath {
@@ -622,6 +640,8 @@ export interface ProjectionResponse {
     dividends: ProjectionAssumption;
     savingsGoals: ProjectionAssumption;
   };
+  /** Each asset class grown on its own return with its own monthly addition. */
+  assetClasses: ProjectionAssetClass[];
   debts: ProjectionDebtPath[];
   propertyMortgage: {
     balanceNzd: number;

@@ -182,40 +182,39 @@ export function Invoices() {
 
   return (
     <div className="stack invoices-page">
-      <section className="panel">
-        <div className="panel-heading">
-          <h2 className="page-title">Invoices</h2>
-          <div className="row gap" style={{ marginTop: 0 }}>
-            <a className="btn small" href={api.invoices.csvUrl()} download>
-              Export CSV
-            </a>
-            <button type="button" className="btn small primary" onClick={() => navigate('/invoices/new')}>
-              New invoice
-            </button>
-          </div>
-        </div>
+      <section className="hero-card hero-card--centered">
+        <h2 className="page-title">Invoices</h2>
         <p className="page-lead">
           Create, send and keep track of invoices. Your name, bank account and GST details come from{' '}
           <Link to="/settings?tab=business">Settings → Business</Link>.
         </p>
-        <div className="invoice-totals-row" style={{ marginTop: '0.75rem' }}>
-          <div className="card">
-            <p className="eyebrow">Outstanding</p>
-            <p className="stat-value">{t ? formatNzd(t.outstandingNzd) : '—'}</p>
-          </div>
-          <div className="card">
-            <p className="eyebrow">Overdue</p>
-            <p className={`stat-value${t && t.overdueNzd > 0 ? ' budget-over-text' : ''}`}>{t ? formatNzd(t.overdueNzd) : '—'}</p>
-          </div>
-          <div className="card">
-            <p className="eyebrow">Paid this month</p>
-            <p className="stat-value">{t ? formatNzd(t.paidThisMonthNzd) : '—'}</p>
-          </div>
-          <div className="card">
-            <p className="eyebrow">Paid this tax year</p>
-            <p className="stat-value">{t ? formatNzd(t.paidTaxYearNzd) : '—'}</p>
-            {t ? <p className="muted small">Since {formatDate(t.taxYearStart)}</p> : null}
-          </div>
+        <div className="row gap" style={{ justifyContent: 'center', flexWrap: 'wrap' }}>
+          <button type="button" className="btn primary" onClick={() => navigate('/invoices/new')}>
+            New invoice
+          </button>
+          <a className="btn" href={api.invoices.csvUrl()} download>
+            Export CSV
+          </a>
+        </div>
+      </section>
+
+      <section className="invoice-totals-row" aria-label="Invoice totals">
+        <div className="card">
+          <p className="eyebrow">Outstanding</p>
+          <p className="stat-value">{t ? formatNzd(t.outstandingNzd) : '—'}</p>
+        </div>
+        <div className="card">
+          <p className="eyebrow">Overdue</p>
+          <p className={`stat-value${t && t.overdueNzd > 0 ? ' budget-over-text' : ''}`}>{t ? formatNzd(t.overdueNzd) : '—'}</p>
+        </div>
+        <div className="card">
+          <p className="eyebrow">Paid this month</p>
+          <p className="stat-value">{t ? formatNzd(t.paidThisMonthNzd) : '—'}</p>
+        </div>
+        <div className="card">
+          <p className="eyebrow">Paid this tax year</p>
+          <p className="stat-value">{t ? formatNzd(t.paidTaxYearNzd) : '—'}</p>
+          {t ? <p className="muted small">Since {formatDate(t.taxYearStart)}</p> : null}
         </div>
       </section>
 

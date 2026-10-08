@@ -11,11 +11,20 @@ import { ApiError, api, formatNzd } from '../api/client';
 import { AssetLineChart, type LineSeries } from '../components/AssetLineChart';
 import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import { showQuietToast } from '../lib/quietToast';
-import type { ProjectionAssumption, ProjectionResponse } from '../types';
+import type { ProjectionAssetClass, ProjectionAssumption, ProjectionResponse } from '../types';
+import {
+  PROJECTION_CLASS_KEYS,
+  PROJECTION_CLASS_LABELS,
+  type ProjectionClassKey,
+  type ProjectionClassValues,
+} from '../lib/projectionClasses';
 import {
   HORIZONS,
   WINDOWS,
+  classNumbers,
+  emptyClassFields,
   flatLineNote,
+  inputsToParams,
   projectionCacheKey,
   readInputs,
   scenarioFrameFromSearch,
@@ -28,6 +37,38 @@ const SOURCE_LABEL: Record<ProjectionAssumption['source'], string> = {
   default: 'Default',
   query: 'You entered',
 };
+
+const CLASS_SOURCE_LABEL: Record<ProjectionAssetClass['returnSource'], string> = {
+  ...SOURCE_LABEL,
+  saved: 'Your saved default',
+};
+
+const CLASS_COLOURS: Record<ProjectionClassKey, string> = {
+  cash: '#8b9aab',
+  shares: '#7a5cc4',
+  kiwiSaver: '#2a9d8f',
+  crypto: '#e0a030',
+  mining: '#b5651d',
+  metals: '#a0a6ad',
+  property: '#5c7cfa',
+  other: '#c06c84',
+};
+
+function pctText(n: number): string {
+  return `${Math.round(n * 100) / 100}%`;
+}
+
+/** Shown in the class fields when nothing is typed: what the projection is using. */
+function usedReturnHint(c: ProjectionAssetClass | undefined): string {
+  if (!c) return 'Default';
+  return c.returnSource === 'saved' ? `${pctText(c.annualReturnPercent)} saved` : `${pctText(c.annualReturnPercent)}`;
+}
+
+function usedAddHint(c: ProjectionAssetClass | undefined): string {
+  if (!c || c.monthlyAdditionNzd == null) return 'None';
+  const v = `${c.monthlyAdditionNzd < 0 ? '−' : ''}$${Math.abs(Math.round(c.monthlyAdditionNzd))}`;
+  return c.additionSource === 'saved' ? `${v} saved` : c.additionSource === 'user_data' ? `${v} (data)` : v;
+}
 
 function formatDate(ymd: string): string {
   const d = new Date(`${ymd}T00:00:00Z`);
@@ -95,6 +136,8 @@ export function Projections() {
         savingWindowMonths: applied.window,
         annualReturnPercent: applied.returnPct === '' ? undefined : Number(applied.returnPct),
         monthlySavingNzd: applied.saving === '' ? undefined : Number(applied.saving),
+        classReturns: classNumbers(applied.classReturns),
+        classAdds: classNumbers(applied.classAdds),
       })
       .then((r) => {
         if (cancelled) return;
@@ -122,18 +165,52 @@ export function Projections() {
 
   const onApply = (e: FormEvent) => {
     e.preventDefault();
-    const next = new URLSearchParams();
-    next.set('months', String(form.months));
-    if (form.window !== 3) next.set('savingWindowMonths', String(form.window));
-    if (form.returnPct.trim() !== '') next.set('annualReturnPercent', form.returnPct.trim());
-    if (form.saving.trim() !== '') next.set('monthlySavingNzd', form.saving.trim());
-    setParams(next, { replace: true });
+    setParams(inputsToParams(form), { replace: true });
   };
 
   const onReset = () => {
-    const base = { months: applied.months, window: 3, returnPct: '', saving: '' };
+    const base = { months: applied.months, window: 3, returnPct: '', saving: '', classReturns: emptyClassFields(), classAdds: emptyClassFields() };
     setForm(base);
     setParams(new URLSearchParams({ months: String(base.months) }), { replace: true });
+  };
+
+  const [savingDefaults, setSavingDefaults] = useState(false);
+  const [defaultsMsg, setDefaultsMsg] = useState<string | null>(null);
+  const classesByKey = useMemo(
+    () => new Map((data?.assetClasses ?? []).map((c) => [c.key, c] as const)),
+    [data],
+  );
+
+  /** Typed values win; classes left blank keep what is already saved. */
+  const onSaveDefaults = async (forget = false) => {
+    setSavingDefaults(true);
+    setDefaultsMsg(null);
+    try {
+      const returns: ProjectionClassValues = {};
+      const contributions: ProjectionClassValues = {};
+      if (!forget) {
+        for (const key of PROJECTION_CLASS_KEYS) {
+          const c = classesByKey.get(key);
+          const r = form.classReturns[key].trim();
+          const a = form.classAdds[key].trim();
+          if (r !== '') returns[key] = Number(r);
+          else if (c?.returnSource === 'saved') returns[key] = c.annualReturnPercent;
+          if (a !== '') contributions[key] = Number(a);
+          else if (c?.additionSource === 'saved' && c.monthlyAdditionNzd != null) contributions[key] = c.monthlyAdditionNzd;
+        }
+      }
+      await api.projections.saveAssumptions({ returns, contributions });
+      // Saved values now apply without being in the link.
+      const cleared = { ...form, classReturns: emptyClassFields(), classAdds: emptyClassFields() };
+      setForm(cleared);
+      setParams(inputsToParams(cleared), { replace: true });
+      setLoadedKey(null);
+      setDefaultsMsg(forget ? 'Saved rates cleared.' : 'Saved. These rates are used every time you open Projections.');
+    } catch (err) {
+      setDefaultsMsg(err instanceof ApiError ? err.message : 'Could not save.');
+    } finally {
+      setSavingDefaults(false);
+    }
   };
 
   const series: LineSeries[] = useMemo(() => {
@@ -146,6 +223,16 @@ export function Projections() {
       { key: 'netWorth', label: 'Net worth', colour: '#3d9a6a', points: pts.map((p) => ({ at: p.date, value: p.netWorthNzd })) },
       { key: 'assets', label: 'Assets that grow', colour: '#4a8fd4', points: pts.map((p) => ({ at: p.date, value: p.compoundingAssetsNzd })) },
     ];
+    for (const key of PROJECTION_CLASS_KEYS) {
+      const c = data.assetClasses?.find((x) => x.key === key);
+      if (!c || (Math.abs(c.startNzd) < 0.005 && Math.abs(c.endNzd) < 0.005)) continue;
+      out.push({
+        key: `class-${key}`,
+        label: PROJECTION_CLASS_LABELS[key],
+        colour: CLASS_COLOURS[key],
+        points: pts.map((p) => ({ at: p.date, value: p.byClassNzd?.[key] ?? 0 })),
+      });
+    }
     if (pts.some((p) => p.debtOutstandingNzd > 0)) {
       out.push({ key: 'debt', label: 'Debt outstanding', colour: '#d45a7a', points: pts.map((p) => ({ at: p.date, value: p.debtOutstandingNzd })) });
     }
@@ -192,7 +279,7 @@ export function Projections() {
             </select>
           </label>
           <label>
-            Yearly return on assets (%)
+            Default yearly return (%)
             <input
               type="number"
               step="0.1"
@@ -203,6 +290,7 @@ export function Projections() {
               value={form.returnPct}
               onChange={(e) => setForm({ ...form, returnPct: e.target.value })}
             />
+            <span className="muted small">For asset classes below without a return of their own.</span>
           </label>
           <label>
             Monthly saving (NZD)
@@ -227,14 +315,82 @@ export function Projections() {
               ))}
             </select>
           </label>
-          <div className="span-2 row gap">
+          <div className="span-2">
+            <h4 style={{ margin: '0.5rem 0 0.25rem' }}>By asset class</h4>
+            <p className="muted small" style={{ margin: 0 }}>
+              Set an average yearly return and a monthly amount for each kind of asset. Blank fields use what the
+              projection shows in grey: your saved default, your data, or the default return. Returns are your own
+              assumptions — nothing here is a price forecast. Money moved to the <strong>Investments</strong> budget
+              category counts as added to Shares &amp; funds and is taken out of cash, so it isn&apos;t counted twice.
+              KiwiSaver contributions come out of pay. Mining rewards recorded as Mining income are already in your saving.
+            </p>
+            <div className="table-wrap" style={{ overflowX: 'auto', marginTop: '0.5rem' }}>
+              <table className="data-table projection-class-inputs">
+                <thead>
+                  <tr>
+                    <th>Asset class</th>
+                    <th style={{ textAlign: 'right' }}>Today</th>
+                    <th>Yearly return (%)</th>
+                    <th>Added each month (NZD)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {PROJECTION_CLASS_KEYS.map((key) => {
+                    const c = classesByKey.get(key);
+                    return (
+                      <tr key={key}>
+                        <td>{PROJECTION_CLASS_LABELS[key]}</td>
+                        <td className="money" style={{ textAlign: 'right' }}>{c ? formatNzd(c.startNzd) : '—'}</td>
+                        <td>
+                          <input
+                            type="number"
+                            step="0.1"
+                            min={-50}
+                            max={50}
+                            inputMode="decimal"
+                            aria-label={`${PROJECTION_CLASS_LABELS[key]} yearly return`}
+                            placeholder={usedReturnHint(c)}
+                            value={form.classReturns[key]}
+                            onChange={(e) => setForm({ ...form, classReturns: { ...form.classReturns, [key]: e.target.value } })}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="number"
+                            step="1"
+                            min={-10000000}
+                            max={10000000}
+                            inputMode="decimal"
+                            aria-label={`${PROJECTION_CLASS_LABELS[key]} added each month`}
+                            placeholder={usedAddHint(c)}
+                            value={form.classAdds[key]}
+                            onChange={(e) => setForm({ ...form, classAdds: { ...form.classAdds, [key]: e.target.value } })}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div className="span-2 row gap" style={{ flexWrap: 'wrap' }}>
             <button type="submit" className="btn primary" disabled={loading}>
               {loading ? 'Projecting…' : 'Update projection'}
             </button>
             <button type="button" className="btn ghost" onClick={onReset} disabled={loading}>
               Use my data only
             </button>
+            <button type="button" className="btn" onClick={() => void onSaveDefaults()} disabled={loading || savingDefaults}>
+              Save class rates as my defaults
+            </button>
+            {[...classesByKey.values()].some((c) => c.returnSource === 'saved' || c.additionSource === 'saved') ? (
+              <button type="button" className="btn ghost" onClick={() => void onSaveDefaults(true)} disabled={loading || savingDefaults}>
+                Forget saved rates
+              </button>
+            ) : null}
           </div>
+          {defaultsMsg ? <p className="muted small span-2" role="status">{defaultsMsg}</p> : null}
         </form>
         {applied.ignored.length ? (
           <p className="muted small" role="status">
@@ -271,9 +427,11 @@ export function Projections() {
               <p className="muted small">{a ? SOURCE_LABEL[a.monthlySavingNzd.source] : ''}</p>
             </div>
             <div className="card">
-              <p className="eyebrow">Yearly return used</p>
-              <p className="stat-value">{a?.annualReturnPercent.value == null ? '—' : `${a.annualReturnPercent.value}%`}</p>
-              <p className="muted small">{a ? SOURCE_LABEL[a.annualReturnPercent.source] : ''} · compounded monthly</p>
+              <p className="eyebrow">Investment growth</p>
+              <p className="stat-value">
+                {signedNzd((data.assetClasses ?? []).reduce((sum, c) => sum + c.growthNzd, 0))}
+              </p>
+              <p className="muted small">From each class&apos;s own return · compounded monthly</p>
             </div>
           </section>
 
@@ -300,12 +458,57 @@ export function Projections() {
             <p className="muted small">{data.note}</p>
           </section>
 
+          {data.assetClasses?.length ? (
+            <section className="panel">
+              <h3>By asset class</h3>
+              <p className="section-desc">Each class grows on its own yearly return, plus what is added to it each month.</p>
+              <div className="table-wrap" style={{ overflowX: 'auto' }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Asset class</th>
+                      <th style={{ textAlign: 'right' }}>Today</th>
+                      <th style={{ textAlign: 'right' }}>Return</th>
+                      <th style={{ textAlign: 'right' }}>Added / month</th>
+                      <th style={{ textAlign: 'right' }}>Growth</th>
+                      <th style={{ textAlign: 'right' }}>At the end</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.assetClasses
+                      .filter((c) => Math.abs(c.startNzd) >= 0.005 || Math.abs(c.endNzd) >= 0.005)
+                      .map((c) => (
+                        <tr key={c.key}>
+                          <td>
+                            {c.label}
+                            {c.additionReason ? <div className="muted small">{c.additionReason}</div> : null}
+                          </td>
+                          <td className="money" style={{ textAlign: 'right' }}>{formatNzd(c.startNzd)}</td>
+                          <td style={{ textAlign: 'right' }}>
+                            {pctText(c.annualReturnPercent)}
+                            <div className="muted small">{CLASS_SOURCE_LABEL[c.returnSource]}</div>
+                          </td>
+                          <td className="money" style={{ textAlign: 'right' }}>
+                            {c.monthlyAdditionNzd == null ? '—' : formatNzd(c.monthlyAdditionNzd)}
+                            <div className="muted small">{CLASS_SOURCE_LABEL[c.additionSource]}</div>
+                          </td>
+                          <td className="money" style={{ textAlign: 'right' }}>{signedNzd(c.growthNzd)}</td>
+                          <td className="money" style={{ textAlign: 'right' }}>{formatNzd(c.endNzd)}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="muted small">Classes with nothing in them and nothing added are hidden. Set them in Scenario above.</p>
+            </section>
+          ) : null}
+
           <section className="panel">
             <h3>Assumptions</h3>
             <p className="section-desc">Where every number in this projection comes from.</p>
             {a ? (
               <ul className="security-list projection-assumptions">
-                <Assumption title="Yearly return on assets" a={a.annualReturnPercent} value={a.annualReturnPercent.value == null ? '—' : `${a.annualReturnPercent.value}%`} />
+                <Assumption title="Default yearly return (classes without their own)" a={a.annualReturnPercent} value={a.annualReturnPercent.value == null ? '—' : `${a.annualReturnPercent.value}%`} />
                 <Assumption title="Monthly saving" a={a.monthlySavingNzd} value={savingValue == null ? '—' : formatNzd(savingValue)} />
                 <Assumption title="KiwiSaver contributions" a={a.kiwiSaverContributionMonthlyNzd} value={a.kiwiSaverContributionMonthlyNzd.value == null ? '—' : `${formatNzd(a.kiwiSaverContributionMonthlyNzd.value)}/mo`} />
                 <Assumption title="Inflation" a={a.inflationPercent} value={a.inflationPercent.value == null ? 'Not applied' : `${a.inflationPercent.value}%`} />

@@ -239,14 +239,14 @@ export function InvoiceEditor() {
 
   if (!loaded) {
     return (
-      <section className="panel">
+      <section className="panel invoices-page">
         {error ? <p className="auth-error" role="alert">{error}</p> : <p className="muted">Loading…</p>}
       </section>
     );
   }
 
   return (
-    <div className="stack">
+    <div className="stack invoices-page">
       <section className="panel">
         <div className="panel-heading">
           <h2 className="page-title">{editingId ? `Edit ${number}` : 'New invoice'}</h2>

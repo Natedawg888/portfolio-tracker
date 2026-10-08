@@ -390,6 +390,76 @@ try {
   eq(overriddenPoints[1].compoundingAssetsNzd, 262.5, '12% monthly compound then the explicit saving');
   eq(overriddenPoints[1].netWorthNzd, 262.5, 'net worth matches the compounded cash');
 
+  // Per-class growth: money moved to the Investments category goes to shares, out of cash.
+  type Cls = { key: string; startNzd: number; endNzd: number; annualReturnPercent: number; returnSource: string; monthlyAdditionNzd: number | null; additionSource: string };
+  const invA = cat(userA, 'cat-investments');
+  for (const [index, yearMonth] of windowMonths.entries()) {
+    run(
+      db,
+      `INSERT INTO transactions
+         (id, user_id, account_id, date, description, amount, kind, category_id, currency, source, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [`txn_inv_a_${index}`, userA, 'acct_a', `${yearMonth}-12`, 'Sharesies top-up', -500, 'debit', invA, 'NZD', 'manual', now],
+    );
+  }
+  const byClass = (json: Record<string, unknown>) =>
+    Object.fromEntries((json.assetClasses as Cls[]).map((c) => [c.key, c])) as Record<string, Cls>;
+  const perClass = await call('/api/projections?months=1', cookieA);
+  assert(perClass.status === 200, 'per-class projection is 200');
+  const pc = byClass(perClass.json);
+  assert(Object.keys(pc).join(',') === 'cash,shares,kiwiSaver,crypto,mining,metals,property,other', 'all classes listed in order');
+  eq(pc.shares.startNzd, 5000, 'shares start at the holding value');
+  eq(pc.kiwiSaver.startNzd, 4000, 'KiwiSaver starts at its balance');
+  eq(pc.property.startNzd, 200000, 'property starts at its value');
+  eq(pc.cash.startNzd, 10000, 'cash is bank balances (credit card stays a flat liability)');
+  eq(pc.shares.monthlyAdditionNzd, 500, 'Investments transfers average 500 a month into shares');
+  assert(pc.shares.additionSource === 'user_data', 'shares addition is from the user’s data');
+  eq(pc.cash.monthlyAdditionNzd, 500, 'cash gets saving 1000 less the 500 invested');
+  eq(pc.kiwiSaver.monthlyAdditionNzd, 150, 'KiwiSaver gets its observed contributions, not taken from cash');
+  const pcPoints = perClass.json.points as Array<Point & { byClassNzd: Record<string, number> }>;
+  const startSum = Object.values(pcPoints[0].byClassNzd).reduce((a, b) => a + b, 0);
+  eq(startSum, pcPoints[0].compoundingAssetsNzd, 'classes add up to compounding assets');
+  eq(pcPoints[1].compoundingAssetsNzd - pcPoints[0].compoundingAssetsNzd, 1150, 'at 0% the month adds saving + KiwiSaver, investing is not double counted');
+
+  const shares12 = await call('/api/projections?months=1&returnShares=12&returnCrypto=-10', cookieA);
+  const s12 = byClass(shares12.json);
+  eq(s12.shares.annualReturnPercent, 12, 'shares use their own return');
+  assert(s12.shares.returnSource === 'query', 'shares return labelled query');
+  eq(s12.shares.endNzd, 5550, '5000 × 1.01 + 500');
+  eq(s12.cash.annualReturnPercent, 0, 'cash keeps the 0% default');
+  assert((await call('/api/projections?returnShares=80', cookieA)).status === 400, 'class return out of range is 400');
+  assert((await call('/api/projections?addCrypto=abc', cookieA)).status === 400, 'class addition must be a number');
+
+  const withDefault = byClass((await call('/api/projections?months=1&annualReturnPercent=6&returnShares=12', cookieA)).json);
+  eq(withDefault.property.annualReturnPercent, 6, 'classes without their own return use the default');
+  eq(withDefault.shares.annualReturnPercent, 12, 'a class return beats the default');
+
+  const added = byClass((await call('/api/projections?months=1&addCrypto=200&addShares=300', cookieA)).json);
+  eq(added.crypto.monthlyAdditionNzd, 200, 'crypto monthly addition from the scenario');
+  eq(added.shares.monthlyAdditionNzd, 300, 'shares addition overridden');
+  eq(added.cash.monthlyAdditionNzd, 500, 'cash = saving 1000 − 300 shares − 200 crypto');
+
+  // Saved per-user defaults.
+  const put = await fetch(`${base}/api/projections/assumptions`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Cookie: cookieA },
+    body: JSON.stringify({ returns: { shares: 7, crypto: 15, bogus: 3, metals: 999 }, contributions: { mining: 50 } }),
+  });
+  const savedBody = (await put.json()) as { returns: Record<string, number>; contributions: Record<string, number> };
+  assert(put.status === 200 && savedBody.returns.shares === 7 && savedBody.returns.crypto === 15, 'saved returns');
+  assert(!('bogus' in savedBody.returns) && !('metals' in savedBody.returns), 'unknown classes and out-of-range values dropped');
+  const usesSaved = byClass((await call('/api/projections?months=1', cookieA)).json);
+  eq(usesSaved.shares.annualReturnPercent, 7, 'saved shares return used');
+  assert(usesSaved.shares.returnSource === 'saved', 'labelled saved');
+  eq(usesSaved.mining.monthlyAdditionNzd, 50, 'saved mining addition used');
+  eq(usesSaved.cash.monthlyAdditionNzd, 500, 'mining rewards are not taken out of cash');
+  const queryWins = byClass((await call('/api/projections?months=1&returnShares=2', cookieA)).json);
+  eq(queryWins.shares.annualReturnPercent, 2, 'scenario beats saved');
+  const savedB = await call('/api/projections/assumptions', cookieB);
+  assert(JSON.stringify(savedB.json) === JSON.stringify({ returns: {}, contributions: {} }), 'saved assumptions are per user');
+  const bClasses = byClass((await call('/api/projections?months=1', cookieB)).json);
+  eq(bClasses.shares.annualReturnPercent, 0, 'user B does not get user A’s saved return');
+
   console.log('projection api tests ok');
 } finally {
   await new Promise<void>((resolve, reject) => {

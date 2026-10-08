@@ -393,7 +393,7 @@ export function InvoiceDetail() {
 
   if (!inv) {
     return (
-      <section className="panel">
+      <section className="panel invoices-page">
         {error ? <p className="auth-error" role="alert">{error}</p> : <p className="muted">Loading…</p>}
         <Link to="/invoices">Back to invoices</Link>
       </section>
@@ -405,7 +405,7 @@ export function InvoiceDetail() {
   const owing = isSent && inv.balanceNzd > 0;
 
   return (
-    <div className="stack">
+    <div className="stack invoices-page">
       <section className="panel">
         <div className="panel-heading">
           <div className="row gap" style={{ marginTop: 0, alignItems: 'center' }}>

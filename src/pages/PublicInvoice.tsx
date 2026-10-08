@@ -37,7 +37,7 @@ export function PublicInvoice() {
   }, [token]);
 
   return (
-    <main className="public-invoice-page stack">
+    <main className="public-invoice-page stack invoices-page">
       {error ? (
         <section className="panel">
           <h2>Invoice not available</h2>
