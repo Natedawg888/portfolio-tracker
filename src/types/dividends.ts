@@ -84,6 +84,11 @@ export interface DetectedDividend {
   /** On spends this row's gross cash on more of the same holding. Tax is not estimated. */
   reinvested: boolean;
   reinvestment: DividendReinvestment;
+  /** Forecast shares added by reinvesting earlier predicted payments of this holding. */
+  reinvestExtraShares: number;
+  /** Extra gross cash those shares earn on this payment, in the payment currency. */
+  reinvestExtraAmount: number;
+  reinvestExtraNzd: number | null;
 }
 
 /** `PATCH /api/dividends/:id/reinvest` with `{ reinvested: boolean }`. */
@@ -158,6 +163,8 @@ export interface DividendDashboard {
     detectedNzd: number | null;
     detectedCount: number;
     detectedUnconvertedCount: number;
+    /** Holdings set to reinvest every predicted payment. */
+    reinvestAllHoldingIds?: string[];
     note: string;
   };
   upcoming: DividendEvent[];

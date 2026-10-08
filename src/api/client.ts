@@ -1319,6 +1319,12 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify(body),
       }),
+    /** Reinvest every predicted payment of a holding (dividend reinvestment plan). */
+    setForecastReinvestAll: (body: { holdingId: string; reinvested: boolean }) =>
+      req<{ holdingId: string; reinvested: boolean }>('/dividends/forecast-reinvest-all', {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      }),
   },
   economy: {
     cycle: (opts?: { refresh?: boolean; country?: string; signal?: AbortSignal }) => {

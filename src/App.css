@@ -143,15 +143,21 @@ a { color: var(--accent-2); }
 }
 
 .app-header {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem 1.25rem;
+  /* Top row: brand left, privacy + theme on the right. Nav pill on its own row below. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "brand actions"
+    "nav nav";
+  gap: 0.9rem 1.25rem;
   align-items: center;
-  justify-content: space-between;
   margin-bottom: 1.65rem;
   padding-bottom: 1rem;
   border-bottom: 1px solid var(--border-soft);
 }
+.app-header > .brand { grid-area: brand; }
+.app-header > .header-actions { grid-area: actions; justify-self: end; }
+.app-header > .nav { grid-area: nav; justify-self: start; }
 
 .brand { display: flex; gap: 0.85rem; align-items: center; }
 .brand h1 { margin: 0; font-size: 1.2rem; font-weight: 650; letter-spacing: -0.01em; }
@@ -2895,6 +2901,7 @@ body.nav-drawer-open {
   }
 
   .app-header {
+    display: flex;
     flex-direction: column;
     align-items: stretch;
     gap: 0.75rem;
@@ -7447,3 +7454,11 @@ html:not([data-theme]) .settings-page :focus-visible {
   text-align: center;
   text-decoration: none;
 }
+
+/* Dividend forecast: reinvest every payment, per holding */
+.reinvest-plans { margin: 0.75rem 0; }
+.reinvest-plans li { align-items: center; flex-wrap: nowrap; }
+.reinvest-plans li > div:first-child { min-width: 0; }
+.reinvest-plan-toggle { flex: none; }
+.reinvest-plan-toggle { display: flex; flex-direction: column; align-items: flex-end; gap: 0.2rem; }
+.reinvest-gain { margin-top: 0.25rem; color: var(--accent-2); }

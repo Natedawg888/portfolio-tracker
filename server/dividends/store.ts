@@ -452,6 +452,13 @@ function usableShares(shares: number | null): number | null {
   return shares;
 }
 
+/** payment_date value meaning "every predicted payment of this holding". */
+export const REINVEST_ALL_PAYMENTS = '*';
+
+function reinvestAllKey(holdingId: string): string {
+  return `${holdingId}:${REINVEST_ALL_PAYMENTS}`;
+}
+
 function readForecastReinvest(db: Database, userId: string): Map<string, boolean> {
   const rows = queryAll<Record<string, unknown>>(
     db,
@@ -464,7 +471,7 @@ function readForecastReinvest(db: Database, userId: string): Map<string, boolean
   for (const row of rows) {
     const holdingId = String(row.holding_id ?? '');
     const paymentDate = String(row.payment_date ?? '');
-    if (!holdingId || !isYmd(paymentDate)) continue;
+    if (!holdingId || (!isYmd(paymentDate) && paymentDate !== REINVEST_ALL_PAYMENTS)) continue;
     if (Number(row.reinvested) === 1) prefs.set(forecastReinvestKey(holdingId, paymentDate), true);
   }
   return prefs;
@@ -579,7 +586,9 @@ async function detectedForHoldings(
     const through = statedThrough.get(item.holding.id);
     for (const projected of schedule) {
       if (through && projected.paymentDate <= through) continue;
-      const reinvested = forecastPrefs.get(forecastReinvestKey(projected.holdingId, projected.paymentDate)) === true;
+      const reinvested =
+        forecastPrefs.get(reinvestAllKey(projected.holdingId)) === true ||
+        forecastPrefs.get(forecastReinvestKey(projected.holdingId, projected.paymentDate)) === true;
       detected.push(reinvested ? { ...projected, reinvested: true } : projected);
     }
   }
@@ -610,8 +619,26 @@ export async function dashboardForUser(
     ...holding,
     quotedPriceNzd: quotePriceNzd(db, holding.symbol),
   }));
+  const dash = buildDividendDashboard({ events, holdings: valued, year, today: todayYmd, detected });
+  const reinvestAllHoldingIds = holdings.filter((h) => prefs.get(reinvestAllKey(h.id)) === true).map((h) => h.id);
   return {
-    ...buildDividendDashboard({ events, holdings: valued, year, today: todayYmd, detected }),
+    ...dash,
+    forecast: { ...dash.forecast, reinvestAllHoldingIds },
     holdings,
   };
+}
+
+/**
+ * Reinvest every predicted payment of one holding (a dividend reinvestment plan), so each
+ * payment buys more shares and later payments grow. Off returns to per-payment choices.
+ */
+export function setForecastReinvestAll(
+  db: Database,
+  userId: string,
+  holdingId: string,
+  reinvested: boolean,
+): { ok: true } | { ok: false; status: number; error: string } {
+  if (!ownedStock(db, userId, holdingId)) return { ok: false, status: 404, error: 'That holding is not on your portfolio.' };
+  writeForecastReinvest(db, userId, holdingId, REINVEST_ALL_PAYMENTS, reinvested);
+  return { ok: true };
 }

@@ -15,6 +15,7 @@ import {
   insertDividend,
   setDividendReinvest,
   setForecastReinvest,
+  setForecastReinvestAll,
   updateDividend,
   type DividendWriteBody,
 } from '../dividends/store.ts';
@@ -112,6 +113,28 @@ router.put('/forecast-reinvest', async (req, res) => {
     detected: result.detected,
     ownedShares: result.ownedShares,
   });
+});
+
+/** Body: { holdingId, reinvested } — reinvest every predicted payment of that holding. */
+router.put('/forecast-reinvest-all', async (req, res) => {
+  const userId = uid(req as AuthedRequest & { scopeUserId?: string });
+  const body = (req.body ?? {}) as { holdingId?: unknown; reinvested?: unknown };
+  const holdingId = typeof body.holdingId === 'string' ? body.holdingId.trim() : '';
+  if (!holdingId) {
+    res.status(400).json({ error: 'Choose one of your stock or ETF holdings.' });
+    return;
+  }
+  if (body.reinvested !== true && body.reinvested !== false) {
+    res.status(400).json({ error: 'reinvested must be true or false.' });
+    return;
+  }
+  const db = await getDb();
+  const result = setForecastReinvestAll(db, userId, holdingId, body.reinvested);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json({ holdingId, reinvested: body.reinvested });
 });
 
 router.patch('/:id', async (req, res) => {
