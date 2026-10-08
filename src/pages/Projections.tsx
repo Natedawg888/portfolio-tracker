@@ -12,62 +12,22 @@ import { AssetLineChart, type LineSeries } from '../components/AssetLineChart';
 import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import { showQuietToast } from '../lib/quietToast';
 import type { ProjectionAssumption, ProjectionResponse } from '../types';
-
-const HORIZONS: Array<{ months: number; label: string }> = [
-  { months: 12, label: '1 year' },
-  { months: 24, label: '2 years' },
-  { months: 60, label: '5 years' },
-  { months: 120, label: '10 years' },
-  { months: 240, label: '20 years' },
-  { months: 360, label: '30 years' },
-];
-const WINDOWS = [3, 6, 12];
+import {
+  HORIZONS,
+  WINDOWS,
+  flatLineNote,
+  projectionCacheKey,
+  readInputs,
+  scenarioFrameFromSearch,
+  scenarioRequestFailure,
+  type Inputs,
+} from './projectionsView';
 
 const SOURCE_LABEL: Record<ProjectionAssumption['source'], string> = {
   user_data: 'From your data',
   default: 'Default',
   query: 'You entered',
 };
-
-type Inputs = { months: number; window: number; returnPct: string; saving: string };
-
-/** One cache entry per URL scenario, so a saved scenario cannot paint over a different link. */
-function projectionCacheKey(input: Inputs): string {
-  return `projections:${input.months}:${input.window}:${encodeURIComponent(input.returnPct)}:${encodeURIComponent(input.saving)}`;
-}
-
-/** Same limits the API enforces (server/projections/model.ts). */
-const RETURN_RANGE = [-50, 50] as const;
-const SAVING_LIMIT = 10_000_000;
-
-function inRange(raw: string, min: number, max: number): boolean {
-  const n = Number(raw);
-  return raw.trim() !== '' && Number.isFinite(n) && n >= min && n <= max;
-}
-
-/** URL → inputs. Out-of-range values (e.g. a hand-edited link) are dropped and reported. */
-function readInputs(params: URLSearchParams): Inputs & { ignored: string[] } {
-  const months = Number(params.get('months'));
-  const window = Number(params.get('savingWindowMonths'));
-  const ignored: string[] = [];
-  let returnPct = params.get('annualReturnPercent') ?? '';
-  if (returnPct !== '' && !inRange(returnPct, RETURN_RANGE[0], RETURN_RANGE[1])) {
-    ignored.push(`yearly return must be between ${RETURN_RANGE[0]}% and ${RETURN_RANGE[1]}%`);
-    returnPct = '';
-  }
-  let saving = params.get('monthlySavingNzd') ?? '';
-  if (saving !== '' && !inRange(saving, -SAVING_LIMIT, SAVING_LIMIT)) {
-    ignored.push('monthly saving must be a number up to $10,000,000');
-    saving = '';
-  }
-  return {
-    months: HORIZONS.some((h) => h.months === months) ? months : 12,
-    window: WINDOWS.includes(window) ? window : 3,
-    returnPct,
-    saving,
-    ignored,
-  };
-}
 
 function formatDate(ymd: string): string {
   const d = new Date(`${ymd}T00:00:00Z`);
@@ -103,26 +63,24 @@ function Assumption({ title, a, value }: { title: string; a: ProjectionAssumptio
 export function Projections() {
   const [params, setParams] = useSearchParams();
   const applied = useMemo(() => readInputs(params), [params]);
-  const [form, setForm] = useState<Inputs>(applied);
   const appliedKey = JSON.stringify(applied);
-  const cacheKey = projectionCacheKey(applied);
-  const initialCached = readPageCache<ProjectionResponse>(cacheKey) ?? null;
-  const [data, setData] = useState<ProjectionResponse | null>(initialCached);
+  // Same helper on the first paint and when the URL changes in place (the
+  // Projections nav link). The form and the cached figures update together,
+  // before paint, so a cached 1-year view cannot sit under the old scenario fields.
+  const frame = scenarioFrameFromSearch(params, (key) => readPageCache<ProjectionResponse>(key));
+  const [form, setForm] = useState<Inputs>(frame.form);
+  const [data, setData] = useState<ProjectionResponse | null>(frame.data);
   const [error, setError] = useState<string | null>(null);
   // Loading until the response for the inputs currently in the URL has arrived.
   // A cache hit for this exact scenario counts as arrived, then refreshes quietly.
-  const [loadedKey, setLoadedKey] = useState<string | null>(initialCached ? appliedKey : null);
+  const [loadedKey, setLoadedKey] = useState<string | null>(frame.loaded ? appliedKey : null);
   const [shownKey, setShownKey] = useState(appliedKey);
   if (shownKey !== appliedKey) {
     setShownKey(appliedKey);
-    const next = readPageCache<ProjectionResponse>(cacheKey);
-    if (next) {
-      setData(next);
-      setLoadedKey(appliedKey);
-      setError(null);
-    } else {
-      setLoadedKey(null);
-    }
+    setForm(frame.form);
+    setData(frame.data);
+    setLoadedKey(frame.loaded ? appliedKey : null);
+    setError(null);
   }
   const loading = loadedKey !== appliedKey;
 
@@ -146,10 +104,12 @@ export function Projections() {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        if (readPageCache<ProjectionResponse>(key)) {
+        const failure = scenarioRequestFailure(readPageCache<ProjectionResponse>(key) != null);
+        if (failure.kind === 'keep-cache') {
           showQuietToast('Could not refresh projection — showing last data.', { kind: 'warn' });
           return;
         }
+        setData(null);
         setError(err instanceof ApiError ? err.message : 'Projection could not be loaded.');
       })
       .finally(() => {
@@ -319,10 +279,12 @@ export function Projections() {
 
           {flat ? (
             <p className="panel projection-flat" role="note">
-              The line is flat because nothing in this scenario changes your balances: the return is 0% and
-              {savingValue == null ? ' there is no saving figure (no income or spending recorded in the budget months)' : ' saving is zero'}
-              {data.debts.some((d) => d.stepped) ? '' : ', and no debt has a saved payment'}. Enter a yearly return or a
-              monthly saving above to see a scenario.
+              {flatLineNote({
+                annualReturnPercent: a?.annualReturnPercent.value ?? null,
+                compoundingAssetsNzd: data.starting.compoundingAssetsNzd,
+                monthlySavingNzd: savingValue ?? null,
+                debtHasSavedPayment: data.debts.some((d) => d.stepped),
+              })}
             </p>
           ) : null}
 
@@ -333,6 +295,7 @@ export function Projections() {
               emptyHint="Nothing to plot yet."
               resolution="month"
               fullWidth
+              foregroundKey="netWorth"
             />
             <p className="muted small">{data.note}</p>
           </section>
