@@ -273,7 +273,7 @@ export async function fetchNzPublic(): Promise<ProviderFetchResult> {
         ...base,
         points: credit.rates,
         indicatorType: 'credit_conditions',
-        unit: 'percent',
+        unit: 'index',
         source:
           'Reserve Bank of New Zealand — credit conditions survey, credit availability for corporate and institutional loans, observed change over the past six months',
         sourceUrl: credit.sourceUrl,
