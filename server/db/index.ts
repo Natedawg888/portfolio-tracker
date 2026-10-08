@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
+import { countFinanceRows, existingDataClaimAllowed, startupOwnerId } from '../lib/dataClaim.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
@@ -570,7 +571,8 @@ function migrateSchema(database: Database) {
     }
   }
 
-  // Backfill unscoped rows to data owner when known
+  // Backfill unscoped rows only to an already recorded data owner, or to the
+  // earliest user when the database has no finance rows (or the bootstrap flag).
   const ownerRow = database.prepare(
     `SELECT value FROM meta WHERE key = 'data_owner_user_id'`,
   );
@@ -580,20 +582,26 @@ function migrateSchema(database: Database) {
     ownerId = o.value?.trim() || null;
   }
   ownerRow.free();
-  // Fallback: earliest user if meta not set yet but users exist
   if (!ownerId) {
     const u = database.prepare(`SELECT id FROM users ORDER BY created_at ASC LIMIT 1`);
+    let earliest: string | null = null;
     if (u.step()) {
       const row = u.getAsObject() as { id?: string };
-      ownerId = row.id ?? null;
-      if (ownerId) {
-        database.run(
-          `INSERT OR REPLACE INTO meta (key, value) VALUES ('data_owner_user_id', ?)`,
-          [ownerId],
-        );
-      }
+      earliest = row.id ?? null;
     }
     u.free();
+    const next = startupOwnerId({
+      earliestUserId: earliest,
+      financeRowCount: countFinanceRows(database),
+      claimAllowed: existingDataClaimAllowed(),
+    });
+    if (next) {
+      ownerId = next;
+      database.run(
+        `INSERT OR REPLACE INTO meta (key, value) VALUES ('data_owner_user_id', ?)`,
+        [ownerId],
+      );
+    }
   }
   if (ownerId) {
     for (const { table } of scopedTables) {

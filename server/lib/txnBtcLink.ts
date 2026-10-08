@@ -276,11 +276,12 @@ export function restoreStoredBtcDelta(db: Database, meta: TxnBtcLinkMeta, userId
     [next, now, meta.btcHoldingId, userId],
   );
 }
-/** Persist BTC link columns on a transaction row. */
+/** Persist BTC link columns on one of the user's transaction rows. */
 export function writeTxnBtcColumns(
   db: Database,
   txnId: string,
   meta: TxnBtcLinkMeta,
+  userId: string,
 ): void {
   run(
     db,
@@ -290,7 +291,7 @@ export function writeTxnBtcColumns(
        btc_delta_applied=?,
        btc_nzd_rate=?,
        btc_applied_at=?
-     WHERE id=?`,
+     WHERE id=? AND user_id=?`,
     [
       meta.affectsBtc ? 1 : 0,
       meta.btcHoldingId,
@@ -298,12 +299,13 @@ export function writeTxnBtcColumns(
       meta.btcNzdRate,
       meta.btcAppliedAt,
       txnId,
+      userId,
     ],
   );
 }
 
 /** Clear BTC link metadata after reverse (keep affects_btc flag as stored by caller). */
-export function clearTxnBtcApplied(db: Database, txnId: string): void {
+export function clearTxnBtcApplied(db: Database, txnId: string, userId: string): void {
   run(
     db,
     `UPDATE transactions SET
@@ -311,7 +313,7 @@ export function clearTxnBtcApplied(db: Database, txnId: string): void {
        btc_delta_applied=NULL,
        btc_nzd_rate=NULL,
        btc_applied_at=NULL
-     WHERE id=?`,
-    [txnId],
+     WHERE id=? AND user_id=?`,
+    [txnId, userId],
   );
 }

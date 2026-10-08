@@ -77,9 +77,9 @@ Single table, discriminated by `asset_class`:
 | `estimated_value_nzd` | Manual, **primary generative** (`gomining`), or **extrapolated from live 12/15** (`gomining_extrapolated`) — **null if unknown** |
 | `estimated_value_source` | `manual` \| `gomining` \| `stub` |
 
-**Earnings estimate** (UI): hashrate + EE + optional network params (`app_settings`: `gominingBtcUsd`, `gominingNetworkHashrateEhs`, …). Periods: day / week / month / year. See [GOMINING.md](./GOMINING.md).
+**Earnings estimate** (UI): hashrate + EE + optional network params stored per user in `users.preferences_json.gominingSettings` (`gominingBtcUsd`, `gominingNetworkHashrateEhs`, …). The data owner still reads legacy `app_settings` until they save. Periods: day / week / month / year. See [GOMINING.md](./GOMINING.md).
 
-**Discount:** `app_settings.gominingDiscountPct` — reduces maintenance in the earnings model only (not secondary NZD value).
+**Discount:** per-user `gominingDiscountPct` — reduces maintenance in the earnings model only (not secondary NZD value). One account cannot change another's discount.
 
 GMT token balance (if any) can be a separate `crypto` row with `asset = 'GMT'`.
 

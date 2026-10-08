@@ -53,6 +53,10 @@ AKAHU_USER_TOKEN=user_token_…
 
 # Full App OAuth (optional - enables Settings → Connect with Akahu per user)
 AKAHU_APP_SECRET=…
+# Encrypts akahu_connections.access_token at rest (AES-256-GCM). 32 bytes, base64 or 64 hex chars.
+# Required in production before a new token is stored. Do not commit the key.
+# Existing plaintext rows still open, and are encrypted on the next read when this is set.
+AKAHU_TOKEN_ENCRYPTION_KEY=
 # Must exactly match a Redirect URI registered on the Akahu app:
 AKAHU_REDIRECT_URI=http://127.0.0.1:3000/api/akahu/callback
 # Where the browser returns after OAuth (Settings):
@@ -73,7 +77,7 @@ AKAHU_FRONTEND_URL=http://127.0.0.1:3000
 2. Put `AKAHU_APP_ID`, `AKAHU_APP_SECRET`, `AKAHU_REDIRECT_URI` in `.env` (and optional `AKAHU_FRONTEND_URL`).
 3. User signs into Portfolio Tracker → **Settings → Connect accounts → Connect with Akahu** (or the onboarding step).
 4. Browser goes to `https://oauth.akahu.nz` → user picks institutions → redirect to `/api/akahu/callback`.
-5. Server exchanges `code` for a **user access token**, stores it in `akahu_connections` (sqlite, server-only), then syncs portfolio + transactions.
+5. Server exchanges `code` for a **user access token**, stores it in `akahu_connections` (sqlite, server-only, encrypted when `AKAHU_TOKEN_ENCRYPTION_KEY` is set), then syncs portfolio + transactions.
 6. **Disconnect** revokes the token at Akahu (`DELETE /token`) and deletes the local row. Shared `AKAHU_USER_TOKEN` is never revoked by Disconnect.
 
 ---
@@ -108,8 +112,9 @@ Akahu's enduring integrations above are **live production institutions**. There 
 ## Security
 
 - App secret + user tokens: **server only** (`.env` or `akahu_connections.access_token`).
+- OAuth user tokens in `akahu_connections.access_token` are encrypted with `AKAHU_TOKEN_ENCRYPTION_KEY` (32-byte key, base64 or 64 hex characters; see `.env.example`). The key is not in the repo. Production refuses to store a new token when the key is missing. Rows written before the key existed stay readable and are encrypted on the next read. Tokens are not written to logs.
 - Never collect bank / Sharesies / Hatch passwords.
-- Prefer read-only scopes (`ENDURING_CONSENT` without payments) for this tracker.
+- Prefer read-only scopes (`ENDURING_CONSENT` without payments) for this tracker. There is no payments scope.
 - On `401` from Akahu, prompt Reconnect (OAuth) or refresh the Personal App user token.
 
 Cross-links: [KIWIBANK_PLAN.md](./KIWIBANK_PLAN.md) · [SHARESIES_KIWISAVER.md](./SHARESIES_KIWISAVER.md) · [AUTH.md](./AUTH.md)

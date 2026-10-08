@@ -9,7 +9,7 @@ import cors from 'cors';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { getDb, DB_PATH, DATA_DIR } from './db/index.ts';
+import { getDb, DB_PATH } from './db/index.ts';
 import holdingsRouter from './routes/holdings.ts';
 import accountsRouter from './routes/accounts.ts';
 import budgetsRouter from './routes/budgets.ts';
@@ -37,10 +37,10 @@ import ssoRouter from './routes/sso.ts';
 import economyRouter from './routes/economy.ts';
 import newsRouter from './routes/news.ts';
 import { loadDotEnv } from './akahu/loadEnv.ts';
-import { ensureUploadDirs } from './lib/uploads.ts';
+import { ensureUploadDirs, uploadsGate } from './lib/uploads.ts';
 import { attachUser, requireAuth, isPublicApiPath } from './middleware/requireAuth.ts';
 import { logger } from './lib/logger.ts';
-import { apiNotFound, mountSpa, staticGetHead } from './lib/spaHost.ts';
+import { apiNotFound, mountSpa } from './lib/spaHost.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -120,7 +120,7 @@ async function main() {
   app.use('/api/auth', securityRouter);
   app.use('/api/auth', ssoRouter);
   // Uploads are files under /api. GET/HEAD only so a POST cannot 405 here.
-  app.use('/api/uploads', staticGetHead(path.join(DATA_DIR, 'uploads'), { maxAge: '1h' }));
+  app.use('/api/uploads', uploadsGate());
 
   app.use('/api/holdings', holdingsRouter);
   app.use('/api/accounts', accountsRouter);

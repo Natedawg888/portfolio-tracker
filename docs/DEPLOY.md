@@ -49,6 +49,8 @@ On the service:
    - `TRUST_PROXY=1`
    - `PUBLIC_URL`, `AKAHU_REDIRECT_URI`, `AKAHU_FRONTEND_URL` = your Railway HTTPS domain
    - Akahu + optional `METALS_API_KEY`
+   - `AKAHU_TOKEN_ENCRYPTION_KEY` — 32-byte key (base64 or 64 hex chars) so OAuth tokens are encrypted in the volume. Required before a new token is stored in production.
+   - Leave `ALLOW_EXISTING_DATA_CLAIM` unset. Set it to `1` only if this volume already has finance or bank rows, has zero users, and the first account should own those rows.
 9. **Settings → Networking → Generate Domain** on **this** Docker service.
 10. **Settings → Deploy**: healthcheck path **`/api/health`** (`railway.toml` `healthcheckPath`). It must be **200** and JSON containing `"ok": true`. An HTML 200 will go green on a static host and still break login.
 11. Register the same HTTPS callback URL on the Akahu Full App.

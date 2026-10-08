@@ -1,11 +1,14 @@
 /**
  * Creating accounts, shared by email sign-up and single sign-on (Google / Apple / Microsoft).
- * The first account on an install claims the existing local finance data; later accounts
- * start with empty ledgers and their own budget categories.
+ * The first account on an empty install becomes the data owner. A database that already has
+ * finance or bank rows is not handed to the first registrant unless ALLOW_EXISTING_DATA_CLAIM
+ * is set on the server (lib/dataClaim.ts). Later accounts start with empty ledgers and their
+ * own budget categories.
  */
 import type { Database } from 'sql.js';
 import { newId, queryOne, run } from '../db/index.ts';
 import { claimUnscopedRowsForOwner } from '../lib/userScope.ts';
+import { mayClaimExistingFinance } from '../lib/dataClaim.ts';
 import { seedCategoriesForUser } from '../lib/categories.ts';
 import { initialPreferencesJsonForNewUser } from '../../src/lib/onboardingPrefs.ts';
 
@@ -50,7 +53,7 @@ export function createUserAccount(
   );
 
   let claimedExistingData = false;
-  if (usersBefore === 0) {
+  if (usersBefore === 0 && mayClaimExistingFinance(db)) {
     run(db, `INSERT OR REPLACE INTO meta (key, value) VALUES ('data_owner_user_id', ?)`, [id]);
     run(db, `INSERT OR REPLACE INTO meta (key, value) VALUES ('data_claimed_at', ?)`, [now]);
     claimUnscopedRowsForOwner(db, id);

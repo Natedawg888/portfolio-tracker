@@ -22,6 +22,7 @@
     "test:wallets": "node --import tsx server/lib/walletAddress.test.ts && node --import tsx server/lib/custodialDenylist.test.ts",
     "test:chain": "node --import tsx server/chain/chain.test.ts && node --import tsx server/chain/bitcoin.test.ts && node --import tsx server/chain/evm.test.ts && node --import tsx server/chain/valuation.test.ts && node --import tsx server/chain/sync.test.ts",
     "test:user-isolation": "node --import tsx scripts/verify-user-isolation.ts",
+    "test:isolation": "node --import tsx server/akahu/tokenCrypto.test.ts && node --import tsx server/security/dataClaim.test.ts && node --import tsx server/security/isolation.test.ts",
     "test:news": "node --import tsx server/news/sections.test.ts",
     "test:debts": "node --import tsx server/debts/model.test.ts && node --import tsx server/debts/store.test.ts",
     "test:home-snapshot": "node --import tsx server/budget/homeSnapshot.test.ts",

@@ -231,8 +231,94 @@ async function apiChecks() {
     else ok('holdings list isolated (B cannot see A holding)');
 
     if (holdId) {
+      const bAcct = await api(jarB, 'POST', '/api/accounts', {
+        name: `Smoke B ${stamp}`,
+        balance: 20,
+      });
+      const bAccountId = bAcct.json?.id;
+      if (bAcct.status !== 201 || !bAccountId) {
+        fail(`user B account create ${bAcct.status}`);
+      } else {
+        const attack = await api(jarB, 'POST', '/api/accounts/transactions', {
+          accountId: bAccountId,
+          date: '2026-10-05',
+          amount: -10,
+          kind: 'debit',
+          description: 'btc cross user',
+          affectsBtc: true,
+          btcHoldingId: holdId,
+        });
+        if (attack.status === 200 || attack.status === 201) {
+          fail('user B transaction changed user A BTC holding');
+        }
+        const attackBody = JSON.stringify(attack.json ?? {});
+        if (attackBody.includes(`Smoke BTC ${stamp}`)) {
+          fail('BTC link error revealed user A holding name');
+        } else {
+          ok('BTC link rejected for another user holding');
+        }
+        const listA2 = await api(jarA, 'GET', '/api/holdings');
+        const still = Array.isArray(listA2.json)
+          ? listA2.json.find((h: { id?: string }) => h.id === holdId)
+          : null;
+        const qty = Number(still?.amount);
+        if (qty !== 0.001) fail(`user A BTC amount changed to ${qty}`);
+        else ok('user A BTC quantity unchanged');
+      }
       await api(jarA, 'DELETE', `/api/holdings/${holdId}`);
     }
+  }
+
+  const incomeMarker = `SecretPayee ${stamp}`;
+  const beforeB = await api(jarB, 'GET', '/api/income/summary?month=2026-10');
+  const beforeActual = Number(beforeB.json?.actualNzd ?? 0);
+  const inc = await api(jarA, 'POST', '/api/income', {
+    date: '2026-10-06',
+    amountNzd: 321.09,
+    kind: 'cash',
+    description: incomeMarker,
+  });
+  if (inc.status !== 201) {
+    fail(`income create A status ${inc.status}: ${JSON.stringify(inc.json)}`);
+  } else {
+    const afterB = await api(jarB, 'GET', '/api/income/summary?month=2026-10');
+    const listB = await api(jarB, 'GET', '/api/income?month=2026-10');
+    const afterActual = Number(afterB.json?.actualNzd ?? 0);
+    if (afterB.status !== 200) fail(`income summary B status ${afterB.status}`);
+    else if (afterActual !== beforeActual) fail('user B income summary changed when user A added income');
+    else ok('income summary stays on the signed-in user');
+    if (JSON.stringify(listB.json ?? {}).includes(incomeMarker)) {
+      fail('user B income list included user A description');
+    } else {
+      ok('income descriptions stay private');
+    }
+  }
+
+  const settingsBefore = await api(jarB, 'GET', '/api/settings');
+  const beforeDiscount = Number(settingsBefore.json?.gomining?.discountPct ?? 0);
+  const nextDiscount = beforeDiscount === 23 ? 24 : 23;
+  const patched = await api(jarA, 'PATCH', '/api/settings/gomining', { discountPct: nextDiscount });
+  const settingsAfterB = await api(jarB, 'GET', '/api/settings');
+  const settingsAfterA = await api(jarA, 'GET', '/api/settings');
+  if (patched.status !== 200) {
+    fail(`gomining patch status ${patched.status}`);
+  } else if (Number(settingsAfterB.json?.gomining?.discountPct) === nextDiscount) {
+    fail('user B received user A GoMining discount');
+  } else if (Number(settingsAfterA.json?.gomining?.discountPct) !== nextDiscount) {
+    fail('user A did not keep their GoMining discount');
+  } else {
+    ok('GoMining settings are per user');
+  }
+  const secretType = `SecretFigs${stamp}`;
+  const putTypes = await api(jarA, 'PUT', '/api/settings/collectable-types', {
+    types: [{ id: `figs-${stamp}`, title: secretType, kind: 'manual' }],
+  });
+  const typesB = await api(jarB, 'GET', '/api/settings/collectable-types');
+  if (putTypes.status !== 200) fail(`collectable types save status ${putTypes.status}`);
+  else if (JSON.stringify(typesB.json ?? {}).includes(secretType)) {
+    fail('user B can see user A collectable types');
+  } else {
+    ok('collectable types are per user');
   }
 
   // Create a wallet for A; B must not list, read, edit or delete it

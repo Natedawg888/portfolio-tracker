@@ -5,6 +5,12 @@ import type { Database } from 'sql.js';
 import { getDb, persist, queryOne, run, newId } from '../db/index.ts';
 import { getAkahuAppCredentials } from './loadEnv.ts';
 import { getDataOwnerUserIdAsync } from '../lib/userScope.ts';
+import {
+  isSealedAccessToken,
+  openAccessToken,
+  readTokenEncryptionKey,
+  sealAccessToken,
+} from './tokenCrypto.ts';
 
 export type AkahuInstitution = {
   connectionId: string;
@@ -65,7 +71,20 @@ export async function getConnectionForUser(userId: string): Promise<AkahuConnect
      FROM akahu_connections WHERE user_id = ?`,
     [userId],
   );
-  return r ? rowFromDb(r) : null;
+  if (!r) return null;
+  const stored = String(r.access_token ?? '');
+  const accessToken = openAccessToken(stored);
+  // Legacy plaintext rows are encrypted in place once a key is configured.
+  if (!isSealedAccessToken(stored) && readTokenEncryptionKey()) {
+    run(
+      db,
+      `UPDATE akahu_connections SET access_token = ? WHERE user_id = ?`,
+      [sealAccessToken(accessToken), userId],
+    );
+  }
+  const row = rowFromDb(r);
+  row.accessToken = accessToken;
+  return row;
 }
 
 export async function upsertConnection(opts: {
@@ -77,6 +96,7 @@ export async function upsertConnection(opts: {
   const db = await getDb();
   ensureAkahuConnectionsTable(db);
   const now = new Date().toISOString();
+  const sealedToken = sealAccessToken(opts.accessToken);
   const existing = await getConnectionForUser(opts.userId);
   const institutionsJson =
     opts.institutions != null ? JSON.stringify(opts.institutions) : (existing?.institutionsJson ?? null);
@@ -87,7 +107,7 @@ export async function upsertConnection(opts: {
        SET access_token = ?, scope = ?, institutions_json = ?, updated_at = ?
        WHERE user_id = ?`,
       [
-        opts.accessToken,
+        sealedToken,
         opts.scope ?? existing.scope,
         institutionsJson,
         now,
@@ -103,7 +123,7 @@ export async function upsertConnection(opts: {
       [
         newId('akahu'),
         opts.userId,
-        opts.accessToken,
+        sealedToken,
         opts.scope ?? null,
         institutionsJson,
         now,
