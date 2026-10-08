@@ -569,6 +569,8 @@ CREATE TABLE IF NOT EXISTS savings_goals (
   target_nzd          REAL NOT NULL,
   current_amount_nzd  REAL NOT NULL DEFAULT 0,
   deadline            TEXT,
+  -- Bank account holding this saving: when set, amount saved = that account's balance.
+  account_id          TEXT,
   created_at          TEXT NOT NULL,
   updated_at          TEXT NOT NULL
 );

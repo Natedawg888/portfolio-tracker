@@ -212,6 +212,12 @@ export interface SavingsGoal {
   currentAmountNzd: number;
   /** YYYY-MM-DD, or null when no deadline is set. */
   deadline: string | null;
+  /** Savings account linked to this goal (its balance is the amount saved), or null. */
+  accountId: string | null;
+  /** "Name · Institution" of the linked account. */
+  accountName: string | null;
+  /** 'account' when currentAmountNzd is the linked account's balance; 'manual' when typed. */
+  amountSource: 'account' | 'manual';
   currency: 'NZD';
   timezone: 'Pacific/Auckland';
   /** Pacific/Auckland calendar date the progress figures were counted on. */
@@ -256,6 +262,8 @@ export interface SavingsGoalWriteBody {
   currentAmountNzd?: number;
   /** YYYY-MM-DD, null, or '' to clear. */
   deadline?: string | null;
+  /** NZD bank account id, or null to unlink. */
+  accountId?: string | null;
 }
 
 /**

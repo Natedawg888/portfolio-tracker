@@ -7465,3 +7465,14 @@ html:not([data-theme]) .settings-page :focus-visible {
 .reinvest-plan-toggle { flex: none; }
 .reinvest-plan-toggle { display: flex; flex-direction: column; align-items: flex-end; gap: 0.2rem; }
 .reinvest-gain { margin-top: 0.25rem; color: var(--accent-2); }
+
+/* Savings goals (KAN-20): account / deadline / notes lines and form hints */
+.savings-goal-meta {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.savings-goal-notes { white-space: pre-wrap; overflow-wrap: anywhere; }
+.savings-goal-hint { font-size: 0.75rem; color: var(--muted); }
+.savings-goal-form textarea { font: inherit; resize: vertical; }

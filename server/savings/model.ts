@@ -48,7 +48,11 @@ export type SavingsGoalInput = {
   targetNzd: number;
   currentAmountNzd: number;
   deadline: string | null;
+  /** Savings account for this goal; its balance becomes the amount saved. Null = typed by hand. */
+  accountId?: string | null;
 };
+
+export const MAX_NOTES_LENGTH = 500;
 
 export type SavingsGoalProgress = {
   asOf: string;
@@ -154,7 +158,14 @@ function parseNotes(raw: unknown): { ok: true; value: string | null } | { ok: fa
   if (raw == null || raw === '') return { ok: true, value: null };
   if (typeof raw !== 'string') return { ok: false, error: 'notes must be a string or null' };
   const notes = raw.trim();
+  if (notes.length > MAX_NOTES_LENGTH) return { ok: false, error: `notes must be ${MAX_NOTES_LENGTH} characters or fewer` };
   return { ok: true, value: notes || null };
+}
+
+function parseAccountId(raw: unknown): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (raw == null || raw === '') return { ok: true, value: null };
+  if (typeof raw !== 'string' || raw.trim().length > 100) return { ok: false, error: 'accountId must be a string or null' };
+  return { ok: true, value: raw.trim() };
 }
 
 function parseMoney(
@@ -203,6 +214,8 @@ export function parseCreateSavingsGoal(
   if (!deadline.ok) return deadline;
   const notes = hasKey(b, 'notes') ? parseNotes(b.notes) : { ok: true as const, value: null };
   if (!notes.ok) return notes;
+  const accountId = hasKey(b, 'accountId') ? parseAccountId(b.accountId) : { ok: true as const, value: null };
+  if (!accountId.ok) return accountId;
   return {
     ok: true,
     value: {
@@ -211,6 +224,7 @@ export function parseCreateSavingsGoal(
       targetNzd: target.value,
       currentAmountNzd: current.value,
       deadline: deadline.value,
+      accountId: accountId.value,
     },
   };
 }
@@ -244,6 +258,11 @@ export function parsePatchSavingsGoal(
     const deadline = parseDeadline(b.deadline);
     if (!deadline.ok) return deadline;
     patch.deadline = deadline.value;
+  }
+  if (hasKey(b, 'accountId')) {
+    const accountId = parseAccountId(b.accountId);
+    if (!accountId.ok) return accountId;
+    patch.accountId = accountId.value;
   }
   return { ok: true, value: patch };
 }

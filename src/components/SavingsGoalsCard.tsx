@@ -2,7 +2,39 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { ApiError, api, formatNzd } from '../api/client';
 import { beginPageRead, commitPageRead, invalidateFinancial, readPageCache } from '../lib/pageDataCache';
+import { useMoneyHidden } from '../lib/privacy';
 import type { SavingsGoal } from '../types';
+
+/** Same cap the API enforces (server/savings/model.ts). */
+const NOTES_MAX = 500;
+
+type GoalAccount = { id: string; label: string };
+
+/** NZD bank accounts that can hold a goal's savings. */
+async function loadGoalAccounts(): Promise<GoalAccount[]> {
+  const rows = (await api.accounts.list()) as Array<{ id: string; name?: string; institution?: string; currency?: string }>;
+  return rows
+    .filter((a) => (a.currency ?? 'NZD').toUpperCase() === 'NZD')
+    .map((a) => ({ id: a.id, label: [a.name, a.institution].filter(Boolean).join(' · ') || a.id }));
+}
+
+function formatDeadline(ymd: string): string {
+  const d = new Date(`${ymd}T00:00:00Z`);
+  return Number.isNaN(d.getTime())
+    ? ymd
+    : d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
+
+/** "By 30 Jun 2027 · 265 days left · $1,000.00/month", or the deadline having passed. */
+function deadlineLine(goal: SavingsGoal): string | null {
+  if (!goal.deadline) return null;
+  const date = formatDeadline(goal.deadline);
+  if (goal.daysRemaining != null && goal.daysRemaining < 0) return `Deadline ${date} has passed`;
+  const parts = [`By ${date}`];
+  if (goal.daysRemaining != null) parts.push(goal.daysRemaining === 1 ? '1 day left' : `${goal.daysRemaining} days left`);
+  if (goal.remainingNzd > 0 && goal.requiredMonthlySavingNzd != null) parts.push(`${formatNzd(goal.requiredMonthlySavingNzd)}/month`);
+  return parts.join(' · ');
+}
 
 type DialogState = { mode: 'add' } | { mode: 'edit'; goal: SavingsGoal };
 
@@ -53,6 +85,8 @@ export function SavingsGoalsCard() {
   const goalsRef = useRef(goals);
   goalsRef.current = goals;
   const [dialog, setDialog] = useState<DialogState | null>(null);
+  // Hide amounts also hides the bar: its length would reveal saved ÷ target.
+  const moneyHidden = useMoneyHidden();
 
   const refresh = useCallback(async () => {
     const stamp = beginPageRead(SAVINGS_GOALS);
@@ -122,16 +156,23 @@ export function SavingsGoalsCard() {
                     <dd>{formatNzd(goal.targetNzd)}</dd>
                   </div>
                 </dl>
-                <div
-                  className="savings-goal-bar"
-                  role="progressbar"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={Math.round(fill)}
-                  aria-label={`${goal.name} progress`}
-                >
-                  <div className="savings-goal-bar-fill" style={{ width: `${fill}%` }} />
-                </div>
+                {moneyHidden ? null : (
+                  <div
+                    className="savings-goal-bar"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={Math.round(fill)}
+                    aria-label={`${goal.name} progress`}
+                  >
+                    <div className="savings-goal-bar-fill" style={{ width: `${fill}%` }} />
+                  </div>
+                )}
+                {goal.amountSource === 'account' && goal.accountName ? (
+                  <p className="savings-goal-meta">Saving in {goal.accountName}</p>
+                ) : null}
+                {deadlineLine(goal) ? <p className="savings-goal-meta">{deadlineLine(goal)}</p> : null}
+                {goal.notes ? <p className="savings-goal-meta savings-goal-notes">{goal.notes}</p> : null}
               </li>
             );
           })}
@@ -173,6 +214,10 @@ function SavingsGoalDialog({
   const [name, setName] = useState(goal?.name ?? '');
   const [target, setTarget] = useState(goal ? String(goal.targetNzd) : '');
   const [saved, setSaved] = useState(goal ? String(goal.currentAmountNzd) : '');
+  const [deadline, setDeadline] = useState(goal?.deadline ?? '');
+  const [notes, setNotes] = useState(goal?.notes ?? '');
+  const [accountId, setAccountId] = useState(goal?.accountId ?? '');
+  const [accounts, setAccounts] = useState<GoalAccount[] | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -180,6 +225,20 @@ function SavingsGoalDialog({
 
   useEffect(() => {
     nameRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadGoalAccounts()
+      .then((list) => {
+        if (!cancelled) setAccounts(list);
+      })
+      .catch(() => {
+        if (!cancelled) setAccounts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -209,8 +268,16 @@ function SavingsGoalDialog({
       setFormError('Target must be greater than 0.');
       return;
     }
+    if (deadline && !/^\d{4}-\d{2}-\d{2}$/.test(deadline)) {
+      setFormError('Pick a deadline date, or leave it blank.');
+      return;
+    }
+    if (notes.trim().length > NOTES_MAX) {
+      setFormError(`Notes must be ${NOTES_MAX} characters or fewer.`);
+      return;
+    }
     let currentAmountNzd = 0;
-    if (mode === 'edit') {
+    if (mode === 'edit' && !accountId) {
       const parsedSaved = parseSavedNzd(saved);
       if (parsedSaved == null) {
         setFormError('Amount saved must be 0 or more.');
@@ -222,13 +289,20 @@ function SavingsGoalDialog({
     setFormError(null);
     setSaving(true);
     try {
+      const shared = {
+        deadline: deadline || null,
+        notes: notes.trim() || null,
+        accountId: accountId || null,
+      };
       if (mode === 'add') {
-        await api.savingsGoals.create({ name: trimmed, targetNzd });
+        await api.savingsGoals.create({ name: trimmed, targetNzd, ...shared });
       } else if (goal) {
         await api.savingsGoals.update(goal.id, {
           name: trimmed,
           targetNzd,
-          currentAmountNzd,
+          // Linked goals take the account balance; keep the typed amount untouched underneath.
+          ...(accountId ? {} : { currentAmountNzd }),
+          ...shared,
         });
       }
     } catch (err) {
@@ -313,7 +387,26 @@ function SavingsGoalDialog({
               disabled={busy}
             />
           </label>
-          {mode === 'edit' ? (
+          <label>
+            Savings account
+            <select value={accountId} onChange={(event) => setAccountId(event.target.value)} disabled={busy || accounts == null}>
+              <option value="">None — I&apos;ll enter the amount saved</option>
+              {(accounts ?? []).map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.label}
+                </option>
+              ))}
+              {goal?.accountId && accounts && !accounts.some((a) => a.id === goal.accountId) ? (
+                <option value={goal.accountId}>{goal.accountName ?? 'Current account'}</option>
+              ) : null}
+            </select>
+            <span className="savings-goal-hint">
+              {accountId
+                ? 'Amount saved follows this account’s balance and updates with each bank sync.'
+                : 'Pick the account this money is kept in to track it automatically.'}
+            </span>
+          </label>
+          {mode === 'edit' && !accountId ? (
             <label>
               Amount saved
               <input
@@ -326,6 +419,20 @@ function SavingsGoalDialog({
               />
             </label>
           ) : null}
+          <label>
+            Deadline (optional)
+            <input type="date" value={deadline} onChange={(event) => setDeadline(event.target.value)} disabled={busy} />
+          </label>
+          <label>
+            Notes (optional)
+            <textarea
+              rows={3}
+              maxLength={NOTES_MAX}
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              disabled={busy}
+            />
+          </label>
           {formError ? (
             <p className="savings-goal-form-error" role="alert">{formError}</p>
           ) : null}

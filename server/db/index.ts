@@ -501,6 +501,12 @@ function migrateSchema(database: Database) {
     database.run('ALTER TABLE wallets ADD COLUMN sync_failures INTEGER NOT NULL DEFAULT 0');
   }
 
+  // Savings goal → savings account link (KAN-20).
+  const goalCols = tableColumns(database, 'savings_goals');
+  if (goalCols.size > 0 && !goalCols.has('account_id')) {
+    database.run('ALTER TABLE savings_goals ADD COLUMN account_id TEXT');
+  }
+
   // 2FA + session devices (KAN-16) — users / sessions predate these columns.
   const totpUserCols = tableColumns(database, 'users');
   for (const [col, type] of [

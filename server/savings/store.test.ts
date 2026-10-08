@@ -186,6 +186,9 @@ async function call(
 }
 
 const KEYS = [
+  'accountId',
+  'accountName',
+  'amountSource',
   'asOf',
   'createdAt',
   'currency',
