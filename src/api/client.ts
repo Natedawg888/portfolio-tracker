@@ -37,6 +37,7 @@ import type {
 import type { OutputPaySourceInputs } from '../lib/outputPayCalc.ts';
 import {
   addParam,
+  growParam,
   MINING_PLAN_FIELDS,
   MINING_REWARDS_TO_PARAM,
   ADD_GROWTH_PARAM,
@@ -289,6 +290,7 @@ export const api = {
       monthlySavingNzd?: number;
       classReturns?: Partial<Record<ProjectionClassKey, number>>;
       classAdds?: Partial<Record<ProjectionClassKey, number>>;
+      classGrowth?: Partial<Record<ProjectionClassKey, number>>;
       mining?: MiningPlan;
       additionGrowthPct?: number;
     }) => {
@@ -304,6 +306,9 @@ export const api = {
       }
       for (const [key, value] of Object.entries(query?.classAdds ?? {})) {
         if (value != null) params.set(addParam(key as ProjectionClassKey), String(value));
+      }
+      for (const [key, value] of Object.entries(query?.classGrowth ?? {})) {
+        if (value != null) params.set(growParam(key as ProjectionClassKey), String(value));
       }
       if (query?.months != null) params.set('months', String(query.months));
       if (query?.savingWindowMonths != null) {

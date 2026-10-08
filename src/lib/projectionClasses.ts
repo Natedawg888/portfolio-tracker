@@ -38,6 +38,11 @@ export function addParam(key: ProjectionClassKey): string {
   return `add${key[0].toUpperCase()}${key.slice(1)}`;
 }
 
+/** Per-class yearly step-up of the monthly addition, e.g. growShares=50. */
+export function growParam(key: ProjectionClassKey): string {
+  return `grow${key[0].toUpperCase()}${key.slice(1)}`;
+}
+
 /** Per-class values the user may set. null / missing = not set. */
 export type ProjectionClassValues = Partial<Record<ProjectionClassKey, number | null>>;
 
@@ -45,8 +50,10 @@ export type SavedProjectionAssumptions = {
   returns: ProjectionClassValues;
   contributions: ProjectionClassValues;
   mining?: MiningPlan;
-  /** Yearly step-up of monthly additions, %. */
+  /** Yearly step-up of monthly additions, % (default for classes without their own). */
   additionGrowthPct?: number;
+  /** Per-class yearly step-up, %. */
+  growth?: ProjectionClassValues;
 };
 
 export const ADD_GROWTH_PARAM = 'addGrowth';
@@ -75,6 +82,7 @@ export function normalizeSavedAssumptions(raw: unknown): SavedProjectionAssumpti
     returns: normalizeClassValues(o.returns, RETURN_LIMITS[0], RETURN_LIMITS[1]),
     contributions: normalizeClassValues(o.contributions, -ADD_LIMIT, ADD_LIMIT),
     mining: normalizeMiningPlan(o.mining),
+    growth: normalizeClassValues(o.growth, 0, 500),
     ...(() => {
       const g = Number(o.additionGrowthPct);
       return o.additionGrowthPct != null && o.additionGrowthPct !== '' && Number.isFinite(g) && g >= ADD_GROWTH_LIMITS[0] && g <= ADD_GROWTH_LIMITS[1]

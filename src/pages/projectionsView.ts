@@ -9,6 +9,7 @@ import {
   PROJECTION_CLASS_LABELS,
   RETURN_LIMITS,
   addParam,
+  growParam,
   returnParam,
   MINING_PLAN_FIELDS,
   MINING_REWARDS_TO_PARAM,
@@ -42,6 +43,8 @@ export type Inputs = {
   saving: string;
   classReturns: ClassFields;
   classAdds: ClassFields;
+  /** Per-class yearly increase in what's added, %. */
+  classGrowth: ClassFields;
   /** Mining plan text fields; '' = not set. */
   mining: MiningFields;
   /** Yearly step-up of monthly additions, %; '' = not set. */
@@ -94,7 +97,13 @@ export function readInputs(params: URLSearchParams): Inputs & { ignored: string[
   }
   const classReturns = emptyClassFields();
   const classAdds = emptyClassFields();
+  const classGrowth = emptyClassFields();
   for (const key of PROJECTION_CLASS_KEYS) {
+    const g = params.get(growParam(key)) ?? '';
+    if (g !== '') {
+      if (inRange(g, 0, 500)) classGrowth[key] = g;
+      else ignored.push(`${PROJECTION_CLASS_LABELS[key]} yearly increase must be 0–500%`);
+    }
     const r = params.get(returnParam(key)) ?? '';
     if (r !== '') {
       if (inRange(r, RETURN_LIMITS[0], RETURN_LIMITS[1])) classReturns[key] = r;
@@ -129,6 +138,7 @@ export function readInputs(params: URLSearchParams): Inputs & { ignored: string[
     saving,
     classReturns,
     classAdds,
+    classGrowth,
     mining,
     addGrowth,
     ignored,
@@ -145,6 +155,7 @@ export function inputsToParams(form: Inputs): URLSearchParams {
   for (const key of PROJECTION_CLASS_KEYS) {
     if (form.classReturns[key].trim() !== '') next.set(returnParam(key), form.classReturns[key].trim());
     if (form.classAdds[key].trim() !== '') next.set(addParam(key), form.classAdds[key].trim());
+    if (form.classGrowth[key].trim() !== '') next.set(growParam(key), form.classGrowth[key].trim());
   }
   for (const key of Object.keys(MINING_PLAN_FIELDS) as MiningNumKey[]) {
     if (form.mining[key].trim() !== '') next.set(MINING_PLAN_FIELDS[key].param, form.mining[key].trim());
@@ -221,7 +232,7 @@ export function flatLineNote(facts: FlatLineFacts): string {
 /** One cache entry per URL scenario, so a saved scenario cannot paint over a different link. */
 export function projectionCacheKey(input: Inputs): string {
   const classes =
-    PROJECTION_CLASS_KEYS.map((k) => `${input.classReturns[k]}/${input.classAdds[k]}`).join(',') +
+    PROJECTION_CLASS_KEYS.map((k) => `${input.classReturns[k]}/${input.classAdds[k]}/${input.classGrowth[k]}`).join(',') +
     `|${Object.values(input.mining).join(',')}|${input.addGrowth}`;
   return `projections:${input.months}:${input.window}:${encodeURIComponent(input.returnPct)}:${encodeURIComponent(input.saving)}:${encodeURIComponent(classes)}`;
 }
@@ -280,6 +291,7 @@ export function scenarioFrameFromSearch<T>(
       saving: applied.saving,
       classReturns: applied.classReturns,
       classAdds: applied.classAdds,
+      classGrowth: applied.classGrowth,
       mining: applied.mining,
       addGrowth: applied.addGrowth,
     },
