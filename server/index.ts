@@ -25,6 +25,7 @@ import dividendsRouter from './routes/dividends.ts';
 import payeesRouter from './routes/payees.ts';
 import savingsGoalsRouter from './routes/savingsGoals.ts';
 import donationsRouter from './routes/donations.ts';
+import paySourcesRouter from './routes/paySources.ts';
 import projectionsRouter from './routes/projections.ts';
 import walletsRouter from './routes/wallets.ts';
 import { startWalletSyncScheduler } from './chain/index.ts';
@@ -134,6 +135,7 @@ async function main() {
   app.use('/api/payees', payeesRouter);
   app.use('/api/savings-goals', savingsGoalsRouter);
   app.use('/api/donations', donationsRouter);
+  app.use('/api/pay-sources', paySourcesRouter);
   app.use('/api/projections', projectionsRouter);
   app.use('/api/economy', economyRouter);
   app.use('/api/news', newsRouter);

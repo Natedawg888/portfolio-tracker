@@ -318,6 +318,12 @@ export function Projections() {
               {a?.monthlySavingNzd.incomeNzd == null ? '—' : formatNzd(a.monthlySavingNzd.incomeNzd)} · spending{' '}
               {a?.monthlySavingNzd.spendingNzd == null ? '—' : formatNzd(a.monthlySavingNzd.spendingNzd)} ·{' '}
               {a?.monthlySavingNzd.monthsWithActivity ?? 0} month(s) with activity.
+              {a?.monthlySavingNzd.expectedPayMonthlyNzd != null ? (
+                <>
+                  {' '}Saved pay sources: {formatNzd(a.monthlySavingNzd.expectedPayMonthlyNzd)}/mo
+                  {a.monthlySavingNzd.usedExpectedPay ? ' (used, because no income is recorded in the window).' : ' (not used — recorded income is used instead).'}
+                </>
+              ) : null}
             </p>
           </section>
 

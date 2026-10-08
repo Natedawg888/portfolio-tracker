@@ -1637,6 +1637,17 @@ export function Spending() {
                   : '—'}
             </p>
           </div>
+          {incomeSummary?.expectedPay ? (
+            <div className="card">
+              <p className="eyebrow">Expected from saved pay</p>
+              <p className="stat-value">{formatNzd(incomeSummary.expectedPay.monthlyNetNzd)}</p>
+              <p className="muted small">
+                {formatNzd(incomeSummary.expectedPay.weeklyNetNzd)}/wk ·{' '}
+                {incomeSummary.expectedPay.sources.map((src) => src.name).join(', ')} · set on{' '}
+                <Link to="/paye">PAYE</Link>
+              </p>
+            </div>
+          ) : null}
         </div>
 
         {incomeCompareRows.length === 0 ? (

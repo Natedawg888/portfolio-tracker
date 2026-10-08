@@ -4288,6 +4288,11 @@ html:not([data-theme]) .dashboard-page :focus-visible {
   font-feature-settings: "tnum" 1;
   overflow-wrap: anywhere;
 }
+.dashboard-page .month-snapshot-figure dd.month-snapshot-expected {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--muted);
+}
 .dashboard-page .month-snapshot-status,
 .dashboard-page .month-snapshot-error {
   margin: 0;

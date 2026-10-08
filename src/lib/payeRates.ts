@@ -237,3 +237,128 @@ export type InvestingCreditKind = (typeof INVESTING_CREDIT_KIND_OPTIONS)[number]
 /** @deprecated alias — same catalog as INVESTING_CREDIT_KIND_OPTIONS */
 export const TAX_CREDIT_KIND_OPTIONS = INVESTING_CREDIT_KIND_OPTIONS;
 export type TaxCreditKind = InvestingCreditKind;
+
+/**
+ * Adult minimum wage (hourly, before tax) — 1 April 2026 to 31 March 2027.
+ * Minimum Wage Order 2026: $23.50 → $23.95. Starting-out / training rate $19.16 (80% of adult).
+ * Source: https://www.employment.govt.nz/news-and-updates/minimum-wage-is-increasing-on-1-april-2026
+ */
+export const MINIMUM_WAGE_ADULT_HOURLY = 23.95;
+export const MINIMUM_WAGE_STARTING_OUT_HOURLY = 19.16;
+
+/**
+ * Holiday pay paid with each pay ("pay as you go"): 8% of gross earnings.
+ * Allowed for fixed-term (≤12 months) or intermittent / irregular work, e.g. seasonal piece work.
+ * Source: https://www.employment.govt.nz/pay-and-hours/pay-and-wages/leave-and-holiday-pay/pay-as-you-go-annual-holiday-payments
+ */
+export const HOLIDAY_PAY_PAYG_RATE = 0.08;
+
+/** GST rate (15%). Source: https://www.ird.govt.nz/gst */
+export const GST_RATE = 0.15;
+
+/**
+ * Schedular payment activities and standard withholding rates (tax code WT).
+ * Copied from IRD IR330C "Tax rate notification for contractors" (January 2024), page 3.
+ * Source: https://www.ird.govt.nz/-/media/project/ir/home/documents/forms-and-guides/ir300---ir399/ir330c/ir330c-2024.pdf
+ *
+ * Withholding is on the GST-exclusive amount when the contractor is GST registered.
+ * Resident contractors may elect their own rate (not below 10%; 15% for non-residents /
+ * temporary visa holders), or use a tailored rate certificate (IR23BS), which can be lower.
+ */
+export const SCHEDULAR_ELECTED_MIN_RATE = 0.1;
+export const SCHEDULAR_ELECTED_MIN_RATE_NON_RESIDENT = 0.15;
+export const SCHEDULAR_NO_NOTIFICATION_RATE = 0.45;
+
+export type SchedularActivity = {
+  /** IR330C activity number. */
+  number: number;
+  label: string;
+  /** Standard rate as a fraction. */
+  rate: number;
+};
+
+/**
+ * Activities most relevant to output-paid work. The full IR330C table has 27 rows;
+ * the rows below are the ones this tool offers, plus voluntary schedular payments.
+ */
+export const SCHEDULAR_ACTIVITIES: readonly SchedularActivity[] = [
+  { number: 3, label: 'Agricultural, horticultural or viticultural contracts (labour on fruit crops, orchards, vegetables or vineyards)', rate: 0.15 },
+  { number: 2, label: 'Agricultural contracts on farming land', rate: 0.15 },
+  { number: 23, label: 'Shearing or droving', rate: 0.15 },
+  { number: 13, label: 'Forestry or bush work, or flax planting or cutting', rate: 0.15 },
+  { number: 12, label: 'Fishing boat work for profit-share (supply of labour only)', rate: 0.2 },
+  { number: 8, label: 'Labour-only contracts in the building industry', rate: 0.2 },
+  { number: 5, label: 'Cleaning premises (not residential), plant, vehicles, furniture', rate: 0.2 },
+  { number: 15, label: 'Gardening, grass or hedge cutting, weed or vermin destruction (for a business)', rate: 0.2 },
+  { number: 19, label: 'Labour hire arrangement', rate: 0.2 },
+  { number: 20, label: 'Caretaking / guard, mail contracting, milk delivery, refuse removal, school transport', rate: 0.15 },
+  { number: 21, label: 'Sales of eels, greenstone, sphagnum moss, whitebait, wild deer / pigs / goats (not retail)', rate: 0.25 },
+  { number: 25, label: 'Voluntary schedular payments (agreed in writing, e.g. courier or trades not listed)', rate: 0.2 },
+] as const;
+
+export const SCHEDULAR_SOURCES = [
+  {
+    label: 'IRD — IR330C Tax rate notification for contractors (Jan 2024)',
+    url: 'https://www.ird.govt.nz/-/media/project/ir/home/documents/forms-and-guides/ir300---ir399/ir330c/ir330c-2024.pdf',
+  },
+  {
+    label: 'IRD — Deductions from payments to contractors',
+    url: 'https://www.ird.govt.nz/income-tax/withholding-taxes/schedular-payments/making-schedular-payments/deductions-from-payments-to-contractors',
+  },
+  {
+    label: 'Employment NZ — Minimum wage from 1 April 2026',
+    url: 'https://www.employment.govt.nz/news-and-updates/minimum-wage-is-increasing-on-1-april-2026',
+  },
+  {
+    label: 'Employment NZ — Paying annual holidays pay-as-you-go (8%)',
+    url: 'https://www.employment.govt.nz/pay-and-hours/pay-and-wages/leave-and-holiday-pay/pay-as-you-go-annual-holiday-payments',
+  },
+] as const;
+
+/**
+ * Per-tax-year rates for the pay tools. Keyed by the calendar year the tax year starts
+ * (2026 = 1 April 2026 – 31 March 2027). Add a new entry when IRD / Employment NZ publish
+ * the next year's figures; the calculators read only from here (KAN-22 / KAN-70).
+ */
+export type PayTaxYearRates = {
+  startYear: number;
+  label: string;
+  start: string;
+  end: string;
+  minimumWageAdultHourly: number;
+  minimumWageStartingOutHourly: number;
+  holidayPayPaygRate: number;
+  gstRate: number;
+  incomeTaxBrackets: readonly TaxBracket[];
+  accRate: number;
+  accMaxEarnings: number;
+  schedularActivities: readonly SchedularActivity[];
+  schedularElectedMinRate: number;
+  schedularNoNotificationRate: number;
+};
+
+export const PAY_TAX_YEARS: Readonly<Record<number, PayTaxYearRates>> = {
+  2026: {
+    startYear: 2026,
+    label: PAYE_TAX_YEAR_LABEL,
+    start: '2026-04-01',
+    end: '2027-03-31',
+    minimumWageAdultHourly: MINIMUM_WAGE_ADULT_HOURLY,
+    minimumWageStartingOutHourly: MINIMUM_WAGE_STARTING_OUT_HOURLY,
+    holidayPayPaygRate: HOLIDAY_PAY_PAYG_RATE,
+    gstRate: GST_RATE,
+    incomeTaxBrackets: INCOME_TAX_BRACKETS,
+    accRate: ACC_RATE,
+    accMaxEarnings: ACC_MAX_EARNINGS,
+    schedularActivities: SCHEDULAR_ACTIVITIES,
+    schedularElectedMinRate: SCHEDULAR_ELECTED_MIN_RATE,
+    schedularNoNotificationRate: SCHEDULAR_NO_NOTIFICATION_RATE,
+  },
+};
+
+export const CURRENT_PAY_TAX_YEAR = 2026;
+
+/** Rates for a tax year, or the current year when that year has no config yet. */
+export function payTaxYearRates(startYear: number = CURRENT_PAY_TAX_YEAR): PayTaxYearRates {
+  return PAY_TAX_YEARS[startYear] ?? PAY_TAX_YEARS[CURRENT_PAY_TAX_YEAR];
+}

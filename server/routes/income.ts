@@ -27,6 +27,7 @@ import {
 import { getDb, queryAll, queryOne, run, newId } from '../db/index.ts';
 import { resolveCryptoTicker } from '../quotes/crypto.ts';
 import type { QuoteResult } from '../../src/types/index.ts';
+import { paySourcesExpected } from '../paySources/store.ts';
 
 const router = Router();
 
@@ -496,6 +497,7 @@ router.get('/summary', async (req, res) => {
     plan: planRows[0] ?? null,
     plans: planRows,
     categories,
+    expectedPay: paySourcesExpected(db, uid(req)),
   });
 });
 

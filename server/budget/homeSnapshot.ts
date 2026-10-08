@@ -10,6 +10,9 @@
  * income — a fraction, same kind of ratio as debt-to-income (0.25 means 25%).
  * The rate is null when income is zero or negative.
  *
+ * expectedPay is the monthly take-home from saved pay sources (KAN-70). It is shown
+ * beside received income and never added to it.
+ *
  * Month bounds are Pacific/Auckland calendar dates. dividend_events is not read;
  * a mirrored dividend already sits on income_records when one was recorded.
  */
@@ -19,6 +22,7 @@ import { categoryTypeCountsAsSpend, normalizeCategoryType } from '../../src/lib/
 import { DEBT_SLUG, isDebtCategoryRef, resolveCategoryId } from '../lib/categories.ts';
 import { queryAll, queryOne } from '../db/index.ts';
 import { aucklandToday, monthBounds, roundMoney } from '../debts/model.ts';
+import { paySourcesExpected } from '../paySources/store.ts';
 
 export function currentYearMonth(now: Date = new Date()): string {
   return aucklandToday(now).slice(0, 7);
@@ -164,5 +168,6 @@ export function homeMonthSnapshot(
     spendingNzd,
     savingsNzd,
     savingsRate: savingsRateOf(savingsNzd, incomeNzd),
+    expectedPay: paySourcesExpected(db, userId),
   };
 }
