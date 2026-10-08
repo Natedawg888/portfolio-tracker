@@ -11,6 +11,7 @@ import {
   readPageCache,
   txnSyncChanged,
 } from '../lib/pageDataCache';
+import { usePageCacheValue } from '../lib/usePageCache';
 import { isMoneyHidden, MONEY_MASK } from '../lib/privacy';
 import { showQuietToast } from '../lib/quietToast';
 import { AssetBreakdownChart, type AssetBreakdownRow } from '../components/AssetBreakdownChart';
@@ -109,16 +110,28 @@ export function Dashboard() {
   const { enabled: assetEnabled } = useAssetClassPrefs();
   const initialMain = readPageCache<DashboardMain>(DASHBOARD_MAIN);
   const initialMonth = readPageCache<HomeMonthSnapshot>(DASHBOARD_MONTH);
-  const [summary, setSummary] = useState<Summary | null>(initialMain?.summary ?? null);
-  const [accounts, setAccounts] = useState<BankAccountRow[]>(initialMain?.accounts ?? []);
-  const [debtPeople, setDebtPeople] = useState<DebtBreakdownPerson[]>(initialMain?.debtPeople ?? []);
+  const cachedMain = usePageCacheValue<DashboardMain>(DASHBOARD_MAIN);
+  const cachedMonth = usePageCacheValue<HomeMonthSnapshot>(DASHBOARD_MONTH);
+  const [summaryState, setSummary] = useState<Summary | null>(initialMain?.summary ?? null);
+  const [accountsState, setAccounts] = useState<BankAccountRow[]>(initialMain?.accounts ?? []);
+  const [debtPeopleState, setDebtPeople] = useState<DebtBreakdownPerson[]>(initialMain?.debtPeople ?? []);
   const [error, setError] = useState<string | null>(null);
-  const [monthSnapshot, setMonthSnapshot] = useState<HomeMonthSnapshot | null>(initialMonth ?? null);
+  const [monthState, setMonthSnapshot] = useState<HomeMonthSnapshot | null>(initialMonth ?? null);
   const [monthError, setMonthError] = useState<string | null>(null);
+  // State wins once this visit has applied a read. Until then, a read that
+  // finished after unmount (or after a newer read started) still paints.
+  const summary = summaryState ?? cachedMain?.summary ?? null;
+  const accounts = summaryState ? accountsState : (cachedMain?.accounts ?? accountsState);
+  const debtPeople = summaryState ? debtPeopleState : (cachedMain?.debtPeople ?? debtPeopleState);
+  const monthSnapshot = monthState ?? cachedMonth ?? null;
   const summaryRef = useRef(summary);
-  summaryRef.current = summary;
   const monthRef = useRef(monthSnapshot);
-  monthRef.current = monthSnapshot;
+  useEffect(() => {
+    summaryRef.current = summary;
+  }, [summary]);
+  useEffect(() => {
+    monthRef.current = monthSnapshot;
+  }, [monthSnapshot]);
 
   const load = useCallback(() => {
     const stamp = beginPageRead(DASHBOARD_MAIN);

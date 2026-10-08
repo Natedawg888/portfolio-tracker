@@ -10,6 +10,7 @@ import {
   defaultAssetClassPrefs,
   type AssetClassPrefs,
 } from '../lib/assetClassPrefs';
+import { invalidateAfterAkahuLinkChange } from '../lib/pageDataCache';
 import {
   akahuConnect,
   akahuStatus,
@@ -365,6 +366,7 @@ export function Register() {
       }
       const r = await akahuConnect();
       if (r.authorizeUrl) {
+        invalidateAfterAkahuLinkChange();
         window.location.href = r.authorizeUrl;
         return;
       }

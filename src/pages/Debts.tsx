@@ -2,10 +2,12 @@
  * Debts the signed-in user records. Figures stay blank until they are entered.
  * Payoff text and debt-to-income are calculated from those figures only.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api, formatNzd } from '../api/client';
-import { beginPageRead, commitPageRead, invalidateFinancial, readPageCache } from '../lib/pageDataCache';
+import { beginPageRead, commitPageRead, invalidateAfterDebtEdit, readPageCache } from '../lib/pageDataCache';
+import { usePageCacheValue } from '../lib/usePageCache';
+import { showQuietToast } from '../lib/quietToast';
 import type {
   DebtCreditorKind,
   DebtInterestPeriod,
@@ -144,10 +146,16 @@ const DEBTS_KEY = 'debts';
 
 export function Debts() {
   const initialDebts = readPageCache<DebtsBundle>(DEBTS_KEY);
-  const [rows, setRows] = useState<DebtPerson[]>(initialDebts?.rows ?? []);
-  const [summary, setSummary] = useState<DebtSummary | null>(initialDebts?.summary ?? null);
-  const [loading, setLoading] = useState(initialDebts == null);
+  const cachedDebts = usePageCacheValue<DebtsBundle>(DEBTS_KEY);
+  const [bundle, setBundle] = useState<DebtsBundle | null>(initialDebts ?? null);
+  const shown = bundle ?? cachedDebts ?? null;
+  const rows = shown?.rows ?? [];
+  const summary = shown?.summary ?? null;
   const [error, setError] = useState<string | null>(null);
+  const showingRef = useRef(shown != null);
+  useEffect(() => {
+    showingRef.current = shown != null;
+  }, [shown]);
   const [msg, setMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -158,22 +166,20 @@ export function Debts() {
     const stamp = beginPageRead(DEBTS_KEY);
     const [people, sum] = await Promise.all([api.debts.people(), api.debts.summary()]);
     if (!commitPageRead(stamp, { rows: people, summary: sum })) return;
-    setRows(people);
-    setSummary(sum);
+    setBundle({ rows: people, summary: sum });
     setError(null);
-    setLoading(false);
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-    if (readPageCache<DebtsBundle>(DEBTS_KEY) == null) setLoading(true);
-    load()
-      .catch((err: Error) => {
-        if (!cancelled) setError(err.message);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    load().catch((err: Error) => {
+      if (cancelled) return;
+      if (showingRef.current || readPageCache<DebtsBundle>(DEBTS_KEY) != null) {
+        showQuietToast('Could not refresh debts — showing last data.', { kind: 'warn' });
+        return;
+      }
+      setError(err.message);
+    });
     return () => {
       cancelled = true;
     };
@@ -249,7 +255,7 @@ export function Debts() {
       setShowForm(false);
       setEditingId(null);
       setForm(emptyForm());
-      invalidateFinancial('debts', 'dashboard', 'spending', 'yearly', 'projections');
+      invalidateAfterDebtEdit();
       await load();
     } catch (err) {
       setMsg((err as Error).message);
@@ -270,7 +276,7 @@ export function Debts() {
         setForm(emptyForm());
       }
       setMsg(`Deleted ${debt.name}.`);
-      invalidateFinancial('debts', 'dashboard', 'spending', 'yearly', 'projections');
+      invalidateAfterDebtEdit();
       await load();
     } catch (err) {
       setMsg((err as Error).message);
@@ -480,7 +486,7 @@ export function Debts() {
         </form>
       )}
 
-      {loading ? (
+      {shown == null && !error ? (
         <p className="muted">Loading debts…</p>
       ) : rows.length === 0 ? (
         <p className="muted">No debts yet. Add one when you want a balance recorded.</p>

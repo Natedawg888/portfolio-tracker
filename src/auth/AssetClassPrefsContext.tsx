@@ -66,7 +66,9 @@ export function AssetClassPrefsProvider({ children }: { children: ReactNode }) {
 
   const loading = Boolean(userId) && loadedFor !== userId;
   const loadedForRef = useRef(loadedFor);
-  loadedForRef.current = loadedFor;
+  useEffect(() => {
+    loadedForRef.current = loadedFor;
+  }, [loadedFor]);
 
   const refresh = useCallback(async () => {
     if (!userId) {

@@ -14,7 +14,7 @@ import {
   beginPageRead,
   commitPageRead,
   invalidateAfterExternalSync,
-  invalidateFinancial,
+  invalidateAfterKiwiSaverEdit,
   portfolioSyncChanged,
   readPageCache,
 } from '../lib/pageDataCache';
@@ -251,9 +251,13 @@ export function KiwiSaver() {
   const [akahuConfigured, setAkahuConfigured] = useState<boolean | null>(initialKs?.akahuConfigured ?? null);
   const [loading, setLoading] = useState(initialKs == null);
   const akahuRef = useRef(initialKs?.akahuConfigured ?? null);
-  akahuRef.current = akahuConfigured;
   const accountsRef = useRef(accounts);
-  accountsRef.current = accounts;
+  useEffect(() => {
+    akahuRef.current = akahuConfigured;
+  }, [akahuConfigured]);
+  useEffect(() => {
+    accountsRef.current = accounts;
+  }, [accounts]);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<ManualForm>(emptyForm);
   const [csvText, setCsvText] = useState('');
@@ -282,7 +286,7 @@ export function KiwiSaver() {
   }, [selectedId]);
 
   const reloadAfterEdit = useCallback(async (preferAccountId?: string | null) => {
-    invalidateFinancial('kiwisaver', 'dashboard', 'projections');
+    invalidateAfterKiwiSaverEdit();
     await load(preferAccountId);
   }, [load]);
 
