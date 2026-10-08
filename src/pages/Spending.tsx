@@ -1282,7 +1282,7 @@ export function Spending() {
           <strong>1 Oct 2026</strong>. Sync Kiwibank via Akahu; off-Akahu cards (Nexo, GoMining, …)
           — add manually with card name and charged cash account.
         </p>
-        <div className="period-pager" role="navigation" aria-label="Spending month">
+        <div className="period-pager" role="navigation" aria-label="Budget month">
           <button
             type="button"
             className="btn"

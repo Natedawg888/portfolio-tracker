@@ -1,5 +1,6 @@
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { api, coerceBalance, formatAuckland, formatNzd } from '../api/client';
 import { maybeAutoSyncBankTransactions, maybeAutoSyncPortfolio } from '../lib/akahuTxnAutoSync';
 import {
@@ -361,9 +362,13 @@ export function Dashboard() {
           title="Debt / I owe"
           value={summary.debtOutstandingNzd ?? 0}
           hint={
-            (summary.debtPersonCount ?? 0) === 0
-              ? 'No creditors recorded · manage under Debts'
-              : `${summary.debtPersonCount} creditor${summary.debtPersonCount === 1 ? '' : 's'} · outstanding reduces net worth (not spend)`
+            (summary.debtPersonCount ?? 0) === 0 ? (
+              <>
+                No creditors recorded · manage under <Link to="/debts">Debts</Link>
+              </>
+            ) : (
+              `${summary.debtPersonCount} creditor${summary.debtPersonCount === 1 ? '' : 's'} · outstanding reduces net worth (not spend)`
+            )
           }
         />
       </section>
@@ -525,7 +530,7 @@ function Bucket({
 }: {
   title: string;
   value: number | null;
-  hint?: string;
+  hint?: ReactNode;
 }) {
   return (
     <div className="card">

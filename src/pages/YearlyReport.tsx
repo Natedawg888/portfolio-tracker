@@ -3,6 +3,7 @@
  * Line graph per asset (class + holding series). Never invents balances.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, formatAuckland, formatNzd } from '../api/client';
 import { beginPageRead, commitPageRead, invalidateFinancial, readPageCache } from '../lib/pageDataCache';
 import {
@@ -584,7 +585,7 @@ export function YearlyReport() {
           debtSummary.personCount === 0 &&
           debtRepayments.length === 0 && (
             <p className="muted" style={{ marginTop: '0.75rem' }}>
-              No debt creditors or repayments yet. Add them under Debts.
+              No debt creditors or repayments yet. Add them under <Link to="/debts">Debts</Link>.
             </p>
           )}
       </section>
