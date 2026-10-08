@@ -545,6 +545,7 @@ function migrateSchema(database: Database) {
     { table: 'payee_settings', index: 'idx_payee_settings_user' },
     { table: 'savings_goals', index: 'idx_savings_goals_user' },
     { table: 'donations', index: 'idx_donations_user' },
+    { table: 'pay_sources', index: 'idx_pay_sources_user' },
   ];
   for (const { table, index } of scopedTables) {
     const cols = tableColumns(database, table);

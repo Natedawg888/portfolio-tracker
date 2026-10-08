@@ -487,6 +487,11 @@ function MonthSnapshot({
           <div className="month-snapshot-figure">
             <dt>Income</dt>
             <dd>{formatNzd(snapshot.incomeNzd)}</dd>
+            {snapshot.expectedPay ? (
+              <dd className="month-snapshot-expected">
+                Expected {formatNzd(snapshot.expectedPay.monthlyNetNzd)} from saved pay
+              </dd>
+            ) : null}
           </div>
           <div className="month-snapshot-figure">
             <dt>Spending</dt>

@@ -607,6 +607,25 @@ BEGIN
   SET receipt_transaction_id = NULL
   WHERE receipt_transaction_id = OLD.id;
 END;
+-- Saved pay calculations (KAN-70): piece rate, contract (schedular), share of catch.
+-- inputs_json holds the calculator inputs; weekly figures are recomputed from them on
+-- save (src/lib/outputPayCalc.ts). weekly_net_nzd feeds the budget, home snapshot and
+-- projections as expected income. Amounts are NZD.
+CREATE TABLE IF NOT EXISTS pay_sources (
+  id               TEXT PRIMARY KEY,
+  user_id          TEXT,
+  name             TEXT NOT NULL,
+  pay_type         TEXT NOT NULL,
+  tax_year         INTEGER NOT NULL,
+  inputs_json      TEXT NOT NULL,
+  weekly_gross_nzd REAL NOT NULL,
+  weekly_net_nzd   REAL NOT NULL,
+  created_at       TEXT NOT NULL,
+  updated_at       TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_pay_sources_user ON pay_sources(user_id);
+
 -- Read-only crypto wallets: public address only. Never store seed phrases / private keys.
 -- No balance column on purpose: balances come from chain providers at sync time
 -- (balance is never stored as the source of truth here).

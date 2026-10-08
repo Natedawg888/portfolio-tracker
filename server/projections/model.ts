@@ -64,6 +64,10 @@ export type ObservedSaving = {
   monthsWithActivity: number;
   monthlyNzd: number | null;
   reason: string | null;
+  /** Monthly take-home from saved pay sources (KAN-70). Null when none are saved. */
+  expectedPayMonthlyNzd?: number | null;
+  /** True when expected pay stood in for recorded income. */
+  usedExpectedPay?: boolean;
 };
 
 export type ProjectionBuildInput = {
@@ -147,6 +151,8 @@ export type ProjectionResult = {
       spendingNzd: number | null;
       monthsWithActivity: number;
       observedMonthlyNzd: number | null;
+      expectedPayMonthlyNzd: number | null;
+      usedExpectedPay: boolean;
     };
     inflationPercent: NumericAssumption;
     kiwiSaverContributionMonthlyNzd: NumericAssumption;
@@ -235,6 +241,25 @@ export function observedMonthlySaving(
     spendingNzd: spending,
     monthsWithActivity: active,
     reason: null,
+  };
+}
+
+/**
+ * Saved pay sources stand in for income only when the window has no recorded income.
+ * Monthly saving is then expected take-home minus the window's average monthly spending.
+ * Recorded income always wins, so saved pay is never counted on top of real pay.
+ */
+export function savingWithExpectedPay(
+  observed: { incomeNzd: number; spendingNzd: number },
+  windowMonths: number,
+  expected: { monthlyNetNzd: number; count: number } | null,
+): { monthlyNzd: number; reason: string } | null {
+  if (!expected || observed.incomeNzd > 0 || windowMonths <= 0) return null;
+  const spendingMonthly = roundMoney(observed.spendingNzd / windowMonths);
+  const sources = expected.count === 1 ? '1 saved pay source' : `${expected.count} saved pay sources`;
+  return {
+    monthlyNzd: roundMoney(expected.monthlyNetNzd - spendingMonthly),
+    reason: `No income is recorded in the window, so expected take-home of $${expected.monthlyNetNzd.toFixed(2)} a month from ${sources} (PAYE page) is used, minus average recorded spending of $${spendingMonthly.toFixed(2)} a month.`,
   };
 }
 
@@ -459,6 +484,8 @@ export function projectSeries(input: ProjectionBuildInput): ProjectionResult {
         spendingNzd: input.observedSaving.spendingNzd,
         monthsWithActivity: input.observedSaving.monthsWithActivity,
         observedMonthlyNzd: input.observedSaving.monthlyNzd,
+        expectedPayMonthlyNzd: input.observedSaving.expectedPayMonthlyNzd ?? null,
+        usedExpectedPay: input.observedSaving.usedExpectedPay === true,
       },
       inflationPercent: {
         value: null,

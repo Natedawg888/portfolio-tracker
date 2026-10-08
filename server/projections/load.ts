@@ -9,11 +9,13 @@ import { computeNetWorth } from '../lib/netWorth.ts';
 import { listDebtsForUser } from '../debts/store.ts';
 import { monthBounds, roundMoney } from '../debts/model.ts';
 import { homeMonthSnapshot } from '../budget/homeSnapshot.ts';
+import { paySourcesExpected } from '../paySources/store.ts';
 import {
   completeMonthsBefore,
   observedKiwiSaverMonthly,
   observedMonthlySaving,
   projectSeries,
+  savingWithExpectedPay,
   type ProjectionResult,
 } from './model.ts';
 import type { ProjectionQuery } from './params.ts';
@@ -65,12 +67,15 @@ export async function loadUserProjection(
     query.savingWindowMonths,
   );
 
-  const monthlySavingNzd = query.monthlySavingNzd != null ? query.monthlySavingNzd : observed.monthlyNzd;
+  const expectedPay = paySourcesExpected(db, userId);
+  const fromPay = savingWithExpectedPay(observed, query.savingWindowMonths, expectedPay);
+  const monthlySavingNzd =
+    query.monthlySavingNzd != null ? query.monthlySavingNzd : (fromPay?.monthlyNzd ?? observed.monthlyNzd);
   const monthlySavingSource = query.monthlySavingNzd != null ? 'query' : 'user_data';
   const monthlySavingReason =
     query.monthlySavingNzd != null
       ? 'Taken from the monthlySavingNzd query parameter. Budget spending already includes debt repayments, and this amount is not reduced again when a debt balance falls.'
-      : observed.reason;
+      : (fromPay?.reason ?? observed.reason);
 
   return projectSeries({
     asOf,
@@ -101,6 +106,8 @@ export async function loadUserProjection(
       monthsWithActivity: observed.monthsWithActivity,
       monthlyNzd: observed.monthlyNzd,
       reason: observed.reason,
+      expectedPayMonthlyNzd: expectedPay?.monthlyNetNzd ?? null,
+      usedExpectedPay: query.monthlySavingNzd == null && fromPay != null,
     },
     kiwiSaverContributionMonthlyNzd: ks.monthlyNzd,
     kiwiSaverContributionReason: ks.reason,

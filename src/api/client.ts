@@ -18,6 +18,7 @@ import type {
   NewsFeedResponse,
   ProjectionResponse,
   PayeeSetting,
+  PaySource,
   SavingsGoal,
   SavingsGoalWriteBody,
   Wallet,
@@ -25,6 +26,7 @@ import type {
   WalletNetworkInfo,
   WalletsValuationResponse,
 } from '../types/index.ts';
+import type { OutputPaySourceInputs } from '../lib/outputPayCalc.ts';
 
 const BASE = '/api';
 
@@ -517,6 +519,15 @@ export const api = {
       req<{ ok: boolean; id: string }>(`/debts/repayments/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       }),
+  },
+  paySources: {
+    list: () => req<PaySource[]>('/pay-sources'),
+    create: (body: { name: string; taxYear?: number; inputs: OutputPaySourceInputs }) =>
+      req<PaySource>('/pay-sources', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: { name: string; taxYear?: number; inputs: OutputPaySourceInputs }) =>
+      req<PaySource>(`/pay-sources/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    remove: (id: string) =>
+      req<{ ok: boolean; id: string }>(`/pay-sources/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
   savingsGoals: {
     list: () => req<SavingsGoal[]>('/savings-goals'),

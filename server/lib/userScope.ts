@@ -26,6 +26,7 @@ export const SCOPED_TABLES = [
   'savings_goals',
   'donations',
   'wallets',
+  'pay_sources',
 ] as const;
 
 export type ScopedTable = (typeof SCOPED_TABLES)[number];
@@ -126,6 +127,7 @@ export function deleteScopedDataForUser(
     'payee_settings',
     'savings_goals',
     'donations',
+    'pay_sources',
     'budgets',
     'debt_people',
     'transactions',

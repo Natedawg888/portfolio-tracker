@@ -4,6 +4,8 @@
  * Never invent live prices, miner secondary-market values, or stone valuations.
  */
 
+import type { OutputPaySourceInputs, OutputPayType } from '../lib/outputPayCalc';
+
 export type CurrencyCode = 'NZD' | 'USD' | 'AUD' | 'EUR' | 'GBP';
 
 export type AccountType =
@@ -467,6 +469,8 @@ export interface IncomeMonthSummary {
   plan: IncomePlan | null;
   plans?: IncomePlan[];
   categories?: IncomeCategorySummary[];
+  /** Expected monthly income from saved pay sources (KAN-70). Null when none are saved. */
+  expectedPay?: PaySourcesExpected | null;
 }
 
 export interface Budget {
@@ -505,6 +509,33 @@ export interface HomeMonthSnapshot {
    * A fraction of income, not a percent. Null when incomeNzd is not positive.
    */
   savingsRate: number | null;
+  /** Expected monthly income from saved pay sources (KAN-70). Null when none are saved. */
+  expectedPay?: PaySourcesExpected | null;
+}
+
+/** A pay calculation saved as an income source (piece rate, contract, share of catch). */
+export interface PaySource {
+  id: string;
+  name: string;
+  payType: OutputPayType;
+  /** Tax year (start year) whose rates were used. */
+  taxYear: number;
+  inputs: OutputPaySourceInputs | null;
+  weeklyGrossNzd: number;
+  /** Typical weekly amount that lands in your pocket. */
+  weeklyNetNzd: number;
+  /** weeklyNetNzd × 52 ÷ 12. */
+  monthlyNetNzd: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Saved pay sources added up as expected income. */
+export interface PaySourcesExpected {
+  count: number;
+  weeklyNetNzd: number;
+  monthlyNetNzd: number;
+  sources: Array<{ id: string; name: string; payType: OutputPayType; weeklyNetNzd: number }>;
 }
 
 /** Where a projection figure came from. */
@@ -580,6 +611,10 @@ export interface ProjectionResponse {
       spendingNzd: number | null;
       monthsWithActivity: number;
       observedMonthlyNzd: number | null;
+      /** Monthly take-home from saved pay sources, used when the window has no recorded income. */
+      expectedPayMonthlyNzd?: number | null;
+      /** True when expectedPayMonthlyNzd stood in for recorded income. */
+      usedExpectedPay?: boolean;
     };
     inflationPercent: ProjectionAssumption;
     kiwiSaverContributionMonthlyNzd: ProjectionAssumption;
