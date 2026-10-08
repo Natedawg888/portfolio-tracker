@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api, formatMoney, formatNzd } from '../api/client';
+import { beginPageRead, commitPageRead, invalidateFinancial, readPageCache } from '../lib/pageDataCache';
 import { todayAucklandYmd } from '../lib/period';
 import type {
   DetectedDividend,
@@ -131,12 +132,17 @@ function applyForecast(dashboard: DividendDashboard, result: ForecastReinvestRes
   };
 }
 
+function dividendKey(year: number): string {
+  return `dividends:${year}`;
+}
+
 export function DividendTracker({ placement }: { placement: Placement }) {
   const [year, setYear] = useState(() => Number(todayAucklandYmd().slice(0, 4)));
-  const [data, setData] = useState<DividendDashboard | null>(null);
+  const initialDividends = readPageCache<DividendDashboard>(dividendKey(Number(todayAucklandYmd().slice(0, 4))));
+  const [data, setData] = useState<DividendDashboard | null>(initialDividends ?? null);
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initialDividends == null);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -148,10 +154,17 @@ export function DividendTracker({ placement }: { placement: Placement }) {
 
   const load = useCallback(() => {
     const ticket = ++requestRef.current;
+    const stamp = beginPageRead(dividendKey(year));
+    const cached = readPageCache<DividendDashboard>(dividendKey(year));
+    if (cached) {
+      setData(cached);
+      setLoading(false);
+    }
     return api.dividends
       .dashboard(year)
       .then((payload) => {
         if (ticket !== requestRef.current) return;
+        if (!commitPageRead(stamp, payload)) return;
         setData(payload);
         setError(null);
       })
@@ -169,7 +182,13 @@ export function DividendTracker({ placement }: { placement: Placement }) {
   }, [load]);
 
   function changeYear(next: number) {
-    setLoading(true);
+    const cached = readPageCache<DividendDashboard>(dividendKey(next));
+    if (cached) {
+      setData(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setYear(next);
   }
 
@@ -248,6 +267,7 @@ export function DividendTracker({ placement }: { placement: Placement }) {
       else await api.dividends.create(body);
       resetForm();
       setShowForm(false);
+      invalidateFinancial('dividends', 'spending', 'dashboard', 'paye', 'projections');
       await load();
     } catch (err) {
       setFormError((err as Error).message);
@@ -262,6 +282,7 @@ export function DividendTracker({ placement }: { placement: Placement }) {
     setFormError(null);
     try {
       await api.dividends.remove(event.id);
+      invalidateFinancial('dividends', 'spending', 'dashboard', 'paye', 'projections');
       if (editingId === event.id) {
         resetForm();
         setShowForm(false);
@@ -280,6 +301,7 @@ export function DividendTracker({ placement }: { placement: Placement }) {
     setData((current) => (current ? patchRecordedFlag(current, event.id, next) : current));
     try {
       const result = await api.dividends.setReinvest(event.id, next);
+      invalidateFinancial('dividends', 'spending', 'dashboard', 'paye', 'projections');
       setData((current) => (current ? applyRecorded(current, result) : current));
       if (editingId === result.event.id) {
         setForm((prev) => ({
@@ -310,6 +332,7 @@ export function DividendTracker({ placement }: { placement: Placement }) {
         paymentDate: row.paymentDate,
         reinvested: next,
       });
+      invalidateFinancial('dividends', 'spending', 'dashboard', 'paye', 'projections');
       setData((current) => (current ? applyForecast(current, result) : current));
       await load();
     } catch (err) {

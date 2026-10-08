@@ -9,6 +9,8 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ApiError, api, formatNzd } from '../api/client';
 import { AssetLineChart, type LineSeries } from '../components/AssetLineChart';
+import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
+import { showQuietToast } from '../lib/quietToast';
 import type { ProjectionAssumption, ProjectionResponse } from '../types';
 
 const HORIZONS: Array<{ months: number; label: string }> = [
@@ -28,6 +30,11 @@ const SOURCE_LABEL: Record<ProjectionAssumption['source'], string> = {
 };
 
 type Inputs = { months: number; window: number; returnPct: string; saving: string };
+
+/** One cache entry per URL scenario, so a saved scenario cannot paint over a different link. */
+function projectionCacheKey(input: Inputs): string {
+  return `projections:${input.months}:${input.window}:${encodeURIComponent(input.returnPct)}:${encodeURIComponent(input.saving)}`;
+}
 
 /** Same limits the API enforces (server/projections/model.ts). */
 const RETURN_RANGE = [-50, 50] as const;
@@ -97,16 +104,33 @@ export function Projections() {
   const [params, setParams] = useSearchParams();
   const applied = useMemo(() => readInputs(params), [params]);
   const [form, setForm] = useState<Inputs>(applied);
-  const [data, setData] = useState<ProjectionResponse | null>(null);
+  const appliedKey = JSON.stringify(applied);
+  const cacheKey = projectionCacheKey(applied);
+  const initialCached = readPageCache<ProjectionResponse>(cacheKey) ?? null;
+  const [data, setData] = useState<ProjectionResponse | null>(initialCached);
   const [error, setError] = useState<string | null>(null);
   // Loading until the response for the inputs currently in the URL has arrived.
-  const appliedKey = JSON.stringify(applied);
-  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  // A cache hit for this exact scenario counts as arrived, then refreshes quietly.
+  const [loadedKey, setLoadedKey] = useState<string | null>(initialCached ? appliedKey : null);
+  const [shownKey, setShownKey] = useState(appliedKey);
+  if (shownKey !== appliedKey) {
+    setShownKey(appliedKey);
+    const next = readPageCache<ProjectionResponse>(cacheKey);
+    if (next) {
+      setData(next);
+      setLoadedKey(appliedKey);
+      setError(null);
+    } else {
+      setLoadedKey(null);
+    }
+  }
   const loading = loadedKey !== appliedKey;
 
   useEffect(() => {
     let cancelled = false;
-    const key = JSON.stringify(applied);
+    const key = projectionCacheKey(applied);
+    const requestKey = JSON.stringify(applied);
+    const stamp = beginPageRead(key);
     api.projections
       .get({
         months: applied.months,
@@ -116,14 +140,20 @@ export function Projections() {
       })
       .then((r) => {
         if (cancelled) return;
+        if (!commitPageRead(stamp, r)) return;
         setData(r);
         setError(null);
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof ApiError ? err.message : 'Projection could not be loaded.');
+        if (cancelled) return;
+        if (readPageCache<ProjectionResponse>(key)) {
+          showQuietToast('Could not refresh projection — showing last data.', { kind: 'warn' });
+          return;
+        }
+        setError(err instanceof ApiError ? err.message : 'Projection could not be loaded.');
       })
       .finally(() => {
-        if (!cancelled) setLoadedKey(key);
+        if (!cancelled) setLoadedKey(requestKey);
       });
     return () => {
       cancelled = true;

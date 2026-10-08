@@ -26,6 +26,7 @@
     "test:debts": "node --import tsx server/debts/model.test.ts && node --import tsx server/debts/store.test.ts",
     "test:home-snapshot": "node --import tsx server/budget/homeSnapshot.test.ts",
     "test:savings-goals": "node --import tsx server/savings/model.test.ts && node --import tsx server/savings/store.test.ts",
+    "test:page-cache": "node --import tsx src/lib/pageDataCache.test.ts",
     "test:donations": "node --import tsx server/donations/model.test.ts && node --import tsx server/donations/store.test.ts",
     "test:projections": "node --import tsx server/projections/model.test.ts && node --import tsx server/projections/api.test.ts",
     "test:net-worth-crypto": "node --import tsx server/lib/netWorth.crypto.test.ts",

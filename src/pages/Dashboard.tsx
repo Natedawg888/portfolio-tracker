@@ -1,7 +1,15 @@
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, coerceBalance, formatAuckland, formatNzd } from '../api/client';
 import { maybeAutoSyncBankTransactions, maybeAutoSyncPortfolio } from '../lib/akahuTxnAutoSync';
+import {
+  beginPageRead,
+  commitPageRead,
+  invalidateAfterExternalSync,
+  portfolioSyncChanged,
+  readPageCache,
+  txnSyncChanged,
+} from '../lib/pageDataCache';
 import { isMoneyHidden, MONEY_MASK } from '../lib/privacy';
 import { showQuietToast } from '../lib/quietToast';
 import { AssetBreakdownChart, type AssetBreakdownRow } from '../components/AssetBreakdownChart';
@@ -78,6 +86,15 @@ function monthErrorMessage(err: unknown): string {
   return 'Could not load this month.';
 }
 
+type DashboardMain = {
+  summary: Summary;
+  accounts: BankAccountRow[];
+  debtPeople: DebtBreakdownPerson[];
+};
+
+const DASHBOARD_MAIN = 'dashboard:main';
+const DASHBOARD_MONTH = 'dashboard:month';
+
 /** Drop env key names from copy shown on the dashboard. */
 function dashboardQuoteNote(note: string | undefined): string | undefined {
   if (!note) return note;
@@ -89,42 +106,57 @@ function dashboardQuoteNote(note: string | undefined): string | undefined {
 
 export function Dashboard() {
   const { enabled: assetEnabled } = useAssetClassPrefs();
-  const [summary, setSummary] = useState<Summary | null>(null);
-  const [accounts, setAccounts] = useState<BankAccountRow[]>([]);
-  const [debtPeople, setDebtPeople] = useState<DebtBreakdownPerson[]>([]);
+  const initialMain = readPageCache<DashboardMain>(DASHBOARD_MAIN);
+  const initialMonth = readPageCache<HomeMonthSnapshot>(DASHBOARD_MONTH);
+  const [summary, setSummary] = useState<Summary | null>(initialMain?.summary ?? null);
+  const [accounts, setAccounts] = useState<BankAccountRow[]>(initialMain?.accounts ?? []);
+  const [debtPeople, setDebtPeople] = useState<DebtBreakdownPerson[]>(initialMain?.debtPeople ?? []);
   const [error, setError] = useState<string | null>(null);
-  const [monthSnapshot, setMonthSnapshot] = useState<HomeMonthSnapshot | null>(null);
+  const [monthSnapshot, setMonthSnapshot] = useState<HomeMonthSnapshot | null>(initialMonth ?? null);
   const [monthError, setMonthError] = useState<string | null>(null);
+  const summaryRef = useRef(summary);
+  summaryRef.current = summary;
+  const monthRef = useRef(monthSnapshot);
+  monthRef.current = monthSnapshot;
 
   const load = useCallback(() => {
+    const stamp = beginPageRead(DASHBOARD_MAIN);
     return Promise.all([api.netWorth(), api.accounts.list(), api.debts.people()])
       .then(([net, accts, people]) => {
-        setSummary(net as Summary);
-        setAccounts(accts as BankAccountRow[]);
-        setDebtPeople(people);
+        const bundle: DashboardMain = {
+          summary: net as Summary,
+          accounts: accts as BankAccountRow[],
+          debtPeople: people,
+        };
+        if (!commitPageRead(stamp, bundle)) return;
+        setSummary(bundle.summary);
+        setAccounts(bundle.accounts);
+        setDebtPeople(bundle.debtPeople);
         setError(null);
       })
       .catch((e: Error) => {
-        setSummary((prev) => {
-          if (prev) {
-            showQuietToast('Could not refresh dashboard — showing last data.', { kind: 'warn' });
-            return prev;
-          }
-          setError(e.message);
-          return prev;
-        });
+        if (summaryRef.current) {
+          showQuietToast('Could not refresh dashboard — showing last data.', { kind: 'warn' });
+          return;
+        }
+        setError(e.message);
       });
   }, []);
 
   const loadMonth = useCallback(() => {
+    const stamp = beginPageRead(DASHBOARD_MONTH);
     return api.home
       .snapshot()
       .then((snap) => {
+        if (!commitPageRead(stamp, snap)) return;
         setMonthSnapshot(snap);
         setMonthError(null);
       })
       .catch((e: unknown) => {
-        setMonthSnapshot(null);
+        if (monthRef.current) {
+          showQuietToast('Could not refresh this month — showing last data.', { kind: 'warn' });
+          return;
+        }
         setMonthError(monthErrorMessage(e));
       });
   }, []);
@@ -149,6 +181,10 @@ export function Dashboard() {
         if (cancelled) return;
         const txnInserted = txn.ran && txn.result.ok && (txn.result.inserted ?? 0) > 0;
         const portOk = port.ran && port.result.ok;
+        const changed =
+          (txn.ran && txn.result.ok && txnSyncChanged(txn.result)) ||
+          (port.ran && port.result.ok && portfolioSyncChanged(port.result));
+        if (changed) invalidateAfterExternalSync();
         if (txnInserted || portOk) await Promise.all([load(), loadMonth()]);
       } catch {
         showQuietToast('Bank/portfolio sync paused — showing last data.', { kind: 'warn' });

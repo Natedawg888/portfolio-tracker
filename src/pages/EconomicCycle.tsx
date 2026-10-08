@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, formatAuckland } from '../api/client';
+import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import { PhaseNews } from '../components/PhaseNews';
 import type { EconomicCycleResponse, EconomicIndicatorCard } from '../types/economy';
 import { isCurrentCycleRequest, nextCycleLoad, shouldApplyCyclePayload } from './cycleLoad';
@@ -97,11 +98,16 @@ function nextQuarter(period: string): string | null {
   return `${year}-Q${quarter}`;
 }
 
+function economyKey(country: string): string {
+  return `economy:${country}`;
+}
+
 export function EconomicCycle() {
   const [country, setCountry] = useState('NZ');
-  const [data, setData] = useState<EconomicCycleResponse | null>(null);
+  const initialCycle = readPageCache<EconomicCycleResponse>(economyKey('NZ'));
+  const [data, setData] = useState<EconomicCycleResponse | null>(initialCycle ?? null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initialCycle == null);
   const requestSeq = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -111,6 +117,12 @@ export function EconomicCycle() {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    const stamp = beginPageRead(economyKey(ticket.country));
+    const cached = readPageCache<EconomicCycleResponse>(economyKey(ticket.country));
+    if (!refresh && cached?.country === ticket.country) {
+      setData(cached);
+      setLoading(false);
+    }
     return api.economy
       .cycle({ refresh, country: ticket.country, signal: controller.signal })
       .then((payload) => {
@@ -119,6 +131,7 @@ export function EconomicCycle() {
           setError('The extract was for a different country, so it was not shown.');
           return;
         }
+        if (!commitPageRead(stamp, payload)) return;
         setData(payload);
         setError(null);
       })
@@ -165,7 +178,13 @@ export function EconomicCycle() {
           options={options}
           disabled={loading}
           onChange={(next) => {
-            setLoading(true);
+            const cached = readPageCache<EconomicCycleResponse>(economyKey(next));
+            if (cached?.country === next) {
+              setData(cached);
+              setLoading(false);
+            } else {
+              setLoading(true);
+            }
             setCountry(next);
           }}
         />
@@ -205,7 +224,13 @@ export function EconomicCycle() {
           options={options}
           disabled={loading}
           onChange={(next) => {
-            setLoading(true);
+            const cached = readPageCache<EconomicCycleResponse>(economyKey(next));
+            if (cached?.country === next) {
+              setData(cached);
+              setLoading(false);
+            } else {
+              setLoading(true);
+            }
             setCountry(next);
           }}
         />
