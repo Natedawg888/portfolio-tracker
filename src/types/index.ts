@@ -8,6 +8,7 @@ import type { OutputPaySourceInputs, OutputPayType } from '../lib/outputPayCalc'
 import type { DuePreset, GstMode, InvoiceStatus, InvoiceStoredStatus } from '../lib/invoiceCalc';
 import type { MiningPlan, ProjectionClassKey } from '../lib/projectionClasses';
 import type { MiningProjection } from '../lib/miningProjection';
+import type { Cadence, RecurringKind, RecurringStatus, RecurringSuggestion } from '../lib/recurring';
 
 export type CurrencyCode = 'NZD' | 'USD' | 'AUD' | 'EUR' | 'GBP';
 
@@ -1331,4 +1332,44 @@ export interface PublicInvoice {
   balanceNzd: number;
   notes: string;
   paymentInstructions: string;
+}
+
+/** A saved bill or subscription (KAN-26). */
+export interface RecurringItem {
+  id: string;
+  name: string;
+  /** Links the item to its transactions; null for items added by hand without a payee. */
+  merchantKey: string | null;
+  kind: RecurringKind;
+  amountNzd: number;
+  /** amountNzd converted to a monthly figure for its cadence. */
+  monthlyNzd: number;
+  cadence: Cadence;
+  /** Active items: first due date on or after today. Paused / cancelled: the saved date. */
+  nextDue: string;
+  categoryId: string | null;
+  categoryName: string | null;
+  status: RecurringStatus;
+  source: 'detected' | 'manual';
+  notes: string;
+  /** Latest matching payment in the last 15 months. */
+  lastPaidDate: string | null;
+  lastPaidNzd: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RecurringListResponse {
+  today: string;
+  items: RecurringItem[];
+  /** Repeating payments found in transactions that aren't saved or dismissed yet. */
+  suggestions: Array<Omit<RecurringSuggestion, 'transactionIds'> & { transactionCount: number }>;
+  dismissedCount: number;
+  totals: {
+    /** Active items only. */
+    monthlyNzd: number;
+    yearlyNzd: number;
+    dueNext30DaysNzd: number;
+    activeCount: number;
+  };
 }

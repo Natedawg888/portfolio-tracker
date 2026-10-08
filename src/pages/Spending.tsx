@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link } from 'react-router-dom';
+import { prefetchNavTarget } from '../lib/routePrefetch';
 import { api, formatNzd } from '../api/client';
 import {
   maybeAutoSyncBankTransactions,
@@ -1288,6 +1289,11 @@ export function Spending() {
           <strong>1 Oct 2026</strong>. Sync Kiwibank via Akahu; off-Akahu cards (Nexo, GoMining, …)
           — add manually with card name and charged cash account.
         </p>
+        <div className="row gap" style={{ marginBottom: '0.75rem' }}>
+          <Link className="btn" to="/bills" onMouseEnter={() => prefetchNavTarget('/bills')} onFocus={() => prefetchNavTarget('/bills')}>
+            Bills &amp; subscriptions →
+          </Link>
+        </div>
         <div className="period-pager" role="navigation" aria-label="Budget month">
           <button
             type="button"
