@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, formatAuckland } from '../api/client';
 import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
+import { usePageCacheValue } from '../lib/usePageCache';
 import { showQuietToast } from '../lib/quietToast';
 import type { NewsFeedResponse, NewsSection, NewsStory } from '../types';
 
@@ -36,11 +37,15 @@ function matchedLine(section: NewsSection): string | null {
 
 export function News() {
   const initial = readPageCache<NewsFeedResponse>(NEWS_PAGE) ?? null;
+  const cached = usePageCacheValue<NewsFeedResponse>(NEWS_PAGE);
   const [data, setData] = useState<NewsFeedResponse | null>(initial);
+  const shown = data ?? cached ?? null;
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(initial == null);
-  const dataRef = useRef(data);
-  dataRef.current = data;
+  const [refreshing, setRefreshing] = useState(false);
+  const dataRef = useRef(shown);
+  useEffect(() => {
+    dataRef.current = shown;
+  }, [shown]);
 
   const load = useCallback((refresh = false) => {
     const stamp = beginPageRead(NEWS_PAGE);
@@ -52,20 +57,21 @@ export function News() {
         setError(null);
       })
       .catch((err: Error) => {
-        if (!refresh && dataRef.current) {
+        if (!refresh && (dataRef.current || readPageCache<NewsFeedResponse>(NEWS_PAGE))) {
           showQuietToast('Could not refresh headlines — showing last data.', { kind: 'warn' });
           return;
         }
         setError(err.message || 'News feeds could not be loaded');
       })
-      .finally(() => setLoading(false));
+      .finally(() => setRefreshing(false));
   }, []);
 
   useEffect(() => {
     void load(false);
   }, [load]);
 
-  const hasHoldingSections = data?.sections.some((section) => section.kind === 'holdings') ?? false;
+  const hasHoldingSections = shown?.sections.some((section) => section.kind === 'holdings') ?? false;
+  const pending = shown == null && !error;
 
   return (
     <div className="stack news-page">
@@ -84,31 +90,31 @@ export function News() {
           <button
             type="button"
             className="btn small"
-            disabled={loading}
+            disabled={refreshing || pending}
             onClick={() => {
-              setLoading(true);
+              setRefreshing(true);
               void load(true);
             }}
           >
-            {loading ? 'Loading headlines…' : 'Refresh headlines'}
+            {refreshing || pending ? 'Loading headlines…' : 'Refresh headlines'}
           </button>
         </div>
-        {data ? <p className="muted small">Updated {formatAuckland(data.fetchedAt)}.</p> : null}
+        {shown ? <p className="muted small">Updated {formatAuckland(shown.fetchedAt)}.</p> : null}
         {error ? (
           <p className="news-status" role="alert">
             {error} No replacement headlines are shown.
           </p>
         ) : null}
-        {!data && loading ? (
+        {!shown && (pending || refreshing) ? (
           <p className="muted">Loading headlines from Google News and BBC News.</p>
         ) : null}
-        {data && !hasHoldingSections ? (
+        {shown && !hasHoldingSections ? (
           <p className="muted">
             No holding-specific sections yet. Add holdings on Portfolio and they will open a section here.
             World and politics still load.
           </p>
         ) : null}
-        {data?.sections.map((section) => {
+        {shown?.sections.map((section) => {
           const matched = matchedLine(section);
           return (
             <div key={section.id} className="phase-news-group">

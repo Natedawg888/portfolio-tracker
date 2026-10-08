@@ -27,6 +27,23 @@ let readSeq = 0;
 const entries = new Map<string, Entry>();
 const tokens = new Map<string, number>();
 const latestRead = new Map<string, number>();
+/** Highest read id that has stored data for this key. Older results must not replace it. */
+const committedRead = new Map<string, number>();
+/** Reads that have begun and not yet committed or been abandoned. */
+const inflight = new Map<string, number>();
+const listeners = new Set<() => void>();
+
+function emit(): void {
+  listeners.forEach((listener) => listener());
+}
+
+/** Re-render when a commit, invalidation, or clear changes what readPageCache returns. */
+export function subscribePageCache(onStoreChange: () => void): () => void {
+  listeners.add(onStoreChange);
+  return () => {
+    listeners.delete(onStoreChange);
+  };
+}
 
 function storageKey(logicalKey: string): string {
   return `${userEpoch}:${logicalKey}`;
@@ -44,6 +61,9 @@ export function clearPageCache(): void {
   entries.clear();
   tokens.clear();
   latestRead.clear();
+  committedRead.clear();
+  inflight.clear();
+  emit();
 }
 
 /**
@@ -62,11 +82,19 @@ export function readPageCache<T>(key: string): T | undefined {
   return entry.data as T;
 }
 
+function endInflight(stamp: PageReadStamp): void {
+  if (stamp.epoch !== userEpoch) return;
+  const n = inflight.get(stamp.storageKey) ?? 0;
+  if (n <= 1) inflight.delete(stamp.storageKey);
+  else inflight.set(stamp.storageKey, n - 1);
+}
+
 /** Capture a stamp before an await so a later invalidation can ignore the result. */
 export function beginPageRead(key: string): PageReadStamp {
   const stored = storageKey(key);
   const id = ++readSeq;
   latestRead.set(stored, id);
+  inflight.set(stored, (inflight.get(stored) ?? 0) + 1);
   return {
     storageKey: stored,
     token: tokens.get(stored) ?? 0,
@@ -75,17 +103,37 @@ export function beginPageRead(key: string): PageReadStamp {
   };
 }
 
-/** Store data only when this read is still the latest one for the same user. */
+/**
+ * Store data when this read has not been invalidated and no newer read has
+ * already stored. A slower read still fills an empty slot after the page
+ * unmounts or a return visit starts another read. Only the newest read
+ * returns true, so an older caller does not treat itself as the active one.
+ * Empty payloads are stored; a miss is a missing entry, not an empty list.
+ */
 export function commitPageRead<T>(stamp: PageReadStamp, data: T): boolean {
+  endInflight(stamp);
   if (stamp.epoch !== userEpoch) return false;
   if ((tokens.get(stamp.storageKey) ?? 0) !== stamp.token) return false;
-  if (latestRead.get(stamp.storageKey) !== stamp.id) return false;
+  const storedId = committedRead.get(stamp.storageKey) ?? 0;
+  if (stamp.id < storedId) return false;
   entries.set(stamp.storageKey, { data, token: stamp.token });
-  return true;
+  committedRead.set(stamp.storageKey, stamp.id);
+  emit();
+  return latestRead.get(stamp.storageKey) === stamp.id;
 }
 
-/** Synchronous write after the caller already holds fresh data. */
+/** The read failed or was dropped. Lets a later synchronous write proceed. */
+export function abandonPageRead(stamp: PageReadStamp): void {
+  endInflight(stamp);
+}
+
+/**
+ * Synchronous write after the caller already holds fresh data.
+ * Skipped while a read for this key is still running, so it cannot replace
+ * that read's result or cancel its commit.
+ */
 export function writePageCache<T>(key: string, data: T): boolean {
+  if ((inflight.get(storageKey(key)) ?? 0) > 0) return false;
   return commitPageRead(beginPageRead(key), data);
 }
 
@@ -97,8 +145,10 @@ export function invalidatePageCache(match: (logicalKey: string) => boolean): voi
     if (!logical || !match(logical)) continue;
     entries.delete(stored);
     latestRead.delete(stored);
+    committedRead.delete(stored);
     tokens.set(stored, (tokens.get(stored) ?? 0) + 1);
   }
+  emit();
 }
 
 function matchesPrefix(key: string, prefix: string): boolean {
@@ -147,6 +197,29 @@ const SCOPE_PREFIXES: Record<FinancialScope, readonly string[]> = {
 export function invalidateFinancial(...scopes: FinancialScope[]): void {
   const prefixes = scopes.flatMap((scope) => SCOPE_PREFIXES[scope]);
   invalidatePageCache((key) => prefixes.some((prefix) => matchesPrefix(key, prefix)));
+}
+
+/** Budget edits also change the portfolio net-worth summary. */
+export function invalidateAfterBudgetEdit(): void {
+  invalidateFinancial('spending', 'dashboard', 'debts', 'yearly', 'paye', 'projections', 'portfolio');
+}
+
+/** Debt edits also change the portfolio net-worth summary. */
+export function invalidateAfterDebtEdit(): void {
+  invalidateFinancial('debts', 'dashboard', 'spending', 'yearly', 'projections', 'portfolio');
+}
+
+/** KiwiSaver edits also change the portfolio net-worth summary. */
+export function invalidateAfterKiwiSaverEdit(): void {
+  invalidateFinancial('kiwisaver', 'dashboard', 'projections', 'portfolio');
+}
+
+const ALL_FINANCIAL_SCOPES = Object.keys(SCOPE_PREFIXES) as FinancialScope[];
+
+/** Bank link or unlink can change balances across the app. */
+export function invalidateAfterAkahuLinkChange(): void {
+  invalidateFinancial(...ALL_FINANCIAL_SCOPES);
+  invalidatePageCache((key) => key === 'settings:akahu');
 }
 
 export function txnSyncChanged(result: {

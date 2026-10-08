@@ -4,6 +4,7 @@ import { api, formatNzd, formatAuckland } from '../api/client';
 import { maybeAutoSyncBankTransactions, maybeAutoSyncPortfolio } from '../lib/akahuTxnAutoSync';
 import { showQuietToast } from '../lib/quietToast';
 import {
+  abandonPageRead,
   beginPageRead,
   commitPageRead,
   invalidateAfterExternalSync,
@@ -2029,11 +2030,17 @@ export function Portfolio() {
   );
   const [savingGm, setSavingGm] = useState(false);
   const holdingsRef = useRef(holdings);
-  holdingsRef.current = holdings;
   const gmCurrencyRef = useRef(gmSettings.displayCurrency);
-  gmCurrencyRef.current = gmSettings.displayCurrency;
   const gmNoteRef = useRef(gmSettings.note);
-  gmNoteRef.current = gmSettings.note;
+  useEffect(() => {
+    holdingsRef.current = holdings;
+  }, [holdings]);
+  useEffect(() => {
+    gmCurrencyRef.current = gmSettings.displayCurrency;
+  }, [gmSettings.displayCurrency]);
+  useEffect(() => {
+    gmNoteRef.current = gmSettings.note;
+  }, [gmSettings.note]);
 
   const load = useCallback(() => {
     const stamp = beginPageRead(PORTFOLIO_KEY);
@@ -2049,6 +2056,7 @@ export function Portfolio() {
         setError(null);
       })
       .catch((e: Error) => {
+        abandonPageRead(stamp);
         if (holdingsRef.current.length > 0) {
           showQuietToast('Could not refresh portfolio — showing last data.', { kind: 'warn' });
           return;
@@ -2149,7 +2157,9 @@ export function Portfolio() {
   // Mount-only + loadRef so Strict Mode remount / stable load identity never
   // cancels a completed sync before the UI reloads (same pattern as Budget).
   const portfolioLoadRef = useRef(load);
-  portfolioLoadRef.current = load;
+  useEffect(() => {
+    portfolioLoadRef.current = load;
+  }, [load]);
   useEffect(() => {
     let cancelled = false;
     (async () => {

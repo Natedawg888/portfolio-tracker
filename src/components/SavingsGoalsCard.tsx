@@ -2,6 +2,8 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { ApiError, api, formatNzd } from '../api/client';
 import { beginPageRead, commitPageRead, invalidateFinancial, readPageCache } from '../lib/pageDataCache';
+import { usePageCacheValue } from '../lib/usePageCache';
+import { showQuietToast } from '../lib/quietToast';
 import type { SavingsGoal } from '../types';
 
 type DialogState = { mode: 'add' } | { mode: 'edit'; goal: SavingsGoal };
@@ -48,10 +50,14 @@ function barPercent(percentComplete: number): number {
 const SAVINGS_GOALS = 'savings-goals';
 
 export function SavingsGoalsCard() {
-  const [goals, setGoals] = useState<SavingsGoal[] | null>(() => readPageCache<SavingsGoal[]>(SAVINGS_GOALS) ?? null);
+  const cachedGoals = usePageCacheValue<SavingsGoal[]>(SAVINGS_GOALS);
+  const [goalsState, setGoals] = useState<SavingsGoal[] | null>(() => readPageCache<SavingsGoal[]>(SAVINGS_GOALS) ?? null);
+  const goals = goalsState ?? cachedGoals ?? null;
   const [error, setError] = useState<string | null>(null);
   const goalsRef = useRef(goals);
-  goalsRef.current = goals;
+  useEffect(() => {
+    goalsRef.current = goals;
+  }, [goals]);
   const [dialog, setDialog] = useState<DialogState | null>(null);
 
   const refresh = useCallback(async () => {
@@ -63,7 +69,10 @@ export function SavingsGoalsCard() {
       setError(null);
     } catch (err) {
       if (isUnauthorized(err)) return;
-      if (goalsRef.current) return;
+      if (goalsRef.current || readPageCache<SavingsGoal[]>(SAVINGS_GOALS) != null) {
+        showQuietToast('Could not refresh savings goals — showing last data.', { kind: 'warn' });
+        return;
+      }
       setError(goalsErrorMessage(err, 'Could not load savings goals.'));
     }
   }, []);

@@ -14,8 +14,8 @@ import { showQuietToast } from '../lib/quietToast';
 import {
   beginPageRead,
   commitPageRead,
+  invalidateAfterBudgetEdit,
   invalidateAfterExternalSync,
-  invalidateFinancial,
   portfolioSyncChanged,
   readPageCache,
   txnSyncChanged,
@@ -331,9 +331,13 @@ export function Spending() {
 
   const formAccountSeeded = useRef(Boolean(initialCash));
   const monthRef = useRef(selectedMonth);
-  monthRef.current = selectedMonth;
   const txnsRef = useRef(txns);
-  txnsRef.current = txns;
+  useEffect(() => {
+    monthRef.current = selectedMonth;
+  }, [selectedMonth]);
+  useEffect(() => {
+    txnsRef.current = txns;
+  }, [txns]);
 
   const load = useCallback(async () => {
     const requested = selectedMonth;
@@ -418,12 +422,14 @@ export function Spending() {
   }, [periodFrom, periodTo, selectedMonth]);
 
   const reloadAfterEdit = useCallback(async () => {
-    invalidateFinancial('spending', 'dashboard', 'debts', 'yearly', 'paye', 'projections');
+    invalidateAfterBudgetEdit();
     await load();
   }, [load]);
 
   const loadRef = useRef(load);
-  loadRef.current = load;
+  useEffect(() => {
+    loadRef.current = load;
+  }, [load]);
 
 
   useEffect(() => {

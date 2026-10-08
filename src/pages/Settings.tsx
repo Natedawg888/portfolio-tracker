@@ -34,6 +34,7 @@ import { SecurityPanel } from '../components/SecurityPanel';
 import {
   beginPageRead,
   commitPageRead,
+  invalidateAfterAkahuLinkChange,
   invalidateAfterExternalSync,
   invalidateFinancial,
   portfolioSyncChanged,
@@ -634,6 +635,7 @@ function CategoriesPanel({
     if (!flag) return;
     const message = searchParams.get('message');
     if (flag === 'connected') {
+      invalidateAfterAkahuLinkChange();
       setAkahuMsg('Connected to Akahu. Your accounts are ready to sync.');
       void loadAkahu();
       void (async () => {
@@ -647,6 +649,7 @@ function CategoriesPanel({
         }
       })();
     } else if (flag === 'revoked') {
+      invalidateAfterAkahuLinkChange();
       setAkahuMsg('Akahu was disconnected. You can connect again anytime.');
       void loadAkahu();
     } else if (flag === 'error') {
@@ -733,6 +736,7 @@ function CategoriesPanel({
     try {
       const r = await akahuConnect();
       if (r.authorizeUrl) {
+        invalidateAfterAkahuLinkChange();
         window.location.href = r.authorizeUrl;
         return;
       }
@@ -753,6 +757,7 @@ function CategoriesPanel({
     setAkahuError(null);
     try {
       const r = await akahuDisconnect();
+      invalidateAfterAkahuLinkChange();
       setAkahuMsg(r.message || (r.disconnected ? 'Disconnected from Akahu.' : 'Nothing to disconnect.'));
       await loadAkahu();
       setInstitutions([]);

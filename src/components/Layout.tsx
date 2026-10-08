@@ -1,5 +1,5 @@
-import { Suspense, useEffect, useState, type ReactNode } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { cloneElement, isValidElement, Suspense, useEffect, useState, type ReactNode } from 'react';
+import { NavLink, useLocation, useOutlet } from 'react-router-dom';
 import { applyTheme, resolveTheme, setTheme, type Theme } from '../lib/theme';
 import {
   MoneyHiddenProvider,
@@ -99,6 +99,11 @@ export function Layout({ children }: { children?: ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
   const [metalProvider, setMetalProvider] = useState<string | null>(null);
   const moneyHidden = useMoneyHidden();
+  const outlet = useOutlet();
+  const routed = children ?? outlet;
+  const painted = isValidElement(routed)
+    ? cloneElement(routed, { moneyHidden } as { moneyHidden: boolean })
+    : routed;
   const visibleLinks = links.filter((l) => {
     if (l.requireAnyPref?.length) return l.requireAnyPref.some((k) => enabled(k));
     if (l.requirePref) return enabled(l.requirePref);
@@ -303,7 +308,7 @@ export function Layout({ children }: { children?: ReactNode }) {
       <main className="app-main">
         <MoneyHiddenProvider>
           <Suspense fallback={<div className="panel"><p className="muted">Loading…</p></div>}>
-            {children ?? <Outlet />}
+            {painted}
           </Suspense>
         </MoneyHiddenProvider>
       </main>
