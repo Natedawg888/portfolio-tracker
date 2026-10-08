@@ -551,6 +551,29 @@ try {
   const planB = (await call('/api/projections?months=12', cookieB)).json.mining as Mining;
   assert(planB.status === 'no_miners', 'user B has no miners and no plan');
 
+  // Yearly step-up of what's added: 500/month in year 1, 1000/month in year 2 at 100%.
+  await putJson('/api/projections/assumptions', {});
+  type ClsAdded = Cls & { addedNzd: number };
+  const stepped = await call('/api/projections?months=24&addGrowth=100&miningRewardsTo=cash', cookieA);
+  assert(stepped.status === 200, 'step-up accepted');
+  const sc = Object.fromEntries((stepped.json.assetClasses as ClsAdded[]).map((c) => [c.key, c]));
+  eq(sc.shares.monthlyAdditionNzd, 500, 'year-1 monthly amount shown');
+  eq(sc.shares.addedNzd, 12 * 500 + 12 * 1000, 'year 2 adds twice year 1');
+  eq(sc.shares.endNzd, 5000 + 18000, 'at 0% return the end value is start + added');
+  const sp = stepped.json.points as Array<Point & { byClassNzd: Record<string, number> }>;
+  eq(sp[13].byClassNzd.shares - sp[12].byClassNzd.shares, 1000, 'month 13 adds 1000');
+  eq(sp[12].byClassNzd.shares - sp[11].byClassNzd.shares, 500, 'month 12 still adds 500');
+  const growthInfo = stepped.json.additionGrowthPercentYear as { value: number; source: string };
+  assert(growthInfo.value === 100 && growthInfo.source === 'query', 'step-up reported');
+  const flat = Object.fromEntries(((await call('/api/projections?months=24&miningRewardsTo=cash', cookieA)).json.assetClasses as ClsAdded[]).map((c) => [c.key, c]));
+  eq(flat.shares.addedNzd, 24 * 500, 'no step-up by default');
+  assert((await call('/api/projections?addGrowth=600', cookieA)).status === 400, 'step-up above 500% is 400');
+  await putJson('/api/projections/assumptions', { additionGrowthPct: 10 });
+  const savedGrowth = (await call('/api/projections?months=24', cookieA)).json.additionGrowthPercentYear as { value: number; source: string };
+  assert(savedGrowth.value === 10 && savedGrowth.source === 'saved', 'saved step-up applies');
+  const growthB = (await call('/api/projections?months=24', cookieB)).json.additionGrowthPercentYear as { value: number };
+  assert(growthB.value === 0, 'saved step-up is per user');
+
   console.log('projection api tests ok');
 } finally {
   await new Promise<void>((resolve, reject) => {
