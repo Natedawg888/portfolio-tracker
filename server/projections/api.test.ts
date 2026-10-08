@@ -506,10 +506,13 @@ try {
   eq(ac.mining.monthlyAdditionNzd, 300, 'TH bought (10 × $30) adds to miner value');
   eq(ac.cash.monthlyAdditionNzd, 200, 'and is paid from cash (500 − 300)');
 
-  const upgrade = await call('/api/projections?months=12&miningUpgradeWth=15', cookieA);
-  const mu = upgrade.json.mining as Mining;
-  assert(mu.projection!.totals.increaseNzd > 0, 'better W/TH increases rewards');
-  assert(mu.projection!.months[0].rewardNzd > m1.projection!.months[0].rewardNzd, 'from the first month');
+  const upgrade = await call('/api/projections?months=12&miningWthDrop=1&miningUpgradeCost=20', cookieA);
+  const mu = upgrade.json.mining as Mining & { projection: { months: Array<{ rewardNzd: number; avgWth: number | null }> } };
+  assert(mu.projection!.totals.increaseNzd > 0, 'lowering W/TH each month increases rewards');
+  assert(mu.projection!.months[1].rewardNzd > m1.projection!.months[1].rewardNzd, 'from the second month');
+  assert(mu.projection!.months[11].avgWth === 12, '20 W/TH falls 1 a month and stops at 12');
+  const uc = byClass(upgrade.json);
+  assert((uc.mining.monthlyAdditionNzd ?? 0) > 0 && (uc.cash.monthlyAdditionNzd ?? 0) < 500, 'upgrade cost moves from cash into miner value');
 
   const reinvest = await call('/api/projections?months=12&miningRewardsTo=reinvest&miningThPrice=30', cookieA);
   const mr = reinvest.json.mining as Mining;
@@ -522,7 +525,8 @@ try {
   assert((toCash.cash.monthlyAdditionNzd ?? 0) > 500, 'rewards sold to cash add to cash');
 
   assert((await call('/api/projections?miningRewardsTo=moon', cookieA)).status === 400, 'bad rewards target is 400');
-  assert((await call('/api/projections?miningUpgradeWth=0', cookieA)).status === 400, 'W/TH out of range is 400');
+  assert((await call('/api/projections?miningNewWth=11', cookieA)).status === 400, 'W/TH below 12 is 400');
+  assert((await call('/api/projections?miningWthDrop=-1', cookieA)).status === 400, 'negative W/TH drop is 400');
 
   // Mining income already recorded in the budget comes off cash (no double count).
   const miningCat = cat(userA, 'cat-income-mining');

@@ -3,7 +3,7 @@
  * Run: npm run test:mining-projection
  */
 import { calcPerThSatDay, PERIOD_DAYS } from './gominingEarnings.ts';
-import { projectMining, type MiningProjectionInput } from './miningProjection.ts';
+import { MINING_MIN_WTH, projectMining, type MiningProjectionInput } from './miningProjection.ts';
 
 function assert(cond: unknown, msg: string): void {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -27,9 +27,8 @@ const base: MiningProjectionInput = {
   addThOnce: 0,
   newThWth: null,
   thPriceNzd: null,
-  upgradeToWth: null,
-  upgradeFromMonth: 1,
-  upgradeCostNzd: 0,
+  wthDropPerMonth: 0,
+  upgradeCostPerMonthNzd: 0,
   rewardsTo: 'crypto',
 };
 
@@ -45,15 +44,26 @@ const base: MiningProjectionInput = {
   near(r.totals.endTh, 100, 'TH unchanged');
 }
 
-// Better efficiency lowers electricity, so rewards rise.
+// Lowering W/TH every month cuts electricity, so rewards rise — down to 12 W/TH.
 {
-  const r = projectMining({ ...base, upgradeToWth: 15, upgradeFromMonth: 4, upgradeCostNzd: 250 });
-  assert(r.months[2].avgWth === 20 && r.months[3].avgWth === 15, 'upgrade applies from month 4');
-  assert(r.months[3].rewardNzd > r.months[2].rewardNzd, 'upgrade raises monthly reward');
-  assert(r.totals.increaseNzd > 0, 'upgrade is an increase over the baseline');
-  near(r.months[3].spendNzd, 250, 'upgrade cost in its month');
-  const worse = projectMining({ ...base, upgradeToWth: 25 });
-  near(worse.totals.increaseNzd, 0, 'a worse W/TH is not applied');
+  const r = projectMining({ ...base, wthDropPerMonth: 1, upgradeCostPerMonthNzd: 40 });
+  assert(MINING_MIN_WTH === 12, 'floor is 12 W/TH');
+  assert(r.months[0].avgWth === 20 && r.months[1].avgWth === 19 && r.months[2].avgWth === 18, 'W/TH drops 1 a month');
+  assert(r.months[11].avgWth === 12, 'stops at 12 W/TH');
+  assert(r.months.every((m) => (m.avgWth ?? 0) >= 12), 'never below 12');
+  assert(r.months[3].rewardNzd > r.months[2].rewardNzd, 'each upgrade raises the monthly reward');
+  assert(r.totals.increaseNzd > 0, 'upgrades beat the baseline');
+  near(r.months[0].spendNzd, 40, 'upgrade cost while improving');
+  near(r.months[8].spendNzd, 0, 'no upgrade cost once at 12 W/TH (20 → 12 takes 8 months)');
+  near(r.totals.spendNzd, 8 * 40, '8 months of upgrade cost');
+  near(r.totals.endAvgWth ?? 0, 12, 'ends at the floor');
+  const half = projectMining({ ...base, wthDropPerMonth: 0.5 });
+  assert(half.months[11].avgWth === 14.5, '20 − 11 × 0.5');
+  const atFloor = projectMining({ ...base, miners: [{ th: 100, wth: 12 }], wthDropPerMonth: 1, upgradeCostPerMonthNzd: 40 });
+  near(atFloor.totals.spendNzd, 0, 'already at 12 W/TH: nothing to upgrade or pay');
+  near(atFloor.totals.increaseNzd, 0, 'and no increase');
+  const newTh = projectMining({ ...base, addThOnce: 50, newThWth: 18, wthDropPerMonth: 1 });
+  near(newTh.totals.endAvgWth ?? 0, 12, 'added TH improves too and stops at 12');
 }
 
 // Adding TH every month.

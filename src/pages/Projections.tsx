@@ -110,9 +110,8 @@ const MINING_INPUTS: Array<{ key: keyof MiningFields & string; label: string; st
   { key: 'addThOnce', label: 'Add TH once (now)', step: '0.1', hint: () => '0' },
   { key: 'newThWth', label: 'W/TH of added TH', step: '0.1', hint: (m) => (m.inputs?.avgWth != null ? `${m.inputs.avgWth} (fleet avg)` : 'Fleet average') },
   { key: 'thPriceNzd', label: 'Price per TH (NZD)', step: '0.01', hint: () => 'Not set' },
-  { key: 'upgradeToWth', label: 'Upgrade existing TH to W/TH', step: '0.1', hint: () => 'No upgrade' },
-  { key: 'upgradeFromMonth', label: 'Upgrade from month', step: '1', hint: () => '1' },
-  { key: 'upgradeCostNzd', label: 'Upgrade cost (NZD, once)', step: '1', hint: () => '0' },
+  { key: 'wthDropPerMonth', label: 'Lower W/TH each month by', step: '0.1', hint: () => '0 (stops at 12)' },
+  { key: 'upgradeCostPerMonthNzd', label: 'Upgrade cost each month (NZD)', step: '1', hint: () => '0' },
   { key: 'rewardChangePct', label: 'Yearly change in reward per TH (%)', step: '1', hint: () => '0' },
 ];
 
@@ -135,8 +134,9 @@ function MiningPlanFields({
               mining.inputs.poolSatPerThDay != null ? ` · pool ${mining.inputs.poolSatPerThDay} sat/TH/day` : ''
             } · ${mining.inputs.discountPct}% discount · kWh $${mining.inputs.kWhCostUsd}. `
           : ''}
-        Rewards use the same GoMining formula as Portfolio (pool reward − electricity − service). Add TH or improve
-        energy efficiency to see how rewards grow. The BTC price changes by your Crypto return.
+        Rewards use the same GoMining formula as Portfolio (pool reward − electricity − service). Add TH or lower
+        W/TH a little each month to see how rewards grow — upgrades stop at 12 W/TH, the lowest GoMining offers, and
+        apply to added TH too. The BTC price changes by your Crypto return.
       </p>
       {mining.status === 'unavailable' ? <p className="banner" style={{ marginTop: '0.5rem' }}>{mining.reason}</p> : null}
       <div className="form-grid" style={{ marginTop: '0.5rem' }}>

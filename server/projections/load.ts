@@ -156,9 +156,8 @@ async function loadMining(opts: {
     addThOnce: plan.addThOnce ?? 0,
     newThWth: plan.newThWth ?? null,
     thPriceNzd: plan.thPriceNzd ?? null,
-    upgradeToWth: plan.upgradeToWth ?? null,
-    upgradeFromMonth: plan.upgradeFromMonth ?? 1,
-    upgradeCostNzd: plan.upgradeCostNzd ?? 0,
+    wthDropPerMonth: plan.wthDropPerMonth ?? 0,
+    upgradeCostPerMonthNzd: plan.upgradeCostPerMonthNzd ?? 0,
     rewardsTo: plan.rewardsTo,
   });
   return { status: 'ok', reason: null, plan, inputs, projection };

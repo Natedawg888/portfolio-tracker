@@ -7,8 +7,9 @@
  *   2. BTC → NZD at today's BTC/NZD, grown by the BTC price change the user sets.
  *   3. After the month: add the TH bought this month (a fixed amount, and/or rewards
  *      reinvested at the user's price per TH), at the efficiency the user sets for new TH.
- * An efficiency upgrade sets existing TH to the target W/TH from a chosen month
- * (only when it is better than the current W/TH).
+ * Efficiency upgrades lower W/TH a little every month, for all TH (existing and added),
+ * until MINING_MIN_WTH (12 W/TH, the lowest GoMining offers). The monthly upgrade cost is
+ * charged only while some TH is still above that floor.
  *
  * Inputs that are not the user's own come from live GoMining / BTC feeds; when a feed is
  * missing the projection is not produced (never invents a reward).
@@ -17,6 +18,9 @@
 import { calcPerThSatDay, PERIOD_DAYS } from './gominingEarnings';
 
 const SATS_PER_BTC = 1e8;
+
+/** Lowest energy efficiency a GoMining miner can be upgraded to (W/TH). */
+export const MINING_MIN_WTH = 12;
 const DAYS_PER_MONTH = PERIOD_DAYS.month;
 
 export type MiningRewardsTo = 'crypto' | 'cash' | 'reinvest';
@@ -47,12 +51,10 @@ export type MiningProjectionInput = {
   newThWth: number | null;
   /** NZD per TH: prices bought TH and converts reinvested rewards into TH. */
   thPriceNzd: number | null;
-  /** Upgrade existing TH to this W/TH (null = no upgrade). */
-  upgradeToWth: number | null;
-  /** First month the upgrade applies (1 = straight away). */
-  upgradeFromMonth: number;
-  /** One-off NZD cost of the upgrade, paid in the upgrade month. */
-  upgradeCostNzd: number;
+  /** W/TH taken off every month by upgrades (0 = none), down to MINING_MIN_WTH. */
+  wthDropPerMonth: number;
+  /** NZD spent on upgrades each month while W/TH is still above the floor. */
+  upgradeCostPerMonthNzd: number;
   rewardsTo: MiningRewardsTo;
 };
 
@@ -137,18 +139,10 @@ function run(input: MiningProjectionInput, withChanges: boolean): { months: Mini
   const priceG = 1 + input.btcPriceChangePctYear / 100;
   const rewardG = 1 + input.rewardChangePctYear / 100;
   const months: MiningMonth[] = [];
-  let upgraded = false;
 
   for (let m = 1; m <= input.months; m += 1) {
     const years = (m - 1) / 12;
     let spendNzd = 0;
-    if (withChanges && input.upgradeToWth != null && !upgraded && m >= Math.max(1, input.upgradeFromMonth)) {
-      for (const t of tranches) {
-        if (t.wth == null || t.wth > input.upgradeToWth) t.wth = input.upgradeToWth;
-      }
-      spendNzd += Math.max(0, input.upgradeCostNzd);
-      upgraded = true;
-    }
     const btcUsd = input.btcUsd * priceG ** years;
     const btcNzd = input.btcNzd * priceG ** years;
     const poolBtc = input.poolBtcPerThDay * rewardG ** years;
@@ -170,7 +164,14 @@ function run(input: MiningProjectionInput, withChanges: boolean): { months: Mini
         reinvestedNzd = rewardNzd;
         thAdded += rewardNzd / input.thPriceNzd;
       }
-      if (thAdded > 0) tranches.push({ th: thAdded, wth: newWth });
+      if (thAdded > 0) tranches.push({ th: thAdded, wth: newWth == null ? null : Math.max(MINING_MIN_WTH, newWth) });
+      // Upgrades at the end of the month: lower W/TH for every tranche, not below the floor.
+      if (input.wthDropPerMonth > 0 && tranches.some((t) => t.wth != null && t.wth > MINING_MIN_WTH)) {
+        for (const t of tranches) {
+          if (t.wth != null) t.wth = Math.max(MINING_MIN_WTH, t.wth - input.wthDropPerMonth);
+        }
+        spendNzd += Math.max(0, input.upgradeCostPerMonthNzd);
+      }
     }
 
     months.push({
