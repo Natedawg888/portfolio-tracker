@@ -84,9 +84,10 @@ export type MiningPlan = {
   newThWth?: number;
   /** NZD per TH, for buying TH and reinvesting rewards. */
   thPriceNzd?: number;
-  upgradeToWth?: number;
-  upgradeFromMonth?: number;
-  upgradeCostNzd?: number;
+  /** W/TH taken off every month by upgrades, down to 12 W/TH. */
+  wthDropPerMonth?: number;
+  /** NZD spent on upgrades each month while still improving. */
+  upgradeCostPerMonthNzd?: number;
   rewardsTo?: 'crypto' | 'cash' | 'reinvest';
   /** Yearly change in pool reward per TH, % (network growth). */
   rewardChangePct?: number;
@@ -98,11 +99,10 @@ type NumField = Exclude<keyof MiningPlan, 'rewardsTo'>;
 export const MINING_PLAN_FIELDS: Record<NumField, { param: string; min: number; max: number; label: string }> = {
   addThPerMonth: { param: 'miningAddTh', min: 0, max: 1_000_000, label: 'TH added each month' },
   addThOnce: { param: 'miningAddThOnce', min: 0, max: 10_000_000, label: 'TH added once' },
-  newThWth: { param: 'miningNewWth', min: 1, max: 200, label: 'W/TH of added TH' },
+  newThWth: { param: 'miningNewWth', min: 12, max: 200, label: 'W/TH of added TH' },
   thPriceNzd: { param: 'miningThPrice', min: 0, max: 1_000_000, label: 'Price per TH' },
-  upgradeToWth: { param: 'miningUpgradeWth', min: 1, max: 200, label: 'Upgrade to W/TH' },
-  upgradeFromMonth: { param: 'miningUpgradeMonth', min: 1, max: 360, label: 'Upgrade from month' },
-  upgradeCostNzd: { param: 'miningUpgradeCost', min: 0, max: 100_000_000, label: 'Upgrade cost' },
+  wthDropPerMonth: { param: 'miningWthDrop', min: 0, max: 50, label: 'W/TH lower each month' },
+  upgradeCostPerMonthNzd: { param: 'miningUpgradeCost', min: 0, max: 10_000_000, label: 'Upgrade cost each month' },
   rewardChangePct: { param: 'miningRewardChange', min: -90, max: 100, label: 'Yearly change in reward per TH' },
 };
 
