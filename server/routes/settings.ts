@@ -284,6 +284,11 @@ function gominingMapForUser(db: AppDb, userId: string): Record<string, string> {
   return {};
 }
 
+/** This user's saved GoMining settings (discount, kWh, manual BTC/USD …), without live feeds. */
+export function goMiningSettingsForUser(db: AppDb, userId: string): GoMiningSettings {
+  return readGoMiningSettings(gominingMapForUser(db, userId));
+}
+
 function saveGominingMap(db: AppDb, userId: string, map: Record<string, string>): boolean {
   const prefs = readUserPrefs(db, userId);
   if (!prefs) return false;

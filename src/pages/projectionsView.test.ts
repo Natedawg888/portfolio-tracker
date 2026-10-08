@@ -7,6 +7,8 @@ import { clearPageCache, readPageCache, syncPageCacheUser, writePageCache } from
 import { formatNzd } from '../api/client.ts';
 import { setMoneyHidden } from '../lib/privacy.tsx';
 import {
+  classNumbers,
+  inputsToParams,
   flatLineNote,
   projectionCacheKey,
   readInputs,
@@ -118,6 +120,21 @@ try {
   assert(!hidden.includes('250'), 'a masked saving does not show the raw amount');
 } finally {
   setMoneyHidden(false);
+}
+
+// Per-asset-class fields (returnShares / addCrypto …).
+{
+  const withClasses = readInputs(new URLSearchParams('months=24&returnShares=7&addCrypto=200&returnMetals=99'));
+  assert(withClasses.classReturns.shares === '7', 'shares return read from the link');
+  assert(withClasses.classAdds.crypto === '200', 'crypto addition read from the link');
+  assert(withClasses.classReturns.metals === '', 'an out-of-range class return is dropped');
+  assert(withClasses.ignored.some((m) => m.startsWith('Metals')), 'and reported');
+  const back = inputsToParams(withClasses);
+  assert(back.get('returnShares') === '7' && back.get('addCrypto') === '200', 'form → link keeps class fields');
+  assert(!back.has('returnCash'), 'blank class fields are left out of the link');
+  assert(classNumbers(withClasses.classReturns).shares === 7 && classNumbers(withClasses.classReturns).cash === undefined, 'only set classes are sent');
+  const plain = readInputs(new URLSearchParams('months=24'));
+  assert(projectionCacheKey(withClasses) !== projectionCacheKey(plain), 'class fields change the cache key');
 }
 
 console.log('projections view tests passed');

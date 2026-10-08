@@ -157,7 +157,8 @@ a { color: var(--accent-2); }
 }
 .app-header > .brand { grid-area: brand; }
 .app-header > .header-actions { grid-area: actions; justify-self: end; }
-.app-header > .nav { grid-area: nav; justify-self: start; }
+/* Desktop: the nav pill is centred under the header. Phones use the drawer (max-width 768px). */
+.app-header > .nav { grid-area: nav; justify-self: center; }
 
 .brand { display: flex; gap: 0.85rem; align-items: center; }
 .brand h1 { margin: 0; font-size: 1.2rem; font-weight: 650; letter-spacing: -0.01em; }
@@ -5082,6 +5083,7 @@ html:not([data-theme]) .projections-page :focus-visible {
 
 /* Projections layout bits */
 .projection-form { align-items: end; }
+.projection-class-inputs input { width: 100%; min-width: 9.5rem; box-sizing: border-box; }
 .projection-assumptions li { align-items: flex-start; flex-wrap: nowrap; }
 .projection-assumptions li > div { min-width: 0; }
 .projection-assumptions li > .money { flex: none; white-space: nowrap; }
@@ -7694,4 +7696,199 @@ html:not([data-theme]) .settings-page :focus-visible {
   max-width: 52rem;
   margin: 0 auto;
   padding: 1.25rem 1rem 3rem;
+}
+
+/* Invoices pages (KAN-71): same theme as the other pages. The invoice paper itself stays white. */
+html[data-theme="light"]:has(.invoices-page),
+html[data-theme="light"]:has(.invoices-page) body {
+  background: #e7e0d4;
+}
+html[data-theme="dark"]:has(.invoices-page),
+html[data-theme="dark"]:has(.invoices-page) body,
+html:not([data-theme]):has(.invoices-page),
+html:not([data-theme]):has(.invoices-page) body {
+  background: #121a16;
+}
+html[data-theme="light"]:has(.invoices-page) .app-footer {
+  color: #5c564e;
+  border-top-color: rgba(26, 26, 26, 0.12);
+}
+html[data-theme="dark"]:has(.invoices-page) .app-footer,
+html:not([data-theme]):has(.invoices-page) .app-footer {
+  color: #c5d5c8;
+  border-top-color: rgba(197, 213, 200, 0.22);
+}
+
+html[data-theme="light"] .invoices-page {
+  --surface: #f7f3ec;
+  --surface-2: #f7f3ec;
+  --surface-3: #efe8dc;
+  --text: #1a1a1a;
+  --muted: #5c564e;
+  --border: #d4c8b6;
+  --border-soft: rgba(26, 26, 26, 0.1);
+  --accent: #1b4332;
+  --accent-2: #6e6278;
+  --accent-deep: #143528;
+  --btn-primary-text: #f7f3ec;
+  --hero-grad: #f7f3ec;
+  --hover-row: rgba(27, 67, 50, 0.05);
+  --shadow-card: 0 8px 24px rgba(48, 36, 22, 0.06);
+  color: #1a1a1a;
+}
+html[data-theme="dark"] .invoices-page,
+html:not([data-theme]) .invoices-page {
+  --surface: #1c2822;
+  --surface-2: #1c2822;
+  --surface-3: #24352c;
+  --text: #f3eee4;
+  --muted: #c5d5c8;
+  --border: #31443a;
+  --border-soft: rgba(197, 213, 200, 0.14);
+  --accent: #2f6b4f;
+  --accent-2: #b7a8c4;
+  --accent-deep: #1b4332;
+  --btn-primary-text: #f3eee4;
+  --hero-grad: #1c2822;
+  --hover-row: rgba(243, 238, 228, 0.04);
+  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.28);
+  color: #f3eee4;
+}
+
+.invoices-page .page-title {
+  font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+}
+.invoices-page .hero-card .page-title,
+.invoices-page.panel .page-title,
+.invoices-page .panel.warn .page-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.35rem;
+  text-transform: none;
+  font-variant-caps: normal;
+}
+.invoices-page .card h3 {
+  text-transform: none;
+  letter-spacing: -0.01em;
+  font-size: 0.92rem;
+}
+
+html[data-theme="light"] .invoices-page h2,
+html[data-theme="light"] .invoices-page h3,
+html[data-theme="light"] .invoices-page .page-title,
+html[data-theme="light"] .invoices-page .hero-value {
+  color: #1a1a1a;
+}
+html[data-theme="light"] .invoices-page .hero-card,
+html[data-theme="light"] .invoices-page .panel,
+html[data-theme="light"] .invoices-page .card,
+html[data-theme="light"] .invoices-page.panel {
+  background: #f7f3ec;
+  color: #1a1a1a;
+  border-color: #d4c8b6;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset, 0 8px 24px rgba(48, 36, 22, 0.06);
+}
+html[data-theme="light"] .invoices-page.panel.warn,
+html[data-theme="light"] .invoices-page .panel.warn {
+  color: #6e1b1b;
+  background: #f8e4e0;
+  border-color: #e4c2bb;
+  box-shadow: none;
+}
+html[data-theme="light"] .invoices-page.panel.warn .page-title,
+html[data-theme="light"] .invoices-page .panel.warn .page-title {
+  color: #1a1a1a;
+}
+html[data-theme="light"] .invoices-page.panel.warn .muted,
+html[data-theme="light"] .invoices-page .panel.warn .muted {
+  color: #6e1b1b;
+}
+html[data-theme="light"] .invoices-page a {
+  color: #6e6278;
+}
+html[data-theme="light"] .invoices-page .btn {
+  background: #1b4332;
+  border-color: #1b4332;
+  color: #f7f3ec;
+}
+html[data-theme="light"] .invoices-page .btn:hover:not(:disabled) {
+  color: #f7f3ec;
+}
+html[data-theme="light"] .invoices-page :focus-visible {
+  outline: 2px solid #1b4332;
+  outline-offset: 2px;
+}
+
+html[data-theme="dark"] .invoices-page h2,
+html[data-theme="dark"] .invoices-page h3,
+html[data-theme="dark"] .invoices-page .page-title,
+html[data-theme="dark"] .invoices-page .hero-value,
+html:not([data-theme]) .invoices-page h2,
+html:not([data-theme]) .invoices-page h3,
+html:not([data-theme]) .invoices-page .page-title,
+html:not([data-theme]) .invoices-page .hero-value {
+  color: #f3eee4;
+}
+html[data-theme="dark"] .invoices-page .hero-card,
+html[data-theme="dark"] .invoices-page .panel,
+html[data-theme="dark"] .invoices-page .card,
+html[data-theme="dark"] .invoices-page.panel,
+html:not([data-theme]) .invoices-page .hero-card,
+html:not([data-theme]) .invoices-page .panel,
+html:not([data-theme]) .invoices-page .card,
+html:not([data-theme]) .invoices-page.panel {
+  background: #1c2822;
+  color: #f3eee4;
+  border-color: #31443a;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+html[data-theme="dark"] .invoices-page.panel.warn,
+html[data-theme="dark"] .invoices-page .panel.warn,
+html:not([data-theme]) .invoices-page.panel.warn,
+html:not([data-theme]) .invoices-page .panel.warn {
+  color: #f3eee4;
+  background: #4a2422;
+  border-color: #7a4038;
+  box-shadow: none;
+}
+html[data-theme="dark"] .invoices-page.panel.warn .page-title,
+html[data-theme="dark"] .invoices-page .panel.warn .page-title,
+html:not([data-theme]) .invoices-page.panel.warn .page-title,
+html:not([data-theme]) .invoices-page .panel.warn .page-title,
+html[data-theme="dark"] .invoices-page.panel.warn .muted,
+html[data-theme="dark"] .invoices-page .panel.warn .muted,
+html:not([data-theme]) .invoices-page.panel.warn .muted,
+html:not([data-theme]) .invoices-page .panel.warn .muted {
+  color: #f3eee4;
+}
+html[data-theme="dark"] .invoices-page a,
+html:not([data-theme]) .invoices-page a {
+  color: #b7a8c4;
+}
+html[data-theme="dark"] .invoices-page .btn,
+html:not([data-theme]) .invoices-page .btn {
+  background: #2f6b4f;
+  border-color: #2f6b4f;
+  color: #f3eee4;
+}
+html[data-theme="dark"] .invoices-page .btn:hover:not(:disabled),
+html:not([data-theme]) .invoices-page .btn:hover:not(:disabled) {
+  color: #f3eee4;
+}
+html[data-theme="dark"] .invoices-page :focus-visible,
+html:not([data-theme]) .invoices-page :focus-visible {
+  outline: 2px solid #c5d5c8;
+  outline-offset: 2px;
+}
+.invoices-page .page-lead { margin-left: auto; margin-right: auto; }/* The invoice is printed paper: keep its text dark on white in both themes. */
+html .invoices-page .invoice-paper,
+html .invoices-page .invoice-paper h2,
+html .invoices-page .invoice-paper strong {
+  color: #1f1f1f;
+}
+html .invoices-page .invoice-paper .invoice-paper-muted,
+html .invoices-page .invoice-paper .invoice-paper-label,
+html .invoices-page .invoice-paper .invoice-paper-note {
+  color: #6b6b6b;
 }

@@ -3,6 +3,18 @@
  * The page renders the API response; these functions only choose words and form state.
  */
 import { formatNzd } from '../api/client';
+import {
+  ADD_LIMIT,
+  PROJECTION_CLASS_KEYS,
+  PROJECTION_CLASS_LABELS,
+  RETURN_LIMITS,
+  addParam,
+  returnParam,
+  MINING_PLAN_FIELDS,
+  MINING_REWARDS_TO_PARAM,
+  type MiningPlan,
+  type ProjectionClassKey,
+} from '../lib/projectionClasses';
 
 export const HORIZONS: Array<{ months: number; label: string }> = [
   { months: 12, label: '1 year' },
@@ -18,7 +30,43 @@ export const WINDOWS = [3, 6, 12];
 const RETURN_RANGE = [-50, 50] as const;
 const SAVING_LIMIT = 10_000_000;
 
-export type Inputs = { months: number; window: number; returnPct: string; saving: string };
+/** Per-class text fields; '' = not set in this scenario. */
+export type ClassFields = Record<ProjectionClassKey, string>;
+
+export type Inputs = {
+  months: number;
+  window: number;
+  returnPct: string;
+  saving: string;
+  classReturns: ClassFields;
+  classAdds: ClassFields;
+  /** Mining plan text fields; '' = not set. */
+  mining: MiningFields;
+};
+
+export type MiningNumKey = keyof typeof MINING_PLAN_FIELDS;
+export type MiningFields = Record<MiningNumKey, string> & { rewardsTo: '' | 'crypto' | 'cash' | 'reinvest' };
+
+export function emptyMiningFields(): MiningFields {
+  return {
+    ...(Object.fromEntries(Object.keys(MINING_PLAN_FIELDS).map((k) => [k, ''])) as Record<MiningNumKey, string>),
+    rewardsTo: '',
+  };
+}
+
+/** Mining fields that are set, as numbers, for the API. */
+export function miningPlanFromFields(f: MiningFields): MiningPlan {
+  const out: MiningPlan = {};
+  for (const key of Object.keys(MINING_PLAN_FIELDS) as MiningNumKey[]) {
+    if (f[key].trim() !== '') out[key] = Number(f[key]);
+  }
+  if (f.rewardsTo) out.rewardsTo = f.rewardsTo;
+  return out;
+}
+
+export function emptyClassFields(): ClassFields {
+  return Object.fromEntries(PROJECTION_CLASS_KEYS.map((k) => [k, ''])) as ClassFields;
+}
 
 function inRange(raw: string, min: number, max: number): boolean {
   const n = Number(raw);
@@ -40,13 +88,66 @@ export function readInputs(params: URLSearchParams): Inputs & { ignored: string[
     ignored.push('monthly saving must be a number up to $10,000,000');
     saving = '';
   }
+  const classReturns = emptyClassFields();
+  const classAdds = emptyClassFields();
+  for (const key of PROJECTION_CLASS_KEYS) {
+    const r = params.get(returnParam(key)) ?? '';
+    if (r !== '') {
+      if (inRange(r, RETURN_LIMITS[0], RETURN_LIMITS[1])) classReturns[key] = r;
+      else ignored.push(`${PROJECTION_CLASS_LABELS[key]} return must be between ${RETURN_LIMITS[0]}% and ${RETURN_LIMITS[1]}%`);
+    }
+    const a = params.get(addParam(key)) ?? '';
+    if (a !== '') {
+      if (inRange(a, -ADD_LIMIT, ADD_LIMIT)) classAdds[key] = a;
+      else ignored.push(`${PROJECTION_CLASS_LABELS[key]} monthly addition must be a number up to $10,000,000`);
+    }
+  }
+  const mining = emptyMiningFields();
+  for (const key of Object.keys(MINING_PLAN_FIELDS) as MiningNumKey[]) {
+    const f = MINING_PLAN_FIELDS[key];
+    const v = params.get(f.param) ?? '';
+    if (v === '') continue;
+    if (inRange(v, f.min, f.max)) mining[key] = v;
+    else ignored.push(`${f.label} must be between ${f.min} and ${f.max}`);
+  }
+  const to = params.get(MINING_REWARDS_TO_PARAM) ?? '';
+  if (to === 'crypto' || to === 'cash' || to === 'reinvest') mining.rewardsTo = to;
+  else if (to !== '') ignored.push('mining rewards must go to crypto, cash or reinvest');
   return {
     months: HORIZONS.some((h) => h.months === months) ? months : 12,
     window: WINDOWS.includes(window) ? window : 3,
     returnPct,
     saving,
+    classReturns,
+    classAdds,
+    mining,
     ignored,
   };
+}
+
+/** Form → URL. Only fields with a value are written, so links stay short. */
+export function inputsToParams(form: Inputs): URLSearchParams {
+  const next = new URLSearchParams();
+  next.set('months', String(form.months));
+  if (form.window !== 3) next.set('savingWindowMonths', String(form.window));
+  if (form.returnPct.trim() !== '') next.set('annualReturnPercent', form.returnPct.trim());
+  if (form.saving.trim() !== '') next.set('monthlySavingNzd', form.saving.trim());
+  for (const key of PROJECTION_CLASS_KEYS) {
+    if (form.classReturns[key].trim() !== '') next.set(returnParam(key), form.classReturns[key].trim());
+    if (form.classAdds[key].trim() !== '') next.set(addParam(key), form.classAdds[key].trim());
+  }
+  for (const key of Object.keys(MINING_PLAN_FIELDS) as MiningNumKey[]) {
+    if (form.mining[key].trim() !== '') next.set(MINING_PLAN_FIELDS[key].param, form.mining[key].trim());
+  }
+  if (form.mining.rewardsTo) next.set(MINING_REWARDS_TO_PARAM, form.mining.rewardsTo);
+  return next;
+}
+
+/** Per-class numbers for the API call (only the ones set). */
+export function classNumbers(fields: ClassFields): Partial<Record<ProjectionClassKey, number>> {
+  const out: Partial<Record<ProjectionClassKey, number>> = {};
+  for (const key of PROJECTION_CLASS_KEYS) if (fields[key].trim() !== '') out[key] = Number(fields[key]);
+  return out;
 }
 
 export type FlatLineFacts = {
@@ -108,7 +209,10 @@ export function flatLineNote(facts: FlatLineFacts): string {
 
 /** One cache entry per URL scenario, so a saved scenario cannot paint over a different link. */
 export function projectionCacheKey(input: Inputs): string {
-  return `projections:${input.months}:${input.window}:${encodeURIComponent(input.returnPct)}:${encodeURIComponent(input.saving)}`;
+  const classes =
+    PROJECTION_CLASS_KEYS.map((k) => `${input.classReturns[k]}/${input.classAdds[k]}`).join(',') +
+    `|${Object.values(input.mining).join(',')}`;
+  return `projections:${input.months}:${input.window}:${encodeURIComponent(input.returnPct)}:${encodeURIComponent(input.saving)}:${encodeURIComponent(classes)}`;
 }
 
 /**
@@ -163,6 +267,9 @@ export function scenarioFrameFromSearch<T>(
       window: applied.window,
       returnPct: applied.returnPct,
       saving: applied.saving,
+      classReturns: applied.classReturns,
+      classAdds: applied.classAdds,
+      mining: applied.mining,
     },
     data: paint.kind === 'cached' ? paint.data : null,
     loaded: paint.kind === 'cached',

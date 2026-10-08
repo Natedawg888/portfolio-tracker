@@ -8,16 +8,24 @@
  * day that many months ahead, clamped to the last day of the month.
  *
  * At the end of each month, in order:
- *   1. Compound known assets by annualReturnPercent / 12.
- *   2. Add the monthly saving amount when one is known.
- *   3. Add the observed KiwiSaver contribution when one is known.
- *   4. Step each debt with advanceDebtOneMonth (interest, then payment).
+ *   1. Grow each asset class by its own yearly return / 12 (cash, shares & funds,
+ *      KiwiSaver, crypto, mining, metals, property, other). A class with no rate of
+ *      its own uses annualReturnPercent.
+ *   2. Add each class's monthly addition: cash gets the budget saving less what is
+ *      moved into other investments; shares & funds get Investments transfers;
+ *      KiwiSaver gets the observed contributions. Any class can be overridden.
+ *   3. Step each debt with advanceDebtOneMonth (interest, then payment).
+ * Without per-class inputs (older callers) all assets form one pot as before.
  *
  * Net worth = compounding assets + signed bank liabilities
  *             − debt balances − property mortgage.
  * Bank liabilities and property mortgages stay at the recorded balance.
  * No inflation adjustment is applied.
  */
+import {
+  PROJECTION_CLASS_LABELS,
+  type ProjectionClassKey,
+} from '../../src/lib/projectionClasses.ts';
 import {
   advanceDebtOneMonth,
   formatUtcDate,
@@ -70,7 +78,34 @@ export type ObservedSaving = {
   usedExpectedPay?: boolean;
 };
 
+export type AssumptionClassSource = 'user_data' | 'default' | 'query' | 'saved';
+
+/** One asset class to grow separately. */
+export type ProjectionClassInput = {
+  key: ProjectionClassKey;
+  startNzd: number;
+  annualReturnPercent: number;
+  returnSource: AssumptionClassSource;
+  /** Added at the end of each month. Null = nothing added. */
+  monthlyAdditionNzd: number | null;
+  /** Month-by-month amounts (index 0 = month 1) when they change over time; overrides monthlyAdditionNzd. */
+  monthlyAdditionsNzd?: number[];
+  additionSource: AssumptionClassSource;
+  additionReason: string | null;
+};
+
+export type ProjectionClassResult = ProjectionClassInput & {
+  label: string;
+  endNzd: number;
+  /** Total added over the horizon. */
+  addedNzd: number;
+  /** End − start − added. */
+  growthNzd: number;
+};
+
 export type ProjectionBuildInput = {
+  /** Per-class growth. When set, compoundingAssetsNzd and the saving / KiwiSaver adds are not used separately. */
+  assetClasses?: ProjectionClassInput[];
   asOf: string;
   horizonMonths: number;
   compoundingAssetsNzd: number;
@@ -102,6 +137,8 @@ export type ProjectionPoint = {
   debtOutstandingNzd: number;
   bankLiabilitiesNzd: number;
   propertyMortgageNzd: number;
+  /** Value of each asset class at this point (per-class projections only). */
+  byClassNzd?: Partial<Record<ProjectionClassKey, number>>;
 };
 
 export type ProjectionDebtPath = {
@@ -159,6 +196,8 @@ export type ProjectionResult = {
     dividends: NumericAssumption;
     savingsGoals: NumericAssumption;
   };
+  /** Per-class start, return, monthly addition and end value. Empty for single-pot projections. */
+  assetClasses: ProjectionClassResult[];
   debts: ProjectionDebtPath[];
   propertyMortgage: {
     balanceNzd: number;
@@ -181,6 +220,8 @@ const NET_WORTH_FORMULA =
   'compoundingAssets + bankLiabilities − debtOutstanding − propertyMortgage';
 const ASSET_FORMULA =
   'previous × (1 + annualReturnPercent / 100 / 12) + monthlySaving + kiwiSaverContribution';
+const CLASS_ASSET_FORMULA =
+  'For each asset class: previous × (1 + class yearly return / 100 / 12) + class monthly addition; compounding assets = sum of classes';
 const SAVING_FORMULA =
   '(income − spending) / windowMonths over the complete calendar months before asOf';
 const DEBT_FORMULA =
@@ -389,7 +430,12 @@ export function projectSeries(input: ProjectionBuildInput): ProjectionResult {
   const horizon = input.horizonMonths;
   const bankLiabilities = roundMoney(input.bankLiabilitiesNzd);
   const propertyMortgage = roundMoney(Math.max(0, input.propertyMortgageNzd));
-  let compounding = roundMoney(input.compoundingAssetsNzd);
+  const classes = input.assetClasses ?? null;
+  const classBalances = new Map<ProjectionClassKey, number>(
+    (classes ?? []).map((c) => [c.key, roundMoney(c.startNzd)]),
+  );
+  const classTotal = (): number => roundMoney([...classBalances.values()].reduce((s, v) => s + v, 0));
+  let compounding = classes ? classTotal() : roundMoney(input.compoundingAssetsNzd);
   const runs = input.debts.map(prepareDebt);
   const debtOutstanding = (): number =>
     roundMoney(runs.reduce((sum, run) => sum + run.balance, 0));
@@ -408,13 +454,23 @@ export function projectSeries(input: ProjectionBuildInput): ProjectionResult {
     debtOutstandingNzd: debtOutstanding(),
     bankLiabilitiesNzd: bankLiabilities,
     propertyMortgageNzd: propertyMortgage,
+    ...(classes ? { byClassNzd: Object.fromEntries(classBalances) as Partial<Record<ProjectionClassKey, number>> } : {}),
   });
 
   const points: ProjectionPoint[] = [pointAt(0)];
   for (let month = 1; month <= horizon; month += 1) {
-    compounding = roundMoney(compounding * monthlyFactor);
-    if (saving != null) compounding = roundMoney(compounding + saving);
-    if (ks != null) compounding = roundMoney(compounding + ks);
+    if (classes) {
+      for (const c of classes) {
+        const grown = (classBalances.get(c.key) ?? 0) * (1 + c.annualReturnPercent / 100 / 12);
+        const add = c.monthlyAdditionsNzd?.[month - 1] ?? c.monthlyAdditionNzd ?? 0;
+        classBalances.set(c.key, roundMoney(grown + add));
+      }
+      compounding = classTotal();
+    } else {
+      compounding = roundMoney(compounding * monthlyFactor);
+      if (saving != null) compounding = roundMoney(compounding + saving);
+      if (ks != null) compounding = roundMoney(compounding + ks);
+    }
     for (const run of runs) {
       if (!run.step) continue;
       const stepped = advanceDebtOneMonth({
@@ -436,8 +492,31 @@ export function projectSeries(input: ProjectionBuildInput): ProjectionResult {
 
   const returnReason =
     input.annualReturnSource === 'query'
-      ? 'Taken from the annualReturnPercent query parameter.'
-      : 'No annual return was supplied. Compounding uses 0%, so known asset balances are not grown. This is not taken from prices.';
+      ? classes
+        ? 'Taken from the annualReturnPercent query parameter. Used for asset classes without a return of their own.'
+        : 'Taken from the annualReturnPercent query parameter.'
+      : classes
+        ? 'No default return was supplied, so asset classes without a return of their own use 0%. This is not taken from prices.'
+        : 'No annual return was supplied. Compounding uses 0%, so known asset balances are not grown. This is not taken from prices.';
+
+  const assetClasses: ProjectionClassResult[] = (classes ?? []).map((c) => {
+    const endNzd = classBalances.get(c.key) ?? 0;
+    const addedNzd = c.monthlyAdditionsNzd
+      ? roundMoney(c.monthlyAdditionsNzd.slice(0, horizon).reduce((sum, n) => sum + n, 0))
+      : roundMoney((c.monthlyAdditionNzd ?? 0) * horizon);
+    const { monthlyAdditionsNzd: _schedule, ...rest } = c;
+    void _schedule;
+    return {
+      ...rest,
+      // A changing schedule is shown as its average.
+      monthlyAdditionNzd: c.monthlyAdditionsNzd && horizon > 0 ? roundMoney(addedNzd / horizon) : c.monthlyAdditionNzd,
+      label: PROJECTION_CLASS_LABELS[c.key],
+      startNzd: roundMoney(c.startNzd),
+      endNzd,
+      addedNzd,
+      growthNzd: roundMoney(endNzd - c.startNzd - addedNzd),
+    };
+  });
 
   const savingReason =
     input.monthlySavingReason ??
@@ -453,7 +532,7 @@ export function projectSeries(input: ProjectionBuildInput): ProjectionResult {
     note: PROJECTION_NOTE,
     formula: {
       netWorth: NET_WORTH_FORMULA,
-      compoundingAssets: ASSET_FORMULA,
+      compoundingAssets: classes ? CLASS_ASSET_FORMULA : ASSET_FORMULA,
       monthlySaving: SAVING_FORMULA,
       debt: DEBT_FORMULA,
     },
@@ -511,6 +590,7 @@ export function projectSeries(input: ProjectionBuildInput): ProjectionResult {
         reason: 'Savings goals are targets. They are not a cashflow history, so they are not used here.',
       },
     },
+    assetClasses,
     debts,
     propertyMortgage: {
       balanceNzd: propertyMortgage,

@@ -32,6 +32,15 @@ import type {
   WalletsValuationResponse,
 } from '../types/index.ts';
 import type { OutputPaySourceInputs } from '../lib/outputPayCalc.ts';
+import {
+  addParam,
+  MINING_PLAN_FIELDS,
+  MINING_REWARDS_TO_PARAM,
+  returnParam,
+  type MiningPlan,
+  type ProjectionClassKey,
+  type SavedProjectionAssumptions,
+} from '../lib/projectionClasses.ts';
 
 const BASE = '/api';
 
@@ -264,8 +273,22 @@ export const api = {
       savingWindowMonths?: number;
       annualReturnPercent?: number;
       monthlySavingNzd?: number;
+      classReturns?: Partial<Record<ProjectionClassKey, number>>;
+      classAdds?: Partial<Record<ProjectionClassKey, number>>;
+      mining?: MiningPlan;
     }) => {
       const params = new URLSearchParams();
+      for (const [key, f] of Object.entries(MINING_PLAN_FIELDS)) {
+        const v = query?.mining?.[key as keyof typeof MINING_PLAN_FIELDS];
+        if (v != null) params.set(f.param, String(v));
+      }
+      if (query?.mining?.rewardsTo) params.set(MINING_REWARDS_TO_PARAM, query.mining.rewardsTo);
+      for (const [key, value] of Object.entries(query?.classReturns ?? {})) {
+        if (value != null) params.set(returnParam(key as ProjectionClassKey), String(value));
+      }
+      for (const [key, value] of Object.entries(query?.classAdds ?? {})) {
+        if (value != null) params.set(addParam(key as ProjectionClassKey), String(value));
+      }
       if (query?.months != null) params.set('months', String(query.months));
       if (query?.savingWindowMonths != null) {
         params.set('savingWindowMonths', String(query.savingWindowMonths));
@@ -279,6 +302,9 @@ export const api = {
       const qs = params.toString();
       return req<ProjectionResponse>(`/projections${qs ? `?${qs}` : ''}`);
     },
+    savedAssumptions: () => req<SavedProjectionAssumptions>('/projections/assumptions'),
+    saveAssumptions: (body: SavedProjectionAssumptions) =>
+      req<SavedProjectionAssumptions>('/projections/assumptions', { method: 'PUT', body: JSON.stringify(body) }),
   },
   snapshots: {
     list: (year?: number) =>
