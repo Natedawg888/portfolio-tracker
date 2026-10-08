@@ -501,6 +501,18 @@ function migrateSchema(database: Database) {
     database.run('ALTER TABLE wallets ADD COLUMN sync_failures INTEGER NOT NULL DEFAULT 0');
   }
 
+  // Invoice send channel (KAN-71): sends made outside the app are logged too.
+  const sendCols = tableColumns(database, 'invoice_sends');
+  if (sendCols.size > 0 && !sendCols.has('channel')) {
+    database.run("ALTER TABLE invoice_sends ADD COLUMN channel TEXT NOT NULL DEFAULT 'resend'");
+  }
+
+  // Invoice payments mirrored into income (KAN-71).
+  const incomeCols = tableColumns(database, 'income_records');
+  if (incomeCols.size > 0 && !incomeCols.has('invoice_payment_id')) {
+    database.run('ALTER TABLE income_records ADD COLUMN invoice_payment_id TEXT');
+  }
+
   // Savings goal → savings account link (KAN-20).
   const goalCols = tableColumns(database, 'savings_goals');
   if (goalCols.size > 0 && !goalCols.has('account_id')) {

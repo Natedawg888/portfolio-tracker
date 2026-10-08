@@ -312,7 +312,9 @@ CREATE TABLE IF NOT EXISTS income_records (
   notes            TEXT,
   created_at       TEXT NOT NULL,
   -- Set when this row mirrors one paid dividend. One income row per dividend per user.
-  dividend_event_id TEXT
+  dividend_event_id TEXT,
+  -- Set when this row mirrors one invoice payment (KAN-71).
+  invoice_payment_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_income_records_date ON income_records(date);
@@ -625,6 +627,118 @@ CREATE TABLE IF NOT EXISTS pay_sources (
 );
 
 CREATE INDEX IF NOT EXISTS idx_pay_sources_user ON pay_sources(user_id);
+
+-- Invoices (KAN-71). Business details, clients, invoices, lines, payments and send log,
+-- all per user. Totals are recomputed from the lines on every save (src/lib/invoiceCalc.ts).
+-- status stores draft | sent | void; partly paid / paid / overdue are counted on read.
+-- business_json / client_* snapshot who the invoice was from and to when it was saved,
+-- so later edits to settings or the client don't change an invoice already sent.
+CREATE TABLE IF NOT EXISTS business_profiles (
+  user_id        TEXT PRIMARY KEY,
+  business_name  TEXT NOT NULL DEFAULT '',
+  address        TEXT NOT NULL DEFAULT '',
+  email          TEXT NOT NULL DEFAULT '',
+  phone          TEXT NOT NULL DEFAULT '',
+  bank_account   TEXT NOT NULL DEFAULT '',
+  gst_registered INTEGER NOT NULL DEFAULT 0,
+  gst_number     TEXT NOT NULL DEFAULT '',
+  nzbn           TEXT NOT NULL DEFAULT '',
+  invoice_prefix TEXT NOT NULL DEFAULT 'INV-',
+  updated_at     TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS invoice_clients (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT,
+  name        TEXT NOT NULL,
+  email       TEXT NOT NULL DEFAULT '',
+  address     TEXT NOT NULL DEFAULT '',
+  reference   TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_invoice_clients_user ON invoice_clients(user_id);
+
+CREATE TABLE IF NOT EXISTS invoices (
+  id                   TEXT PRIMARY KEY,
+  user_id              TEXT,
+  number               TEXT NOT NULL,
+  number_key           TEXT NOT NULL,
+  status               TEXT NOT NULL DEFAULT 'draft',
+  client_id            TEXT,
+  client_name          TEXT NOT NULL DEFAULT '',
+  client_email         TEXT NOT NULL DEFAULT '',
+  client_address       TEXT NOT NULL DEFAULT '',
+  client_reference     TEXT NOT NULL DEFAULT '',
+  issue_date           TEXT NOT NULL,
+  due_preset           TEXT NOT NULL DEFAULT 'days_14',
+  due_date             TEXT NOT NULL,
+  reference            TEXT NOT NULL DEFAULT '',
+  gst_mode             TEXT NOT NULL DEFAULT 'none',
+  withholding_rate_pct REAL,
+  notes                TEXT NOT NULL DEFAULT '',
+  payment_instructions TEXT NOT NULL DEFAULT '',
+  business_json        TEXT NOT NULL DEFAULT '{}',
+  subtotal_nzd         REAL NOT NULL DEFAULT 0,
+  gst_nzd              REAL NOT NULL DEFAULT 0,
+  total_nzd            REAL NOT NULL DEFAULT 0,
+  withholding_nzd      REAL NOT NULL DEFAULT 0,
+  amount_due_nzd       REAL NOT NULL DEFAULT 0,
+  share_token          TEXT,
+  sent_at              TEXT,
+  voided_at            TEXT,
+  created_at           TEXT NOT NULL,
+  updated_at           TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_invoices_user ON invoices(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_user_number ON invoices(user_id, number_key);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_share_token ON invoices(share_token);
+
+CREATE TABLE IF NOT EXISTS invoice_lines (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT,
+  invoice_id  TEXT NOT NULL,
+  position    INTEGER NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  quantity    REAL NOT NULL DEFAULT 0,
+  unit        TEXT NOT NULL DEFAULT '',
+  rate        REAL NOT NULL DEFAULT 0,
+  line_total  REAL NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_invoice_lines_invoice ON invoice_lines(invoice_id, position);
+CREATE INDEX IF NOT EXISTS idx_invoice_lines_user ON invoice_lines(user_id);
+
+CREATE TABLE IF NOT EXISTS invoice_payments (
+  id               TEXT PRIMARY KEY,
+  user_id          TEXT,
+  invoice_id       TEXT NOT NULL,
+  date             TEXT NOT NULL,
+  amount_nzd       REAL NOT NULL,
+  method           TEXT NOT NULL DEFAULT '',
+  notes            TEXT NOT NULL DEFAULT '',
+  income_record_id TEXT,
+  created_at       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_invoice_payments_invoice ON invoice_payments(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_invoice_payments_user ON invoice_payments(user_id);
+
+-- Every send (invoice or reminder), successful or not. channel: resend (sent by the app,
+-- the only channel the send rate limit counts) | email_app (user's own mail app) | share (share sheet).
+CREATE TABLE IF NOT EXISTS invoice_sends (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT,
+  invoice_id  TEXT NOT NULL,
+  kind        TEXT NOT NULL,
+  channel     TEXT NOT NULL DEFAULT 'resend',
+  recipients  TEXT NOT NULL,
+  subject     TEXT NOT NULL DEFAULT '',
+  status      TEXT NOT NULL,
+  provider_id TEXT,
+  error       TEXT,
+  sent_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_invoice_sends_user_time ON invoice_sends(user_id, sent_at);
+CREATE INDEX IF NOT EXISTS idx_invoice_sends_invoice ON invoice_sends(invoice_id);
 
 -- Read-only crypto wallets: public address only. Never store seed phrases / private keys.
 -- No balance column on purpose: balances come from chain providers at sync time

@@ -1,4 +1,5 @@
 
+import { Suspense } from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
@@ -11,6 +12,10 @@ import {
   KiwiSaverPage,
   NewsPage,
   PayePage,
+  InvoicesPage,
+  InvoiceEditorPage,
+  InvoiceDetailPage,
+  PublicInvoicePage,
   PortfolioPage,
   ProjectionsPage,
   SettingsPage,
@@ -31,6 +36,14 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route
+              path="/i/:token"
+              element={
+                <Suspense fallback={null}>
+                  <PublicInvoicePage />
+                </Suspense>
+              }
+            />
             <Route element={<RequireAuth />}>
               <Route element={<Layout />}>
                 <Route index element={<Dashboard />} />
@@ -43,6 +56,10 @@ export default function App() {
                 <Route path="news" element={<NewsPage />} />
                 <Route path="kiwisaver" element={<KiwiSaverPage />} />
                 <Route path="paye" element={<PayePage />} />
+                <Route path="invoices" element={<InvoicesPage />} />
+                <Route path="invoices/new" element={<InvoiceEditorPage />} />
+                <Route path="invoices/:id" element={<InvoiceDetailPage />} />
+                <Route path="invoices/:id/edit" element={<InvoiceEditorPage />} />
                 <Route path="value-search" element={<ValueSearchPage />} />
                 <Route path="settings" element={<SettingsPage />} />
               </Route>

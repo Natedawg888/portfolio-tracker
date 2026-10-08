@@ -19,6 +19,11 @@ import type {
   ProjectionResponse,
   PayeeSetting,
   PaySource,
+  BusinessProfile,
+  Invoice,
+  InvoiceClient,
+  InvoiceListResponse,
+  PublicInvoice,
   SavingsGoal,
   SavingsGoalWriteBody,
   Wallet,
@@ -58,6 +63,25 @@ let onUnauthorized: AuthUnauthorizedHandler | null = null;
 export function setUnauthorizedHandler(handler: AuthUnauthorizedHandler | null) {
   onUnauthorized = handler;
 }
+
+/** Draft invoice fields sent to the API. Totals are always computed by the server. */
+export type InvoiceWriteBody = {
+  number?: string;
+  clientId: string | null;
+  clientName: string;
+  clientEmail: string;
+  clientAddress: string;
+  clientReference: string;
+  issueDate: string;
+  duePreset: string;
+  dueDate: string | null;
+  reference: string;
+  gstMode: 'none' | 'exclusive' | 'inclusive';
+  withholdingRatePct: number | null;
+  notes: string;
+  paymentInstructions: string;
+  lines: { description: string; quantity: number; unit: string; rate: number }[];
+};
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
@@ -519,6 +543,51 @@ export const api = {
       req<{ ok: boolean; id: string }>(`/debts/repayments/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       }),
+  },
+  invoices: {
+    list: (filters: { status?: string; clientId?: string; from?: string; to?: string } = {}) => {
+      const q = new URLSearchParams(Object.entries(filters).filter(([, v]) => v) as [string, string][]);
+      const qs = q.toString();
+      return req<InvoiceListResponse>(`/invoices${qs ? `?${qs}` : ''}`);
+    },
+    get: (id: string) => req<Invoice>(`/invoices/${encodeURIComponent(id)}`),
+    create: (body: InvoiceWriteBody) => req<Invoice>('/invoices', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: InvoiceWriteBody) =>
+      req<Invoice>(`/invoices/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    remove: (id: string) => req<{ ok: boolean; id: string }>(`/invoices/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    action: (id: string, action: 'mark-sent' | 'void' | 'duplicate') =>
+      req<Invoice>(`/invoices/${encodeURIComponent(id)}/${action}`, { method: 'POST' }),
+    share: (id: string) => req<Invoice>(`/invoices/${encodeURIComponent(id)}/share`, { method: 'POST' }),
+    unshare: (id: string) => req<Invoice>(`/invoices/${encodeURIComponent(id)}/share`, { method: 'DELETE' }),
+    addPayment: (id: string, body: { date: string; amountNzd: number; method: string; notes?: string; addToIncome: boolean }) =>
+      req<Invoice>(`/invoices/${encodeURIComponent(id)}/payments`, { method: 'POST', body: JSON.stringify(body) }),
+    removePayment: (id: string, paymentId: string) =>
+      req<Invoice>(`/invoices/${encodeURIComponent(id)}/payments/${encodeURIComponent(paymentId)}`, { method: 'DELETE' }),
+    emailDraft: (id: string, kind: 'invoice' | 'reminder') =>
+      req<{ to: string[]; subject: string; message: string; kind: string; emailEnabled: boolean; problem: string | null }>(
+        `/invoices/${encodeURIComponent(id)}/email-draft?kind=${kind}`,
+      ),
+    send: (id: string, body: { kind: 'invoice' | 'reminder'; to: string[]; subject: string; message: string; includeLink: boolean }) =>
+      req<Invoice>(`/invoices/${encodeURIComponent(id)}/send`, {
+        method: 'POST',
+        body: JSON.stringify({ ...body, confirm: true }),
+      }),
+    recordSend: (id: string, body: { kind: 'invoice' | 'reminder'; channel: 'email_app' | 'share'; to: string[]; subject: string }) =>
+      req<Invoice>(`/invoices/${encodeURIComponent(id)}/record-send`, { method: 'POST', body: JSON.stringify(body) }),
+    pdfUrl: (id: string, inline = false) => `${BASE}/invoices/${encodeURIComponent(id)}/pdf${inline ? '?inline=1' : ''}`,
+    csvUrl: () => `${BASE}/invoices/export.csv`,
+    business: () => req<BusinessProfile>('/invoices/business'),
+    saveBusiness: (body: BusinessProfile) =>
+      req<BusinessProfile>('/invoices/business', { method: 'PUT', body: JSON.stringify(body) }),
+    clients: () => req<InvoiceClient[]>('/invoices/clients'),
+    createClient: (body: { name: string; email: string; address: string; reference: string }) =>
+      req<InvoiceClient>('/invoices/clients', { method: 'POST', body: JSON.stringify(body) }),
+    updateClient: (id: string, body: { name: string; email: string; address: string; reference: string }) =>
+      req<InvoiceClient>(`/invoices/clients/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    removeClient: (id: string) =>
+      req<{ ok: boolean; id: string }>(`/invoices/clients/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    publicView: (token: string) => req<PublicInvoice>(`/public/invoices/${encodeURIComponent(token)}`),
+    publicPdfUrl: (token: string) => `${BASE}/public/invoices/${encodeURIComponent(token)}/pdf`,
   },
   paySources: {
     list: () => req<PaySource[]>('/pay-sources'),

@@ -31,6 +31,7 @@ import {
 } from '../lib/categoryTypes';
 import { CategoryTypeToggle } from '../components/CategoryTypeToggle';
 import { SecurityPanel } from '../components/SecurityPanel';
+import { BusinessDetailsPanel } from '../components/BusinessDetailsPanel';
 import {
   beginPageRead,
   commitPageRead,
@@ -41,7 +42,7 @@ import {
   txnSyncChanged,
 } from '../lib/pageDataCache';
 
-type SettingsTab = 'account' | 'security' | 'categories';
+type SettingsTab = 'account' | 'security' | 'business' | 'categories';
 
 type TxCategory = {
   id: string;
@@ -71,7 +72,9 @@ export function Settings() {
       ? 'categories'
       : tabParam === 'security'
         ? 'security'
-        : 'account';
+        : tabParam === 'business'
+          ? 'business'
+          : 'account';
 
   const setTab = (next: SettingsTab) => {
     const params = new URLSearchParams(searchParams);
@@ -102,6 +105,14 @@ export function Settings() {
           </button>
           <button
             type="button"
+            className={tab === 'business' ? 'settings-side-link active' : 'settings-side-link'}
+            onClick={() => setTab('business')}
+            aria-current={tab === 'business' ? 'page' : undefined}
+          >
+            Business
+          </button>
+          <button
+            type="button"
             className={tab === 'categories' ? 'settings-side-link active' : 'settings-side-link'}
             onClick={() => setTab('categories')}
             aria-current={tab === 'categories' ? 'page' : undefined}
@@ -115,6 +126,8 @@ export function Settings() {
           <AccountPanel />
         ) : tab === 'security' ? (
           <SecurityPanel />
+        ) : tab === 'business' ? (
+          <BusinessDetailsPanel />
         ) : (
           <CategoriesPanel searchParams={searchParams} setSearchParams={setSearchParams} />
         )}
