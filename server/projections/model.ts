@@ -88,6 +88,8 @@ export type ProjectionClassInput = {
   returnSource: AssumptionClassSource;
   /** Added at the end of each month. Null = nothing added. */
   monthlyAdditionNzd: number | null;
+  /** Month-by-month amounts (index 0 = month 1) when they change over time; overrides monthlyAdditionNzd. */
+  monthlyAdditionsNzd?: number[];
   additionSource: AssumptionClassSource;
   additionReason: string | null;
 };
@@ -460,7 +462,8 @@ export function projectSeries(input: ProjectionBuildInput): ProjectionResult {
     if (classes) {
       for (const c of classes) {
         const grown = (classBalances.get(c.key) ?? 0) * (1 + c.annualReturnPercent / 100 / 12);
-        classBalances.set(c.key, roundMoney(grown + (c.monthlyAdditionNzd ?? 0)));
+        const add = c.monthlyAdditionsNzd?.[month - 1] ?? c.monthlyAdditionNzd ?? 0;
+        classBalances.set(c.key, roundMoney(grown + add));
       }
       compounding = classTotal();
     } else {
@@ -498,9 +501,15 @@ export function projectSeries(input: ProjectionBuildInput): ProjectionResult {
 
   const assetClasses: ProjectionClassResult[] = (classes ?? []).map((c) => {
     const endNzd = classBalances.get(c.key) ?? 0;
-    const addedNzd = roundMoney((c.monthlyAdditionNzd ?? 0) * horizon);
+    const addedNzd = c.monthlyAdditionsNzd
+      ? roundMoney(c.monthlyAdditionsNzd.slice(0, horizon).reduce((sum, n) => sum + n, 0))
+      : roundMoney((c.monthlyAdditionNzd ?? 0) * horizon);
+    const { monthlyAdditionsNzd: _schedule, ...rest } = c;
+    void _schedule;
     return {
-      ...c,
+      ...rest,
+      // A changing schedule is shown as its average.
+      monthlyAdditionNzd: c.monthlyAdditionsNzd && horizon > 0 ? roundMoney(addedNzd / horizon) : c.monthlyAdditionNzd,
       label: PROJECTION_CLASS_LABELS[c.key],
       startNzd: roundMoney(c.startNzd),
       endNzd,

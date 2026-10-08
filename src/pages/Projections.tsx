@@ -11,11 +11,12 @@ import { ApiError, api, formatNzd } from '../api/client';
 import { AssetLineChart, type LineSeries } from '../components/AssetLineChart';
 import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import { showQuietToast } from '../lib/quietToast';
-import type { ProjectionAssetClass, ProjectionAssumption, ProjectionResponse } from '../types';
+import type { ProjectionAssetClass, ProjectionAssumption, ProjectionMining, ProjectionResponse } from '../types';
 import {
   PROJECTION_CLASS_KEYS,
   PROJECTION_CLASS_LABELS,
   type ProjectionClassKey,
+  type MiningPlan,
   type ProjectionClassValues,
 } from '../lib/projectionClasses';
 import {
@@ -23,6 +24,9 @@ import {
   WINDOWS,
   classNumbers,
   emptyClassFields,
+  emptyMiningFields,
+  miningPlanFromFields,
+  type MiningFields,
   flatLineNote,
   inputsToParams,
   projectionCacheKey,
@@ -101,6 +105,158 @@ function Assumption({ title, a, value }: { title: string; a: ProjectionAssumptio
   );
 }
 
+const MINING_INPUTS: Array<{ key: keyof MiningFields & string; label: string; step: string; hint: (m: ProjectionMining) => string }> = [
+  { key: 'addThPerMonth', label: 'Add TH each month', step: '0.1', hint: () => '0' },
+  { key: 'addThOnce', label: 'Add TH once (now)', step: '0.1', hint: () => '0' },
+  { key: 'newThWth', label: 'W/TH of added TH', step: '0.1', hint: (m) => (m.inputs?.avgWth != null ? `${m.inputs.avgWth} (fleet avg)` : 'Fleet average') },
+  { key: 'thPriceNzd', label: 'Price per TH (NZD)', step: '0.01', hint: () => 'Not set' },
+  { key: 'upgradeToWth', label: 'Upgrade existing TH to W/TH', step: '0.1', hint: () => 'No upgrade' },
+  { key: 'upgradeFromMonth', label: 'Upgrade from month', step: '1', hint: () => '1' },
+  { key: 'upgradeCostNzd', label: 'Upgrade cost (NZD, once)', step: '1', hint: () => '0' },
+  { key: 'rewardChangePct', label: 'Yearly change in reward per TH (%)', step: '1', hint: () => '0' },
+];
+
+function MiningPlanFields({
+  mining,
+  fields,
+  onChange,
+}: {
+  mining: ProjectionMining;
+  fields: MiningFields;
+  onChange: (next: MiningFields) => void;
+}) {
+  const inUse = mining.plan;
+  return (
+    <div className="span-2">
+      <h4 style={{ margin: '0.75rem 0 0.25rem' }}>Mining (GoMining)</h4>
+      <p className="muted small" style={{ margin: 0 }}>
+        {mining.inputs
+          ? `${mining.inputs.th.toLocaleString('en-NZ')} TH at ${mining.inputs.avgWth ?? '—'} W/TH${
+              mining.inputs.poolSatPerThDay != null ? ` · pool ${mining.inputs.poolSatPerThDay} sat/TH/day` : ''
+            } · ${mining.inputs.discountPct}% discount · kWh $${mining.inputs.kWhCostUsd}. `
+          : ''}
+        Rewards use the same GoMining formula as Portfolio (pool reward − electricity − service). Add TH or improve
+        energy efficiency to see how rewards grow. The BTC price changes by your Crypto return.
+      </p>
+      {mining.status === 'unavailable' ? <p className="banner" style={{ marginTop: '0.5rem' }}>{mining.reason}</p> : null}
+      <div className="form-grid" style={{ marginTop: '0.5rem' }}>
+        {MINING_INPUTS.map((f) => {
+          const used = inUse[f.key as keyof typeof inUse];
+          return (
+            <label key={f.key}>
+              {f.label}
+              <input
+                type="number"
+                step={f.step}
+                inputMode="decimal"
+                placeholder={used != null && f.key !== 'rewardsTo' ? `${used} saved` : f.hint(mining)}
+                value={fields[f.key]}
+                onChange={(e) => onChange({ ...fields, [f.key]: e.target.value })}
+              />
+            </label>
+          );
+        })}
+        <label>
+          Rewards go to
+          <select
+            value={fields.rewardsTo}
+            onChange={(e) => onChange({ ...fields, rewardsTo: e.target.value as MiningFields['rewardsTo'] })}
+          >
+            <option value="">{`In use: ${inUse.rewardsTo === 'reinvest' ? 'reinvest' : inUse.rewardsTo === 'cash' ? 'cash' : 'kept as BTC'}`}</option>
+            <option value="crypto">Kept as BTC (Crypto)</option>
+            <option value="cash">Sold to cash</option>
+            <option value="reinvest">Reinvested into more TH</option>
+          </select>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function MiningResults({ mining, months }: { mining: ProjectionMining; months: number }) {
+  const p = mining.projection;
+  const years = months / 12;
+  const yearly = p ? p.months.filter((m) => m.monthIndex % 12 === 0 || m.monthIndex === months) : [];
+  return (
+    <section className="panel">
+      <h3>Mining (GoMining)</h3>
+      {!p ? (
+        <p className="muted">{mining.reason ?? 'Mining rewards are not projected.'}</p>
+      ) : (
+        <>
+          <div className="grid cards" style={{ marginTop: '0.5rem' }}>
+            <div className="card">
+              <p className="eyebrow">Reward now</p>
+              <p className="stat-value">{formatNzd(p.start.monthlyNetNzd)}</p>
+              <p className="muted small">a month · {p.start.monthlyNetBtc.toFixed(6)} BTC</p>
+            </div>
+            <div className="card">
+              <p className="eyebrow">Reward in the last month</p>
+              <p className="stat-value">{formatNzd(p.totals.lastMonthRewardNzd)}</p>
+              <p className="muted small">{p.totals.endTh.toLocaleString('en-NZ', { maximumFractionDigits: 2 })} TH at {p.totals.endAvgWth ?? '—'} W/TH</p>
+            </div>
+            <div className="card">
+              <p className="eyebrow">Rewards over {years >= 1 ? `${Math.round(years * 10) / 10} yr` : `${months} mo`}</p>
+              <p className="stat-value">{formatNzd(p.totals.rewardNzd)}</p>
+              <p className="muted small">{p.totals.rewardBtc.toFixed(6)} BTC</p>
+            </div>
+            <div className="card">
+              <p className="eyebrow">Increase from your plan</p>
+              <p className="stat-value">{signedNzd(p.totals.increaseNzd)}</p>
+              <p className="muted small">vs {formatNzd(p.totals.baselineRewardNzd)} with no changes{p.totals.spendNzd > 0 ? ` · costs ${formatNzd(p.totals.spendNzd)}` : ''}</p>
+            </div>
+          </div>
+          {yearly.length > 1 ? (
+            <div className="table-wrap" style={{ overflowX: 'auto', marginTop: '0.75rem' }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Month</th>
+                    <th style={{ textAlign: 'right' }}>TH</th>
+                    <th style={{ textAlign: 'right' }}>W/TH</th>
+                    <th style={{ textAlign: 'right' }}>Net sat/TH/day</th>
+                    <th style={{ textAlign: 'right' }}>Reward that month</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {yearly.map((m) => (
+                    <tr key={m.monthIndex}>
+                      <td>{m.monthIndex}</td>
+                      <td style={{ textAlign: 'right' }}>{m.th.toLocaleString('en-NZ', { maximumFractionDigits: 2 })}</td>
+                      <td style={{ textAlign: 'right' }}>{m.avgWth ?? '—'}</td>
+                      <td style={{ textAlign: 'right' }}>{m.netSatPerThDay}</td>
+                      <td className="money" style={{ textAlign: 'right' }}>{formatNzd(m.rewardNzd)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+          <ul className="muted small" style={{ margin: '0.75rem 0 0', paddingLeft: '1.1rem' }}>
+            <li>
+              Rewards are {mining.plan.rewardsTo === 'reinvest' ? 'reinvested into more TH' : mining.plan.rewardsTo === 'cash' ? 'sold to cash' : 'kept as BTC (Crypto class)'}.
+              TH bought and upgrades are paid from cash and add to the miner value.
+            </li>
+            {mining.inputs && mining.inputs.recordedMiningIncomeMonthlyNzd !== 0 ? (
+              <li>
+                {formatNzd(mining.inputs.recordedMiningIncomeMonthlyNzd)} a month of Mining income in your budget is taken off cash, because
+                this model now projects those rewards.
+              </li>
+            ) : null}
+            <li>
+              Model, not a forecast: today&apos;s pool reward{mining.inputs?.rewardChangePctYear ? ` changing ${mining.inputs.rewardChangePctYear}% a year` : ' held flat'}; BTC
+              price changing {mining.inputs?.btcPriceChangePctYear ?? 0}% a year (your Crypto return).
+            </li>
+            {p.notes.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}
+
 export function Projections() {
   const [params, setParams] = useSearchParams();
   const applied = useMemo(() => readInputs(params), [params]);
@@ -138,6 +294,7 @@ export function Projections() {
         monthlySavingNzd: applied.saving === '' ? undefined : Number(applied.saving),
         classReturns: classNumbers(applied.classReturns),
         classAdds: classNumbers(applied.classAdds),
+        mining: miningPlanFromFields(applied.mining),
       })
       .then((r) => {
         if (cancelled) return;
@@ -169,7 +326,7 @@ export function Projections() {
   };
 
   const onReset = () => {
-    const base = { months: applied.months, window: 3, returnPct: '', saving: '', classReturns: emptyClassFields(), classAdds: emptyClassFields() };
+    const base = { months: applied.months, window: 3, returnPct: '', saving: '', classReturns: emptyClassFields(), classAdds: emptyClassFields(), mining: emptyMiningFields() };
     setForm(base);
     setParams(new URLSearchParams({ months: String(base.months) }), { replace: true });
   };
@@ -199,9 +356,15 @@ export function Projections() {
           else if (c?.additionSource === 'saved' && c.monthlyAdditionNzd != null) contributions[key] = c.monthlyAdditionNzd;
         }
       }
-      await api.projections.saveAssumptions({ returns, contributions });
+      // Mining: the plan in use (saved + this scenario), with anything typed now on top.
+      let mining: MiningPlan = {};
+      if (!forget) {
+        const inUse = data?.mining?.plan ?? {};
+        mining = { ...inUse, ...miningPlanFromFields(form.mining) };
+      }
+      await api.projections.saveAssumptions({ returns, contributions, mining });
       // Saved values now apply without being in the link.
-      const cleared = { ...form, classReturns: emptyClassFields(), classAdds: emptyClassFields() };
+      const cleared = { ...form, classReturns: emptyClassFields(), classAdds: emptyClassFields(), mining: emptyMiningFields() };
       setForm(cleared);
       setParams(inputsToParams(cleared), { replace: true });
       setLoadedKey(null);
@@ -374,6 +537,13 @@ export function Projections() {
               </table>
             </div>
           </div>
+          {data?.mining && data.mining.status !== 'no_miners' ? (
+            <MiningPlanFields
+              mining={data.mining}
+              fields={form.mining}
+              onChange={(mining) => setForm({ ...form, mining })}
+            />
+          ) : null}
           <div className="span-2 row gap" style={{ flexWrap: 'wrap' }}>
             <button type="submit" className="btn primary" disabled={loading}>
               {loading ? 'Projecting…' : 'Update projection'}
@@ -384,7 +554,8 @@ export function Projections() {
             <button type="button" className="btn" onClick={() => void onSaveDefaults()} disabled={loading || savingDefaults}>
               Save class rates as my defaults
             </button>
-            {[...classesByKey.values()].some((c) => c.returnSource === 'saved' || c.additionSource === 'saved') ? (
+            {[...classesByKey.values()].some((c) => c.returnSource === 'saved' || c.additionSource === 'saved') ||
+            Object.keys(data?.mining?.plan ?? {}).some((k) => k !== 'rewardsTo') ? (
               <button type="button" className="btn ghost" onClick={() => void onSaveDefaults(true)} disabled={loading || savingDefaults}>
                 Forget saved rates
               </button>
@@ -502,6 +673,8 @@ export function Projections() {
               <p className="muted small">Classes with nothing in them and nothing added are hidden. Set them in Scenario above.</p>
             </section>
           ) : null}
+
+          {data.mining && data.mining.status !== 'no_miners' ? <MiningResults mining={data.mining} months={data.horizonMonths} /> : null}
 
           <section className="panel">
             <h3>Assumptions</h3>

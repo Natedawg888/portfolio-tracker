@@ -28,6 +28,19 @@ function eq(actual: number | null | undefined, expected: number, msg: string): v
   }
 }
 
+// Live GoMining and BTC feeds are stubbed: 60 sat/TH/day at BTC $100,000 (NZD 170,000), kWh $0.05.
+const realFetch = globalThis.fetch;
+globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  if (url.includes('api.gomining.com')) {
+    return new Response(JSON.stringify({ data: { totalIncomePerThToday: 0.06, btcCourseInUsd: 100000, c1ValuePerThPerWtToday: 0.0012, c2ValuePerThToday: 0.0089, id: 1, createdAt: '2026-10-08T00:00:00Z' } }), { status: 200 });
+  }
+  if (url.includes('coingecko')) {
+    return new Response(JSON.stringify({ bitcoin: { usd: 100000, nzd: 170000 } }), { status: 200 });
+  }
+  return realFetch(input as Parameters<typeof fetch>[0], init);
+}) as typeof fetch;
+
 const { getDb, run } = await import('../db/index.ts');
 const { seedCategoriesForUser, resolveCategoryId } = await import('../lib/categories.ts');
 const { createSession, SESSION_COOKIE } = await import('../auth/sessions.ts');
@@ -456,9 +469,83 @@ try {
   const queryWins = byClass((await call('/api/projections?months=1&returnShares=2', cookieA)).json);
   eq(queryWins.shares.annualReturnPercent, 2, 'scenario beats saved');
   const savedB = await call('/api/projections/assumptions', cookieB);
-  assert(JSON.stringify(savedB.json) === JSON.stringify({ returns: {}, contributions: {} }), 'saved assumptions are per user');
+  assert(JSON.stringify(savedB.json) === JSON.stringify({ returns: {}, contributions: {}, mining: {} }), 'saved assumptions are per user');
   const bClasses = byClass((await call('/api/projections?months=1', cookieB)).json);
   eq(bClasses.shares.annualReturnPercent, 0, 'user B does not get user A’s saved return');
+
+  // GoMining: rewards from the live model; adding TH or better W/TH raises them.
+  const { calcPerThSatDay, PERIOD_DAYS } = await import('../../src/lib/gominingEarnings.ts');
+  const putJson = (pathname: string, body: unknown) =>
+    fetch(`${base}${pathname}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: cookieA }, body: JSON.stringify(body) });
+  await putJson('/api/projections/assumptions', {});
+  type Mining = { status: string; reason: string | null; projection: { start: { monthlyNetNzd: number; th: number }; totals: { endTh: number; increaseNzd: number; rewardNzd: number; spendNzd: number }; months: Array<{ rewardNzd: number }> } | null; inputs: { recordedMiningIncomeMonthlyNzd: number } | null };
+  const noMiners = (await call('/api/projections?months=12', cookieA)).json.mining as Mining;
+  assert(noMiners.status === 'no_miners', 'no miners → no mining projection');
+  run(
+    db,
+    `INSERT INTO holdings (id, user_id, asset_class, name, hashrate_ths, energy_efficiency_wth, estimated_value_nzd, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    ['hold_miner_a', userA, 'gomining_miner', 'Miner', 100, 20, 3000, now, now],
+  );
+  const perThSat = calcPerThSatDay({ energyEfficiencyWth: 20, discountPct: 0, btcUsd: 100000, kWhCostUsd: 0.05, poolIncomeBtcPerTh: 0.0000006, goBtcPaySatPerTh: 0 }).netSat ?? 0;
+  const expectedMonthlyNzd = ((perThSat * 100 * PERIOD_DAYS.month) / 1e8) * 170000;
+  const mined = await call('/api/projections?months=12', cookieA);
+  const m1 = mined.json.mining as Mining;
+  assert(m1.status === 'ok', `mining projected (${m1.reason})`);
+  eq(Math.round(m1.projection!.start.monthlyNetNzd * 100) / 100, Math.round(expectedMonthlyNzd * 100) / 100, 'monthly reward = GoMining formula × TH × days × BTC/NZD');
+  const mc = byClass(mined.json);
+  eq(mc.mining.startNzd, 3000, 'miner value is the mining class');
+  eq(Math.round((mc.crypto.monthlyAdditionNzd ?? 0) * 100) / 100, Math.round(expectedMonthlyNzd * 100) / 100, 'rewards kept as BTC go to crypto (no price change)');
+  eq(mc.cash.monthlyAdditionNzd, 500, 'cash unchanged when rewards are kept as BTC');
+
+  const addTh = await call('/api/projections?months=12&miningAddTh=10&miningThPrice=30', cookieA);
+  const ma = addTh.json.mining as Mining;
+  eq(ma.projection!.totals.endTh, 220, '10 TH added each month for a year');
+  assert(ma.projection!.totals.increaseNzd > 0, 'adding TH increases rewards');
+  const ac = byClass(addTh.json);
+  eq(ac.mining.monthlyAdditionNzd, 300, 'TH bought (10 × $30) adds to miner value');
+  eq(ac.cash.monthlyAdditionNzd, 200, 'and is paid from cash (500 − 300)');
+
+  const upgrade = await call('/api/projections?months=12&miningUpgradeWth=15', cookieA);
+  const mu = upgrade.json.mining as Mining;
+  assert(mu.projection!.totals.increaseNzd > 0, 'better W/TH increases rewards');
+  assert(mu.projection!.months[0].rewardNzd > m1.projection!.months[0].rewardNzd, 'from the first month');
+
+  const reinvest = await call('/api/projections?months=12&miningRewardsTo=reinvest&miningThPrice=30', cookieA);
+  const mr = reinvest.json.mining as Mining;
+  assert(mr.projection!.totals.endTh > 100, 'reinvested rewards buy TH');
+  const rc = byClass(reinvest.json);
+  assert(rc.crypto.monthlyAdditionNzd == null, 'reinvested rewards do not go to crypto');
+  assert((rc.mining.monthlyAdditionNzd ?? 0) > 0, 'they add to miner value');
+
+  const toCash = byClass((await call('/api/projections?months=12&miningRewardsTo=cash', cookieA)).json);
+  assert((toCash.cash.monthlyAdditionNzd ?? 0) > 500, 'rewards sold to cash add to cash');
+
+  assert((await call('/api/projections?miningRewardsTo=moon', cookieA)).status === 400, 'bad rewards target is 400');
+  assert((await call('/api/projections?miningUpgradeWth=0', cookieA)).status === 400, 'W/TH out of range is 400');
+
+  // Mining income already recorded in the budget comes off cash (no double count).
+  const miningCat = cat(userA, 'cat-income-mining');
+  for (const [index, yearMonth] of windowMonths.entries()) {
+    run(
+      db,
+      `INSERT INTO income_records (id, user_id, date, amount_nzd, kind, description, category_id, created_at)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [`inc_mine_a_${index}`, userA, `${yearMonth}-15`, 90, 'cash', 'GoMining', miningCat, now],
+    );
+  }
+  const recorded = await call('/api/projections?months=12', cookieA);
+  const rec = recorded.json.mining as Mining;
+  eq(rec.inputs!.recordedMiningIncomeMonthlyNzd, 90, 'recorded mining income averages 90 a month');
+  const recClasses = byClass(recorded.json);
+  eq(recClasses.cash.monthlyAdditionNzd, 500, 'saving rose by 90 (1090 − 500 invested) and the 90 is taken back off cash');
+
+  const savedPlan = await putJson('/api/projections/assumptions', { mining: { addThPerMonth: 5, thPriceNzd: 30, rewardsTo: 'reinvest' } });
+  assert(savedPlan.status === 200, 'mining plan saved');
+  const usesPlan = (await call('/api/projections?months=12', cookieA)).json.mining as Mining & { plan: { rewardsTo: string; addThPerMonth?: number } };
+  assert(usesPlan.plan.rewardsTo === 'reinvest' && usesPlan.plan.addThPerMonth === 5, 'saved plan applies');
+  const planB = (await call('/api/projections?months=12', cookieB)).json.mining as Mining;
+  assert(planB.status === 'no_miners', 'user B has no miners and no plan');
 
   console.log('projection api tests ok');
 } finally {

@@ -44,6 +44,7 @@ export type ProjectionClassValues = Partial<Record<ProjectionClassKey, number | 
 export type SavedProjectionAssumptions = {
   returns: ProjectionClassValues;
   contributions: ProjectionClassValues;
+  mining?: MiningPlan;
 };
 
 export const RETURN_LIMITS = [-50, 50] as const;
@@ -68,5 +69,55 @@ export function normalizeSavedAssumptions(raw: unknown): SavedProjectionAssumpti
   return {
     returns: normalizeClassValues(o.returns, RETURN_LIMITS[0], RETURN_LIMITS[1]),
     contributions: normalizeClassValues(o.contributions, -ADD_LIMIT, ADD_LIMIT),
+    mining: normalizeMiningPlan(o.mining),
   };
+}
+
+/**
+ * GoMining mining plan for the projection: add TH, improve efficiency, and where rewards go.
+ * Every field is optional; a missing field means "no change" (rewards kept as BTC).
+ */
+export type MiningPlan = {
+  addThPerMonth?: number;
+  addThOnce?: number;
+  /** W/TH of TH added (blank = current fleet average). */
+  newThWth?: number;
+  /** NZD per TH, for buying TH and reinvesting rewards. */
+  thPriceNzd?: number;
+  upgradeToWth?: number;
+  upgradeFromMonth?: number;
+  upgradeCostNzd?: number;
+  rewardsTo?: 'crypto' | 'cash' | 'reinvest';
+  /** Yearly change in pool reward per TH, % (network growth). */
+  rewardChangePct?: number;
+};
+
+type NumField = Exclude<keyof MiningPlan, 'rewardsTo'>;
+
+/** Link parameter and allowed range for each numeric mining field. */
+export const MINING_PLAN_FIELDS: Record<NumField, { param: string; min: number; max: number; label: string }> = {
+  addThPerMonth: { param: 'miningAddTh', min: 0, max: 1_000_000, label: 'TH added each month' },
+  addThOnce: { param: 'miningAddThOnce', min: 0, max: 10_000_000, label: 'TH added once' },
+  newThWth: { param: 'miningNewWth', min: 1, max: 200, label: 'W/TH of added TH' },
+  thPriceNzd: { param: 'miningThPrice', min: 0, max: 1_000_000, label: 'Price per TH' },
+  upgradeToWth: { param: 'miningUpgradeWth', min: 1, max: 200, label: 'Upgrade to W/TH' },
+  upgradeFromMonth: { param: 'miningUpgradeMonth', min: 1, max: 360, label: 'Upgrade from month' },
+  upgradeCostNzd: { param: 'miningUpgradeCost', min: 0, max: 100_000_000, label: 'Upgrade cost' },
+  rewardChangePct: { param: 'miningRewardChange', min: -90, max: 100, label: 'Yearly change in reward per TH' },
+};
+
+export const MINING_REWARDS_TO_PARAM = 'miningRewardsTo';
+
+export function normalizeMiningPlan(raw: unknown): MiningPlan {
+  const out: MiningPlan = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  const o = raw as Record<string, unknown>;
+  for (const [key, f] of Object.entries(MINING_PLAN_FIELDS) as [NumField, (typeof MINING_PLAN_FIELDS)[NumField]][]) {
+    const v = o[key];
+    if (v == null || v === '') continue;
+    const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
+    if (Number.isFinite(n) && n >= f.min && n <= f.max) out[key] = Math.round(n * 10000) / 10000;
+  }
+  if (o.rewardsTo === 'crypto' || o.rewardsTo === 'cash' || o.rewardsTo === 'reinvest') out.rewardsTo = o.rewardsTo;
+  return out;
 }

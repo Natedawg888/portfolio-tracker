@@ -33,6 +33,7 @@
     "test:page-cache": "node --import tsx src/lib/pageDataCache.test.ts",
     "test:donations": "node --import tsx server/donations/model.test.ts && node --import tsx server/donations/store.test.ts",
     "test:projections": "node --import tsx server/projections/model.test.ts && node --import tsx server/projections/api.test.ts",
+    "test:mining-projection": "node --import tsx src/lib/miningProjection.test.ts",
     "test:projections-page": "node --import tsx src/pages/projectionsView.test.ts && node --import tsx src/components/AssetLineChart.test.ts",
     "test:net-worth-crypto": "node --import tsx server/lib/netWorth.crypto.test.ts",
     "test:dividends": "node --import tsx server/dividends/model.test.ts && node --import tsx server/dividends/reinvestAll.test.ts && node --import tsx server/quotes/yahooDividends.test.ts && node --import tsx server/dividends/store.test.ts && node --import tsx server/dividends/incomeSync.test.ts && node --import tsx server/payees/store.test.ts && node --import tsx server/kiwisaver/employeeRate.test.ts",

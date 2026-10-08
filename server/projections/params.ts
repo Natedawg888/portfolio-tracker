@@ -20,6 +20,9 @@ import {
   RETURN_LIMITS,
   addParam,
   returnParam,
+  MINING_PLAN_FIELDS,
+  MINING_REWARDS_TO_PARAM,
+  type MiningPlan,
   type ProjectionClassValues,
 } from '../../src/lib/projectionClasses.ts';
 
@@ -32,6 +35,8 @@ export type ProjectionQuery = {
   classReturns: ProjectionClassValues;
   /** Per-class monthly additions (addShares=500 …). Missing classes fall back to saved, then observed. */
   classAdditions: ProjectionClassValues;
+  /** Mining plan fields set in the scenario (missing = saved, then no change). */
+  mining: MiningPlan;
 };
 
 function oneString(
@@ -134,9 +139,30 @@ export function parseProjectionQuery(
     }
   }
 
+  const mining: MiningPlan = {};
+  for (const [key, f] of Object.entries(MINING_PLAN_FIELDS) as [keyof typeof MINING_PLAN_FIELDS, (typeof MINING_PLAN_FIELDS)[keyof typeof MINING_PLAN_FIELDS]][]) {
+    const raw = oneString(query[f.param], f.param);
+    if (!raw.ok) return raw;
+    if (raw.value == null) continue;
+    const n = Number(raw.value);
+    if (!Number.isFinite(n) || n < f.min || n > f.max) {
+      return { ok: false, error: `${f.label} must be a number from ${f.min} to ${f.max}` };
+    }
+    mining[key] = Math.round(n * 10000) / 10000;
+  }
+  const to = oneString(query[MINING_REWARDS_TO_PARAM], MINING_REWARDS_TO_PARAM);
+  if (!to.ok) return to;
+  if (to.value != null) {
+    if (to.value !== 'crypto' && to.value !== 'cash' && to.value !== 'reinvest') {
+      return { ok: false, error: 'miningRewardsTo must be crypto, cash or reinvest' };
+    }
+    mining.rewardsTo = to.value;
+  }
+
   return {
     ok: true,
     value: {
+      mining,
       months: months.value,
       savingWindowMonths: savingWindowMonths.value,
       annualReturnPercent,

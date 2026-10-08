@@ -10,6 +10,9 @@ import {
   RETURN_LIMITS,
   addParam,
   returnParam,
+  MINING_PLAN_FIELDS,
+  MINING_REWARDS_TO_PARAM,
+  type MiningPlan,
   type ProjectionClassKey,
 } from '../lib/projectionClasses';
 
@@ -37,7 +40,29 @@ export type Inputs = {
   saving: string;
   classReturns: ClassFields;
   classAdds: ClassFields;
+  /** Mining plan text fields; '' = not set. */
+  mining: MiningFields;
 };
+
+export type MiningNumKey = keyof typeof MINING_PLAN_FIELDS;
+export type MiningFields = Record<MiningNumKey, string> & { rewardsTo: '' | 'crypto' | 'cash' | 'reinvest' };
+
+export function emptyMiningFields(): MiningFields {
+  return {
+    ...(Object.fromEntries(Object.keys(MINING_PLAN_FIELDS).map((k) => [k, ''])) as Record<MiningNumKey, string>),
+    rewardsTo: '',
+  };
+}
+
+/** Mining fields that are set, as numbers, for the API. */
+export function miningPlanFromFields(f: MiningFields): MiningPlan {
+  const out: MiningPlan = {};
+  for (const key of Object.keys(MINING_PLAN_FIELDS) as MiningNumKey[]) {
+    if (f[key].trim() !== '') out[key] = Number(f[key]);
+  }
+  if (f.rewardsTo) out.rewardsTo = f.rewardsTo;
+  return out;
+}
 
 export function emptyClassFields(): ClassFields {
   return Object.fromEntries(PROJECTION_CLASS_KEYS.map((k) => [k, ''])) as ClassFields;
@@ -77,6 +102,17 @@ export function readInputs(params: URLSearchParams): Inputs & { ignored: string[
       else ignored.push(`${PROJECTION_CLASS_LABELS[key]} monthly addition must be a number up to $10,000,000`);
     }
   }
+  const mining = emptyMiningFields();
+  for (const key of Object.keys(MINING_PLAN_FIELDS) as MiningNumKey[]) {
+    const f = MINING_PLAN_FIELDS[key];
+    const v = params.get(f.param) ?? '';
+    if (v === '') continue;
+    if (inRange(v, f.min, f.max)) mining[key] = v;
+    else ignored.push(`${f.label} must be between ${f.min} and ${f.max}`);
+  }
+  const to = params.get(MINING_REWARDS_TO_PARAM) ?? '';
+  if (to === 'crypto' || to === 'cash' || to === 'reinvest') mining.rewardsTo = to;
+  else if (to !== '') ignored.push('mining rewards must go to crypto, cash or reinvest');
   return {
     months: HORIZONS.some((h) => h.months === months) ? months : 12,
     window: WINDOWS.includes(window) ? window : 3,
@@ -84,6 +120,7 @@ export function readInputs(params: URLSearchParams): Inputs & { ignored: string[
     saving,
     classReturns,
     classAdds,
+    mining,
     ignored,
   };
 }
@@ -99,6 +136,10 @@ export function inputsToParams(form: Inputs): URLSearchParams {
     if (form.classReturns[key].trim() !== '') next.set(returnParam(key), form.classReturns[key].trim());
     if (form.classAdds[key].trim() !== '') next.set(addParam(key), form.classAdds[key].trim());
   }
+  for (const key of Object.keys(MINING_PLAN_FIELDS) as MiningNumKey[]) {
+    if (form.mining[key].trim() !== '') next.set(MINING_PLAN_FIELDS[key].param, form.mining[key].trim());
+  }
+  if (form.mining.rewardsTo) next.set(MINING_REWARDS_TO_PARAM, form.mining.rewardsTo);
   return next;
 }
 
@@ -168,7 +209,9 @@ export function flatLineNote(facts: FlatLineFacts): string {
 
 /** One cache entry per URL scenario, so a saved scenario cannot paint over a different link. */
 export function projectionCacheKey(input: Inputs): string {
-  const classes = PROJECTION_CLASS_KEYS.map((k) => `${input.classReturns[k]}/${input.classAdds[k]}`).join(',');
+  const classes =
+    PROJECTION_CLASS_KEYS.map((k) => `${input.classReturns[k]}/${input.classAdds[k]}`).join(',') +
+    `|${Object.values(input.mining).join(',')}`;
   return `projections:${input.months}:${input.window}:${encodeURIComponent(input.returnPct)}:${encodeURIComponent(input.saving)}:${encodeURIComponent(classes)}`;
 }
 
@@ -226,6 +269,7 @@ export function scenarioFrameFromSearch<T>(
       saving: applied.saving,
       classReturns: applied.classReturns,
       classAdds: applied.classAdds,
+      mining: applied.mining,
     },
     data: paint.kind === 'cached' ? paint.data : null,
     loaded: paint.kind === 'cached',
