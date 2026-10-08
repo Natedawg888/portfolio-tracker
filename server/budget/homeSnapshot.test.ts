@@ -191,6 +191,7 @@ async function get(pathname: string, cookie?: string): Promise<{ status: number;
 
 const KEYS = [
   'currency',
+  'expectedPay',
   'incomeNzd',
   'periodEnd',
   'periodStart',

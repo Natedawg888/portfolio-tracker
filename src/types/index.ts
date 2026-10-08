@@ -4,6 +4,9 @@
  * Never invent live prices, miner secondary-market values, or stone valuations.
  */
 
+import type { OutputPaySourceInputs, OutputPayType } from '../lib/outputPayCalc';
+import type { DuePreset, GstMode, InvoiceStatus, InvoiceStoredStatus } from '../lib/invoiceCalc';
+
 export type CurrencyCode = 'NZD' | 'USD' | 'AUD' | 'EUR' | 'GBP';
 
 export type AccountType =
@@ -212,6 +215,12 @@ export interface SavingsGoal {
   currentAmountNzd: number;
   /** YYYY-MM-DD, or null when no deadline is set. */
   deadline: string | null;
+  /** Savings account linked to this goal (its balance is the amount saved), or null. */
+  accountId: string | null;
+  /** "Name · Institution" of the linked account. */
+  accountName: string | null;
+  /** 'account' when currentAmountNzd is the linked account's balance; 'manual' when typed. */
+  amountSource: 'account' | 'manual';
   currency: 'NZD';
   timezone: 'Pacific/Auckland';
   /** Pacific/Auckland calendar date the progress figures were counted on. */
@@ -256,6 +265,8 @@ export interface SavingsGoalWriteBody {
   currentAmountNzd?: number;
   /** YYYY-MM-DD, null, or '' to clear. */
   deadline?: string | null;
+  /** NZD bank account id, or null to unlink. */
+  accountId?: string | null;
 }
 
 /**
@@ -459,6 +470,8 @@ export interface IncomeMonthSummary {
   plan: IncomePlan | null;
   plans?: IncomePlan[];
   categories?: IncomeCategorySummary[];
+  /** Expected monthly income from saved pay sources (KAN-70). Null when none are saved. */
+  expectedPay?: PaySourcesExpected | null;
 }
 
 export interface Budget {
@@ -497,6 +510,33 @@ export interface HomeMonthSnapshot {
    * A fraction of income, not a percent. Null when incomeNzd is not positive.
    */
   savingsRate: number | null;
+  /** Expected monthly income from saved pay sources (KAN-70). Null when none are saved. */
+  expectedPay?: PaySourcesExpected | null;
+}
+
+/** A pay calculation saved as an income source (piece rate, contract, share of catch). */
+export interface PaySource {
+  id: string;
+  name: string;
+  payType: OutputPayType;
+  /** Tax year (start year) whose rates were used. */
+  taxYear: number;
+  inputs: OutputPaySourceInputs | null;
+  weeklyGrossNzd: number;
+  /** Typical weekly amount that lands in your pocket. */
+  weeklyNetNzd: number;
+  /** weeklyNetNzd × 52 ÷ 12. */
+  monthlyNetNzd: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Saved pay sources added up as expected income. */
+export interface PaySourcesExpected {
+  count: number;
+  weeklyNetNzd: number;
+  monthlyNetNzd: number;
+  sources: Array<{ id: string; name: string; payType: OutputPayType; weeklyNetNzd: number }>;
 }
 
 /** Where a projection figure came from. */
@@ -572,6 +612,10 @@ export interface ProjectionResponse {
       spendingNzd: number | null;
       monthsWithActivity: number;
       observedMonthlyNzd: number | null;
+      /** Monthly take-home from saved pay sources, used when the window has no recorded income. */
+      expectedPayMonthlyNzd?: number | null;
+      /** True when expectedPayMonthlyNzd stood in for recorded income. */
+      usedExpectedPay?: boolean;
     };
     inflationPercent: ProjectionAssumption;
     kiwiSaverContributionMonthlyNzd: ProjectionAssumption;
@@ -1103,3 +1147,145 @@ export type WalletsValuationResponse = {
   failedWallets: number;
   wallets: Array<{ wallet: Wallet; valuation: WalletValuation }>;
 };
+
+/** Business details printed on the user's invoices (KAN-71). */
+export interface BusinessProfile {
+  businessName: string;
+  address: string;
+  email: string;
+  phone: string;
+  bankAccount: string;
+  gstRegistered: boolean;
+  gstNumber: string;
+  nzbn: string;
+  invoicePrefix: string;
+}
+
+export interface InvoiceClient {
+  id: string;
+  name: string;
+  email: string;
+  address: string;
+  reference: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InvoiceLine {
+  id: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  rate: number;
+  lineTotalNzd: number;
+}
+
+export interface InvoicePayment {
+  id: string;
+  date: string;
+  amountNzd: number;
+  method: string;
+  notes: string;
+  /** Income record this payment added to the budget, when it was added. */
+  incomeRecordId: string | null;
+  createdAt: string;
+}
+
+export type InvoiceSendChannel = 'resend' | 'email_app' | 'share';
+
+export interface InvoiceSendLog {
+  id: string;
+  kind: 'invoice' | 'reminder';
+  /** resend = sent by the app; email_app / share = the user sent it themselves. */
+  channel: InvoiceSendChannel;
+  recipients: string[];
+  subject: string;
+  status: 'sent' | 'failed';
+  error: string | null;
+  sentAt: string;
+}
+
+/** One row of the invoice list. */
+export interface InvoiceSummary {
+  id: string;
+  number: string;
+  status: InvoiceStatus;
+  storedStatus: InvoiceStoredStatus;
+  clientId: string | null;
+  clientName: string;
+  issueDate: string;
+  dueDate: string;
+  totalNzd: number;
+  amountDueNzd: number;
+  paidNzd: number;
+  balanceNzd: number;
+  sentAt: string | null;
+}
+
+export interface Invoice extends InvoiceSummary {
+  clientEmail: string;
+  clientAddress: string;
+  clientReference: string;
+  duePreset: DuePreset;
+  reference: string;
+  gstMode: GstMode;
+  withholdingRatePct: number | null;
+  notes: string;
+  paymentInstructions: string;
+  /** Business details as printed on this invoice. */
+  business: BusinessProfile;
+  lines: InvoiceLine[];
+  subtotalNzd: number;
+  gstNzd: number;
+  withholdingNzd: number;
+  /** Title printed on the invoice: "Tax invoice" when GST registered. */
+  title: 'Tax invoice' | 'Invoice';
+  shareUrl: string | null;
+  payments: InvoicePayment[];
+  sends: InvoiceSendLog[];
+  voidedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InvoiceListResponse {
+  invoices: InvoiceSummary[];
+  totals: {
+    outstandingNzd: number;
+    overdueNzd: number;
+    paidThisMonthNzd: number;
+    paidTaxYearNzd: number;
+    /** NZ tax year start (YYYY-04-01) used for paidTaxYearNzd. */
+    taxYearStart: string;
+  };
+  nextNumber: string;
+  /** False when email sending isn't configured on this server. */
+  emailEnabled: boolean;
+}
+
+/** What a share link shows: the invoice itself and nothing else. */
+export interface PublicInvoice {
+  number: string;
+  title: 'Tax invoice' | 'Invoice';
+  status: InvoiceStatus;
+  business: BusinessProfile;
+  clientName: string;
+  clientEmail: string;
+  clientAddress: string;
+  clientReference: string;
+  issueDate: string;
+  dueDate: string;
+  reference: string;
+  gstMode: GstMode;
+  lines: InvoiceLine[];
+  subtotalNzd: number;
+  gstNzd: number;
+  totalNzd: number;
+  withholdingRatePct: number | null;
+  withholdingNzd: number;
+  amountDueNzd: number;
+  paidNzd: number;
+  balanceNzd: number;
+  notes: string;
+  paymentInstructions: string;
+}

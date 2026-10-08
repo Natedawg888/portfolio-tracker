@@ -13,6 +13,7 @@ import { aucklandToday } from '../debts/model.ts';
 import { parseCreateSavingsGoal, parsePatchSavingsGoal } from '../savings/model.ts';
 import {
   createSavingsGoal,
+  goalAccountProblem,
   deleteSavingsGoal,
   getSavingsGoal,
   listSavingsGoals,
@@ -46,6 +47,11 @@ router.post('/', async (req, res) => {
     return;
   }
   const db = await getDb();
+  const accountProblem = goalAccountProblem(db, uid(req), parsed.value.accountId);
+  if (accountProblem) {
+    res.status(400).json({ error: accountProblem });
+    return;
+  }
   const saved = createSavingsGoal(db, uid(req), parsed.value, aucklandToday());
   res.status(201).json(saved);
 });
@@ -67,6 +73,11 @@ router.patch('/:id', async (req, res) => {
     return;
   }
   const db = await getDb();
+  const accountProblem = goalAccountProblem(db, uid(req), parsed.value.accountId);
+  if (accountProblem) {
+    res.status(400).json({ error: accountProblem });
+    return;
+  }
   const saved = updateSavingsGoal(db, uid(req), req.params.id, parsed.value, aucklandToday());
   if (!saved) {
     res.status(404).json({ error: 'Savings goal not found' });

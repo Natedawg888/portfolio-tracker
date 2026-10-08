@@ -10,6 +10,7 @@ import { getDb, queryAll, queryOne, run, newId } from '../db/index.ts';
 import { coerceAkahuBalance } from '../akahu/sync.ts';
 import { TXN_SYNC_FROM_DATE } from '../akahu/syncTransactions.ts';
 import { parseWalletCsv } from '../../src/imports/walletCsv.ts';
+import { linkInvoicePaymentsToBankCredits } from '../invoices/store.ts';
 import {
   applyBtcLink,
   clearTxnBtcApplied,
@@ -709,6 +710,8 @@ router.post('/transactions/import-wallet-csv', async (req: AuthedRequest, res) =
     );
     inserted += 1;
   }
+  // An imported deposit may be an invoice payment already counted as income (KAN-71).
+  if (inserted > 0) linkInvoicePaymentsToBankCredits(db, userId);
 
   res.json({
     ok: true,

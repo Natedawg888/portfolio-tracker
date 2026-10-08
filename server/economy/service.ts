@@ -19,6 +19,13 @@ function cacheMs(): number {
   return hours * 60 * 60 * 1000;
 }
 
+/** A refresh where some series failed is retried after an hour instead of being held for the full cache window. */
+const PARTIAL_RETRY_MS = 60 * 60 * 1000;
+
+export function cacheLifetimeMs(note: string | null | undefined): number {
+  return visibleCacheNote(note) ? Math.min(PARTIAL_RETRY_MS, cacheMs()) : cacheMs();
+}
+
 export function cacheNote(warnings: string[]): string | null {
   const text = [`rev:${EXTRACT_REVISION}`, ...warnings].join(' ').trim();
   return text.slice(0, 500) || null;
@@ -49,7 +56,7 @@ export async function getEconomicCycle(
   let observations = await readObservations(country, provider.id);
   const age = log ? now.getTime() - Date.parse(log.fetchedAt) : Number.POSITIVE_INFINITY;
   const fresh =
-    Boolean(log?.ok) && age >= 0 && age < cacheMs() && observations.length > 0 && cacheIsCurrent(log?.note);
+    Boolean(log?.ok) && age >= 0 && age < cacheLifetimeMs(log?.note) && observations.length > 0 && cacheIsCurrent(log?.note);
   const cachedNote = visibleCacheNote(log?.note);
   if (fresh && cachedNote) warnings = [cachedNote];
 
@@ -73,7 +80,7 @@ export async function getEconomicCycle(
       logger.info('economy_fetch', {
         provider: provider.id,
         observations: result.observations.length,
-        warnings: result.warnings.length,
+        warnings: result.warnings,
       });
     } catch (err) {
       refreshError = err instanceof Error ? err.message : String(err);

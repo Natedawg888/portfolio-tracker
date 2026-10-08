@@ -26,6 +26,13 @@ export const SCOPED_TABLES = [
   'savings_goals',
   'donations',
   'wallets',
+  'pay_sources',
+  'business_profiles',
+  'invoice_clients',
+  'invoices',
+  'invoice_lines',
+  'invoice_payments',
+  'invoice_sends',
 ] as const;
 
 export type ScopedTable = (typeof SCOPED_TABLES)[number];
@@ -119,6 +126,12 @@ export function deleteScopedDataForUser(
   // Dependents first, then parents. debt_people cascades repayments;
   // kiwisaver_accounts cascades history + activity.
   const deleteOrder: ScopedTable[] = [
+    'invoice_sends',
+    'invoice_payments',
+    'invoice_lines',
+    'invoices',
+    'invoice_clients',
+    'business_profiles',
     'income_records',
     'income_plans',
     'dividend_forecast_reinvest',
@@ -126,6 +139,7 @@ export function deleteScopedDataForUser(
     'payee_settings',
     'savings_goals',
     'donations',
+    'pay_sources',
     'budgets',
     'debt_people',
     'transactions',

@@ -501,6 +501,24 @@ function migrateSchema(database: Database) {
     database.run('ALTER TABLE wallets ADD COLUMN sync_failures INTEGER NOT NULL DEFAULT 0');
   }
 
+  // Invoice send channel (KAN-71): sends made outside the app are logged too.
+  const sendCols = tableColumns(database, 'invoice_sends');
+  if (sendCols.size > 0 && !sendCols.has('channel')) {
+    database.run("ALTER TABLE invoice_sends ADD COLUMN channel TEXT NOT NULL DEFAULT 'resend'");
+  }
+
+  // Invoice payments mirrored into income (KAN-71).
+  const incomeCols = tableColumns(database, 'income_records');
+  if (incomeCols.size > 0 && !incomeCols.has('invoice_payment_id')) {
+    database.run('ALTER TABLE income_records ADD COLUMN invoice_payment_id TEXT');
+  }
+
+  // Savings goal → savings account link (KAN-20).
+  const goalCols = tableColumns(database, 'savings_goals');
+  if (goalCols.size > 0 && !goalCols.has('account_id')) {
+    database.run('ALTER TABLE savings_goals ADD COLUMN account_id TEXT');
+  }
+
   // 2FA + session devices (KAN-16) — users / sessions predate these columns.
   const totpUserCols = tableColumns(database, 'users');
   for (const [col, type] of [
@@ -539,6 +557,7 @@ function migrateSchema(database: Database) {
     { table: 'payee_settings', index: 'idx_payee_settings_user' },
     { table: 'savings_goals', index: 'idx_savings_goals_user' },
     { table: 'donations', index: 'idx_donations_user' },
+    { table: 'pay_sources', index: 'idx_pay_sources_user' },
   ];
   for (const { table, index } of scopedTables) {
     const cols = tableColumns(database, table);
