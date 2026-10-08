@@ -12,6 +12,8 @@ import {
   returnParam,
   MINING_PLAN_FIELDS,
   MINING_REWARDS_TO_PARAM,
+  ADD_GROWTH_PARAM,
+  ADD_GROWTH_LIMITS,
   type MiningPlan,
   type ProjectionClassKey,
 } from '../lib/projectionClasses';
@@ -42,6 +44,8 @@ export type Inputs = {
   classAdds: ClassFields;
   /** Mining plan text fields; '' = not set. */
   mining: MiningFields;
+  /** Yearly step-up of monthly additions, %; '' = not set. */
+  addGrowth: string;
 };
 
 export type MiningNumKey = keyof typeof MINING_PLAN_FIELDS;
@@ -113,6 +117,11 @@ export function readInputs(params: URLSearchParams): Inputs & { ignored: string[
   const to = params.get(MINING_REWARDS_TO_PARAM) ?? '';
   if (to === 'crypto' || to === 'cash' || to === 'reinvest') mining.rewardsTo = to;
   else if (to !== '') ignored.push('mining rewards must go to crypto, cash or reinvest');
+  let addGrowth = params.get(ADD_GROWTH_PARAM) ?? '';
+  if (addGrowth !== '' && !inRange(addGrowth, ADD_GROWTH_LIMITS[0], ADD_GROWTH_LIMITS[1])) {
+    ignored.push(`yearly increase in what's added must be ${ADD_GROWTH_LIMITS[0]}–${ADD_GROWTH_LIMITS[1]}%`);
+    addGrowth = '';
+  }
   return {
     months: HORIZONS.some((h) => h.months === months) ? months : 12,
     window: WINDOWS.includes(window) ? window : 3,
@@ -121,6 +130,7 @@ export function readInputs(params: URLSearchParams): Inputs & { ignored: string[
     classReturns,
     classAdds,
     mining,
+    addGrowth,
     ignored,
   };
 }
@@ -140,6 +150,7 @@ export function inputsToParams(form: Inputs): URLSearchParams {
     if (form.mining[key].trim() !== '') next.set(MINING_PLAN_FIELDS[key].param, form.mining[key].trim());
   }
   if (form.mining.rewardsTo) next.set(MINING_REWARDS_TO_PARAM, form.mining.rewardsTo);
+  if (form.addGrowth.trim() !== '') next.set(ADD_GROWTH_PARAM, form.addGrowth.trim());
   return next;
 }
 
@@ -211,7 +222,7 @@ export function flatLineNote(facts: FlatLineFacts): string {
 export function projectionCacheKey(input: Inputs): string {
   const classes =
     PROJECTION_CLASS_KEYS.map((k) => `${input.classReturns[k]}/${input.classAdds[k]}`).join(',') +
-    `|${Object.values(input.mining).join(',')}`;
+    `|${Object.values(input.mining).join(',')}|${input.addGrowth}`;
   return `projections:${input.months}:${input.window}:${encodeURIComponent(input.returnPct)}:${encodeURIComponent(input.saving)}:${encodeURIComponent(classes)}`;
 }
 
@@ -270,6 +281,7 @@ export function scenarioFrameFromSearch<T>(
       classReturns: applied.classReturns,
       classAdds: applied.classAdds,
       mining: applied.mining,
+      addGrowth: applied.addGrowth,
     },
     data: paint.kind === 'cached' ? paint.data : null,
     loaded: paint.kind === 'cached',

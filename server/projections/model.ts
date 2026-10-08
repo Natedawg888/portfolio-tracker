@@ -106,6 +106,12 @@ export type ProjectionClassResult = ProjectionClassInput & {
 export type ProjectionBuildInput = {
   /** Per-class growth. When set, compoundingAssetsNzd and the saving / KiwiSaver adds are not used separately. */
   assetClasses?: ProjectionClassInput[];
+  /**
+   * Yearly step-up of what is added each month, % (100 = year 2 adds twice year 1).
+   * Applies to each class's monthly addition, not to mining-model flows.
+   */
+  additionGrowthPercentYear?: number;
+  additionGrowthSource?: 'default' | 'query' | 'saved';
   asOf: string;
   horizonMonths: number;
   compoundingAssetsNzd: number;
@@ -198,6 +204,7 @@ export type ProjectionResult = {
   };
   /** Per-class start, return, monthly addition and end value. Empty for single-pot projections. */
   assetClasses: ProjectionClassResult[];
+  additionGrowthPercentYear: { value: number; source: 'default' | 'query' | 'saved'; reason: string };
   debts: ProjectionDebtPath[];
   propertyMortgage: {
     balanceNzd: number;
@@ -457,12 +464,19 @@ export function projectSeries(input: ProjectionBuildInput): ProjectionResult {
     ...(classes ? { byClassNzd: Object.fromEntries(classBalances) as Partial<Record<ProjectionClassKey, number>> } : {}),
   });
 
+  const growth = input.additionGrowthPercentYear ?? 0;
+  const stepUp = (month: number): number => (1 + growth / 100) ** Math.floor((month - 1) / 12);
+  const classAdded = new Map<ProjectionClassKey, number>();
+
   const points: ProjectionPoint[] = [pointAt(0)];
   for (let month = 1; month <= horizon; month += 1) {
     if (classes) {
       for (const c of classes) {
         const grown = (classBalances.get(c.key) ?? 0) * (1 + c.annualReturnPercent / 100 / 12);
-        const add = c.monthlyAdditionsNzd?.[month - 1] ?? c.monthlyAdditionNzd ?? 0;
+        // Step the class's own monthly amount up once a year; schedules (mining flows) are kept as they are.
+        const base = c.monthlyAdditionNzd ?? 0;
+        const add = (c.monthlyAdditionsNzd?.[month - 1] ?? base) + base * (stepUp(month) - 1);
+        classAdded.set(c.key, (classAdded.get(c.key) ?? 0) + add);
         classBalances.set(c.key, roundMoney(grown + add));
       }
       compounding = classTotal();
@@ -501,14 +515,12 @@ export function projectSeries(input: ProjectionBuildInput): ProjectionResult {
 
   const assetClasses: ProjectionClassResult[] = (classes ?? []).map((c) => {
     const endNzd = classBalances.get(c.key) ?? 0;
-    const addedNzd = c.monthlyAdditionsNzd
-      ? roundMoney(c.monthlyAdditionsNzd.slice(0, horizon).reduce((sum, n) => sum + n, 0))
-      : roundMoney((c.monthlyAdditionNzd ?? 0) * horizon);
+    const addedNzd = roundMoney(classAdded.get(c.key) ?? 0);
     const { monthlyAdditionsNzd: _schedule, ...rest } = c;
     void _schedule;
     return {
       ...rest,
-      // A changing schedule is shown as its average.
+      // A changing schedule is shown as its average; otherwise the year-1 monthly amount.
       monthlyAdditionNzd: c.monthlyAdditionsNzd && horizon > 0 ? roundMoney(addedNzd / horizon) : c.monthlyAdditionNzd,
       label: PROJECTION_CLASS_LABELS[c.key],
       startNzd: roundMoney(c.startNzd),
@@ -591,6 +603,14 @@ export function projectSeries(input: ProjectionBuildInput): ProjectionResult {
       },
     },
     assetClasses,
+    additionGrowthPercentYear: {
+      value: growth,
+      source: input.additionGrowthSource ?? 'default',
+      reason:
+        growth === 0
+          ? 'Monthly additions stay the same every year.'
+          : `Each class's monthly addition goes up ${growth}% at the start of each new year (year 2 = year 1 × ${Math.round((1 + growth / 100) * 100) / 100}). Mining-model flows are not stepped up.`,
+    },
     debts,
     propertyMortgage: {
       balanceNzd: propertyMortgage,

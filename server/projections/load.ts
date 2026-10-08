@@ -406,7 +406,15 @@ export async function loadUserProjection(
     kiwiSaverMonthlyNzd: ks.monthlyNzd,
   });
 
+  const growth =
+    query.additionGrowthPct != null
+      ? { value: query.additionGrowthPct, source: 'query' as const }
+      : saved.additionGrowthPct != null
+        ? { value: saved.additionGrowthPct, source: 'saved' as const }
+        : { value: 0, source: 'default' as const };
   const result = projectSeries({
+    additionGrowthPercentYear: growth.value,
+    additionGrowthSource: growth.source,
     assetClasses,
     asOf,
     horizonMonths: query.months,

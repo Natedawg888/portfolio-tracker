@@ -45,7 +45,12 @@ export type SavedProjectionAssumptions = {
   returns: ProjectionClassValues;
   contributions: ProjectionClassValues;
   mining?: MiningPlan;
+  /** Yearly step-up of monthly additions, %. */
+  additionGrowthPct?: number;
 };
+
+export const ADD_GROWTH_PARAM = 'addGrowth';
+export const ADD_GROWTH_LIMITS = [0, 500] as const;
 
 export const RETURN_LIMITS = [-50, 50] as const;
 export const ADD_LIMIT = 10_000_000;
@@ -70,6 +75,12 @@ export function normalizeSavedAssumptions(raw: unknown): SavedProjectionAssumpti
     returns: normalizeClassValues(o.returns, RETURN_LIMITS[0], RETURN_LIMITS[1]),
     contributions: normalizeClassValues(o.contributions, -ADD_LIMIT, ADD_LIMIT),
     mining: normalizeMiningPlan(o.mining),
+    ...(() => {
+      const g = Number(o.additionGrowthPct);
+      return o.additionGrowthPct != null && o.additionGrowthPct !== '' && Number.isFinite(g) && g >= ADD_GROWTH_LIMITS[0] && g <= ADD_GROWTH_LIMITS[1]
+        ? { additionGrowthPct: Math.round(g * 100) / 100 }
+        : {};
+    })(),
   };
 }
 

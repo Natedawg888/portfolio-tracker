@@ -38,6 +38,7 @@ import {
   addParam,
   MINING_PLAN_FIELDS,
   MINING_REWARDS_TO_PARAM,
+  ADD_GROWTH_PARAM,
   returnParam,
   type MiningPlan,
   type ProjectionClassKey,
@@ -288,8 +289,10 @@ export const api = {
       classReturns?: Partial<Record<ProjectionClassKey, number>>;
       classAdds?: Partial<Record<ProjectionClassKey, number>>;
       mining?: MiningPlan;
+      additionGrowthPct?: number;
     }) => {
       const params = new URLSearchParams();
+      if (query?.additionGrowthPct != null) params.set(ADD_GROWTH_PARAM, String(query.additionGrowthPct));
       for (const [key, f] of Object.entries(MINING_PLAN_FIELDS)) {
         const v = query?.mining?.[key as keyof typeof MINING_PLAN_FIELDS];
         if (v != null) params.set(f.param, String(v));

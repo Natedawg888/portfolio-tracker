@@ -22,6 +22,8 @@ import {
   returnParam,
   MINING_PLAN_FIELDS,
   MINING_REWARDS_TO_PARAM,
+  ADD_GROWTH_PARAM,
+  ADD_GROWTH_LIMITS,
   type MiningPlan,
   type ProjectionClassValues,
 } from '../../src/lib/projectionClasses.ts';
@@ -37,6 +39,8 @@ export type ProjectionQuery = {
   classAdditions: ProjectionClassValues;
   /** Mining plan fields set in the scenario (missing = saved, then no change). */
   mining: MiningPlan;
+  /** Yearly step-up of monthly additions, % (null = saved, then 0). */
+  additionGrowthPct: number | null;
 };
 
 function oneString(
@@ -159,9 +163,21 @@ export function parseProjectionQuery(
     mining.rewardsTo = to.value;
   }
 
+  const growthRaw = oneString(query[ADD_GROWTH_PARAM], ADD_GROWTH_PARAM);
+  if (!growthRaw.ok) return growthRaw;
+  let additionGrowthPct: number | null = null;
+  if (growthRaw.value != null) {
+    const g = Number(growthRaw.value);
+    if (!Number.isFinite(g) || g < ADD_GROWTH_LIMITS[0] || g > ADD_GROWTH_LIMITS[1]) {
+      return { ok: false, error: `Yearly increase in what's added must be ${ADD_GROWTH_LIMITS[0]}–${ADD_GROWTH_LIMITS[1]}%` };
+    }
+    additionGrowthPct = Math.round(g * 100) / 100;
+  }
+
   return {
     ok: true,
     value: {
+      additionGrowthPct,
       mining,
       months: months.value,
       savingWindowMonths: savingWindowMonths.value,

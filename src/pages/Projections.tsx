@@ -295,6 +295,7 @@ export function Projections() {
         classReturns: classNumbers(applied.classReturns),
         classAdds: classNumbers(applied.classAdds),
         mining: miningPlanFromFields(applied.mining),
+        additionGrowthPct: applied.addGrowth === '' ? undefined : Number(applied.addGrowth),
       })
       .then((r) => {
         if (cancelled) return;
@@ -326,7 +327,7 @@ export function Projections() {
   };
 
   const onReset = () => {
-    const base = { months: applied.months, window: 3, returnPct: '', saving: '', classReturns: emptyClassFields(), classAdds: emptyClassFields(), mining: emptyMiningFields() };
+    const base = { months: applied.months, window: 3, returnPct: '', saving: '', classReturns: emptyClassFields(), classAdds: emptyClassFields(), mining: emptyMiningFields(), addGrowth: '' };
     setForm(base);
     setParams(new URLSearchParams({ months: String(base.months) }), { replace: true });
   };
@@ -362,9 +363,18 @@ export function Projections() {
         const inUse = data?.mining?.plan ?? {};
         mining = { ...inUse, ...miningPlanFromFields(form.mining) };
       }
-      await api.projections.saveAssumptions({ returns, contributions, mining });
+      const typedGrowth = form.addGrowth.trim();
+      const inUseGrowth = data?.additionGrowthPercentYear;
+      const additionGrowthPct = forget
+        ? undefined
+        : typedGrowth !== ''
+          ? Number(typedGrowth)
+          : inUseGrowth && inUseGrowth.source !== 'default' && inUseGrowth.value
+            ? inUseGrowth.value
+            : undefined;
+      await api.projections.saveAssumptions({ returns, contributions, mining, ...(additionGrowthPct != null ? { additionGrowthPct } : {}) });
       // Saved values now apply without being in the link.
-      const cleared = { ...form, classReturns: emptyClassFields(), classAdds: emptyClassFields(), mining: emptyMiningFields() };
+      const cleared = { ...form, classReturns: emptyClassFields(), classAdds: emptyClassFields(), mining: emptyMiningFields(), addGrowth: '' };
       setForm(cleared);
       setParams(inputsToParams(cleared), { replace: true });
       setLoadedKey(null);
@@ -467,6 +477,24 @@ export function Projections() {
               value={form.saving}
               onChange={(e) => setForm({ ...form, saving: e.target.value })}
             />
+          </label>
+          <label>
+            Increase what&apos;s added each year (%)
+            <input
+              type="number"
+              step="1"
+              min={0}
+              max={500}
+              inputMode="decimal"
+              placeholder={
+                data?.additionGrowthPercentYear && data.additionGrowthPercentYear.source === 'saved'
+                  ? `${data.additionGrowthPercentYear.value}% saved`
+                  : '0 (same every year)'
+              }
+              value={form.addGrowth}
+              onChange={(e) => setForm({ ...form, addGrowth: e.target.value })}
+            />
+            <span className="muted small">100% = $500 a month this year, $1,000 a month next year.</span>
           </label>
           <label>
             Budget months to average
@@ -632,7 +660,13 @@ export function Projections() {
           {data.assetClasses?.length ? (
             <section className="panel">
               <h3>By asset class</h3>
-              <p className="section-desc">Each class grows on its own yearly return, plus what is added to it each month.</p>
+              <p className="section-desc">
+                Each class grows on its own yearly return, plus what is added to it each month
+                {data.additionGrowthPercentYear?.value
+                  ? ` — and what's added goes up ${data.additionGrowthPercentYear.value}% each year (Added / month shows year 1; Added in total covers every year)`
+                  : ''}
+                .
+              </p>
               <div className="table-wrap" style={{ overflowX: 'auto' }}>
                 <table className="data-table">
                   <thead>
@@ -641,6 +675,7 @@ export function Projections() {
                       <th style={{ textAlign: 'right' }}>Today</th>
                       <th style={{ textAlign: 'right' }}>Return</th>
                       <th style={{ textAlign: 'right' }}>Added / month</th>
+                      <th style={{ textAlign: 'right' }}>Added in total</th>
                       <th style={{ textAlign: 'right' }}>Growth</th>
                       <th style={{ textAlign: 'right' }}>At the end</th>
                     </tr>
@@ -663,6 +698,7 @@ export function Projections() {
                             {c.monthlyAdditionNzd == null ? '—' : formatNzd(c.monthlyAdditionNzd)}
                             <div className="muted small">{CLASS_SOURCE_LABEL[c.additionSource]}</div>
                           </td>
+                          <td className="money" style={{ textAlign: 'right' }}>{signedNzd(c.addedNzd)}</td>
                           <td className="money" style={{ textAlign: 'right' }}>{signedNzd(c.growthNzd)}</td>
                           <td className="money" style={{ textAlign: 'right' }}>{formatNzd(c.endNzd)}</td>
                         </tr>

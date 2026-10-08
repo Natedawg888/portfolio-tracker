@@ -137,4 +137,14 @@ try {
   assert(projectionCacheKey(withClasses) !== projectionCacheKey(plain), 'class fields change the cache key');
 }
 
+// Yearly step-up of what's added (addGrowth).
+{
+  const g = readInputs(new URLSearchParams('months=60&addGrowth=100'));
+  assert(g.addGrowth === '100', 'step-up read from the link');
+  assert(inputsToParams(g).get('addGrowth') === '100', 'and written back');
+  const bad = readInputs(new URLSearchParams('addGrowth=900'));
+  assert(bad.addGrowth === '' && bad.ignored.some((m) => m.includes('yearly increase')), 'out-of-range step-up dropped and reported');
+  assert(projectionCacheKey(g) !== projectionCacheKey(readInputs(new URLSearchParams('months=60'))), 'step-up changes the cache key');
+}
+
 console.log('projections view tests passed');

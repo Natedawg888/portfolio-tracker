@@ -664,6 +664,8 @@ export interface ProjectionResponse {
   };
   /** Each asset class grown on its own return with its own monthly addition. */
   assetClasses: ProjectionAssetClass[];
+  /** Yearly step-up of monthly additions. */
+  additionGrowthPercentYear?: { value: number; source: 'default' | 'query' | 'saved'; reason: string };
   /** GoMining rewards from the live model, with the user's plan (add TH, upgrade W/TH, reinvest). */
   mining?: ProjectionMining;
   debts: ProjectionDebtPath[];
