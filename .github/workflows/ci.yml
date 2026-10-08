@@ -26,8 +26,10 @@ jobs:
       - run: npm run test:dividends
       - run: npm run test:home-snapshot
       - run: npm run test:savings-goals
+      - run: npm run test:page-cache
       - run: npm run test:donations
       - run: npm run test:projections
+      - run: npm run test:projections-page
       - run: npm run test:net-worth-crypto
       - run: npm run test:2fa
       - run: npm run test:wallets

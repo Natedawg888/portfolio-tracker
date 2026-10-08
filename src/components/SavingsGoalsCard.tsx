@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { ApiError, api, formatNzd } from '../api/client';
+import { beginPageRead, commitPageRead, invalidateFinancial, readPageCache } from '../lib/pageDataCache';
 import type { SavingsGoal } from '../types';
 
 type DialogState = { mode: 'add' } | { mode: 'edit'; goal: SavingsGoal };
@@ -44,41 +45,32 @@ function barPercent(percentComplete: number): number {
   return percentComplete;
 }
 
+const SAVINGS_GOALS = 'savings-goals';
+
 export function SavingsGoalsCard() {
-  const [goals, setGoals] = useState<SavingsGoal[] | null>(null);
+  const [goals, setGoals] = useState<SavingsGoal[] | null>(() => readPageCache<SavingsGoal[]>(SAVINGS_GOALS) ?? null);
   const [error, setError] = useState<string | null>(null);
+  const goalsRef = useRef(goals);
+  goalsRef.current = goals;
   const [dialog, setDialog] = useState<DialogState | null>(null);
 
   const refresh = useCallback(async () => {
+    const stamp = beginPageRead(SAVINGS_GOALS);
     try {
       const rows = await api.savingsGoals.list();
+      if (!commitPageRead(stamp, rows)) return;
       setGoals(rows);
       setError(null);
     } catch (err) {
       if (isUnauthorized(err)) return;
-      setGoals(null);
+      if (goalsRef.current) return;
       setError(goalsErrorMessage(err, 'Could not load savings goals.'));
     }
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    api.savingsGoals
-      .list()
-      .then((rows) => {
-        if (cancelled) return;
-        setGoals(rows);
-        setError(null);
-      })
-      .catch((err: unknown) => {
-        if (cancelled || isUnauthorized(err)) return;
-        setGoals(null);
-        setError(goalsErrorMessage(err, 'Could not load savings goals.'));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    void refresh();
+  }, [refresh]);
 
   const closeDialog = useCallback(() => setDialog(null), []);
 
@@ -248,6 +240,7 @@ function SavingsGoalDialog({
     }
     setSaving(false);
     onClose();
+    invalidateFinancial('savings');
     await onSaved();
   }
 
@@ -267,6 +260,7 @@ function SavingsGoalDialog({
     }
     setDeleting(false);
     onClose();
+    invalidateFinancial('savings');
     await onSaved();
   }
 

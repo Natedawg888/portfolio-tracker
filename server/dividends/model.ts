@@ -141,6 +141,11 @@ export type DetectedDividend = {
   /** On spends this row's gross cash on more of the same holding. Tax is not estimated. */
   reinvested: boolean;
   reinvestment: ReinvestmentEffect;
+  /** Forecast shares added by reinvesting earlier predicted payments of this holding. */
+  reinvestExtraShares: number;
+  /** Extra gross cash those shares earn on this payment, in the payment currency. */
+  reinvestExtraAmount: number;
+  reinvestExtraNzd: number | null;
 };
 
 export type DividendView = DividendRecord & {
@@ -227,6 +232,8 @@ export type DividendDashboard = {
     detectedNzd: number | null;
     detectedCount: number;
     detectedUnconvertedCount: number;
+    /** Holdings set to reinvest every predicted payment (filled in by the store). */
+    reinvestAllHoldingIds?: string[];
     note: string;
   };
   upcoming: DividendView[];
@@ -246,6 +253,7 @@ export const DIVIDEND_FORECAST_NOTE =
   'Predicted payments cover the next 12 months. The date repeats the gap between those published dates, and the amount is the last cash dividend per share times a projected share count. ' +
   'The projected share count starts at the shares you own. Reinvest does not change that stored quantity. ' +
   'When reinvest is on for a predicted payment, that row\'s gross cash buys more of the same holding. Tax is not estimated. Later predicted payments use the extra shares. ' +
+  'Reinvest every payment does that for each predicted payment of a holding, so each later payment grows; the extra shares and cash are shown on each row. ' +
   'A recorded payment adds shares only when its date is after today. A paid dividend does not add shares again; those shares are already in the quantity you own. ' +
   'Reinvestment is left unchanged when there is no saved quote or recorded price. ' +
   'A holding is left out when that source has no dividend figure. A payment you already entered is not repeated; later predicted payments for that holding can still appear. ' +
@@ -656,6 +664,9 @@ function detectedFromPlan(
     source: 'yahoo',
     reinvested: false,
     reinvestment: REINVEST_OFF,
+    reinvestExtraShares: 0,
+    reinvestExtraAmount: 0,
+    reinvestExtraNzd: plan.fx == null ? null : 0,
   };
 }
 
@@ -929,6 +940,10 @@ export function applyDividendReinvestment(input: {
         amount,
         amountNzd: fx == null ? null : amount * fx,
         reinvestment,
+        // What reinvesting earlier predicted payments adds to this one (recorded payments excluded).
+        reinvestExtraShares: forecastExtra,
+        reinvestExtraAmount: forecastExtra * row.dividendPerShare,
+        reinvestExtraNzd: fx == null ? null : forecastExtra * row.dividendPerShare * fx,
       });
     }
   }

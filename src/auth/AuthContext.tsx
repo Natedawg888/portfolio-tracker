@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { api, setUnauthorizedHandler, type AuthUser } from '../api/client';
+import { clearPageCache, syncPageCacheUser } from '../lib/pageDataCache';
 
 type AuthStatus = {
   hasUsers: boolean;
@@ -82,14 +83,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const setUser = useCallback((next: AuthUser | null) => {
-    setUserState(normalizeUser(next));
+  const publishUser = useCallback((next: AuthUser | null) => {
+    syncPageCacheUser(next?.id ?? null);
+    setUserState(next);
   }, []);
+
+  const setUser = useCallback((next: AuthUser | null) => {
+    publishUser(normalizeUser(next));
+  }, [publishUser]);
 
   const refresh = useCallback(async () => {
     try {
       const [me, st] = await Promise.all([api.auth.me(), api.auth.status()]);
-      setUserState(normalizeUser(me.user));
+      publishUser(normalizeUser(me.user));
       setStatus({
         hasUsers: st.hasUsers,
         userCount: st.userCount,
@@ -97,11 +103,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         dataClaimed: st.dataClaimed,
       });
     } catch {
-      setUserState(null);
+      clearPageCache();
+      publishUser(null);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [publishUser]);
 
   useEffect(() => {
     void refresh();
@@ -109,14 +116,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
-      setUserState(null);
+      clearPageCache();
+      publishUser(null);
     });
     return () => setUnauthorizedHandler(null);
-  }, []);
+  }, [publishUser]);
 
   const signedIn = useCallback(async (raw: AuthUser) => {
     const u = normalizeUser(raw)!;
-    setUserState(u);
+    publishUser(u);
     const st = await api.auth.status();
     setStatus({
       hasUsers: st.hasUsers,
@@ -125,7 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       dataClaimed: st.dataClaimed,
     });
     return u;
-  }, []);
+  }, [publishUser]);
 
   const login = useCallback(
     async (email: string, password: string, opts: { remember?: boolean } = {}): Promise<LoginResult> => {
@@ -160,7 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       lastName: names.lastName,
     });
     const u = normalizeUser(res.user)!;
-    setUserState(u);
+    publishUser(u);
     const st = await api.auth.status();
     setStatus({
       hasUsers: st.hasUsers,
@@ -173,29 +181,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       claimedExistingData: res.claimedExistingData,
       message: res.message,
     };
-  }, []);
+  }, [publishUser]);
 
   const logout = useCallback(async () => {
     let next: string | null = null;
     try {
       next = (await api.auth.logout()).switchedToUserId;
     } finally {
-      // A full reload drops every cached page of the previous account.
+      // Drop the previous account's figures before another account can paint.
+      // A switch reloads; a full sign-out stays on this page, so clear in memory too.
+      clearPageCache();
       if (next) window.location.assign('/');
-      else setUserState(null);
+      else publishUser(null);
     }
-  }, []);
+  }, [publishUser]);
 
   const logoutAll = useCallback(async () => {
     try {
       await api.auth.logoutAll();
     } finally {
-      setUserState(null);
+      clearPageCache();
+      publishUser(null);
     }
-  }, []);
+  }, [publishUser]);
 
   const switchAccount = useCallback(async (userId: string) => {
     await api.auth.switchAccount(userId);
+    clearPageCache();
     window.location.assign('/');
   }, []);
 

@@ -56,10 +56,13 @@ export function AssetBreakdownChart({
   );
   const barEmpty =
     Boolean(barEmptyLabel) && !rows.some((row) => Number.isFinite(row.value) && row.value > 0);
+  // An all-zero debt chart draws a blank donut and a $0 header. Leave the quiet line on its own.
+  const pieVisible = showPie && !barEmpty;
+  const totalVisible = showTotal && !barEmpty;
 
   return (
     <section
-      className={`panel asset-breakdown${showPie ? '' : ' asset-breakdown--bar-only'}`}
+      className={`panel asset-breakdown${pieVisible ? '' : ' asset-breakdown--bar-only'}`}
       aria-labelledby={headingId}
     >
       <div className="asset-breakdown-head">
@@ -70,7 +73,7 @@ export function AssetBreakdownChart({
             {asOf ? ` · as of ${asOf}` : ''}
           </p>
         </div>
-        {showTotal ? (
+        {totalVisible ? (
           <p className="asset-breakdown-total">
             <span className="muted small">{totalLabel}</span>
             <strong>{formatNzd(total)}</strong>
@@ -82,7 +85,7 @@ export function AssetBreakdownChart({
       </div>
 
       <div className="asset-breakdown-grid">
-        {showPie ? (
+        {pieVisible ? (
           <div className="asset-chart">
             <h3>{pieTitle}</h3>
             <PieChart rows={rows} total={total} centerLabel={centerLabel} chartLabel={chartLabel} />
@@ -98,18 +101,20 @@ export function AssetBreakdownChart({
         </div>
       </div>
 
-      <ul className="asset-breakdown-legend" aria-label={legendLabel}>
-        {rows.map((row) => (
-          <li key={row.key}>
-            <span className="spend-swatch" style={{ background: row.colour }} aria-hidden />
-            <span className="asset-legend-name">{row.name}</span>
-            <strong>{formatNzd(row.value)}</strong>
-            <span className="muted small">
-              {total > 0 ? `${((Math.max(0, row.value) / total) * 100).toFixed(0)}%` : '0%'}
-            </span>
-          </li>
-        ))}
-      </ul>
+      {barEmpty ? null : (
+        <ul className="asset-breakdown-legend" aria-label={legendLabel}>
+          {rows.map((row) => (
+            <li key={row.key}>
+              <span className="spend-swatch" style={{ background: row.colour }} aria-hidden />
+              <span className="asset-legend-name">{row.name}</span>
+              <strong>{formatNzd(row.value)}</strong>
+              <span className="muted small">
+                {total > 0 ? `${((Math.max(0, row.value) / total) * 100).toFixed(0)}%` : '0%'}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
       {note && <p className="muted small asset-breakdown-note">{note}</p>}
     </section>
   );

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api, formatAuckland, formatMoney, formatNzd } from '../api/client';
+import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import { CurrencyPicker, type CurrencyOption } from '../components/CurrencyPicker';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
@@ -21,6 +22,16 @@ import {
   nzdPerOzToDisplay,
   type MetalDisplayUnit,
 } from '../lib/metalUnits';
+
+type MetalsCache = {
+  configured: boolean;
+  quotes: MetalQuote[];
+  quotaBlocked: boolean;
+  quotaMessage: string | null;
+};
+
+const METALS_KEY = 'value-search:metals';
+const FX_CURRENCIES_KEY = 'value-search:fx';
 
 type MetalQuote = {
   metal: string;
@@ -98,13 +109,14 @@ export function ValueSearch() {
     VALUE_SEARCH_PREF_KEYS.some((k) => enabled(k)) || showCurrencyExchanger;
 
   // --- Metals ---
-  const [configured, setConfigured] = useState<boolean | null>(null);
-  const [quotes, setQuotes] = useState<MetalQuote[]>([]);
+  const initialMetals = readPageCache<MetalsCache>(METALS_KEY);
+  const [configured, setConfigured] = useState<boolean | null>(initialMetals?.configured ?? null);
+  const [quotes, setQuotes] = useState<MetalQuote[]>(initialMetals?.quotes ?? []);
   const [msg, setMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [metalUnit, setMetalUnit] = useState<MetalDisplayUnit>(() => loadMetalDisplayUnit());
-  const [quotaBlocked, setQuotaBlocked] = useState(false);
-  const [quotaMessage, setQuotaMessage] = useState<string | null>(null);
+  const [quotaBlocked, setQuotaBlocked] = useState(initialMetals?.quotaBlocked ?? false);
+  const [quotaMessage, setQuotaMessage] = useState<string | null>(initialMetals?.quotaMessage ?? null);
 
   // --- Diamond ---
   const [diamondForm, setDiamondForm] = useState({
@@ -160,7 +172,9 @@ export function ValueSearch() {
 
   // --- FX (any → any) ---
   const [fxForm, setFxForm] = useState({ from: 'NZD', to: 'JPY', amount: '100' });
-  const [fxCurrencies, setFxCurrencies] = useState<CurrencyOption[]>([]);
+  const [fxCurrencies, setFxCurrencies] = useState<CurrencyOption[]>(
+    () => readPageCache<CurrencyOption[]>(FX_CURRENCIES_KEY) ?? [],
+  );
   const [fxCurrenciesMsg, setFxCurrenciesMsg] = useState<string | null>(null);
   const [fxLoading, setFxLoading] = useState(false);
   const [fxMsg, setFxMsg] = useState<string | null>(null);
@@ -179,19 +193,25 @@ export function ValueSearch() {
   const [minerDisplay, setMinerDisplay] = useState<EarningsDisplayCurrency>('NZD');
 
   const loadMetals = useCallback(async (force = false) => {
-    setLoading(true);
+    const stamp = beginPageRead(METALS_KEY);
+    if (force || readPageCache<MetalsCache>(METALS_KEY) == null) setLoading(true);
     setMsg(null);
     try {
       const status = await api.quotes.metalsStatus();
-      setConfigured(status.configured);
-      setQuotaBlocked(Boolean((status as { quotaBlocked?: boolean }).quotaBlocked));
-      setQuotaMessage((status as { quotaMessage?: string | null }).quotaMessage ?? null);
       const data = force
         ? await api.quotes.refreshMetals()
         : await api.quotes.metals(false);
-      setQuotes(data.quotes);
       const qb = Boolean((data as { quotaBlocked?: boolean }).quotaBlocked);
       const qm = (data as { quotaMessage?: string | null }).quotaMessage ?? null;
+      const bundle: MetalsCache = {
+        configured: status.configured,
+        quotes: data.quotes,
+        quotaBlocked: qb,
+        quotaMessage: qm,
+      };
+      if (!commitPageRead(stamp, bundle)) return;
+      setConfigured(bundle.configured);
+      setQuotes(bundle.quotes);
       setQuotaBlocked(qb);
       setQuotaMessage(qm);
       if (force) {
@@ -233,10 +253,12 @@ export function ValueSearch() {
   useEffect(() => {
     if (!showCurrencyExchanger) return;
     let cancelled = false;
+    const stamp = beginPageRead(FX_CURRENCIES_KEY);
     (async () => {
       try {
         const data = await api.quotes.fxCurrencies(false);
         if (cancelled) return;
+        if (!commitPageRead(stamp, data.currencies)) return;
         setFxCurrencies(data.currencies);
         if (data.message) setFxCurrenciesMsg(data.message);
       } catch (err) {
