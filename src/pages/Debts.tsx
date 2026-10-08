@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api, formatNzd } from '../api/client';
+import { beginPageRead, commitPageRead, invalidateFinancial, readPageCache } from '../lib/pageDataCache';
 import type {
   DebtCreditorKind,
   DebtInterestPeriod,
@@ -137,10 +138,15 @@ function optionalMonths(raw: string): number | null | 'invalid' {
   return n;
 }
 
+type DebtsBundle = { rows: DebtPerson[]; summary: DebtSummary };
+
+const DEBTS_KEY = 'debts';
+
 export function Debts() {
-  const [rows, setRows] = useState<DebtPerson[]>([]);
-  const [summary, setSummary] = useState<DebtSummary | null>(null);
-  const [loading, setLoading] = useState(true);
+  const initialDebts = readPageCache<DebtsBundle>(DEBTS_KEY);
+  const [rows, setRows] = useState<DebtPerson[]>(initialDebts?.rows ?? []);
+  const [summary, setSummary] = useState<DebtSummary | null>(initialDebts?.summary ?? null);
+  const [loading, setLoading] = useState(initialDebts == null);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -149,7 +155,9 @@ export function Debts() {
   const [form, setForm] = useState<FormState>(emptyForm);
 
   const load = useCallback(async () => {
+    const stamp = beginPageRead(DEBTS_KEY);
     const [people, sum] = await Promise.all([api.debts.people(), api.debts.summary()]);
+    if (!commitPageRead(stamp, { rows: people, summary: sum })) return;
     setRows(people);
     setSummary(sum);
     setError(null);
@@ -158,15 +166,8 @@ export function Debts() {
 
   useEffect(() => {
     let cancelled = false;
-    api.debts
-      .people()
-      .then(async (people) => {
-        const sum = await api.debts.summary();
-        if (cancelled) return;
-        setRows(people);
-        setSummary(sum);
-        setError(null);
-      })
+    if (readPageCache<DebtsBundle>(DEBTS_KEY) == null) setLoading(true);
+    load()
       .catch((err: Error) => {
         if (!cancelled) setError(err.message);
       })
@@ -176,7 +177,7 @@ export function Debts() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [load]);
 
   function openCreate() {
     setEditingId(null);
@@ -248,6 +249,7 @@ export function Debts() {
       setShowForm(false);
       setEditingId(null);
       setForm(emptyForm());
+      invalidateFinancial('debts', 'dashboard', 'spending', 'yearly', 'projections');
       await load();
     } catch (err) {
       setMsg((err as Error).message);
@@ -268,6 +270,7 @@ export function Debts() {
         setForm(emptyForm());
       }
       setMsg(`Deleted ${debt.name}.`);
+      invalidateFinancial('debts', 'dashboard', 'spending', 'yearly', 'projections');
       await load();
     } catch (err) {
       setMsg((err as Error).message);

@@ -49,17 +49,6 @@ export function readInputs(params: URLSearchParams): Inputs & { ignored: string[
   };
 }
 
-/** Fields the scenario form should show for the URL that is applied right now. */
-export function formFieldsFromSearch(params: URLSearchParams): Inputs {
-  const applied = readInputs(params);
-  return {
-    months: applied.months,
-    window: applied.window,
-    returnPct: applied.returnPct,
-    saving: applied.saving,
-  };
-}
-
 export type FlatLineFacts = {
   annualReturnPercent: number | null;
   /** Starting balance the yearly return is applied to. */
@@ -144,4 +133,38 @@ export function scenarioRequestFailure(cachedForThisScenario: boolean):
   | { kind: 'error' } {
   if (cachedForThisScenario) return { kind: 'keep-cache' };
   return { kind: 'error' };
+}
+
+export type ScenarioFrame<T> = {
+  /** Form fields for the URL that is applied right now. */
+  form: Inputs;
+  /** This scenario's cache entry, or null when this URL has none. */
+  data: T | null;
+  /** True when `data` is this scenario's cache and can count as already loaded. */
+  loaded: boolean;
+};
+
+/**
+ * Form fields and cached figures for one projections URL.
+ * Used on the first paint and again when the URL changes without remounting
+ * (the Projections nav link clears the query while the page stays mounted).
+ * `readCache` is only asked for this URL's key, so another scenario's entry
+ * cannot be returned.
+ */
+export function scenarioFrameFromSearch<T>(
+  params: URLSearchParams,
+  readCache: (key: string) => T | null | undefined,
+): ScenarioFrame<T> {
+  const applied = readInputs(params);
+  const paint = paintScenarioCache(readCache(projectionCacheKey(applied)));
+  return {
+    form: {
+      months: applied.months,
+      window: applied.window,
+      returnPct: applied.returnPct,
+      saving: applied.saving,
+    },
+    data: paint.kind === 'cached' ? paint.data : null,
+    loaded: paint.kind === 'cached',
+  };
 }

@@ -2,9 +2,13 @@
  * Holdings news page. Sections come from the signed-in user's holdings.
  * World and politics always load. Feeds are public RSS; no API key.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, formatAuckland } from '../api/client';
+import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
+import { showQuietToast } from '../lib/quietToast';
 import type { NewsFeedResponse, NewsSection, NewsStory } from '../types';
+
+const NEWS_PAGE = 'news-page';
 
 function itemMeta(item: NewsStory): string {
   const parts: string[] = [];
@@ -31,18 +35,27 @@ function matchedLine(section: NewsSection): string | null {
 }
 
 export function News() {
-  const [data, setData] = useState<NewsFeedResponse | null>(null);
+  const initial = readPageCache<NewsFeedResponse>(NEWS_PAGE) ?? null;
+  const [data, setData] = useState<NewsFeedResponse | null>(initial);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initial == null);
+  const dataRef = useRef(data);
+  dataRef.current = data;
 
   const load = useCallback((refresh = false) => {
+    const stamp = beginPageRead(NEWS_PAGE);
     return api.news
       .feed({ refresh })
       .then((payload) => {
+        if (!commitPageRead(stamp, payload)) return;
         setData(payload);
         setError(null);
       })
       .catch((err: Error) => {
+        if (!refresh && dataRef.current) {
+          showQuietToast('Could not refresh headlines — showing last data.', { kind: 'warn' });
+          return;
+        }
         setError(err.message || 'News feeds could not be loaded');
       })
       .finally(() => setLoading(false));

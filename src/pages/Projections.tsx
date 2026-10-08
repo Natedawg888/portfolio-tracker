@@ -9,13 +9,17 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ApiError, api, formatNzd } from '../api/client';
 import { AssetLineChart, type LineSeries } from '../components/AssetLineChart';
+import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
+import { showQuietToast } from '../lib/quietToast';
 import type { ProjectionAssumption, ProjectionResponse } from '../types';
 import {
   HORIZONS,
   WINDOWS,
   flatLineNote,
-  formFieldsFromSearch,
+  projectionCacheKey,
   readInputs,
+  scenarioFrameFromSearch,
+  scenarioRequestFailure,
   type Inputs,
 } from './projectionsView';
 
@@ -59,25 +63,32 @@ function Assumption({ title, a, value }: { title: string; a: ProjectionAssumptio
 export function Projections() {
   const [params, setParams] = useSearchParams();
   const applied = useMemo(() => readInputs(params), [params]);
-  const appliedInputs = useMemo(() => formFieldsFromSearch(params), [params]);
-  const [form, setForm] = useState<Inputs>(appliedInputs);
-  const [data, setData] = useState<ProjectionResponse | null>(null);
+  const appliedKey = JSON.stringify(applied);
+  // Same helper on the first paint and when the URL changes in place (the
+  // Projections nav link). The form and the cached figures update together,
+  // before paint, so a cached 1-year view cannot sit under the old scenario fields.
+  const frame = scenarioFrameFromSearch(params, (key) => readPageCache<ProjectionResponse>(key));
+  const [form, setForm] = useState<Inputs>(frame.form);
+  const [data, setData] = useState<ProjectionResponse | null>(frame.data);
   const [error, setError] = useState<string | null>(null);
   // Loading until the response for the inputs currently in the URL has arrived.
-  const appliedKey = JSON.stringify(applied);
-  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  // A cache hit for this exact scenario counts as arrived, then refreshes quietly.
+  const [loadedKey, setLoadedKey] = useState<string | null>(frame.loaded ? appliedKey : null);
+  const [shownKey, setShownKey] = useState(appliedKey);
+  if (shownKey !== appliedKey) {
+    setShownKey(appliedKey);
+    setForm(frame.form);
+    setData(frame.data);
+    setLoadedKey(frame.loaded ? appliedKey : null);
+    setError(null);
+  }
   const loading = loadedKey !== appliedKey;
-
-  // The Projections nav link (and any other navigation) replaces the query string
-  // without going through this form. Put those URL values back into the fields.
-  useEffect(() => {
-    setForm(appliedInputs);
-  }, [appliedInputs]);
 
   useEffect(() => {
     let cancelled = false;
-    const key = JSON.stringify(applied);
-    setError(null);
+    const key = projectionCacheKey(applied);
+    const requestKey = JSON.stringify(applied);
+    const stamp = beginPageRead(key);
     api.projections
       .get({
         months: applied.months,
@@ -87,16 +98,22 @@ export function Projections() {
       })
       .then((r) => {
         if (cancelled) return;
+        if (!commitPageRead(stamp, r)) return;
         setData(r);
         setError(null);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
+        const failure = scenarioRequestFailure(readPageCache<ProjectionResponse>(key) != null);
+        if (failure.kind === 'keep-cache') {
+          showQuietToast('Could not refresh projection — showing last data.', { kind: 'warn' });
+          return;
+        }
         setData(null);
         setError(err instanceof ApiError ? err.message : 'Projection could not be loaded.');
       })
       .finally(() => {
-        if (!cancelled) setLoadedKey(key);
+        if (!cancelled) setLoadedKey(requestKey);
       });
     return () => {
       cancelled = true;

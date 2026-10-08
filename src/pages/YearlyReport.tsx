@@ -4,6 +4,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, formatAuckland, formatNzd } from '../api/client';
+import { beginPageRead, commitPageRead, invalidateFinancial, readPageCache } from '../lib/pageDataCache';
 import {
   AssetLineChart,
   seriesColour,
@@ -83,16 +84,10 @@ const CLASS_ORDER = [
   'debt',
 ];
 
-export function YearlyReport() {
-  const [year, setYear] = useState(DEFAULT_REPORT_YEAR);
-  const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
-  const [holdings, setHoldings] = useState<HoldingRow[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [view, setView] = useState<'class' | 'holdings'>('class');
-  const [resolution, setResolution] = useState<ChartResolution>('day');
-  const [debtSummary, setDebtSummary] = useState<{
+type YearlyBundle = {
+  snapshots: Snapshot[];
+  holdings: HoldingRow[];
+  debtSummary: {
     outstandingTotalNzd: number;
     personCount: number;
     personKindCount?: number;
@@ -100,28 +95,59 @@ export function YearlyReport() {
     repaidTotalNzd: number;
     year: number | null;
     asOf: string;
-  } | null>(null);
-  const [debtPeople, setDebtPeople] = useState<
-    Array<{
-      id: string;
-      name: string;
-      kind: 'person' | 'corporation';
-      outstandingNzd: number;
-      notes: string | null;
-    }>
-  >([]);
-  const [debtRepayments, setDebtRepayments] = useState<
-    Array<{
-      id: string;
-      personId: string;
-      personName: string | null;
-      amountNzd: number;
-      date: string;
-      notes: string | null;
-    }>
-  >([]);
+  } | null;
+  debtPeople: Array<{
+    id: string;
+    name: string;
+    kind: 'person' | 'corporation';
+    outstandingNzd: number;
+    notes: string | null;
+  }>;
+  debtRepayments: Array<{
+    id: string;
+    personId: string;
+    personName: string | null;
+    amountNzd: number;
+    date: string;
+    notes: string | null;
+  }>;
+};
+
+function yearlyKey(year: number): string {
+  return `yearly:${year}`;
+}
+
+export function YearlyReport() {
+  const [year, setYear] = useState(DEFAULT_REPORT_YEAR);
+  const initialYear = readPageCache<YearlyBundle>(yearlyKey(DEFAULT_REPORT_YEAR));
+  const [snapshots, setSnapshots] = useState<Snapshot[]>(initialYear?.snapshots ?? []);
+  const [holdings, setHoldings] = useState<HoldingRow[]>(initialYear?.holdings ?? []);
+  const [error, setError] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [view, setView] = useState<'class' | 'holdings'>('class');
+  const [resolution, setResolution] = useState<ChartResolution>('day');
+  const [debtSummary, setDebtSummary] = useState<YearlyBundle['debtSummary']>(initialYear?.debtSummary ?? null);
+  const [debtPeople, setDebtPeople] = useState<YearlyBundle['debtPeople']>(initialYear?.debtPeople ?? []);
+  const [debtRepayments, setDebtRepayments] = useState<YearlyBundle['debtRepayments']>(
+    initialYear?.debtRepayments ?? [],
+  );
+  const [appliedYear, setAppliedYear] = useState(year);
+  if (appliedYear !== year) {
+    setAppliedYear(year);
+    const next = readPageCache<YearlyBundle>(yearlyKey(year));
+    if (next) {
+      setSnapshots(next.snapshots);
+      setHoldings(next.holdings);
+      setDebtSummary(next.debtSummary);
+      setDebtPeople(next.debtPeople);
+      setDebtRepayments(next.debtRepayments);
+      setError(null);
+    }
+  }
 
   const load = useCallback(async () => {
+    const stamp = beginPageRead(yearlyKey(year));
     const [snaps, holds, summary, people, repayments] = await Promise.all([
       api.snapshots.list(year),
       api.holdings.list(),
@@ -129,33 +155,33 @@ export function YearlyReport() {
       api.debts.people().catch(() => []),
       api.debts.repayments({ year }).catch(() => []),
     ]);
-    setSnapshots(snaps as Snapshot[]);
-    setHoldings(holds as HoldingRow[]);
-    setDebtSummary(summary);
-    setDebtPeople(
-      (
-        people as Array<{
-          id: string;
-          name: string;
-          kind?: 'person' | 'corporation';
-          outstandingNzd: number;
-          notes: string | null;
-        }>
-      ).map((p) => ({
-        ...p,
-        kind: p.kind === 'corporation' ? 'corporation' : 'person',
-      })),
-    );
-    setDebtRepayments(
-      repayments as Array<{
+    const peopleRows = (
+      people as Array<{
         id: string;
-        personId: string;
-        personName: string | null;
-        amountNzd: number;
-        date: string;
+        name: string;
+        kind?: 'person' | 'corporation';
+        outstandingNzd: number;
         notes: string | null;
-      }>,
-    );
+      }>
+    ).map((p) => ({
+      ...p,
+      kind: p.kind === 'corporation' ? 'corporation' as const : 'person' as const,
+    }));
+    const repaymentRows = repayments as YearlyBundle['debtRepayments'];
+    const bundle: YearlyBundle = {
+      snapshots: snaps as Snapshot[],
+      holdings: holds as HoldingRow[],
+      debtSummary: summary,
+      debtPeople: peopleRows,
+      debtRepayments: repaymentRows,
+    };
+    if (!commitPageRead(stamp, bundle)) return;
+    setSnapshots(bundle.snapshots);
+    setHoldings(bundle.holdings);
+    setDebtSummary(bundle.debtSummary);
+    setDebtPeople(bundle.debtPeople);
+    setDebtRepayments(bundle.debtRepayments);
+    setError(null);
   }, [year]);
 
   useEffect(() => {
@@ -168,6 +194,7 @@ export function YearlyReport() {
     try {
       const snap = await api.snapshots.take(`Manual snapshot · ${year} report`);
       setMsg(`Snapshot saved · ${formatNzd(snap.totalNzd)} · ${formatAuckland(snap.takenAt)}`);
+      invalidateFinancial('yearly');
       await load();
     } catch (e) {
       setMsg((e as Error).message);
