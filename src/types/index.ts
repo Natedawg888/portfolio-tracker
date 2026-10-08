@@ -575,6 +575,9 @@ export interface ProjectionAssetClass {
   additionReason: string | null;
   addedNzd: number;
   growthNzd: number;
+  /** This class's yearly increase in what's added, %. */
+  additionGrowthPercentYear?: number;
+  growthSource?: 'user_data' | 'default' | 'query' | 'saved';
 }
 
 /** Where a projection figure came from. */

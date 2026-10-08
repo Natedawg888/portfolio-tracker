@@ -294,6 +294,7 @@ export function Projections() {
         monthlySavingNzd: applied.saving === '' ? undefined : Number(applied.saving),
         classReturns: classNumbers(applied.classReturns),
         classAdds: classNumbers(applied.classAdds),
+        classGrowth: classNumbers(applied.classGrowth),
         mining: miningPlanFromFields(applied.mining),
         additionGrowthPct: applied.addGrowth === '' ? undefined : Number(applied.addGrowth),
       })
@@ -327,7 +328,7 @@ export function Projections() {
   };
 
   const onReset = () => {
-    const base = { months: applied.months, window: 3, returnPct: '', saving: '', classReturns: emptyClassFields(), classAdds: emptyClassFields(), mining: emptyMiningFields(), addGrowth: '' };
+    const base = { months: applied.months, window: 3, returnPct: '', saving: '', classReturns: emptyClassFields(), classAdds: emptyClassFields(), classGrowth: emptyClassFields(), mining: emptyMiningFields(), addGrowth: '' };
     setForm(base);
     setParams(new URLSearchParams({ months: String(base.months) }), { replace: true });
   };
@@ -346,9 +347,13 @@ export function Projections() {
     try {
       const returns: ProjectionClassValues = {};
       const contributions: ProjectionClassValues = {};
+      const growth: ProjectionClassValues = {};
       if (!forget) {
         for (const key of PROJECTION_CLASS_KEYS) {
           const c = classesByKey.get(key);
+          const g = form.classGrowth[key].trim();
+          if (g !== '') growth[key] = Number(g);
+          else if (c?.growthSource === 'saved' && c.additionGrowthPercentYear != null) growth[key] = c.additionGrowthPercentYear;
           const r = form.classReturns[key].trim();
           const a = form.classAdds[key].trim();
           if (r !== '') returns[key] = Number(r);
@@ -372,9 +377,9 @@ export function Projections() {
           : inUseGrowth && inUseGrowth.source !== 'default' && inUseGrowth.value
             ? inUseGrowth.value
             : undefined;
-      await api.projections.saveAssumptions({ returns, contributions, mining, ...(additionGrowthPct != null ? { additionGrowthPct } : {}) });
+      await api.projections.saveAssumptions({ returns, contributions, mining, growth, ...(additionGrowthPct != null ? { additionGrowthPct } : {}) });
       // Saved values now apply without being in the link.
-      const cleared = { ...form, classReturns: emptyClassFields(), classAdds: emptyClassFields(), mining: emptyMiningFields(), addGrowth: '' };
+      const cleared = { ...form, classReturns: emptyClassFields(), classAdds: emptyClassFields(), classGrowth: emptyClassFields(), mining: emptyMiningFields(), addGrowth: '' };
       setForm(cleared);
       setParams(inputsToParams(cleared), { replace: true });
       setLoadedKey(null);
@@ -479,7 +484,7 @@ export function Projections() {
             />
           </label>
           <label>
-            Increase what&apos;s added each year (%)
+            Default increase in what&apos;s added each year (%)
             <input
               type="number"
               step="1"
@@ -494,7 +499,7 @@ export function Projections() {
               value={form.addGrowth}
               onChange={(e) => setForm({ ...form, addGrowth: e.target.value })}
             />
-            <span className="muted small">100% = $500 a month this year, $1,000 a month next year.</span>
+            <span className="muted small">100% = $500 a month this year, $1,000 next year. For classes below without their own.</span>
           </label>
           <label>
             Budget months to average
@@ -523,6 +528,7 @@ export function Projections() {
                     <th style={{ textAlign: 'right' }}>Today</th>
                     <th>Yearly return (%)</th>
                     <th>Added each month (NZD)</th>
+                    <th>Increase each year (%)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -556,6 +562,23 @@ export function Projections() {
                             placeholder={usedAddHint(c)}
                             value={form.classAdds[key]}
                             onChange={(e) => setForm({ ...form, classAdds: { ...form.classAdds, [key]: e.target.value } })}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="number"
+                            step="1"
+                            min={0}
+                            max={500}
+                            inputMode="decimal"
+                            aria-label={`${PROJECTION_CLASS_LABELS[key]} increase each year`}
+                            placeholder={
+                              c?.additionGrowthPercentYear == null
+                                ? 'Default'
+                                : `${c.additionGrowthPercentYear}%${c.growthSource === 'saved' ? ' saved' : c.growthSource === 'query' ? '' : ' (default)'}`
+                            }
+                            value={form.classGrowth[key]}
+                            onChange={(e) => setForm({ ...form, classGrowth: { ...form.classGrowth, [key]: e.target.value } })}
                           />
                         </td>
                       </tr>
@@ -662,8 +685,8 @@ export function Projections() {
               <h3>By asset class</h3>
               <p className="section-desc">
                 Each class grows on its own yearly return, plus what is added to it each month
-                {data.additionGrowthPercentYear?.value
-                  ? ` — and what's added goes up ${data.additionGrowthPercentYear.value}% each year (Added / month shows year 1; Added in total covers every year)`
+                {data.assetClasses.some((c) => (c.additionGrowthPercentYear ?? 0) > 0)
+                  ? ' — and what’s added goes up each year by the class’s increase (Added / month shows year 1; Added in total covers every year)'
                   : ''}
                 .
               </p>
@@ -675,6 +698,7 @@ export function Projections() {
                       <th style={{ textAlign: 'right' }}>Today</th>
                       <th style={{ textAlign: 'right' }}>Return</th>
                       <th style={{ textAlign: 'right' }}>Added / month</th>
+                      <th style={{ textAlign: 'right' }}>Increase / yr</th>
                       <th style={{ textAlign: 'right' }}>Added in total</th>
                       <th style={{ textAlign: 'right' }}>Growth</th>
                       <th style={{ textAlign: 'right' }}>At the end</th>
@@ -697,6 +721,10 @@ export function Projections() {
                           <td className="money" style={{ textAlign: 'right' }}>
                             {c.monthlyAdditionNzd == null ? '—' : formatNzd(c.monthlyAdditionNzd)}
                             <div className="muted small">{CLASS_SOURCE_LABEL[c.additionSource]}</div>
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            {pctText(c.additionGrowthPercentYear ?? 0)}
+                            {c.growthSource ? <div className="muted small">{CLASS_SOURCE_LABEL[c.growthSource]}</div> : null}
                           </td>
                           <td className="money" style={{ textAlign: 'right' }}>{signedNzd(c.addedNzd)}</td>
                           <td className="money" style={{ textAlign: 'right' }}>{signedNzd(c.growthNzd)}</td>

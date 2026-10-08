@@ -147,4 +147,12 @@ try {
   assert(projectionCacheKey(g) !== projectionCacheKey(readInputs(new URLSearchParams('months=60'))), 'step-up changes the cache key');
 }
 
+// Per-class yearly increase (growShares …).
+{
+  const g = readInputs(new URLSearchParams('growShares=100&growCrypto=999'));
+  assert(g.classGrowth.shares === '100', 'class increase read from the link');
+  assert(g.classGrowth.crypto === '' && g.ignored.some((m) => m.startsWith('Crypto yearly increase')), 'out of range dropped');
+  assert(inputsToParams(g).get('growShares') === '100', 'written back to the link');
+}
+
 console.log('projections view tests passed');

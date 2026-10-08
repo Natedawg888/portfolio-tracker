@@ -313,6 +313,11 @@ export function buildClassInputs(opts: {
       returnSource,
       monthlyAdditionNzd: add.value,
       ...(schedules.has(key) ? { monthlyAdditionsNzd: schedules.get(key) } : {}),
+      ...(query.classGrowth[key] != null
+        ? { additionGrowthPercentYear: query.classGrowth[key]!, growthSource: 'query' as const }
+        : saved.growth?.[key] != null
+          ? { additionGrowthPercentYear: saved.growth[key]!, growthSource: 'saved' as const }
+          : {}),
       additionSource: add.source,
       additionReason: add.reason,
     };

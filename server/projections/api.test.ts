@@ -469,7 +469,7 @@ try {
   const queryWins = byClass((await call('/api/projections?months=1&returnShares=2', cookieA)).json);
   eq(queryWins.shares.annualReturnPercent, 2, 'scenario beats saved');
   const savedB = await call('/api/projections/assumptions', cookieB);
-  assert(JSON.stringify(savedB.json) === JSON.stringify({ returns: {}, contributions: {}, mining: {} }), 'saved assumptions are per user');
+  assert(JSON.stringify(savedB.json) === JSON.stringify({ returns: {}, contributions: {}, mining: {}, growth: {} }), 'saved assumptions are per user');
   const bClasses = byClass((await call('/api/projections?months=1', cookieB)).json);
   eq(bClasses.shares.annualReturnPercent, 0, 'user B does not get user A’s saved return');
 
@@ -573,6 +573,22 @@ try {
   assert(savedGrowth.value === 10 && savedGrowth.source === 'saved', 'saved step-up applies');
   const growthB = (await call('/api/projections?months=24', cookieB)).json.additionGrowthPercentYear as { value: number };
   assert(growthB.value === 0, 'saved step-up is per user');
+
+  // Per-class yearly increase: shares +100%, everything else the 0% default.
+  await putJson('/api/projections/assumptions', {});
+  type ClsGrow = ClsAdded & { additionGrowthPercentYear: number; growthSource: string };
+  const classGrow = Object.fromEntries(((await call('/api/projections?months=24&growShares=100&miningRewardsTo=cash', cookieA)).json.assetClasses as ClsGrow[]).map((c) => [c.key, c]));
+  eq(classGrow.shares.addedNzd, 18000, 'shares step up 100%');
+  assert(classGrow.shares.additionGrowthPercentYear === 100 && classGrow.shares.growthSource === 'query', 'shares growth labelled');
+  eq(classGrow.kiwiSaver.addedNzd, 24 * 150, 'KiwiSaver stays flat');
+  assert(classGrow.kiwiSaver.additionGrowthPercentYear === 0, 'others use the default 0%');
+  const mixed = Object.fromEntries(((await call('/api/projections?months=24&addGrowth=50&growShares=0&miningRewardsTo=cash', cookieA)).json.assetClasses as ClsGrow[]).map((c) => [c.key, c]));
+  eq(mixed.shares.addedNzd, 24 * 500, 'a class set to 0% overrides the default');
+  eq(mixed.kiwiSaver.addedNzd, 12 * 150 + 12 * 225, 'others use the 50% default');
+  assert((await call('/api/projections?growCrypto=900', cookieA)).status === 400, 'class increase above 500% is 400');
+  await putJson('/api/projections/assumptions', { growth: { kiwiSaver: 10 } });
+  const savedClass = Object.fromEntries(((await call('/api/projections?months=24&miningRewardsTo=cash', cookieA)).json.assetClasses as ClsGrow[]).map((c) => [c.key, c]));
+  assert(savedClass.kiwiSaver.additionGrowthPercentYear === 10 && savedClass.kiwiSaver.growthSource === 'saved', 'saved class increase applies');
 
   console.log('projection api tests ok');
 } finally {

@@ -19,6 +19,7 @@ import {
   PROJECTION_CLASS_LABELS,
   RETURN_LIMITS,
   addParam,
+  growParam,
   returnParam,
   MINING_PLAN_FIELDS,
   MINING_REWARDS_TO_PARAM,
@@ -41,6 +42,8 @@ export type ProjectionQuery = {
   mining: MiningPlan;
   /** Yearly step-up of monthly additions, % (null = saved, then 0). */
   additionGrowthPct: number | null;
+  /** Per-class yearly step-up (growShares=50 …); missing classes use additionGrowthPct. */
+  classGrowth: ProjectionClassValues;
 };
 
 function oneString(
@@ -121,6 +124,7 @@ export function parseProjectionQuery(
 
   const classReturns: ProjectionClassValues = {};
   const classAdditions: ProjectionClassValues = {};
+  const classGrowth: ProjectionClassValues = {};
   for (const key of PROJECTION_CLASS_KEYS) {
     const label = PROJECTION_CLASS_LABELS[key];
     const r = oneString(query[returnParam(key)], returnParam(key));
@@ -140,6 +144,15 @@ export function parseProjectionQuery(
         return { ok: false, error: `${label} monthly addition must be a number from -${ADD_LIMIT} to ${ADD_LIMIT}` };
       }
       classAdditions[key] = roundMoney(n);
+    }
+    const gr = oneString(query[growParam(key)], growParam(key));
+    if (!gr.ok) return gr;
+    if (gr.value != null) {
+      const n = Number(gr.value);
+      if (!Number.isFinite(n) || n < 0 || n > 500) {
+        return { ok: false, error: `${label} yearly increase must be 0–500%` };
+      }
+      classGrowth[key] = Math.round(n * 100) / 100;
     }
   }
 
@@ -178,6 +191,7 @@ export function parseProjectionQuery(
     ok: true,
     value: {
       additionGrowthPct,
+      classGrowth,
       mining,
       months: months.value,
       savingWindowMonths: savingWindowMonths.value,

@@ -90,6 +90,9 @@ export type ProjectionClassInput = {
   monthlyAdditionNzd: number | null;
   /** Month-by-month amounts (index 0 = month 1) when they change over time; overrides monthlyAdditionNzd. */
   monthlyAdditionsNzd?: number[];
+  /** This class's yearly step-up of its monthly addition, %. Missing = the projection default. */
+  additionGrowthPercentYear?: number;
+  growthSource?: AssumptionClassSource;
   additionSource: AssumptionClassSource;
   additionReason: string | null;
 };
@@ -465,7 +468,7 @@ export function projectSeries(input: ProjectionBuildInput): ProjectionResult {
   });
 
   const growth = input.additionGrowthPercentYear ?? 0;
-  const stepUp = (month: number): number => (1 + growth / 100) ** Math.floor((month - 1) / 12);
+  const stepUp = (month: number, pct: number): number => (1 + pct / 100) ** Math.floor((month - 1) / 12);
   const classAdded = new Map<ProjectionClassKey, number>();
 
   const points: ProjectionPoint[] = [pointAt(0)];
@@ -475,7 +478,7 @@ export function projectSeries(input: ProjectionBuildInput): ProjectionResult {
         const grown = (classBalances.get(c.key) ?? 0) * (1 + c.annualReturnPercent / 100 / 12);
         // Step the class's own monthly amount up once a year; schedules (mining flows) are kept as they are.
         const base = c.monthlyAdditionNzd ?? 0;
-        const add = (c.monthlyAdditionsNzd?.[month - 1] ?? base) + base * (stepUp(month) - 1);
+        const add = (c.monthlyAdditionsNzd?.[month - 1] ?? base) + base * (stepUp(month, c.additionGrowthPercentYear ?? growth) - 1);
         classAdded.set(c.key, (classAdded.get(c.key) ?? 0) + add);
         classBalances.set(c.key, roundMoney(grown + add));
       }
@@ -523,6 +526,8 @@ export function projectSeries(input: ProjectionBuildInput): ProjectionResult {
       // A changing schedule is shown as its average; otherwise the year-1 monthly amount.
       monthlyAdditionNzd: c.monthlyAdditionsNzd && horizon > 0 ? roundMoney(addedNzd / horizon) : c.monthlyAdditionNzd,
       label: PROJECTION_CLASS_LABELS[c.key],
+      additionGrowthPercentYear: c.additionGrowthPercentYear ?? growth,
+      growthSource: c.growthSource ?? input.additionGrowthSource ?? 'default',
       startNzd: roundMoney(c.startNzd),
       endNzd,
       addedNzd,
@@ -609,7 +614,7 @@ export function projectSeries(input: ProjectionBuildInput): ProjectionResult {
       reason:
         growth === 0
           ? 'Monthly additions stay the same every year.'
-          : `Each class's monthly addition goes up ${growth}% at the start of each new year (year 2 = year 1 × ${Math.round((1 + growth / 100) * 100) / 100}). Mining-model flows are not stepped up.`,
+          : `Each class's monthly addition goes up ${growth}% at the start of each new year (year 2 = year 1 × ${Math.round((1 + growth / 100) * 100) / 100}), unless the class has its own increase. Mining-model flows are not stepped up.`,
     },
     debts,
     propertyMortgage: {
