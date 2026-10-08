@@ -3,6 +3,7 @@
  * Default window: from 2026-10-01 inclusive (Pacific/Auckland).
  * Dedupe on external_id = Akahu _id. Never invent amounts.
  */
+import { linkInvoicePaymentsToBankCredits } from '../invoices/store.ts';
 import type { Database } from 'sql.js';
 import { queryAll, queryOne, run, newId } from '../db/index.ts';
 import {
@@ -323,6 +324,9 @@ export async function syncBankTransactionsFromAkahu(
       }
     }
   }
+
+  // A synced deposit may be an invoice payment already counted as income (KAN-71).
+  linkInvoicePaymentsToBankCredits(db, userId);
 
   return {
     ok: true,

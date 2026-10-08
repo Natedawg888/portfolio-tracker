@@ -35,5 +35,7 @@ export function isPublicApiPath(path: string): boolean {
   if (path.startsWith('/auth/')) return true;
   // Akahu OAuth redirect — validated via signed/ephemeral `state`, not session cookie.
   if (path === '/akahu/callback') return true;
+  // Invoice share links (KAN-71) — the unguessable token is the credential.
+  if (path.startsWith('/public/invoices/')) return true;
   return false;
 }

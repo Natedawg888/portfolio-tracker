@@ -28,6 +28,7 @@
     "test:savings-goals": "node --import tsx server/savings/model.test.ts && node --import tsx server/savings/store.test.ts && node --import tsx server/savings/accountLink.test.ts",
     "test:output-pay": "node --import tsx src/lib/outputPayCalc.test.ts",
     "test:pay-sources": "node --import tsx server/paySources/store.test.ts",
+    "test:invoices": "node --import tsx src/lib/invoiceCalc.test.ts && node --import tsx server/invoices/store.test.ts",
     "test:page-cache": "node --import tsx src/lib/pageDataCache.test.ts",
     "test:donations": "node --import tsx server/donations/model.test.ts && node --import tsx server/donations/store.test.ts",
     "test:projections": "node --import tsx server/projections/model.test.ts && node --import tsx server/projections/api.test.ts",
@@ -41,9 +42,11 @@
     "db:restore": "node scripts/restore-db.mjs"
   },
   "dependencies": {
+    "@pdf-lib/fontkit": "^1.1.1",
     "concurrently": "^8.2.2",
     "cors": "^2.8.6",
     "express": "^5.2.1",
+    "pdf-lib": "^1.17.1",
     "qrcode-generator": "2.0.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
