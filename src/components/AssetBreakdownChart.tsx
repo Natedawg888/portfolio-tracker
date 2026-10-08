@@ -25,6 +25,11 @@ type Props = {
   showPie?: boolean;
   /** When false, hide the header total (e.g. Portfolio hero already shows it). Default true. */
   showTotal?: boolean;
+  /**
+   * When set, the bar chart is replaced with this quiet line if there are no
+   * rows or every bucket is zero. Asset charts omit it so zero buckets stay.
+   */
+  barEmptyLabel?: string;
 };
 
 /** Asset-allocation pie and vertical bar charts. Zero rows stay visible in the legend. */
@@ -43,11 +48,14 @@ export function AssetBreakdownChart({
   chartLabel = 'assets by class',
   showPie = true,
   showTotal = true,
+  barEmptyLabel,
 }: Props) {
   const total = useMemo(
     () => rows.reduce((sum, row) => sum + (Number.isFinite(row.value) ? Math.max(0, row.value) : 0), 0),
     [rows],
   );
+  const barEmpty =
+    Boolean(barEmptyLabel) && !rows.some((row) => Number.isFinite(row.value) && row.value > 0);
 
   return (
     <section
@@ -82,7 +90,11 @@ export function AssetBreakdownChart({
         ) : null}
         <div className="asset-chart">
           <h3>{barTitle}</h3>
-          <BarChart rows={rows} chartLabel={chartLabel} />
+          {barEmpty ? (
+            <p className="muted small asset-bar-empty">{barEmptyLabel}</p>
+          ) : (
+            <BarChart rows={rows} chartLabel={chartLabel} />
+          )}
         </div>
       </div>
 

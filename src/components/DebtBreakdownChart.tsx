@@ -37,6 +37,7 @@ export function DebtBreakdownChart({ people }: { people: DebtBreakdownPerson[] }
       headingId="debt-breakdown-title"
       legendLabel="Creditor debt totals"
       chartLabel="debt by creditor"
+      barEmptyLabel="No debts yet"
     />
   );
 }

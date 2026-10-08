@@ -1345,6 +1345,9 @@ code { background: var(--surface-2); padding: 0.1rem 0.35rem; border-radius: 4px
   stroke: var(--border);
   stroke-width: 1;
 }
+.asset-bar-empty {
+  margin: 0.65rem 0 0.15rem;
+}
 .asset-breakdown-legend {
   list-style: none;
   margin: 0.75rem 0 0;
