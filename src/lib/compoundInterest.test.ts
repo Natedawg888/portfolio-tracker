@@ -70,4 +70,42 @@ near(
 // Negative rate shrinks the balance.
 assert(calculateCompound({ ...base, ratePct: -2 }).futureValue < 10000, 'negative rate');
 
+// Tax on returns: 28% PIR on 5% → 3.6% a year after tax.
+{
+  const r = calculateCompound({ ...base, taxPct: 28 });
+  near(r.futureValue, 10000 * 1.036 ** 10, '28% tax on 5% interest = 3.6% net');
+  near(r.totalTax / r.grossInterest, 0.28, 'tax is about 28% of interest earned', 0.01);
+  const yearly = calculateCompound({ ...base, contributionFrequency: 'yearly', taxPct: 28, years: 1 });
+  near(yearly.totalTax, 500 * 0.28, 'one year, yearly crediting: exactly 28% of 500');
+  near(r.totalInterest, r.grossInterest - r.totalTax, 'net interest = gross − tax');
+}
+
+// Management fee: 1% a year of the balance, after interest.
+{
+  const r = calculateCompound({ ...base, contributionFrequency: 'yearly', years: 1, feePctYear: 1 });
+  near(r.futureValue, 10500 - 105, '10,000 → 10,500, less 1% fee (105)');
+  near(r.totalFees, 105, 'fee total');
+  const ten = calculateCompound({ ...base, contributionFrequency: 'yearly', feePctYear: 1 });
+  const monthly = calculateCompound({ ...base, years: 1, feePctYear: 1 });
+  assert(monthly.totalFees > 100 && monthly.totalFees < 105, 'charged monthly: about 1% of the average balance through the year');
+  near(ten.futureValue, 10000 * (1.05 * 0.99) ** 10, 'compounds year on year');
+}
+
+// Fixed fee: $5 a month = $60 a year; monthly steps spread it evenly.
+{
+  const r = calculateCompound({ ...base, principal: 1000, ratePct: 0, years: 1, compounding: 'monthly', fixedFee: 5, fixedFeePer: 'month' });
+  near(r.futureValue, 940, '$1,000 at 0% less $60 of fees');
+  near(r.totalFees, 60, 'twelve $5 fees');
+  near(r.rows[0].fees, 60, 'shown in the yearly row');
+  const drained = calculateCompound({ ...base, principal: 50, ratePct: 0, years: 2, fixedFee: 100, fixedFeePer: 'year' });
+  near(drained.futureValue, 0, 'fees never take the balance below zero');
+}
+
+// Tax and fees together, and no tax on losses.
+{
+  const both = calculateCompound({ ...base, taxPct: 28, feePctYear: 0.5 });
+  assert(both.futureValue < calculateCompound({ ...base, taxPct: 28 }).futureValue, 'fees lower the result further');
+  near(calculateCompound({ ...base, ratePct: -2, taxPct: 28 }).totalTax, 0, 'no tax on negative returns');
+}
+
 console.log('compound interest tests ok');

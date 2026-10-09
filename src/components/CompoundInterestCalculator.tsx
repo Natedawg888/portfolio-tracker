@@ -11,6 +11,7 @@ import {
   COMPOUNDING,
   CONTRIBUTION_FREQ,
   FREQ_LABELS,
+  RETURN_TAX_PRESETS,
   type Compounding,
   type ContributionFrequency,
 } from '../lib/compoundInterest';
@@ -35,6 +36,12 @@ type Fields = {
   contributionIncreasePct: string;
   years: string;
   months: string;
+  /** Index into RETURN_TAX_PRESETS, or 'custom'. */
+  taxPreset: string;
+  taxPct: string;
+  feePctYear: string;
+  fixedFee: string;
+  fixedFeePer: 'month' | 'year';
 };
 
 const DEFAULTS: Fields = {
@@ -47,6 +54,11 @@ const DEFAULTS: Fields = {
   contributionIncreasePct: '0',
   years: '10',
   months: '0',
+  taxPreset: '0',
+  taxPct: '',
+  feePctYear: '0',
+  fixedFee: '0',
+  fixedFeePer: 'month',
 };
 
 function loadFields(): Fields {
@@ -60,6 +72,7 @@ function loadFields(): Fields {
       compounding: o.compounding && o.compounding in COMPOUNDING ? o.compounding : DEFAULTS.compounding,
       contributionFrequency:
         o.contributionFrequency && o.contributionFrequency in CONTRIBUTION_FREQ ? o.contributionFrequency : DEFAULTS.contributionFrequency,
+      fixedFeePer: o.fixedFeePer === 'year' ? 'year' : 'month',
     };
   } catch {
     return DEFAULTS;
@@ -89,9 +102,15 @@ export function CompoundInterestCalculator({ startingAmountNzd }: { startingAmou
   }, [f]);
   const set = <K extends keyof Fields>(k: K, v: Fields[K]) => setF((prev) => ({ ...prev, [k]: v }));
 
+  const taxPct =
+    f.taxPreset === 'custom' ? num(f.taxPct, 0, 100) : (RETURN_TAX_PRESETS[Number(f.taxPreset)]?.pct ?? 0);
   const result = useMemo(
     () =>
       calculateCompound({
+        taxPct,
+        feePctYear: num(f.feePctYear, 0, 20),
+        fixedFee: num(f.fixedFee, 0, 1e7),
+        fixedFeePer: f.fixedFeePer,
         principal: num(f.principal, 0, 1e12),
         ratePct: num(f.ratePct, -50, 100),
         compounding: f.compounding,
@@ -102,7 +121,7 @@ export function CompoundInterestCalculator({ startingAmountNzd }: { startingAmou
         years: Math.floor(num(f.years, 0, 100)),
         months: Math.floor(num(f.months, 0, 11)),
       }),
-    [f],
+    [f, taxPct],
   );
 
   const series: LineSeries[] = useMemo(() => {
@@ -176,6 +195,40 @@ export function CompoundInterestCalculator({ startingAmountNzd }: { startingAmou
           Months
           <input type="number" min={0} max={11} step="1" inputMode="numeric" value={f.months} onChange={(e) => set('months', e.target.value)} />
         </label>
+        <label>
+          Tax on returns
+          <select value={f.taxPreset} onChange={(e) => set('taxPreset', e.target.value)}>
+            {RETURN_TAX_PRESETS.map((t, i) => (
+              <option key={t.label} value={String(i)}>
+                {t.label}
+              </option>
+            ))}
+            <option value="custom">Your own rate</option>
+          </select>
+          <span className="muted small">PIE funds use your PIR; bank interest uses your RWT rate.</span>
+        </label>
+        {f.taxPreset === 'custom' ? (
+          <label>
+            Tax rate (%)
+            <input type="number" min={0} max={100} step="0.5" inputMode="decimal" value={f.taxPct} onChange={(e) => set('taxPct', e.target.value)} />
+          </label>
+        ) : null}
+        <label>
+          Management fee (% a year)
+          <input type="number" min={0} max={20} step="0.05" inputMode="decimal" value={f.feePctYear} onChange={(e) => set('feePctYear', e.target.value)} />
+          <span className="muted small">Taken off the balance, e.g. a fund&apos;s 0.5% a year.</span>
+        </label>
+        <label>
+          Fixed fee (NZD)
+          <input type="number" min={0} step="any" inputMode="decimal" value={f.fixedFee} onChange={(e) => set('fixedFee', e.target.value)} />
+        </label>
+        <label>
+          Fixed fee every
+          <select value={f.fixedFeePer} onChange={(e) => set('fixedFeePer', e.target.value === 'year' ? 'year' : 'month')}>
+            <option value="month">Month</option>
+            <option value="year">Year</option>
+          </select>
+        </label>
         <label className="field checkbox-field">
           <label className="inline-check">
             <input type="checkbox" checked={f.contributeAtStart} onChange={(e) => set('contributeAtStart', e.target.checked)} />
@@ -195,10 +248,19 @@ export function CompoundInterestCalculator({ startingAmountNzd }: { startingAmou
           <p className="stat-value">{formatNzd(result.totalContributed)}</p>
         </div>
         <div className="card">
-          <p className="eyebrow">Interest earned</p>
+          <p className="eyebrow">{result.totalTax > 0 || result.totalFees > 0 ? 'Interest after tax and fees' : 'Interest earned'}</p>
           <p className="stat-value">{formatNzd(result.totalInterest)}</p>
-          <p className="muted small">Effective yearly rate {result.effectiveAnnualRatePct}%</p>
+          <p className="muted small">Effective yearly rate {result.effectiveAnnualRatePct}% before tax and fees</p>
         </div>
+        {result.totalTax > 0 || result.totalFees > 0 ? (
+          <div className="card">
+            <p className="eyebrow">Tax and fees</p>
+            <p className="stat-value">{formatNzd(result.totalTax + result.totalFees)}</p>
+            <p className="muted small">
+              Tax {formatNzd(result.totalTax)} · fees {formatNzd(result.totalFees)} · interest before them {formatNzd(result.grossInterest)}
+            </p>
+          </div>
+        ) : null}
       </div>
 
       {result.rows.length > 0 ? (
@@ -210,7 +272,9 @@ export function CompoundInterestCalculator({ startingAmountNzd }: { startingAmou
                 <tr>
                   <th>Year</th>
                   <th style={{ textAlign: 'right' }}>You put in</th>
-                  <th style={{ textAlign: 'right' }}>Interest</th>
+                  <th style={{ textAlign: 'right' }}>Interest (net)</th>
+                  {result.totalTax > 0 ? <th style={{ textAlign: 'right' }}>Tax</th> : null}
+                  {result.totalFees > 0 ? <th style={{ textAlign: 'right' }}>Fees</th> : null}
                   <th style={{ textAlign: 'right' }}>Balance</th>
                 </tr>
               </thead>
@@ -220,6 +284,8 @@ export function CompoundInterestCalculator({ startingAmountNzd }: { startingAmou
                     <td>{r.months % 12 === 0 ? r.year : `${Math.floor(r.months / 12)}y ${r.months % 12}m`}</td>
                     <td className="money" style={{ textAlign: 'right' }}>{formatNzd(r.contributed)}</td>
                     <td className="money" style={{ textAlign: 'right' }}>{formatNzd(r.interest)}</td>
+                    {result.totalTax > 0 ? <td className="money" style={{ textAlign: 'right' }}>{formatNzd(r.tax)}</td> : null}
+                    {result.totalFees > 0 ? <td className="money" style={{ textAlign: 'right' }}>{formatNzd(r.fees)}</td> : null}
                     <td className="money" style={{ textAlign: 'right' }}>{formatNzd(r.balance)}</td>
                   </tr>
                 ))}
@@ -229,7 +295,8 @@ export function CompoundInterestCalculator({ startingAmountNzd }: { startingAmou
         </>
       ) : null}
       <p className="muted small" style={{ marginTop: '0.5rem' }}>
-        Tax on interest (RWT / PIE) and fees aren&apos;t taken off. Use a rate after tax and fees for a closer figure.
+        Tax is taken each time interest is credited; fees come off the balance each period. Tax and fees are
+        totals so far in the table. Not tax advice — check your PIR or RWT rate with IRD.
       </p>
     </section>
   );
