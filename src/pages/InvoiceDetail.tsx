@@ -512,7 +512,7 @@ export function InvoiceDetail() {
               Void
             </button>
           ) : null}
-          {isDraft ? (
+          {isDraft || inv.storedStatus === 'void' ? (
             <button
               type="button"
               className="btn small danger"
@@ -521,10 +521,10 @@ export function InvoiceDetail() {
                 void act(async () => {
                   await api.invoices.remove(inv.id);
                   navigate('/invoices');
-                }, null, `Delete draft ${inv.number}?`)
+                }, null, `Delete ${isDraft ? 'draft' : 'void invoice'} ${inv.number}? This can’t be undone.`)
               }
             >
-              Delete draft
+              {isDraft ? 'Delete draft' : 'Delete invoice'}
             </button>
           ) : null}
         </div>
