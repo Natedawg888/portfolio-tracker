@@ -37,5 +37,7 @@ export function isPublicApiPath(path: string): boolean {
   if (path === '/akahu/callback') return true;
   // Invoice share links (KAN-71) — the unguessable token is the credential.
   if (path.startsWith('/public/invoices/')) return true;
+  // Side ad config (KAN-72): no user data either way.
+  if (path === '/ads/config') return true;
   return false;
 }
