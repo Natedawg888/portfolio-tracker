@@ -8151,3 +8151,59 @@ html:not([data-theme]) .bills-page :focus-visible {
   flex-wrap: wrap;
 }
 .projection-calculators-title { margin: 0.5rem 0 0; font-size: 1.25rem; }
+
+/* Warranties (KAN-61): uses the Bills theme (.bills-page) plus these. */
+.warranties-page .warranty-status {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.warranties-page .warranty-status--active { color: var(--accent); }
+.warranties-page .warranty-status--expiring {
+  color: var(--budget-over-badge-text);
+  background: var(--budget-over-badge-bg);
+  border-color: var(--budget-over-badge-border);
+}
+.warranties-page .warranty-status--expired { color: var(--muted); }
+.warranties-page .warranty-expiring-list { margin: 0.25rem 0 0.5rem; padding-left: 1.1rem; }
+.warranties-page .warranty-expiring-list li { margin: 0.2rem 0; }
+.warranties-page .warranty-upload { position: relative; cursor: pointer; }
+.warranties-page .warranty-upload input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.warranties-page .warranty-upload:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.warranty-picker { display: grid; gap: 0.4rem; }
+.warranty-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 14rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.warranty-picker-list li + li { border-top: 1px solid var(--border-soft); }
+.warranty-picker-list .warranty-pick {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.5rem 0.65rem;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.warranty-picker-list .warranty-pick:hover,
+.warranty-picker-list .warranty-pick:focus-visible { background: var(--hover-row); }
+.warranty-picker-list .warranty-pick .muted { white-space: nowrap; }
+.warranty-linked { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }

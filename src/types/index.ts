@@ -9,6 +9,7 @@ import type { DuePreset, GstMode, InvoiceStatus, InvoiceStoredStatus } from '../
 import type { MiningPlan, ProjectionClassKey } from '../lib/projectionClasses';
 import type { MiningProjection } from '../lib/miningProjection';
 import type { Cadence, RecurringKind, RecurringStatus, RecurringSuggestion } from '../lib/recurring';
+import type { WarrantyStatus } from '../lib/warranty';
 
 export type CurrencyCode = 'NZD' | 'USD' | 'AUD' | 'EUR' | 'GBP';
 
@@ -1385,3 +1386,44 @@ export type HealthScoreResponse = import('../lib/healthScore').HealthScore & {
   windowStart: string | null;
   windowEnd: string | null;
 };
+
+/** A money-out transaction a warranty can be linked to (KAN-61). */
+export interface WarrantyPurchase {
+  id: string;
+  date: string;
+  description: string;
+  /** Positive amount paid. */
+  amountNzd: number;
+  /** `/api/uploads/...` when the transaction has a receipt, else null. */
+  receiptUrl: string | null;
+}
+
+/** Warranty on something the user bought (KAN-61). */
+export interface Warranty {
+  id: string;
+  itemName: string;
+  retailer: string;
+  priceNzd: number | null;
+  startsOn: string;
+  /** Last day of cover. */
+  endsOn: string;
+  status: WarrantyStatus;
+  /** Days of cover left counting today; negative once expired. */
+  daysLeft: number;
+  notes: string;
+  /** Linked purchase; null when not linked or the transaction was deleted. */
+  transactionId: string | null;
+  purchase: WarrantyPurchase | null;
+  /** The warranty's own receipt / warranty card, `/api/uploads/warranties/...`. */
+  receiptUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WarrantyListResponse {
+  today: string;
+  /** Soonest ending first; expired after the rest, most recently expired first. */
+  items: Warranty[];
+  expiringSoonDays: number;
+  totals: { active: number; expiring: number; expired: number };
+}

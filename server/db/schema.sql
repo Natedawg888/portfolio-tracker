@@ -770,6 +770,25 @@ CREATE TABLE IF NOT EXISTS recurring_dismissed (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_recurring_dismissed_user_key ON recurring_dismissed(user_id, merchant_key);
 
+-- Warranties on things the user bought (KAN-61). transaction_id optionally links the
+-- purchase; its receipt (if any) is shown from the transaction. receipt_path is the
+-- warranty's own receipt / warranty card under data/uploads/warranties/.
+CREATE TABLE IF NOT EXISTS warranties (
+  id              TEXT PRIMARY KEY,
+  user_id         TEXT,
+  item_name       TEXT NOT NULL,
+  retailer        TEXT NOT NULL DEFAULT '',
+  price_nzd       REAL,
+  starts_on       TEXT NOT NULL,
+  ends_on         TEXT NOT NULL,
+  transaction_id  TEXT,
+  receipt_path    TEXT,
+  notes           TEXT NOT NULL DEFAULT '',
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_warranties_user ON warranties(user_id, ends_on);
+
 -- Read-only crypto wallets: public address only. Never store seed phrases / private keys.
 -- No balance column on purpose: balances come from chain providers at sync time
 -- (balance is never stored as the source of truth here).

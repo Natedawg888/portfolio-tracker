@@ -20,6 +20,7 @@ export function ensureUploadDirs() {
   fs.mkdirSync(ART_DIR, { recursive: true });
   fs.mkdirSync(path.join(UPLOADS_DIR, 'avatars'), { recursive: true });
   fs.mkdirSync(path.join(UPLOADS_DIR, 'receipts'), { recursive: true });
+  fs.mkdirSync(path.join(UPLOADS_DIR, 'warranties'), { recursive: true });
 }
 
 /** Parse data URL or raw base64; returns { buffer, ext } or null. */
@@ -224,7 +225,26 @@ export function saveCharityReceipt(txnId: string, dataUrlOrBase64: string): stri
   return rel;
 }
 
-const UPLOAD_FOLDERS = new Set(['properties', 'collectables', 'art', 'avatars', 'receipts']);
+export const WARRANTIES_DIR = path.join(UPLOADS_DIR, 'warranties');
+
+/** Save a warranty's receipt / warranty card (KAN-61); returns relative path warranties/<id><ext>. */
+export function saveWarrantyReceipt(warrantyId: string, dataUrlOrBase64: string): string {
+  ensureUploadDirs();
+  const decoded = decodeReceiptBase64(dataUrlOrBase64);
+  if (!decoded) {
+    throw new Error('Invalid receipt — use JPEG/PNG/WebP/GIF/PDF data URL or base64 (max 8MB)');
+  }
+  const safeId = warrantyId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
+  for (const e of RECEIPT_EXT) {
+    const prev = path.join(WARRANTIES_DIR, `${safeId}${e}`);
+    if (fs.existsSync(prev)) fs.unlinkSync(prev);
+  }
+  const rel = `warranties/${safeId}${decoded.ext}`;
+  fs.writeFileSync(path.join(UPLOADS_DIR, rel), decoded.buffer);
+  return rel;
+}
+
+const UPLOAD_FOLDERS = new Set(['properties', 'collectables', 'art', 'avatars', 'receipts', 'warranties']);
 
 /** Relative path `folder/file` under data/uploads, or null if it is not a single file there. */
 export function normalizeUploadRel(rawPath: string): string | null {
@@ -276,6 +296,14 @@ export function userOwnsUpload(
     const rows = queryAll<{ p: string | null }>(
       db,
       `SELECT receipt_path AS p FROM transactions WHERE user_id = ? AND receipt_path IS NOT NULL`,
+      [userId],
+    );
+    return rows.some((r) => storedPathMatches(r.p, rel));
+  }
+  if (folder === 'warranties') {
+    const rows = queryAll<{ p: string | null }>(
+      db,
+      `SELECT receipt_path AS p FROM warranties WHERE user_id = ? AND receipt_path IS NOT NULL`,
       [userId],
     );
     return rows.some((r) => storedPathMatches(r.p, rel));
@@ -351,4 +379,9 @@ export function deleteCharityReceipt(receiptPath: string | null | undefined) {
       /* ignore */
     }
   }
+}
+
+/** Remove a warranty's receipt file (same rules as charity receipts). */
+export function deleteWarrantyReceipt(receiptPath: string | null | undefined) {
+  deleteCharityReceipt(receiptPath);
 }

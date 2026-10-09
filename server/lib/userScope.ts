@@ -6,7 +6,7 @@
 import type { Database } from 'sql.js';
 import type { Response } from 'express';
 import { getDb, queryAll, queryOne, run } from '../db/index.ts';
-import { deletePropertyPhoto } from './uploads.ts';
+import { deletePropertyPhoto, deleteWarrantyReceipt } from './uploads.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 
 export const SCOPED_TABLES = [
@@ -35,6 +35,7 @@ export const SCOPED_TABLES = [
   'invoice_sends',
   'recurring_items',
   'recurring_dismissed',
+  'warranties',
 ] as const;
 
 export type ScopedTable = (typeof SCOPED_TABLES)[number];
@@ -125,9 +126,19 @@ export function deleteScopedDataForUser(
     photosRemoved += 1;
   }
 
+  // Warranty receipt files (KAN-61).
+  for (const row of queryAll<{ p: string | null }>(
+    db,
+    `SELECT receipt_path AS p FROM warranties WHERE user_id = ? AND receipt_path IS NOT NULL`,
+    [userId],
+  )) {
+    deleteWarrantyReceipt(row.p);
+  }
+
   // Dependents first, then parents. debt_people cascades repayments;
   // kiwisaver_accounts cascades history + activity.
   const deleteOrder: ScopedTable[] = [
+    'warranties',
     'recurring_dismissed',
     'recurring_items',
     'invoice_sends',
