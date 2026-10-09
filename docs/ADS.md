@@ -36,7 +36,8 @@ Ads earn revenue from the free app. They are **off** unless `ADS_ENABLED=true`.
 2. Create ad units: two 160×600 (left, right) and one responsive / fixed banner for the bottom.
 3. Set `ADSENSE_CLIENT_ID`, `ADSENSE_SLOT_LEFT`, `ADSENSE_SLOT_RIGHT`, `ADSENSE_SLOT_BOTTOM`, then
    `ADS_ENABLED=true`. Turn ads off again with `ADS_ENABLED=false` and a restart.
-4. Add `ads.txt` at the site root with the line AdSense gives you.
+4. Site verification is done with the `google-adsense-account` meta tag in `index.html` and
+   `public/ads.txt` (served at `/ads.txt`), so the ad script never loads while ads are off.
 5. **Block categories** in AdSense → Brand safety → Blocking controls: gambling & betting, payday /
    short-term loans, get-rich-quick and crypto schemes, adult / sexual content. The privacy page says
    these are blocked, so do this before switching ads on.
