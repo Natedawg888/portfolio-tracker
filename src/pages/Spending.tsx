@@ -1293,6 +1293,9 @@ export function Spending() {
           <Link className="btn" to="/bills" onMouseEnter={() => prefetchNavTarget('/bills')} onFocus={() => prefetchNavTarget('/bills')}>
             Bills &amp; subscriptions →
           </Link>
+          <Link className="btn" to="/warranties" onMouseEnter={() => prefetchNavTarget('/warranties')} onFocus={() => prefetchNavTarget('/warranties')}>
+            Warranties →
+          </Link>
         </div>
         <div className="period-pager" role="navigation" aria-label="Budget month">
           <button

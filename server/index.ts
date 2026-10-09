@@ -29,6 +29,7 @@ import paySourcesRouter from './routes/paySources.ts';
 import invoicesRouter from './routes/invoices.ts';
 import publicInvoicesRouter from './routes/publicInvoices.ts';
 import recurringRouter from './routes/recurring.ts';
+import warrantiesRouter from './routes/warranties.ts';
 import healthScoreRouter from './routes/healthScore.ts';
 import projectionsRouter from './routes/projections.ts';
 import walletsRouter from './routes/wallets.ts';
@@ -143,6 +144,7 @@ async function main() {
   app.use('/api/invoices', invoicesRouter);
   app.use('/api/public', publicInvoicesRouter);
   app.use('/api/recurring', recurringRouter);
+  app.use('/api/warranties', warrantiesRouter);
   app.use('/api/health-score', healthScoreRouter);
   app.use('/api/projections', projectionsRouter);
   app.use('/api/economy', economyRouter);

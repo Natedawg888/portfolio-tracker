@@ -22,6 +22,9 @@ import type {
   RecurringItem,
   HealthScoreResponse,
   RecurringListResponse,
+  Warranty,
+  WarrantyListResponse,
+  WarrantyPurchase,
   BusinessProfile,
   Invoice,
   InvoiceClient,
@@ -85,6 +88,16 @@ export type RecurringWriteBody = {
   cadence: RecurringItem['cadence'];
   nextDue: string;
   categoryId: string | null;
+  notes: string;
+};
+
+export type WarrantyWriteBody = {
+  itemName: string;
+  retailer: string;
+  priceNzd: number | null;
+  startsOn: string;
+  endsOn: string;
+  transactionId: string | null;
   notes: string;
 };
 
@@ -604,6 +617,17 @@ export const api = {
     dismiss: (merchantKey: string) =>
       req<{ ok: boolean; merchantKey: string }>('/recurring/dismiss', { method: 'POST', body: JSON.stringify({ merchantKey }) }),
     restoreDismissed: () => req<{ ok: boolean; restored: number }>('/recurring/dismissed/restore', { method: 'POST' }),
+  },
+  warranties: {
+    list: () => req<WarrantyListResponse>('/warranties'),
+    purchases: (q = '') => req<WarrantyPurchase[]>(`/warranties/purchases?${new URLSearchParams({ q })}`),
+    create: (body: WarrantyWriteBody) => req<Warranty>('/warranties', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: Partial<WarrantyWriteBody>) =>
+      req<Warranty>(`/warranties/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    remove: (id: string) => req<{ ok: boolean; id: string }>(`/warranties/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    uploadReceipt: (id: string, receiptBase64: string) =>
+      req<Warranty>(`/warranties/${encodeURIComponent(id)}/receipt`, { method: 'POST', body: JSON.stringify({ receiptBase64 }) }),
+    removeReceipt: (id: string) => req<Warranty>(`/warranties/${encodeURIComponent(id)}/receipt`, { method: 'DELETE' }),
   },
   invoices: {
     list: (filters: { status?: string; clientId?: string; from?: string; to?: string } = {}) => {
