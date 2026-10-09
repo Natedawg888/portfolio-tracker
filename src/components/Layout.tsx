@@ -11,6 +11,7 @@ import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
 import { ProfileMenu } from './ProfileMenu';
 import { QuietToast } from './QuietToast';
+import { PageAds } from './PageAds';
 import { api } from '../api/client';
 import { metalProviderFooter } from '../lib/metalSpotCopy';
 import { prefetchNavTarget, schedulePrefetchAppRoutes } from '../lib/routePrefetch';
@@ -314,6 +315,7 @@ export function Layout({ children }: { children?: ReactNode }) {
         </MoneyHiddenProvider>
       </main>
       <QuietToast />
+      <PageAds />
       <footer className="app-footer">
         Local-first · email/password · {metalProviderFooter(metalProvider)} · sync failures stay quiet
       </footer>

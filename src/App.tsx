@@ -5,6 +5,7 @@ import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
+import { Privacy } from './pages/Privacy';
 import { NotFoundRoute } from './pages/NotFound';
 import {
   DebtsPage,
@@ -38,6 +39,8 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            {/* Privacy (advertising section, KAN-72): public, no ads. */}
+            <Route path="/privacy" element={<Privacy />} />
             <Route
               path="/i/:token"
               element={

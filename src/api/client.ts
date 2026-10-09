@@ -1,4 +1,5 @@
 import { isMoneyHidden, MONEY_MASK } from '../lib/privacy';
+import type { AdsConfig } from '../lib/ads';
 import type { EconomicCycleResponse, PhaseNewsResponse } from '../types/economy.ts';
 import type {
   DividendDashboard,
@@ -617,6 +618,9 @@ export const api = {
     dismiss: (merchantKey: string) =>
       req<{ ok: boolean; merchantKey: string }>('/recurring/dismiss', { method: 'POST', body: JSON.stringify({ merchantKey }) }),
     restoreDismissed: () => req<{ ok: boolean; restored: number }>('/recurring/dismissed/restore', { method: 'POST' }),
+  },
+  ads: {
+    config: () => req<AdsConfig>('/ads/config'),
   },
   warranties: {
     list: () => req<WarrantyListResponse>('/warranties'),

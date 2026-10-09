@@ -32,6 +32,7 @@ import {
 import { CategoryTypeToggle } from '../components/CategoryTypeToggle';
 import { SecurityPanel } from '../components/SecurityPanel';
 import { BusinessDetailsPanel } from '../components/BusinessDetailsPanel';
+import { AdPrefsPanel } from '../components/AdPrefsPanel';
 import {
   beginPageRead,
   commitPageRead,
@@ -124,7 +125,10 @@ export function Settings() {
       </aside>
       <div className="settings-main stack">
         {tab === 'account' ? (
-          <AccountPanel />
+          <>
+            <AccountPanel />
+            <AdPrefsPanel />
+          </>
         ) : tab === 'security' ? (
           <SecurityPanel />
         ) : tab === 'business' ? (
