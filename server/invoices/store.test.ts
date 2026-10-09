@@ -233,6 +233,10 @@ try {
   await call('POST', `/api/invoices/${id2}/mark-sent`, A);
   const voided = await call('POST', `/api/invoices/${id2}/void`, A);
   assert(voided.json.status === 'void', 'voided');
+  assert((await call('DELETE', `/api/invoices/${id1}`, A)).status === 409, 'sent invoices still can’t be deleted');
+  assert((await call('DELETE', `/api/invoices/${id2}`, B)).status === 404, 'user B cannot delete A’s void invoice');
+  assert((await call('DELETE', `/api/invoices/${id2}`, A)).status === 200, 'void invoice deleted');
+  assert((await call('GET', `/api/invoices/${id2}`, A)).status === 404, 'and gone');
   eq(voided.json.balanceNzd, 0, 'void owes nothing');
   assert((await call('DELETE', `/api/invoices/${custom.json.id}`, A)).status === 200, 'draft deleted');
 
@@ -305,7 +309,7 @@ try {
   const reminder = await call('POST', `/api/invoices/${id1}/send`, A, { kind: 'reminder', to: ['accounts@matai.nz'], subject: 'Reminder', confirm: true });
   assert(reminder.status === 200 && reminder.json.sends[0].kind === 'reminder', 'reminder sent and logged');
   const voidSend = await call('POST', `/api/invoices/${id2}/send`, A, { to: ['a@b.co'], subject: 'x', confirm: true });
-  assert(voidSend.status === 409, 'void invoices cannot be sent');
+  assert(voidSend.status === 404, 'a deleted void invoice cannot be sent');
 
   // Hourly limit is 3 in this test: two sends so far + this one = 3; the 4th is refused.
   await call('POST', `/api/invoices/${id1}/send`, A, { kind: 'reminder', to: ['accounts@matai.nz'], subject: 'Reminder 2', confirm: true });

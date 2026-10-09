@@ -5,7 +5,7 @@
  *
  * Totals are recomputed from the lines on every save. Status: draft / sent / void is
  * stored; partly paid / paid / overdue are counted from payments and the due date.
- * Only drafts can be edited or deleted. A sent invoice can be voided (when it has no
+ * Only drafts can be edited. Drafts and void invoices can be deleted. A sent invoice can be voided (when it has no
  * payments) but never deleted, so the record stays.
  */
 import crypto from 'node:crypto';
@@ -500,7 +500,8 @@ export function updateInvoice(
 export function deleteInvoice(db: Database, userId: string, id: string): Result<true> {
   const r = row(db, userId, id);
   if (!r) return fail(404, 'Invoice not found');
-  if (storedStatus(r) !== 'draft') return fail(409, 'Only drafts can be deleted. Void a sent invoice instead.');
+  // Sent / paid invoices stay on record; void ones (never paid) and drafts can go.
+  if (storedStatus(r) === 'sent') return fail(409, 'Sent invoices can’t be deleted. Void it first, then delete it.');
   run(db, `DELETE FROM invoice_lines WHERE invoice_id = ? AND user_id = ?`, [id, userId]);
   run(db, `DELETE FROM invoice_sends WHERE invoice_id = ? AND user_id = ?`, [id, userId]);
   run(db, `DELETE FROM invoices WHERE id = ? AND user_id = ?`, [id, userId]);

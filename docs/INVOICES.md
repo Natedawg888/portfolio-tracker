@@ -19,7 +19,7 @@ Also: **Download PDF**, **Copy share link** (read-only `/i/<token>`, 192-bit ran
 ## Rules
 
 - Numbers: `<prefix>0001` upward per user, editable, unique (case-insensitive). The next number follows the highest used with the prefix.
-- Statuses: Draft, Sent, Partly paid, Paid, Overdue (day after the due date with a balance), Void. Only drafts can be edited or deleted. Sent invoices can be voided (when no payments are recorded), never deleted. A sent invoice keeps the business details it was sent with.
+- Statuses: Draft, Sent, Partly paid, Paid, Overdue (day after the due date with a balance), Void. Only drafts can be edited. Drafts and void invoices can be deleted. Sent invoices can be voided (when no payments are recorded) and then deleted; sent or paid invoices themselves are never deleted. A sent invoice keeps the business details it was sent with.
 - GST (registered businesses): 15%, prices entered excluding (GST added) or including (GST = total × 15/115). Titled **Tax invoice**.
 - Withholding tax (schedular payments, KAN-70): on the GST-exclusive subtotal, shown as a deduction; amount due = total − withholding.
 - Payments: partial payments allowed up to the balance. "Add to my income" creates an income record tagged to the payment (`income_records.invoice_payment_id`). Bank sync and CSV import link a matching deposit (same amount, within 10 days, not already linked) so it isn't counted twice.

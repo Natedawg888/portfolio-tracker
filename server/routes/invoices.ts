@@ -5,7 +5,7 @@
  *   GET/POST /clients, PUT/DELETE /clients/:id
  *   GET      /export.csv               all invoices for an accountant
  *   GET/POST /                         list (filters: status, clientId, from, to) / create draft
- *   GET/PUT/DELETE /:id                read / edit draft / delete draft
+ *   GET/PUT/DELETE /:id                read / edit draft / delete draft or void invoice
  *   GET      /:id/pdf                  download
  *   POST     /:id/mark-sent | /:id/void | /:id/duplicate
  *   POST/DELETE /:id/share             create / revoke the read-only share link
