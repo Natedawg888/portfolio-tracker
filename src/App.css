@@ -8150,3 +8150,4 @@ html:not([data-theme]) .bills-page :focus-visible {
   gap: 0.75rem;
   flex-wrap: wrap;
 }
+.projection-calculators-title { margin: 0.5rem 0 0; font-size: 1.25rem; }

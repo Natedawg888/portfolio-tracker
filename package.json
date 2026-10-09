@@ -32,6 +32,7 @@
     "test:invoices": "node --import tsx src/lib/invoiceCalc.test.ts && node --import tsx server/invoices/store.test.ts",
     "test:bills": "node --import tsx src/lib/recurring.test.ts && node --import tsx server/recurring/store.test.ts",
     "test:health-score": "node --import tsx src/lib/healthScore.test.ts && node --import tsx server/health/api.test.ts",
+    "test:compound": "node --import tsx src/lib/compoundInterest.test.ts",
     "test:page-cache": "node --import tsx src/lib/pageDataCache.test.ts",
     "test:donations": "node --import tsx server/donations/model.test.ts && node --import tsx server/donations/store.test.ts",
     "test:projections": "node --import tsx server/projections/model.test.ts && node --import tsx server/projections/api.test.ts",

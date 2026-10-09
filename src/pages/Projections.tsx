@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ApiError, api, formatNzd } from '../api/client';
 import { AssetLineChart, type LineSeries } from '../components/AssetLineChart';
+import { CompoundInterestCalculator } from '../components/CompoundInterestCalculator';
 import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import { showQuietToast } from '../lib/quietToast';
 import type { ProjectionAssetClass, ProjectionAssumption, ProjectionMining, ProjectionResponse } from '../types';
@@ -441,6 +442,15 @@ export function Projections() {
           Where your net worth heads if today&apos;s balances, debt payments and saving carry on. Educational only —
           not a forecast of prices or financial advice. Change the return or saving below to try a scenario.
         </p>
+        <div className="row gap" style={{ justifyContent: 'center' }}>
+          <button
+            type="button"
+            className="btn small"
+            onClick={() => document.getElementById('calculators')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+          >
+            Calculators ↓
+          </button>
+        </div>
       </section>
 
       <section className="panel" aria-label="Scenario">
@@ -861,6 +871,10 @@ export function Projections() {
           </section>
         </>
       ) : null}
+      <section className="stack" id="calculators" aria-labelledby="calculators-heading">
+        <h2 id="calculators-heading" className="page-title projection-calculators-title">Calculators</h2>
+        <CompoundInterestCalculator startingAmountNzd={data?.starting.compoundingAssetsNzd ?? null} />
+      </section>
     </div>
   );
 }
