@@ -9,7 +9,7 @@ import { PHASE_NEWS_NOTE, loadPhaseNews, planPhaseNewsFeeds } from './phaseNews.
 
 const feeds = planPhaseNewsFeeds('recession');
 const ids = feeds.map((feed) => feed.id);
-assert.deepEqual(ids, ['phase', 'rates', 'gdp', 'inflation', 'unemployment', 'housing', 'global', 'world', 'politics']);
+assert.deepEqual(ids, ['phase', 'rates', 'gdp', 'inflation', 'unemployment', 'housing', 'markets', 'global', 'world', 'politics']);
 
 for (const feed of feeds) {
   if (feed.sourceName === 'Google News') {
@@ -165,3 +165,11 @@ assert.equal(phaseGroup?.items.length, 1);
 assert.match(phaseGroup?.items[0]?.headline ?? '', /economy grows/);
 
 console.log('phase news tests passed');
+
+{
+  // Every item carries the id of the feed it came from, so the page can filter locally.
+  const plans = planPhaseNewsFeeds('slowdown', 'NZ');
+  const ids = new Set(plans.map((plan) => plan.id));
+  assert.ok(ids.has('markets'), 'NZ has a markets search');
+  console.log('OK: NZ news includes a markets search');
+}

@@ -68,12 +68,27 @@ export type IndicatorScoreDetail = {
   fit: number;
 };
 
+export type ConfidenceDetail = {
+  /** Winning phase fit, 0–1. */
+  support: number;
+  /** Lead over the runner-up as a share of the winner's fit, 0–1. */
+  margin: number;
+  /** Indicators present ÷ catalogue size, 0–1. */
+  coverage: number;
+  /** Weights applied to support, margin, and coverage. */
+  weights: { support: number; margin: number; coverage: number };
+  /** Ceiling applied for thin coverage, or null when none applied. */
+  cap: number | null;
+};
+
 export type CycleAssessment = {
   phase: Phase | null;
   /** Blend of phase anchors, about -100 to +100. Not a forecast. */
   score: number;
   /** 0–100 support from the indicators that were present. Not a probability. */
   confidence: number;
+  /** The parts confidence was built from. Reported, not recalculated elsewhere. */
+  confidenceDetail: ConfidenceDetail;
   momentum: MomentumName;
   previousPhase: Phase | null;
   phaseScores: Record<Phase, PhaseScoreDetail>;

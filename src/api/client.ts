@@ -1,6 +1,6 @@
 import { isMoneyHidden, MONEY_MASK } from '../lib/privacy';
 import type { AdsConfig } from '../lib/ads';
-import type { EconomicCycleResponse, PhaseNewsResponse } from '../types/economy.ts';
+import type { EconomicCycleResponse, EconomicScenarioResult, PhaseNewsResponse } from '../types/economy.ts';
 import type {
   DividendDashboard,
   DividendEvent,
@@ -1513,6 +1513,13 @@ export const api = {
       const search = q.toString();
       return req<PhaseNewsResponse>(`/economy/news${search ? `?${search}` : ''}`);
     },
+    /** Hypothetical re-score of the stored quarter. Read-only on the server. */
+    scenario: (body: { country: string; overrides: Record<string, number> }, opts?: { signal?: AbortSignal }) =>
+      req<EconomicScenarioResult>('/economy/scenario', {
+        method: 'POST',
+        body: JSON.stringify(body),
+        signal: opts?.signal,
+      }),
   },
   news: {
     feed: (opts?: { refresh?: boolean }) => {
