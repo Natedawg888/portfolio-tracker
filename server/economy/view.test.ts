@@ -93,4 +93,46 @@ assert(blank.phase === null, 'no observations means no phase');
 assert(blank.indicators.every((card) => !card.available), 'cards stay blank');
 assert(blank.refreshError === 'download failed', 'refresh error is surfaced');
 
-console.log('3 view tests passed');
+// Redesign fields -----------------------------------------------------------
+assert(view.phase?.confidenceDetail != null, 'confidence parts are reported');
+assert(view.phase?.catalogueCount === 11 && view.phase?.availableCount === 11, 'coverage counts');
+assert(view.phaseFits.length === 5, 'every phase has a fit');
+const winner = view.phaseFits.find((row) => row.id === view.phase?.id);
+assert(winner && view.phaseFits.every((row) => row.fit <= winner.fit), 'calculated phase has the top fit');
+assert(view.takeaways.length === 3, `three takeaways, got ${view.takeaways.length}`);
+assert(view.takeaways.find((row) => row.id === 'growth')?.headline === 'Growth is slowing', 'growth falls in the recession fixture');
+assert(view.phaseGuide.length === 5, 'guide for every phase');
+assert(view.phaseGuide.every((row) => row.rules.length === 11), 'guide lists the model rules');
+assert(view.assetEvidence.map((row) => row.id).join(',') === 'shares,property,bonds,cash,gold,crypto', 'asset explorer order');
+assert(view.assetEvidence.find((row) => row.id === 'property')?.status === 'unavailable', 'no property dataset');
+assert(view.freshness.missingCount === 0 && view.freshness.staleCount === 0, 'fixture is complete and fresh');
+const gdp = view.indicators.find((card) => card.type === 'gdp_growth')!;
+assert(gdp.signal === 'supports', `gdp supports recession, got ${gdp.signal}`);
+assert(gdp.expects === 'below 0.0%, not rising', `gdp rule text ${gdp.expects}`);
+assert(gdp.weight === 1.8, 'gdp weight in recession');
+assert(gdp.contribution != null && gdp.contribution <= gdp.weight!, 'contribution is at most the weight');
+assert(gdp.derived === false, 'fixture gdp is published, not derived');
+assert(view.indicators.find((card) => card.type === 'yield_curve')?.derived === true, 'yield spread is derived');
+assert(gdp.summary === 'Below the 0.0% low line and falling.', `summary ${gdp.summary}`);
+
+// Stale and missing data ------------------------------------------------------
+const partial = buildCycleView({
+  observations: [
+    ...recession.filter((row) => row.indicatorType !== 'credit_conditions' && row.indicatorType !== 'housing_activity'),
+    { ...obs('credit_conditions', -1, 0, '2023-Q1', '2023-03-31') },
+  ],
+  provider: { id: 'test', label: 'Test', kind: 'live' },
+  warnings: [],
+  refreshError: null,
+  now,
+});
+const housing = partial.indicators.find((card) => card.type === 'housing_activity')!;
+assert(housing.available === false && housing.signal === 'insufficient', 'missing series is insufficient');
+assert(housing.summary === null && housing.weight === null, 'missing series has no summary or weight');
+assert(partial.indicators.find((card) => card.type === 'credit_conditions')?.stale === true, 'old credit print is stale');
+assert(partial.freshness.missingCount === 1 && partial.freshness.staleCount === 1, 'freshness counts');
+assert(partial.freshness.mixedPeriods === true, 'periods differ across cards');
+assert(blank.takeaways.length === 0 && blank.phaseFits.length === 0, 'no takeaways without a phase');
+assert(blank.assetEvidence.find((row) => row.id === 'shares')?.status === 'unavailable', 'no share series, no evidence');
+
+console.log('6 view tests passed');

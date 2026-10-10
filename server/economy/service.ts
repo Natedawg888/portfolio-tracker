@@ -5,10 +5,42 @@ import { logger } from '../lib/logger.ts';
 import { analyseObservations } from './analyse.ts';
 import { requireEconomyCountry } from './countries.ts';
 import { getEconomicProvider } from './providers/index.ts';
+import { parseOverrides, runScenario, type ScenarioResult } from './scenario.ts';
 import { readFetchLog, readObservations, writeAssessments, writeObservations } from './store.ts';
 import { buildCycleView, type CycleResponse } from './view.ts';
 
 export { EconomyCountryError } from './countries.ts';
+export { ScenarioInputError } from './scenario.ts';
+
+export class ScenarioUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ScenarioUnavailableError';
+  }
+}
+
+/**
+ * Re-score the stored current quarter with hypothetical values. Read-only:
+ * no provider fetch, no writes. Scenario values never reach the store.
+ */
+export async function getEconomicScenario(
+  countryRaw: string | undefined,
+  rawOverrides: unknown,
+  options: { now?: Date; read?: typeof readObservations } = {},
+): Promise<ScenarioResult> {
+  const country = requireEconomyCountry(countryRaw).code;
+  const overrides = parseOverrides(rawOverrides);
+  const provider = getEconomicProvider(country);
+  const observations = await (options.read ?? readObservations)(country, provider.id);
+  if (observations.length === 0) {
+    throw new ScenarioUnavailableError('No stored indicator extract for this country yet. Load the dashboard first.');
+  }
+  const analysis = analyseObservations(observations, options.now ?? new Date());
+  if (!analysis.current?.phase) {
+    throw new ScenarioUnavailableError('The current quarter has too few indicators to score, so a scenario cannot be compared.');
+  }
+  return runScenario(analysis, overrides);
+}
 
 /** Bump when a provider starts returning a series the previous extract did not store. */
 export const EXTRACT_REVISION = 'nz-credit-c60-2';

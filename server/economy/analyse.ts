@@ -1,7 +1,7 @@
 /**
  * Choose the observations that count for each quarter, then score them.
  */
-import { assessTimeline, type TimelinePoint } from './scoring.ts';
+import { assessTimeline, type TimelineFrame, type TimelinePoint } from './scoring.ts';
 import { INDICATOR_TYPES, type EconomicObservation, type IndicatorType } from './types.ts';
 import { latestAsOf, latestCompletedQuarter, listQuarters, periodEnd } from './periods.ts';
 
@@ -9,6 +9,8 @@ export type Analysis = {
   asOfPeriod: string;
   timeline: TimelinePoint[];
   current: TimelinePoint | null;
+  /** Scored inputs for each quarter, in timeline order. */
+  frames: TimelineFrame[];
   used: Map<IndicatorType, EconomicObservation | null>;
   byType: Map<IndicatorType, EconomicObservation[]>;
 };
@@ -22,7 +24,7 @@ export function analyseObservations(observations: EconomicObservation[], now: Da
   }
 
   const end = latestCompletedQuarter(now);
-  const frames: Array<{ period: string; inputs: Array<{ indicator: IndicatorType; value: number; previousValue: number | null }> }> = [];
+  const frames: TimelineFrame[] = [];
   for (const quarter of listQuarters('2012-Q1', end)) {
     const quarterEnd = periodEnd(quarter);
     if (!quarterEnd) continue;
@@ -47,5 +49,5 @@ export function analyseObservations(observations: EconomicObservation[], now: Da
   for (const indicator of INDICATOR_TYPES) {
     used.set(indicator, latestAsOf(byType.get(indicator) ?? [], asOfEnd));
   }
-  return { asOfPeriod, timeline, current, used, byType };
+  return { asOfPeriod, timeline, current, frames, used, byType };
 }

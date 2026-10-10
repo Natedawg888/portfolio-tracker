@@ -4,7 +4,7 @@
  */
 import { INDICATOR_TYPES, type IndicatorInput, type IndicatorType, type Phase } from './types.ts';
 import { DEFAULT_PHASE_MODEL, type PhaseModel, type PhaseRule } from './weights.ts';
-import { assessCycle, assessTimeline, classifySignal, ruleFit } from './scoring.ts';
+import { CONFIDENCE_WEIGHTS, assessCycle, assessTimeline, classifySignal, ruleFit } from './scoring.ts';
 
 function assert(cond: unknown, msg: string): void {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -267,6 +267,26 @@ check('catalogue size used by coverage is the full indicator list', () => {
   for (const phase of phases) {
     assert(result.phaseScores[phase] != null, `missing score for ${phase}`);
   }
+});
+
+check('confidence detail reproduces the reported confidence', () => {
+  const cases: IndicatorInput[][] = [recession, slowdown, recovery, expansion, recession.slice(0, 2), recovery.slice(0, 4)];
+  for (const inputs of cases) {
+    const result = assessCycle(inputs);
+    const d = result.confidenceDetail;
+    assert(d.weights.support === CONFIDENCE_WEIGHTS.support, 'weights are the scorer constants');
+    if (!result.phase) continue;
+    const raw = d.weights.support * d.support + d.weights.margin * d.margin + d.weights.coverage * d.coverage;
+    let rebuilt = Math.round(100 * Math.min(1, Math.max(0, raw)));
+    if (d.cap != null) rebuilt = Math.min(rebuilt, d.cap);
+    assert(Math.abs(rebuilt - result.confidence) <= 1, `rebuilt ${rebuilt} vs ${result.confidence}`);
+    const winner = result.phaseScores[result.phase].normalized;
+    assert(Math.abs(d.support - winner) < 1e-3, 'support is the winning phase fit');
+    assert(Math.abs(d.coverage - inputs.length / 11) < 1e-3, 'coverage is present / 11');
+  }
+  assert(assessCycle(recession.slice(0, 2)).confidenceDetail.cap === 45, 'two indicators cap at 45');
+  assert(assessCycle(recovery.slice(0, 4)).confidenceDetail.cap === 70, 'four indicators cap at 70');
+  assert(assessCycle(recession).confidenceDetail.cap === null, 'full coverage has no cap');
 });
 
 console.log(`\n${passed} scoring tests passed`);

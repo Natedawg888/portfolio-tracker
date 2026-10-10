@@ -4,11 +4,29 @@
  */
 import { analyseObservations } from './analyse.ts';
 import { assetClassContext } from './assetContext.ts';
+import { buildAssetEvidence, type AssetEvidence } from './assetEvidence.ts';
+import {
+  buildFreshness,
+  buildPhaseGuide,
+  buildTakeaways,
+  cardSummary,
+  describeRule,
+  isDerived,
+  ruleFor,
+  signalStatus,
+  type Freshness,
+  type PhaseGuide,
+  type SignalStatus,
+  type Takeaway,
+} from './insights.ts';
+import { SCENARIO_LIMITS } from './scenario.ts';
+import { ruleFit, classifySignal } from './scoring.ts';
 import { INDICATOR_CATALOG } from './catalog.ts';
 import { economyCountry, listEconomyCountries } from './countries.ts';
 import { daysAfter, periodEnd } from './periods.ts';
 import {
   INDICATOR_TYPES,
+  type ConfidenceDetail,
   type CycleAssessment,
   type DirectionName,
   type EconomicObservation,
@@ -18,7 +36,7 @@ import {
   type Phase,
   type ProviderKind,
 } from './types.ts';
-import { PHASE_CYCLE_ORDER, PHASE_LABEL, PHASE_MODEL_VERSION } from './weights.ts';
+import { DEFAULT_PHASE_MODEL, PHASE_CYCLE_ORDER, PHASE_LABEL, PHASE_MODEL_VERSION } from './weights.ts';
 
 const DISCLAIMER =
   'Educational context only. This is not financial advice and it does not recommend any investment action. Confidence is how strongly the available indicators support the phase. It is not a forecast.';
@@ -58,12 +76,16 @@ export function formatIndicatorNumber(value: number, unit: string): string {
   return value.toFixed(1);
 }
 
+const STATUS_TEXT: Record<SignalStatus, string> = {
+  insufficient: 'Not available',
+  unscored: 'Not scored',
+  supports: 'Consistent with this phase',
+  mixed: 'Mixed for this phase',
+  conflicts: 'Diverges from this phase',
+};
+
 function statusFor(fit: number | null, available: boolean, phase: Phase | null): string {
-  if (!available) return 'Not available';
-  if (phase == null || fit == null) return 'Not scored';
-  if (fit >= 0.75) return 'Consistent with this phase';
-  if (fit >= 0.4) return 'Mixed for this phase';
-  return 'Diverges from this phase';
+  return STATUS_TEXT[signalStatus(fit, available, phase)];
 }
 
 export function isStale(
@@ -100,7 +122,18 @@ export type CycleResponse = {
     momentum: MomentumName;
     momentumLabel: string;
     explanation: string;
+    confidenceDetail: ConfidenceDetail;
+    availableCount: number;
+    catalogueCount: number;
   };
+  /** Fit of the current quarter's indicators to every phase, 0–100. */
+  phaseFits: Array<{ id: Phase; label: string; fit: number; weightUsed: number }>;
+  takeaways: Takeaway[];
+  phaseGuide: PhaseGuide[];
+  assetEvidence: AssetEvidence[];
+  freshness: Freshness;
+  /** Slider ranges for the what-if panel. Value is the real current reading, or null when missing. */
+  scenarioInputs: Array<{ indicator: IndicatorType; label: string; min: number; max: number; step: number; value: number | null }>;
   cycle: Array<{ id: Phase; label: string; active: boolean }>;
   indicators: IndicatorCard[];
   timeline: Array<{
@@ -129,6 +162,20 @@ export type IndicatorCard = {
   direction: DirectionName;
   directionLabel: string;
   status: string;
+  signal: SignalStatus;
+  /** One sentence: where the reading sits against the model's lines and how it moved. */
+  summary: string | null;
+  /** What the calculated phase's rule expects of this indicator. */
+  expects: string | null;
+  /** Rule weight in the calculated phase; contribution is at most this. */
+  weight: number | null;
+  thresholds: { lowBelow: number; highAbove: number; flatBand: number };
+  /** Value is arithmetic in this app on a published series. */
+  derived: boolean;
+  frequency: Frequency | null;
+  periodEnd: string | null;
+  previousPeriod: string | null;
+  previousPeriodLabel: string | null;
   level: string | null;
   change: string | null;
   score: number | null;
@@ -185,6 +232,8 @@ export function buildCycleView(args: {
       .slice(-16)
       .map((point) => ({ period: point.period, value: point.value }));
     const stale = row ? isStale(indicator, row.periodEnd, args.now, row.frequency) : false;
+    const rule = phase ? ruleFor(phase, indicator) : null;
+    const signal = signalStatus(scored?.fit ?? null, row != null, phase);
     return {
       type: indicator,
       label: meta.label,
@@ -199,6 +248,16 @@ export function buildCycleView(args: {
       direction: scored?.direction ?? 'unknown',
       directionLabel: DIRECTION_LABEL[scored?.direction ?? 'unknown'],
       status: statusFor(scored?.fit ?? null, row != null, phase),
+      signal,
+      summary: cardSummary(indicator, row, scored),
+      expects: rule ? describeRule(rule) : null,
+      weight: rule && row ? rule.weight : null,
+      thresholds: { ...DEFAULT_PHASE_MODEL.thresholds[indicator] },
+      derived: row ? isDerived(indicator, row.notes) : false,
+      frequency: row?.frequency ?? null,
+      periodEnd: row?.periodEnd ?? null,
+      previousPeriod: row?.previousPeriod ?? null,
+      previousPeriodLabel: row?.previousPeriod ? formatPeriod(row.previousPeriod) : null,
       level: scored?.level ?? null,
       change: scored?.change ?? null,
       score: row ? (scored?.score ?? null) : null,
@@ -225,6 +284,26 @@ export function buildCycleView(args: {
     missing.length > 0 ? `No value for this quarter: ${missing.join(', ')}.` : '',
   ].filter(Boolean);
 
+  const readings = new Map<IndicatorType, { indicator: IndicatorType; observation: EconomicObservation; signal: NonNullable<typeof current>['indicators'][number]; stale: boolean }>();
+  for (const indicator of INDICATOR_TYPES) {
+    const observation = analysis.used.get(indicator);
+    const signal = scoreRows.get(indicator);
+    if (!observation || !signal) continue;
+    readings.set(indicator, {
+      indicator,
+      observation,
+      signal,
+      stale: indicators.find((card) => card.type === indicator)?.stale ?? false,
+    });
+  }
+  const currentInputs = new Map((analysis.frames.at(-1)?.inputs ?? []).map((input) => [input.indicator, input]));
+  const fitFor = (candidate: Phase, indicator: IndicatorType): number | null => {
+    const input = currentInputs.get(indicator);
+    const rule = ruleFor(candidate, indicator);
+    if (!input || !rule) return null;
+    return ruleFit(classifySignal(indicator, input.value, input.previousValue), rule);
+  };
+
   return {
     country: profile?.code ?? 'NZ',
     countryName: profile?.name ?? 'New Zealand',
@@ -249,8 +328,29 @@ export function buildCycleView(args: {
           momentum: current.momentum,
           momentumLabel: MOMENTUM_LABEL[current.momentum],
           explanation: explain(current, availableCount),
+          confidenceDetail: current.confidenceDetail,
+          availableCount: current.availableCount,
+          catalogueCount: INDICATOR_TYPES.length,
         }
       : null,
+    phaseFits: current
+      ? PHASE_CYCLE_ORDER.map((id) => ({
+          id,
+          label: PHASE_LABEL[id],
+          fit: Math.round(current.phaseScores[id].normalized * 100),
+          weightUsed: current.phaseScores[id].weightUsed,
+        }))
+      : [],
+    takeaways: current ? buildTakeaways(readings) : [],
+    phaseGuide: buildPhaseGuide(analysis, fitFor),
+    assetEvidence: buildAssetEvidence(analysis, profile?.name ?? 'New Zealand'),
+    freshness: buildFreshness(indicators),
+    scenarioInputs: (Object.keys(SCENARIO_LIMITS) as IndicatorType[]).map((indicator) => ({
+      indicator,
+      label: INDICATOR_CATALOG[indicator].label,
+      ...SCENARIO_LIMITS[indicator]!,
+      value: currentInputs.get(indicator)?.value ?? null,
+    })),
     cycle: PHASE_CYCLE_ORDER.map((id) => ({
       id,
       label: PHASE_LABEL[id],

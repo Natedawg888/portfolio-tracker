@@ -38,6 +38,8 @@ export type PhaseNewsItem = {
   url: string;
   sourceName: string;
   topic: string;
+  /** Feed id the item came from (rates, gdp, inflation, …). Lets the page filter without a new request. */
+  topicId: string;
 };
 
 export type PhaseNewsGroup = {
@@ -129,6 +131,7 @@ function toItem(item: RssItem, plan: FeedPlan): PhaseNewsItem {
     url: item.url,
     sourceName: plan.sourceName,
     topic: plan.topic,
+    topicId: plan.id,
   };
 }
 

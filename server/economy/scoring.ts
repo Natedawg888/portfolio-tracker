@@ -7,6 +7,7 @@ import {
   PHASES,
   type ChangeName,
   type ClassifiedSignal,
+  type ConfidenceDetail,
   type CycleAssessment,
   type DirectionName,
   type IndicatorInput,
@@ -98,6 +99,9 @@ function momentumOf(signals: ClassifiedSignal[], model: PhaseModel): MomentumNam
   return 'steady';
 }
 
+/** How support, margin, and coverage are blended into confidence. */
+export const CONFIDENCE_WEIGHTS = { support: 0.62, margin: 0.23, coverage: 0.15 } as const;
+
 export type AssessOptions = {
   model?: PhaseModel;
   previousPhase?: Phase | null;
@@ -160,14 +164,28 @@ export function assessCycle(inputs: IndicatorInput[], options: AssessOptions = {
 
   const availableCount = signals.length;
   let confidence = 0;
+  const confidenceDetail: ConfidenceDetail = {
+    support: 0,
+    margin: 0,
+    coverage: 0,
+    weights: { ...CONFIDENCE_WEIGHTS },
+    cap: null,
+  };
   if (phase && availableCount > 0) {
     const support = bestNorm;
     const margin = bestNorm <= 0 ? 0 : (bestNorm - secondNorm) / bestNorm;
     const coverage = availableCount / INDICATOR_TYPES.length;
-    const rawConfidence = 0.62 * support + 0.23 * margin + 0.15 * coverage;
+    const rawConfidence =
+      CONFIDENCE_WEIGHTS.support * support +
+      CONFIDENCE_WEIGHTS.margin * margin +
+      CONFIDENCE_WEIGHTS.coverage * coverage;
     confidence = Math.round(100 * clamp(rawConfidence, 0, 1));
-    if (availableCount < 3) confidence = Math.min(confidence, 45);
-    else if (availableCount < 5) confidence = Math.min(confidence, 70);
+    const cap = availableCount < 3 ? 45 : availableCount < 5 ? 70 : null;
+    if (cap != null) confidence = Math.min(confidence, cap);
+    confidenceDetail.support = roundTo(support, 4);
+    confidenceDetail.margin = roundTo(margin, 4);
+    confidenceDetail.coverage = roundTo(coverage, 4);
+    confidenceDetail.cap = cap;
   }
 
   const indicators: IndicatorScoreDetail[] = signals
@@ -191,6 +209,7 @@ export function assessCycle(inputs: IndicatorInput[], options: AssessOptions = {
     phase,
     score,
     confidence,
+    confidenceDetail,
     momentum: momentumOf(signals, model),
     previousPhase: options.previousPhase ?? null,
     phaseScores,

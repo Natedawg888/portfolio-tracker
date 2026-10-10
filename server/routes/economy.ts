@@ -1,6 +1,12 @@
 import { Router } from 'express';
 import { loadPhaseNews } from '../economy/phaseNews.ts';
-import { EconomyCountryError, getEconomicCycle } from '../economy/service.ts';
+import {
+  EconomyCountryError,
+  ScenarioInputError,
+  ScenarioUnavailableError,
+  getEconomicCycle,
+  getEconomicScenario,
+} from '../economy/service.ts';
 import { PHASES, type Phase } from '../economy/types.ts';
 
 const router = Router();
@@ -43,6 +49,26 @@ router.get('/news', async (req, res) => {
     }
     const message = err instanceof Error ? err.message : 'News feeds could not be loaded';
     res.status(502).json({ error: message });
+  }
+});
+
+/** Hypothetical re-score. Read-only: never fetches, never writes. */
+router.post('/scenario', async (req, res) => {
+  const body = (req.body ?? {}) as { country?: unknown; overrides?: unknown };
+  const country = typeof body.country === 'string' ? body.country : 'NZ';
+  try {
+    res.json(await getEconomicScenario(country, body.overrides ?? {}));
+  } catch (err) {
+    if (err instanceof EconomyCountryError || err instanceof ScenarioInputError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    if (err instanceof ScenarioUnavailableError) {
+      res.status(409).json({ error: err.message });
+      return;
+    }
+    const message = err instanceof Error ? err.message : 'Could not score the scenario';
+    res.status(500).json({ error: message });
   }
 });
 

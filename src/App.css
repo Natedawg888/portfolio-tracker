@@ -4689,6 +4689,444 @@ html:not([data-theme]) .econ-page .cycle-node.active {
   background: transparent;
 }
 
+/* Economic cycle dashboard (redesign). Page-scoped; uses the .econ-page tokens above. */
+html[data-theme="light"] .econ-page {
+  --econ-good: #1b6b45;
+  --econ-mixed: #8a5a12;
+  --econ-bad: #a3322a;
+  --econ-none: #6b655c;
+  --econ-track: rgba(26, 26, 26, 0.09);
+  --econ-scenario: #6e6278;
+}
+html[data-theme="dark"] .econ-page,
+html:not([data-theme]) .econ-page {
+  --econ-good: #86cfa3;
+  --econ-mixed: #e3b46a;
+  --econ-bad: #f2a194;
+  --econ-none: #a9b8ad;
+  --econ-track: rgba(243, 238, 228, 0.1);
+  --econ-scenario: #b7a8c4;
+}
+.econ-page .tiny { font-size: 0.74rem; line-height: 1.45; }
+.econ-page .small { font-size: 0.86rem; line-height: 1.5; }
+.econ-page p { margin: 0; }
+.econ-page .panel > * + *,
+.econ-page .hero-card > * + * { margin-top: 0.85rem; }
+.econ-page .panel-heading + .section-desc { margin-top: 0.25rem; }
+.econ-subhead {
+  margin: 0.9rem 0 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.econ-page .tone-supports { --tone: var(--econ-good); }
+.econ-page .tone-mixed { --tone: var(--econ-mixed); }
+.econ-page .tone-conflicts { --tone: var(--econ-bad); }
+.econ-page .tone-insufficient { --tone: var(--econ-none); }
+.econ-badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  color: var(--text);
+}
+.econ-badge--solid { background: var(--text); color: var(--surface); border-color: var(--text); }
+.econ-flag {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+.econ-flag:first-child { margin-left: 0; }
+.econ-flag--warn { border-color: var(--econ-mixed); color: var(--text); }
+.econ-linklike {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--border);
+  text-underline-offset: 2px;
+}
+.econ-linklike:hover { text-decoration-color: currentColor; }
+
+/* Overview */
+.econ-overview { text-align: left; }
+.econ-overview-top {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem 1rem;
+}
+.econ-overview .page-title { margin: 0.15rem 0 0.2rem !important; font-size: clamp(1.6rem, 4vw, 2.2rem) !important; }
+.econ-overview-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.econ-overview-actions .country-control { margin: 0; }
+.econ-gauges {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+.econ-gauge {
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  padding: 0.7rem 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+.econ-gauge-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; font-size: 0.82rem; }
+.econ-gauge-head strong { font-size: 1.35rem; font-variant-numeric: tabular-nums; }
+.econ-gauge-head strong .muted { font-size: 0.8rem; font-weight: 500; }
+.econ-meter { height: 8px; border-radius: 999px; background: var(--econ-track); overflow: hidden; }
+.econ-meter > span { display: block; height: 100%; border-radius: 999px; background: var(--text); }
+.econ-scale {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--econ-bad), var(--econ-track) 50%, var(--econ-good));
+  opacity: 0.9;
+}
+.econ-scale-tick { position: absolute; top: -2px; width: 1px; height: 12px; background: var(--muted); opacity: 0.6; }
+.econ-scale-marker {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: var(--text);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.econ-scale-labels { display: flex; justify-content: space-between; }
+.econ-gauge--facts { justify-content: center; gap: 0.3rem; font-size: 0.86rem; }
+.econ-gauge--facts p { display: flex; justify-content: space-between; gap: 0.5rem; }
+.econ-takeaways {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+.econ-takeaway { display: flex; gap: 0.6rem; align-items: flex-start; min-width: 0; }
+.econ-takeaway-icon {
+  flex: none;
+  width: 1.8rem;
+  height: 1.8rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  font-weight: 700;
+}
+.econ-takeaway-head { font-weight: 650; margin-bottom: 0.15rem !important; }
+.econ-freshness {
+  font-size: 0.78rem;
+  color: var(--muted);
+  border-top: 1px solid var(--border-soft);
+  padding-top: 0.65rem;
+}
+.econ-freshness.has-warning > span:first-child { color: var(--econ-mixed); }
+.econ-why-toggle {
+  font: inherit;
+  font-weight: 650;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  cursor: pointer;
+}
+.econ-why-toggle:hover { background: var(--hover-row); }
+.econ-why-panel { margin-top: 0.75rem; }
+.econ-why-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem; }
+.econ-signal-list { border-top: 3px solid var(--tone); padding-top: 0.25rem; min-width: 0; }
+.econ-signal-list .econ-subhead { margin-top: 0.3rem; color: var(--text); }
+.econ-signal-list .econ-subhead > span[aria-hidden] { color: var(--tone); }
+.econ-signal-list ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.25rem; font-size: 0.86rem; }
+.econ-fit-bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
+.econ-fit-bars li {
+  display: grid;
+  grid-template-columns: minmax(7rem, 11rem) 1fr 4.5rem;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+}
+.econ-fit-bars li.is-current .econ-fit-label { font-weight: 700; }
+.econ-fit-track { position: relative; height: 10px; background: var(--econ-track); border-radius: 999px; overflow: hidden; }
+.econ-fit-track > span { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--muted); }
+.econ-fit-bars li.is-current .econ-fit-track > span { background: var(--text); }
+.econ-fit-track--double { height: 14px; }
+.econ-fit-track--double > .is-actual { top: 0; bottom: 50%; border-radius: 999px 999px 0 0; background: var(--muted) !important; }
+.econ-fit-track--double > .is-scenario { top: 50%; bottom: 0; border-radius: 0 0 999px 999px; background: var(--econ-scenario) !important; box-shadow: 0 -1px 0 var(--surface); }
+.econ-fit-value { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.econ-confidence-table th[scope="row"] { text-transform: none; letter-spacing: 0; font-size: 0.82rem; font-weight: 500; color: var(--text); }
+.econ-limits { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.2rem; }
+
+/* Phase explorer */
+.econ-rail {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+.econ-rail-step { position: relative; display: flex; align-items: center; min-width: 0; }
+.econ-rail-arrow { position: absolute; right: -0.48rem; z-index: 1; color: var(--muted); font-size: 0.8rem; }
+.econ-rail-node {
+  width: 100%;
+  min-height: 2.9rem;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.45rem 0.5rem;
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  border-top: 4px solid var(--phase, var(--border));
+}
+.econ-rail-node:hover { background: var(--hover-row); }
+.econ-rail-node .econ-badge { margin-left: 0; }
+.econ-rail-node.is-current { background: var(--surface-3); }
+.econ-rail-node.is-selected { outline: 2px solid var(--text); outline-offset: 1px; }
+.econ-rail-node.phase-recovery,
+.econ-rail-node.phase-expansion,
+.econ-rail-node.phase-late_expansion,
+.econ-rail-node.phase-slowdown,
+.econ-rail-node.phase-recession { color: var(--text); }
+.econ-explorer-panel { border: 1px solid var(--border-soft); border-radius: 12px; padding: 0.85rem 1rem; }
+.econ-explorer-panel.is-exploring { border-style: dashed; border-color: var(--border); }
+.econ-explorer-panel > * + * { margin-top: 0.75rem; }
+.econ-explorer-head h3 { margin: 0.1rem 0 0.2rem; font-size: 1.2rem; }
+.econ-explorer-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 1rem 1.5rem; }
+.econ-bigfit strong { font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+.econ-rules { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; font-size: 0.85rem; }
+.econ-rules li { display: flex; gap: 0.5rem; align-items: baseline; }
+.econ-dot {
+  flex: none;
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  border: 2px solid var(--tone);
+  transform: translateY(1px);
+}
+.econ-dot.tone-supports { background: var(--tone); }
+.econ-dot.tone-mixed { background: linear-gradient(90deg, var(--tone) 50%, transparent 50%); }
+.econ-dot.tone-insufficient { border-style: dotted; }
+.econ-more { margin-top: 0.6rem; }
+.econ-more > summary { cursor: pointer; font-size: 0.84rem; font-weight: 600; }
+.econ-more > summary:hover { text-decoration: underline; }
+.econ-tendencies { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; gap: 0.5rem; }
+.econ-tendencies li { display: grid; gap: 0.15rem; }
+.econ-tendencies .tendency { justify-self: start; }
+
+/* Indicator cards */
+.econ-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 15.5rem), 1fr));
+  gap: 0.75rem;
+  grid-auto-flow: dense;
+}
+.econ-page .card.econ-card {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  border-left: 3px solid var(--tone);
+}
+.econ-card.is-expanded { grid-column: 1 / -1; }
+/* Beats the theme's .card border colour so the status edge shows in both themes. */
+html .econ-page .card.econ-card { border-left-color: var(--tone); }
+.econ-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.8rem 0.9rem 0.4rem;
+  cursor: pointer;
+  flex: 1;
+}
+.econ-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; }
+.econ-card-top h3 { margin: 0; font-size: 0.92rem; }
+.econ-status {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 650;
+  padding: 0.08rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--tone);
+  color: var(--text);
+  white-space: nowrap;
+}
+.econ-status > span[aria-hidden] { color: var(--tone); font-weight: 800; }
+.econ-card-value { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.25rem 0.6rem; }
+.econ-card-value strong { font-size: 1.5rem; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.econ-change { font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.econ-page .econ-spark { width: 100%; height: 30px; margin: 0; color: var(--accent-2); }
+.econ-spark-empty { min-height: 30px; display: flex; align-items: center; }
+.econ-card-summary { color: var(--text); }
+.econ-card-meta { margin-top: auto !important; }
+.econ-card-more {
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: left;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--border-soft);
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+}
+.econ-card-more:hover { color: var(--text); background: var(--hover-row); }
+.econ-card-detail { padding: 0.25rem 0.9rem 0.9rem; border-top: 1px solid var(--border-soft); }
+.econ-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem 1.5rem; }
+.econ-dl { display: grid; grid-template-columns: minmax(6.5rem, max-content) 1fr; gap: 0.25rem 0.75rem; margin: 0.5rem 0 0; font-size: 0.84rem; }
+.econ-dl dt { color: var(--muted); }
+.econ-dl dd { margin: 0; overflow-wrap: anywhere; }
+.econ-warning {
+  margin-top: 0.6rem !important;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--econ-mixed);
+  border-radius: 8px;
+}
+.econ-chart { margin: 0.5rem 0 0; }
+.econ-chart svg { width: 100%; height: auto; max-height: 240px; display: block; color: var(--accent-2); }
+.econ-chart-readout { font-size: 0.86rem; min-height: 1.3rem; }
+.econ-chart-grid { stroke: var(--border-soft); stroke-width: 1; }
+.econ-chart-threshold { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 4; opacity: 0.7; }
+.econ-chart-axis { fill: var(--muted); font-size: 11px; }
+.econ-chart-cross { stroke: var(--muted); stroke-width: 1; }
+.econ-chart-dot { fill: currentColor; stroke: var(--surface); stroke-width: 2; }
+
+/* Asset explorer & chips */
+.econ-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.econ-chip {
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem;
+  cursor: pointer;
+  min-height: 2rem;
+}
+.econ-chip:hover { background: var(--hover-row); }
+.econ-chip.is-on { background: var(--text); color: var(--surface); border-color: var(--text); }
+.econ-chip-note { opacity: 0.75; }
+.econ-asset-table td, .econ-asset-table th { white-space: nowrap; }
+.econ-asset-table tr.is-current th, .econ-asset-table tr.is-current td { background: var(--hover-row); }
+.econ-asset-table .econ-th-sub { display: block; min-width: 9rem; white-space: normal; text-transform: none; letter-spacing: 0; font-weight: 500; }
+.econ-asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr)); gap: 0.75rem; }
+.econ-asset-card { display: flex; flex-direction: column; gap: 0.4rem; }
+.econ-asset-card h3 { margin: 0; }
+.econ-asset-card.is-unavailable { border-style: dashed; box-shadow: none !important; }
+.econ-asset-card .econ-status { align-self: flex-start; }
+
+/* Scenario */
+.econ-hypothetical {
+  font-size: 0.84rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px dashed var(--econ-scenario);
+  border-radius: 10px;
+}
+.econ-scenario-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 1rem 1.5rem; }
+.econ-sliders { display: grid; gap: 0.8rem; }
+.econ-slider { display: grid; gap: 0.2rem; }
+.econ-slider label { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.86rem; }
+.econ-slider label strong { font-variant-numeric: tabular-nums; }
+.econ-slider.is-moved label strong { color: var(--econ-scenario); }
+.econ-slider input[type="range"] { width: 100%; accent-color: var(--econ-scenario); min-height: 1.5rem; }
+.econ-scenario-result { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+.econ-scenario-verdict { font-weight: 650; font-size: 0.95rem; }
+.econ-legend { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+.econ-key { display: inline-block; width: 0.9rem; height: 0.45rem; border-radius: 2px; margin-left: 0.4rem; }
+.econ-key:first-child { margin-left: 0; }
+.econ-key.is-actual { background: var(--muted); }
+.econ-key.is-scenario { background: var(--econ-scenario); }
+
+/* News */
+.econ-news-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 1.25rem; }
+.econ-news-item { padding: 0.65rem 0; border-bottom: 1px solid var(--border-soft); display: grid; gap: 0.2rem; align-content: start; min-width: 0; }
+.econ-page a.econ-news-link { color: var(--text); font-weight: 600; text-decoration: none; line-height: 1.35; overflow-wrap: anywhere; }
+.econ-page a.econ-news-link:hover { text-decoration: underline; }
+.econ-news-related { border-left: 2px solid var(--border); padding-left: 0.5rem; }
+.econ-news-skeleton, .econ-skeleton {
+  display: block;
+  height: 3.2rem;
+  border-radius: 10px;
+  background: var(--econ-track);
+  animation: econ-pulse 1.4s ease-in-out infinite;
+}
+.econ-skeleton-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: 0.75rem; margin-top: 0.75rem; }
+.econ-skeleton { height: 7rem; }
+@keyframes econ-pulse { 50% { opacity: 0.5; } }
+@media (prefers-reduced-motion: reduce) {
+  .econ-news-skeleton, .econ-skeleton { animation: none; }
+}
+.econ-more-btn { justify-self: start; }
+
+/* History + footer */
+.econ-history > details > summary { cursor: pointer; display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; list-style: none; }
+.econ-history > details > summary::-webkit-details-marker { display: none; }
+.econ-history > details > summary h2 { margin: 0; font-size: 1.15rem; }
+.econ-history > details > summary::before { content: "▸"; color: var(--muted); }
+.econ-history > details[open] > summary::before { content: "▾"; }
+.econ-history > details > * + * { margin-top: 0.75rem; }
+.econ-footnote { display: grid; gap: 0.3rem; padding: 0 0.25rem; }
+
+@media (max-width: 900px) {
+  .econ-gauges { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .econ-gauge--facts { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; justify-content: space-between; }
+  .econ-why-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .econ-explorer-grid, .econ-scenario-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .econ-page .hero-card, .econ-page .panel { padding: 0.9rem 0.85rem; }
+  .econ-gauges, .econ-takeaways, .econ-news-list, .econ-detail-grid { grid-template-columns: 1fr; }
+  .econ-gauge--facts { flex-direction: column; }
+  .econ-rail {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(7.2rem, 1fr);
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    /* Room for the raised selected node; overflow-x clips vertically too. */
+    padding: 0.3rem 0.15rem 0.35rem;
+  }
+  .econ-rail-step { scroll-snap-align: start; }
+  .econ-fit-bars li { grid-template-columns: 6.5rem 1fr 3.8rem; gap: 0.45rem; }
+  .econ-dl { grid-template-columns: 1fr; gap: 0 0; }
+  .econ-dl dd { margin-bottom: 0.35rem; }
+  .econ-chip { min-height: 2.25rem; }
+}
+
 /* News page only (same theme as the other pages). Header and other screens stay as they are. */
 html[data-theme="light"]:has(.news-page),
 html[data-theme="light"]:has(.news-page) body {

@@ -41,6 +41,11 @@ const NZ_TOPICS: EconomyNewsTopic[] = [
     query: '"New Zealand" (housing OR "house prices" OR "building consents")',
   },
   {
+    id: 'markets',
+    title: 'Markets',
+    query: '"New Zealand" (NZX OR "NZX 50" OR sharemarket OR "share market")',
+  },
+  {
     id: 'global',
     title: 'Global economy',
     query: '("world economy" OR "global economy" OR IMF OR "Federal Reserve" OR "European Central Bank")',
