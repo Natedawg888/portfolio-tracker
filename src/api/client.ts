@@ -37,6 +37,7 @@ import type {
   WalletNetwork,
   WalletNetworkInfo,
   WalletsValuationResponse,
+  TxnCategorySuggestions,
 } from '../types/index.ts';
 import type { OutputPaySourceInputs } from '../lib/outputPayCalc.ts';
 import {
@@ -467,6 +468,11 @@ export const api = {
       if (to) q.set('to', to);
       return req<unknown[]>(`/accounts/transactions?${q}`);
     },
+    /** One-tap category suggestions for uncategorised transactions in the range (Budget triage). */
+    categorySuggestions: (from: string, to: string) =>
+      req<TxnCategorySuggestions[]>(
+        `/accounts/transactions/suggestions?${new URLSearchParams({ from, to })}`,
+      ),
     btcHoldings: () =>
       req<{
         holdings: Array<{

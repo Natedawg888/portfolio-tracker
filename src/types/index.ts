@@ -114,6 +114,12 @@ export interface Transaction {
   receiptUrl?: string | null;
 }
 
+/** Budget triage: up to 3 categories for an uncategorised transaction, most likely first. */
+export interface TxnCategorySuggestions {
+  transactionId: string;
+  suggestions: Array<{ categoryId: string; source: 'payee' | 'history' | 'popular' }>;
+}
+
 /** spending | income | transfer_out | transfer_in — only spending counts as Budget spend. */
 export type BudgetCategoryType = 'spending' | 'income' | 'transfer_out' | 'transfer_in';
 

@@ -9,6 +9,7 @@
  */
 import { useMemo, useState } from 'react';
 import { formatNzd } from '../api/client';
+import { categoryColour, UNCATEGORISED_COLOUR } from '../lib/categoryColours';
 import {
   categoryTypeCountsAsSpend,
   normalizeCategoryType,
@@ -22,6 +23,8 @@ export type ChartCategory = {
   name: string;
   type?: CategoryType;
   isIncome?: boolean;
+  /** Saved colour (#rrggbb); falls back to the palette. */
+  colour?: string | null;
 };
 
 function isDebtCategory(categoryId: string | null | undefined, categories: ChartCategory[]): boolean {
@@ -59,21 +62,6 @@ export type CategorySpendRow = {
   colour: string;
 };
 
-const PALETTE = [
-  '#3d9a6a',
-  '#4a8fd4',
-  '#c47a2c',
-  '#9a6ad4',
-  '#d45a7a',
-  '#5ab8a0',
-  '#d4b84a',
-  '#6a8fd4',
-  '#a07050',
-  '#70a0c0',
-];
-
-const UNC_COLOUR = '#6a7585';
-
 export function aggregateCategorySpend(
   txns: ChartTransaction[],
   categories: ChartCategory[],
@@ -82,6 +70,7 @@ export function aggregateCategorySpend(
   repayments: ChartDebtRepayment[] = [],
 ): CategorySpendRow[] {
   const nameById = new Map(categories.map((c) => [c.id, c.name]));
+  const colourById = new Map(categories.map((c) => [c.id, c.colour ?? null]));
   const typeById = new Map(
     categories.map((c) => [c.id, normalizeCategoryType(c.type, c.isIncome)]),
   );
@@ -124,20 +113,20 @@ export function aggregateCategorySpend(
 
 
   const rows = Array.from(totals.entries())
-    .map(([key, row], i) => ({
+    .map(([key, row]) => ({
       key,
       categoryId: row.categoryId,
       name: row.name,
       spend: row.spend,
-      colour: row.categoryId == null ? UNC_COLOUR : PALETTE[i % PALETTE.length],
+      colour: UNCATEGORISED_COLOUR,
     }))
     .filter((r) => r.spend > 0)
     .sort((a, b) => b.spend - a.spend);
 
-  // Re-assign palette after sort so largest gets first colours
+  // Palette by spend rank so the largest gets the first colours; a saved colour wins.
   return rows.map((r, i) => ({
     ...r,
-    colour: r.categoryId == null ? UNC_COLOUR : PALETTE[i % PALETTE.length],
+    colour: r.categoryId == null ? UNCATEGORISED_COLOUR : categoryColour(colourById.get(r.categoryId), i),
   }));
 }
 

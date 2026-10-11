@@ -23,13 +23,7 @@ import {
   type AkahuConnectionStatus,
   type AkahuInstitution,
 } from '../api/akahuClient';
-import {
-  CATEGORY_TYPES,
-  CATEGORY_TYPE_LABELS,
-  normalizeCategoryType,
-  type CategoryType,
-} from '../lib/categoryTypes';
-import { CategoryTypeToggle } from '../components/CategoryTypeToggle';
+import { CategoryManager } from '../components/CategoryManager';
 import { SecurityPanel } from '../components/SecurityPanel';
 import { BusinessDetailsPanel } from '../components/BusinessDetailsPanel';
 import { AdPrefsPanel } from '../components/AdPrefsPanel';
@@ -38,23 +32,12 @@ import {
   commitPageRead,
   invalidateAfterAkahuLinkChange,
   invalidateAfterExternalSync,
-  invalidateFinancial,
   portfolioSyncChanged,
   readPageCache,
   txnSyncChanged,
 } from '../lib/pageDataCache';
 
 type SettingsTab = 'account' | 'security' | 'business' | 'categories';
-
-type TxCategory = {
-  id: string;
-  name: string;
-  parentId: string | null;
-  colour: string | null;
-  type: CategoryType;
-  isIncome: boolean;
-  sortOrder: number;
-};
 
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -595,14 +578,6 @@ function CategoriesPanel({
     () => readPageCache<AkahuConnectionStatus>('settings:akahu')?.institutions ?? [],
   );
 
-  const [categories, setCategories] = useState<TxCategory[]>(
-    () => readPageCache<TxCategory[]>('categories') ?? [],
-  );
-  const [catBusy, setCatBusy] = useState(false);
-  const [catMsg, setCatMsg] = useState<string | null>(null);
-  const [catError, setCatError] = useState<string | null>(null);
-  const [newCatName, setNewCatName] = useState('');
-  const [newCatType, setNewCatType] = useState<CategoryType>('spending');
 
   useEffect(() => {
     setDraft(prefs);
@@ -615,21 +590,6 @@ function CategoriesPanel({
   useEffect(() => {
     void refresh();
   }, [refresh]);
-
-  const loadCategories = useCallback(async () => {
-    const stamp = beginPageRead('categories');
-    try {
-      const rows = await api.budgets.categories();
-      if (!commitPageRead(stamp, rows)) return;
-      setCategories(rows);
-    } catch (err) {
-      setCatError(err instanceof ApiError ? err.message : 'Could not load categories');
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadCategories();
-  }, [loadCategories]);
 
   const loadAkahu = useCallback(async () => {
     const stamp = beginPageRead('settings:akahu');
@@ -699,51 +659,6 @@ function CategoriesPanel({
     setVsDraft(defaultValueSearchPrefs());
     setMsg(null);
     setError(null);
-  };
-
-  const onAddCategory = async (e: FormEvent) => {
-    e.preventDefault();
-    const name = newCatName.trim();
-    if (!name) return;
-    setCatBusy(true);
-    setCatMsg(null);
-    setCatError(null);
-    try {
-      const createdType = newCatType;
-      await api.budgets.createCategory({ name, type: createdType });
-      setNewCatName('');
-      setNewCatType('spending');
-      setCatMsg(`Added “${name}” (${CATEGORY_TYPE_LABELS[createdType].toLowerCase()}).`);
-      invalidateFinancial('categories', 'spending');
-      await loadCategories();
-    } catch (err) {
-      setCatError(err instanceof ApiError ? err.message : 'Could not add category');
-    } finally {
-      setCatBusy(false);
-    }
-  };
-
-  const onDeleteCategory = async (cat: TxCategory) => {
-    if (
-      !window.confirm(
-        `Remove category “${cat.name}”? Transactions keep their history but lose this category tag; related budget plans are deleted.`,
-      )
-    ) {
-      return;
-    }
-    setCatBusy(true);
-    setCatMsg(null);
-    setCatError(null);
-    try {
-      await api.budgets.deleteCategory(cat.id);
-      setCatMsg(`Removed “${cat.name}”.`);
-      invalidateFinancial('categories', 'spending', 'dashboard');
-      await loadCategories();
-    } catch (err) {
-      setCatError(err instanceof ApiError ? err.message : 'Could not remove category');
-    } finally {
-      setCatBusy(false);
-    }
   };
 
   const onConnect = async () => {
@@ -828,9 +743,6 @@ function CategoriesPanel({
     }
   };
 
-  const catsByType = (t: CategoryType) =>
-    categories.filter((c) => normalizeCategoryType(c.type, c.isIncome) === t);
-
   return (
     <>
       <section className="panel">
@@ -893,69 +805,10 @@ function CategoriesPanel({
       <section className="panel">
         <h2>Transaction categories</h2>
         <p className="page-lead">
-          Add or remove categories by type (spending, income, transfer out, transfer in) for the Budget page and budget plans.
+          Add, rename, recolour, retype or remove the categories used on the Budget page and in budget plans.
         </p>
 
-        <form className="auth-form account-form" onSubmit={onAddCategory}>
-          <CategoryTypeToggle
-            value={newCatType}
-            onChange={setNewCatType}
-            disabled={catBusy}
-            label="Type (set when creating)"
-          />
-          <div className="row gap wrap-row" style={{ marginTop: '0.75rem' }}>
-            <label className="field grow">
-              <span>New category name</span>
-              <input
-                type="text"
-                value={newCatName}
-                onChange={(e) => setNewCatName(e.target.value)}
-                maxLength={80}
-                placeholder="e.g. Pets"
-                disabled={catBusy}
-                required
-              />
-            </label>
-            <div className="field field-align-end">
-              <span className="sr-only">Add</span>
-              <button type="submit" className="btn primary" disabled={catBusy || !newCatName.trim()}>
-                {catBusy ? 'Adding…' : `Add ${CATEGORY_TYPE_LABELS[newCatType].toLowerCase()} category`}
-              </button>
-            </div>
-          </div>
-        </form>
-
-        {catError ? <p className="auth-error" role="alert">{catError}</p> : null}
-        {catMsg ? <p className="auth-info" role="status">{catMsg}</p> : null}
-
-        <div className="txn-cat-columns txn-cat-columns-4">
-          {CATEGORY_TYPES.map((t) => {
-            const rows = catsByType(t);
-            return (
-              <div key={t}>
-                <h3>{CATEGORY_TYPE_LABELS[t]}</h3>
-                <ul className="txn-cat-list">
-                  {rows.map((c) => (
-                    <li key={c.id}>
-                      <span>{c.name}</span>
-                      <button
-                        type="button"
-                        className="btn small ghost"
-                        disabled={catBusy}
-                        onClick={() => void onDeleteCategory(c)}
-                      >
-                        Remove
-                      </button>
-                    </li>
-                  ))}
-                  {rows.length === 0 ? (
-                    <li className="muted">No {CATEGORY_TYPE_LABELS[t].toLowerCase()} categories.</li>
-                  ) : null}
-                </ul>
-              </div>
-            );
-          })}
-        </div>
+        <CategoryManager />
       </section>
 
       <section className="panel" id="connect-accounts">

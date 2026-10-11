@@ -5,7 +5,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { prefetchNavTarget } from '../lib/routePrefetch';
 import { api, formatNzd } from '../api/client';
 import {
   maybeAutoSyncBankTransactions,
@@ -21,17 +20,16 @@ import {
   readPageCache,
   txnSyncChanged,
 } from '../lib/pageDataCache';
-import type { DebtCreditorKind, DebtPerson, DebtRepayment, IncomeKind, IncomeMonthSummary, IncomeRecord, PayeeSetting, Transaction, TransactionSource } from '../types';
-import {
-  CategorySpendChart,
-  aggregateCategorySpend,
-} from '../components/CategorySpendChart';
+import type { DebtPerson, DebtRepayment, IncomeKind, IncomeMonthSummary, IncomeRecord, PayeeSetting, Transaction, TransactionSource, TxnCategorySuggestions } from '../types';
+import { aggregateCategorySpend } from '../components/CategorySpendChart';
+import { CategoryBudgetList, type PlannedRow, type UnplannedRow } from '../components/budget/CategoryBudgetList';
+import { CategoryManager } from '../components/CategoryManager';
+import { categoryColour, validColour } from '../lib/categoryColours';
 import {
   DEFAULT_MONTH,
   SPENDING_FLOOR,
   addMonths,
   budgetOverlapsMonth,
-  formatMonthLabel,
   formatMonthLong,
   isBeforeFloorMonth,
   monthEnd,
@@ -45,6 +43,12 @@ import {
   linkCharityDonationToPaye,
   unlinkCharityDonationFromPaye,
 } from '../lib/charityPayeLink';
+import { budgetUsed, monthProgress, spendInsight, type TxnFilter } from '../lib/budgetView';
+import { BudgetHeader } from '../components/budget/BudgetHeader';
+import { BudgetSummary } from '../components/budget/BudgetSummary';
+import { IncomeCard, type IncomeRow } from '../components/budget/IncomeCard';
+import { TriageCard } from '../components/budget/TriageCard';
+import { TransactionList } from '../components/budget/TransactionList';
 import {
   categoryTypeShortTag,
   categoryTypeCountsAsSpend,
@@ -56,6 +60,7 @@ import {
 type Category = {
   id: string;
   name: string;
+  colour?: string | null;
   type?: CategoryType;
   isIncome: boolean;
   sortOrder: number;
@@ -85,7 +90,6 @@ type SpendingBundle = {
   budgets: Budget[];
   txns: Transaction[];
   accounts: CashAccount[];
-  flowTxns: Transaction[];
   debtPeople: DebtPerson[];
   debtRepayments: DebtRepayment[];
   incomeRecords: IncomeRecord[];
@@ -93,6 +97,7 @@ type SpendingBundle = {
   payees: PayeeSetting[];
   btcHoldings: Array<{ id: string; name: string; asset: string; amount: number }>;
   btcPrimaryId: string | null;
+  suggestions: TxnCategorySuggestions[];
 };
 
 function spendingCacheKey(month: YearMonth): string {
@@ -103,18 +108,6 @@ function payeeDraftFrom(payees: PayeeSetting[]): Record<string, string> {
   const next: Record<string, string> = {};
   for (const payee of payees) next[payee.name] = payee.categoryId ?? '';
   return next;
-}
-
-/** Match server liquid-cash filter (net-worth Cash / Dashboard). */
-const LIQUID_CASH_TYPES = new Set(['cheque', 'savings', 'wallet', 'term_deposit']);
-const LIABILITY_CASH_TYPES = new Set(['credit', 'loan']);
-
-function isLiquidCashAccount(a: CashAccount): boolean {
-  const t = (a.accountType ?? '').toLowerCase();
-  if (LIABILITY_CASH_TYPES.has(t)) return false;
-  if (LIQUID_CASH_TYPES.has(t)) return true;
-  if (t === 'other' && a.notes && /\bWALLET\b/i.test(a.notes)) return true;
-  return false;
 }
 
 /** Presets for cards that may not appear in Akahu (crypto cards, etc.). */
@@ -129,9 +122,6 @@ const CARD_PRESETS = [
 ] as const;
 
 
-function debtKindLabel(kind: DebtCreditorKind | string | undefined): string {
-  return kind === 'corporation' ? 'Corporation' : 'Person';
-}
 
 function sourceLabel(s: string | undefined): string {
   switch (s) {
@@ -179,12 +169,14 @@ export function Spending() {
   const [budgets, setBudgets] = useState<Budget[]>(initialSpend?.budgets ?? []);
   const [txns, setTxns] = useState<Transaction[]>(initialSpend?.txns ?? []);
   const [accounts, setAccounts] = useState<CashAccount[]>(initialSpend?.accounts ?? []);
-  /** Txns from selected month start through today (Auckland) — for start-of-month cash back-calc. */
-  const [flowTxns, setFlowTxns] = useState<Transaction[]>(initialSpend?.flowTxns ?? []);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showTxnModal, setShowTxnModal] = useState(false);
+  const [showCsvModal, setShowCsvModal] = useState(false);
+  const [showCategoriesModal, setShowCategoriesModal] = useState(false);
+  /** Transactions list filter; "See transactions" on a category row sets a category filter. */
+  const [txnFilter, setTxnFilter] = useState<TxnFilter>({ kind: 'all' });
 
   // Income
   const [incomeRecords, setIncomeRecords] = useState<IncomeRecord[]>(initialSpend?.incomeRecords ?? []);
@@ -201,16 +193,13 @@ export function Spending() {
   const [incNotes, setIncNotes] = useState('');
   const [incCategoryId, setIncCategoryId] = useState('cat-income');
   const [payees, setPayees] = useState<PayeeSetting[]>(initialSpend?.payees ?? []);
+  const [suggestions, setSuggestions] = useState<TxnCategorySuggestions[]>(initialSpend?.suggestions ?? []);
   const [payeeCategoryDraft, setPayeeCategoryDraft] = useState<Record<string, string>>(() =>
     payeeDraftFrom(initialSpend?.payees ?? []),
   );
   const [payeeSavingName, setPayeeSavingName] = useState<string | null>(null);
   const [payeeSettingsOpen, setPayeeSettingsOpen] = useState(false);
-  const [planIncomeCategoryId, setPlanIncomeCategoryId] = useState('');
-  const [planIncomeAmount, setPlanIncomeAmount] = useState('');
   const [planIncomeSaving, setPlanIncomeSaving] = useState(false);
-  const [editingIncomePlanId, setEditingIncomePlanId] = useState<string | null>(null);
-  const [editIncomePlanAmount, setEditIncomePlanAmount] = useState('');
 
   // Manual / Wallet form state
   const [formSource, setFormSource] = useState<'bank' | 'manual' | 'google_wallet'>(
@@ -247,33 +236,15 @@ export function Spending() {
   >(initialSpend?.btcHoldings ?? []);
   const [btcPrimaryId, setBtcPrimaryId] = useState<string | null>(initialSpend?.btcPrimaryId ?? null);
 
-  // Debt / I owe
+  // Debts (summary link; managed on the Debts page)
   const [debtPeople, setDebtPeople] = useState<DebtPerson[]>(initialSpend?.debtPeople ?? []);
   const [debtRepayments, setDebtRepayments] = useState<DebtRepayment[]>(initialSpend?.debtRepayments ?? []);
-  const [showAddPerson, setShowAddPerson] = useState(false);
-  const [personName, setPersonName] = useState('');
-  const [personKind, setPersonKind] = useState<DebtCreditorKind>('person');
-  const [personNotes, setPersonNotes] = useState('');
-  const [personOutstanding, setPersonOutstanding] = useState('');
-  const [repayPersonId, setRepayPersonId] = useState('');
-  const [repayAmount, setRepayAmount] = useState('');
-  const [repayDate, setRepayDate] = useState(todayAucklandYmd);
-  const [repayNotes, setRepayNotes] = useState('');
-  const [repayTxnId, setRepayTxnId] = useState('');
-  const [showRepayForm, setShowRepayForm] = useState(false);
-  const [historyPersonId, setHistoryPersonId] = useState<string | null>(null);
-  const [debtSaving, setDebtSaving] = useState(false);
 
   // Budget plan (monthly planned spend per category)
-  const [planCategoryId, setPlanCategoryId] = useState('');
-  const [planAmount, setPlanAmount] = useState('');
   const [planSaving, setPlanSaving] = useState(false);
-  const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
-  const [editPlanAmount, setEditPlanAmount] = useState('');
 
   const periodFrom = monthStart(selectedMonth);
   const periodTo = monthEnd(selectedMonth);
-  const monthLabel = formatMonthLabel(selectedMonth);
   const monthLong = formatMonthLong(selectedMonth);
   const monthKey = yearMonthKey(selectedMonth);
   const canGoPrev = !isBeforeFloorMonth(addMonths(selectedMonth, -1));
@@ -318,7 +289,6 @@ export function Spending() {
       setBudgets(next.budgets);
       setTxns(next.txns);
       setAccounts(next.accounts);
-      setFlowTxns(next.flowTxns);
       setDebtPeople(next.debtPeople);
       setDebtRepayments(next.debtRepayments);
       setIncomeRecords(next.incomeRecords);
@@ -326,6 +296,7 @@ export function Spending() {
       setPayees(next.payees);
       setBtcHoldings(next.btcHoldings);
       setBtcPrimaryId(next.btcPrimaryId);
+      setSuggestions(next.suggestions ?? []);
       setError(null);
     }
   }
@@ -343,8 +314,7 @@ export function Spending() {
   const load = useCallback(async () => {
     const requested = selectedMonth;
     const stamp = beginPageRead(spendingCacheKey(requested));
-    const todayYmd = todayAucklandYmd();
-    const [cats, buds, list, accts, btc, people, repayments, incomeList, incomeSum, payeeList] = await Promise.all([
+    const [cats, buds, list, accts, btc, people, repayments, incomeList, incomeSum, payeeList, suggested] = await Promise.all([
       api.budgets.categories(),
       api.budgets.list(),
       api.accounts.transactions(periodFrom, periodTo),
@@ -355,27 +325,15 @@ export function Spending() {
       api.income.list({ month: yearMonthKey(selectedMonth) }).catch(() => []),
       api.income.summary(yearMonthKey(selectedMonth)).catch(() => null),
       api.payees.list().catch(() => []),
+      api.accounts.categorySuggestions(periodFrom, periodTo).catch(() => [] as TxnCategorySuggestions[]),
     ]);
     const nextPayees = payeeList as PayeeSetting[];
     const cash = (accts as CashAccount[]).slice().sort((a, b) => a.name.localeCompare(b.name));
-    // Start-of-month cash = current liquid − net liquid flows from month start through today.
-    // Never invent: future months (periodFrom > today) leave flowTxns empty → UI shows em dash.
-    let flows: Transaction[];
-    if (periodFrom > todayYmd) {
-      flows = [];
-    } else if (periodTo >= todayYmd) {
-      // Current month: month txn fetch already covers [periodFrom, today] (no future-dated needed).
-      flows = list as Transaction[];
-    } else {
-      // Past month: need flows after periodTo as well to back out from current balances.
-      flows = (await api.accounts.transactions(periodFrom, todayYmd).catch(() => [])) as Transaction[];
-    }
     const bundle: SpendingBundle = {
       categories: cats as Category[],
       budgets: buds as Budget[],
       txns: list as Transaction[],
       accounts: cash,
-      flowTxns: flows,
       debtPeople: people as DebtPerson[],
       debtRepayments: repayments as DebtRepayment[],
       incomeRecords: incomeList as IncomeRecord[],
@@ -383,6 +341,7 @@ export function Spending() {
       payees: nextPayees,
       btcHoldings: btc.holdings ?? [],
       btcPrimaryId: btc.primaryId ?? null,
+      suggestions: suggested,
     };
     if (!commitPageRead(stamp, bundle)) return;
     if (monthRef.current !== requested) return;
@@ -402,9 +361,9 @@ export function Spending() {
       return next;
     });
     setAccounts(cash);
-    setFlowTxns(flows);
     setBtcHoldings(bundle.btcHoldings);
     setBtcPrimaryId(bundle.btcPrimaryId);
+    setSuggestions(bundle.suggestions);
     // Seed form defaults via functional updates so `load` identity stays stable.
     // (Previously depending on formAccountId etc. recreated `load` on first paint,
     // cancelled the in-flight auto-sync effect after debounce was marked, and the
@@ -812,55 +771,7 @@ export function Spending() {
     [budgetCompareRows],
   );
 
-  const plannedIncomeNzd = incomeSummary?.plannedNzd ?? 0;
   const actualIncomeNzd = incomeSummary?.actualNzd ?? 0;
-  const incomeRemainingNzd = plannedIncomeNzd - actualIncomeNzd;
-  const incomeOverPlan = actualIncomeNzd > plannedIncomeNzd && plannedIncomeNzd > 0;
-  /** True when this month has received income (records or category credits). */
-  const hasReceivedIncome =
-    incomeRecords.length > 0 ||
-    actualIncomeNzd > 0 ||
-    incomeCompareRows.some((r) => r.actualNzd > 0);
-
-  /** Liquid NZD bank/cash total — same basis as Dashboard Cash. */
-  const cashBalanceNzd = useMemo(
-    () =>
-      accounts
-        .filter((a) => (a.currency ?? 'NZD').toUpperCase() === 'NZD')
-        .filter(isLiquidCashAccount)
-        .reduce((s, a) => s + (Number(a.balance) || 0), 0),
-    [accounts],
-  );
-
-  const liquidCashIds = useMemo(
-    () =>
-      new Set(
-        accounts
-          .filter((a) => (a.currency ?? 'NZD').toUpperCase() === 'NZD' && isLiquidCashAccount(a))
-          .map((a) => a.id),
-      ),
-    [accounts],
-  );
-
-  /**
-   * Cash at start of selected calendar month (Pacific/Auckland).
-   * Derived only: current liquid NZD − sum of signed txn amounts on those liquid accounts
-   * from month start through today. Null when the month has not started yet (never invent).
-   */
-  const cashStartOfMonthNzd = useMemo(() => {
-    const todayYmd = todayAucklandYmd();
-    if (periodFrom > todayYmd) return null;
-    const netFlow = flowTxns
-      .filter(
-        (t) =>
-          t.accountId !== null &&
-          liquidCashIds.has(t.accountId) &&
-          t.date >= periodFrom &&
-          t.date <= todayYmd,
-      )
-      .reduce((s, t) => s + (Number(t.amount) || 0), 0);
-    return cashBalanceNzd - netFlow;
-  }, [cashBalanceNzd, flowTxns, liquidCashIds, periodFrom]);
 
   /** Selected-month spending (Pacific/Auckland) — sum of category spend rows. */
   const spentThisMonthNzd = useMemo(
@@ -868,99 +779,90 @@ export function Spending() {
     [categorySpend],
   );
 
-  /**
-   * Saved = leftover = Cash − Spent this month.
-   * Chosen over income − spent: Nathan called it "cash leftover after spend".
-   * Cash is current liquid NZD; Spent is this calendar month's outflows.
-   * (Income − spent remains available via planned/received cards below.)
-   */
-  const savedLeftoverNzd = cashBalanceNzd - spentThisMonthNzd;
-  const liquidCashAccountCount = useMemo(
-    () =>
-      accounts.filter(
-        (a) => (a.currency ?? 'NZD').toUpperCase() === 'NZD' && isLiquidCashAccount(a),
-      ).length,
-    [accounts],
+  const colourByCategory = new Map(
+    categorySpend.filter((r) => r.categoryId).map((r) => [r.categoryId as string, r.colour]),
+  );
+  const plannedIds = new Set(budgetCompareRows.map((r) => r.categoryId));
+  const plannedRows: PlannedRow[] = budgetCompareRows.map((r, i) => ({
+    budgetId: r.budget.id,
+    categoryId: r.categoryId,
+    name: r.name,
+    colour:
+      colourByCategory.get(r.categoryId) ??
+      categoryColour(categories.find((c) => c.id === r.categoryId)?.colour, categorySpend.length + i),
+    planned: r.planned,
+    spent: r.spent,
+  }));
+  const unplannedRows: UnplannedRow[] = categorySpend
+    .filter((r) => r.categoryId != null && !plannedIds.has(r.categoryId))
+    .map((r) => ({ categoryId: r.categoryId as string, name: r.name, colour: r.colour, spent: r.spend }));
+  const uncategorisedSpend = categorySpend.filter((r) => r.categoryId == null).reduce((s, r) => s + r.spend, 0);
+  const addablePlanCategories = expenseCategories
+    .filter((c) => !plannedIds.has(c.id) && !unplannedRows.some((u) => u.categoryId === c.id))
+    .map((c) => ({ id: c.id, name: c.name }));
+  const uncategorisedTxns = txns.filter((t) => !t.categoryId);
+  const repaidThisMonth = debtRepayments
+    .filter((r) => r.date >= periodFrom && r.date <= periodTo)
+    .reduce((s, r) => s + Number(r.amountNzd || 0), 0);
+  const incomeRows: IncomeRow[] = (() => {
+    const itemsByCat = new Map<string, IncomeRecord[]>();
+    for (const rec of incomeRecords) {
+      const key = rec.categoryId ?? '__none__';
+      itemsByCat.set(key, [...(itemsByCat.get(key) ?? []), rec]);
+    }
+    const rows: IncomeRow[] = incomeCompareRows.map((row) => ({
+      categoryId: row.categoryId,
+      name: row.categoryName,
+      received: row.actualNzd,
+      planned: row.plannedNzd > 0 || row.plan ? row.plannedNzd : null,
+      planId: row.plan?.id ?? null,
+      items: itemsByCat.get(row.categoryId) ?? [],
+    }));
+    // Income whose category isn't in the summary (or has none) still shows, totalled from its items.
+    for (const [key, items] of itemsByCat) {
+      if (rows.some((row) => (row.categoryId ?? '__none__') === key)) continue;
+      rows.push({
+        categoryId: key === '__none__' ? null : key,
+        name: key === '__none__' ? 'Other income' : (items[0].categoryName ?? categories.find((c) => c.id === key)?.name ?? key),
+        received: items.reduce((s, r) => s + (Number(r.amountNzd) || 0), 0),
+        planned: null,
+        planId: null,
+        items,
+      });
+    }
+    return rows.sort((a, b) => b.received - a.received);
+  })();
+  const progress = monthProgress(selectedMonth, todayAucklandYmd());
+  const used = budgetUsed(spentAgainstPlanTotal, plannedTotal);
+  const insight = useMemo(
+    () => spendInsight(categorySpend, new Set(budgetCompareRows.map((r) => r.categoryId))),
+    [categorySpend, budgetCompareRows],
   );
 
-  function startEditPlan(b: Budget) {
-    setEditingPlanId(b.id);
-    setEditPlanAmount(String(b.amountNzd ?? ''));
-  }
-
-  function cancelEditPlan() {
-    setEditingPlanId(null);
-    setEditPlanAmount('');
-  }
-
-  async function onSavePlan(e: FormEvent) {
-    e.preventDefault();
+  async function savePlan(categoryId: string, amount: number): Promise<boolean> {
     setMsg(null);
-    if (!planCategoryId) {
-      setMsg('Choose a category for the budget plan.');
-      return;
-    }
-    const amount = Number(planAmount);
-    if (!Number.isFinite(amount) || amount < 0) {
-      setMsg('Enter a non-negative planned amount in NZD.');
-      return;
-    }
     setPlanSaving(true);
     try {
-      await api.budgets.upsertPlan({
-        categoryId: planCategoryId,
-        yearMonth: monthKey,
-        amountNzd: amount,
-      });
-      const name = categories.find((c) => c.id === planCategoryId)?.name ?? planCategoryId;
-      setMsg(`Budget plan · ${name} · ${formatNzd(amount)} for ${monthLong}`);
-      setPlanAmount('');
+      await api.budgets.upsertPlan({ categoryId, yearMonth: monthKey, amountNzd: amount });
+      const name = categories.find((c) => c.id === categoryId)?.name ?? categoryId;
+      setMsg(`Plan saved · ${name} · ${formatNzd(amount)} for ${monthLong}`);
       await reloadAfterEdit();
+      return true;
     } catch (err) {
       setMsg((err as Error).message);
+      return false;
     } finally {
       setPlanSaving(false);
     }
   }
 
-  async function onSaveInlinePlan(budgetId: string) {
-    setMsg(null);
-    const amount = Number(editPlanAmount);
-    if (!Number.isFinite(amount) || amount < 0) {
-      setMsg('Enter a non-negative planned amount in NZD.');
-      return;
-    }
-    const row = budgetsThisPeriod.find((b) => b.id === budgetId);
-    if (!row) return;
-    setPlanSaving(true);
-    try {
-      await api.budgets.upsertPlan({
-        categoryId: row.categoryId,
-        yearMonth: monthKey,
-        amountNzd: amount,
-      });
-      setMsg(`Updated plan · ${formatNzd(amount)}`);
-      cancelEditPlan();
-      await reloadAfterEdit();
-    } catch (err) {
-      setMsg((err as Error).message);
-    } finally {
-      setPlanSaving(false);
-    }
-  }
-
-  async function onClearPlan(budgetId: string) {
-    const row = budgetsThisPeriod.find((b) => b.id === budgetId);
-    const name = row
-      ? categories.find((c) => c.id === row.categoryId)?.name ?? row.categoryId
-      : budgetId;
-    if (!window.confirm(`Remove budget plan for ${name} in ${monthLong}?`)) return;
+  async function removePlan(budgetId: string, name: string): Promise<void> {
+    if (!window.confirm(`Remove the ${monthLong} plan for ${name}?`)) return;
     setMsg(null);
     setPlanSaving(true);
     try {
       await api.budgets.remove(budgetId);
-      setMsg(`Cleared plan · ${name}`);
-      if (editingPlanId === budgetId) cancelEditPlan();
+      setMsg(`Removed plan · ${name}`);
       await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
@@ -969,70 +871,35 @@ export function Spending() {
     }
   }
 
+  function seeTransactions(categoryId: string) {
+    setTxnFilter({ kind: 'category', categoryId });
+    document.getElementById('budget-transactions')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 
-  async function onSaveIncomePlan(e?: FormEvent) {
-    e?.preventDefault();
+  async function saveIncomePlan(categoryId: string, amount: number): Promise<boolean> {
     setMsg(null);
-    if (!planIncomeCategoryId) {
-      setMsg('Choose an income category (Salary, Mining, …).');
-      return;
-    }
-    const amount = Number(planIncomeAmount);
-    if (!Number.isFinite(amount) || amount < 0) {
-      setMsg('Enter a non-negative planned income amount in NZD.');
-      return;
-    }
     setPlanIncomeSaving(true);
     try {
-      await api.income.upsertPlan({
-        yearMonth: monthKey,
-        categoryId: planIncomeCategoryId,
-        amountNzd: amount,
-      });
-      const catName =
-        incomeCategories.find((c) => c.id === planIncomeCategoryId)?.name ?? planIncomeCategoryId;
-      setMsg(`Planned ${catName} · ${formatNzd(amount)} for ${monthLong}`);
-      setPlanIncomeAmount('');
+      await api.income.upsertPlan({ yearMonth: monthKey, categoryId, amountNzd: amount });
+      const name = incomeCategories.find((c) => c.id === categoryId)?.name ?? categoryId;
+      setMsg(`Planned ${name} · ${formatNzd(amount)} for ${monthLong}`);
       await reloadAfterEdit();
+      return true;
     } catch (err) {
       setMsg((err as Error).message);
+      return false;
     } finally {
       setPlanIncomeSaving(false);
     }
   }
 
-  async function onSaveEditIncomePlan(categoryId: string) {
-    const amount = Number(editIncomePlanAmount);
-    if (!Number.isFinite(amount) || amount < 0) {
-      setMsg('Enter a non-negative planned income amount in NZD.');
-      return;
-    }
-    setPlanIncomeSaving(true);
-    setMsg(null);
-    try {
-      await api.income.upsertPlan({
-        yearMonth: monthKey,
-        categoryId,
-        amountNzd: amount,
-      });
-      setEditingIncomePlanId(null);
-      setMsg(`Updated planned income · ${formatNzd(amount)}`);
-      await reloadAfterEdit();
-    } catch (err) {
-      setMsg((err as Error).message);
-    } finally {
-      setPlanIncomeSaving(false);
-    }
-  }
-
-  async function onClearIncomePlan(planId: string, categoryName: string) {
-    if (!window.confirm(`Clear planned ${categoryName} for ${monthLong}?`)) return;
+  async function removeIncomePlan(planId: string, name: string): Promise<void> {
+    if (!window.confirm(`Remove the ${monthLong} plan for ${name}?`)) return;
     setMsg(null);
     setPlanIncomeSaving(true);
     try {
       await api.income.removePlan(planId);
-      setMsg(`Cleared planned ${categoryName} · ${monthLong}`);
-      setEditingIncomePlanId(null);
+      setMsg(`Removed planned ${name}`);
       await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
@@ -1165,112 +1032,6 @@ export function Spending() {
     }
   }
 
-  async function onAddDebtPerson(e: FormEvent) {
-    e.preventDefault();
-    setMsg(null);
-    const name = personName.trim();
-    if (!name) {
-      setMsg('Enter a name for who you owe.');
-      return;
-    }
-    const outstanding = Number(personOutstanding);
-    if (!Number.isFinite(outstanding) || outstanding < 0) {
-      setMsg('Outstanding must be a non-negative NZD amount.');
-      return;
-    }
-    setDebtSaving(true);
-    try {
-      await api.debts.createPerson({
-        name,
-        kind: personKind,
-        notes: personNotes.trim() || null,
-        outstandingNzd: outstanding,
-      });
-      setPersonName('');
-      setPersonKind('person');
-      setPersonNotes('');
-      setPersonOutstanding('');
-      setShowAddPerson(false);
-      const kindLabel = personKind === 'corporation' ? 'Corporation' : 'Person';
-      setMsg(`Added debt · ${kindLabel} · ${name} · ${formatNzd(outstanding)} outstanding`);
-      await reloadAfterEdit();
-    } catch (err) {
-      setMsg((err as Error).message);
-    } finally {
-      setDebtSaving(false);
-    }
-  }
-
-
-  async function onDeleteDebtPerson(p: DebtPerson) {
-    const kind = debtKindLabel(p.kind);
-    const repaid = Number(p.repaidTotalNzd ?? 0);
-    const extra =
-      repaid > 0
-        ? `\n\nThis also removes ${formatNzd(repaid)} of repayment history for this creditor only. Other creditors are unchanged.`
-        : '';
-    if (
-      !window.confirm(
-        `Delete this creditor?\n\n${kind} · ${p.name} · ${formatNzd(p.outstandingNzd)} outstanding${extra}`,
-      )
-    ) {
-      return;
-    }
-    setMsg(null);
-    setDebtSaving(true);
-    try {
-      await api.debts.deletePerson(p.id);
-      if (historyPersonId === p.id) setHistoryPersonId(null);
-      if (repayPersonId === p.id) setRepayPersonId('');
-      setMsg(`Deleted creditor · ${kind} · ${p.name}`);
-      await reloadAfterEdit();
-    } catch (err) {
-      setMsg((err as Error).message);
-      await load();
-    } finally {
-      setDebtSaving(false);
-    }
-  }
-
-  async function onAddRepayment(e: FormEvent) {
-    e.preventDefault();
-    setMsg(null);
-    if (!repayPersonId) {
-      setMsg('Choose who you are repaying.');
-      return;
-    }
-    const amount = Number(repayAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setMsg('Enter a positive repayment amount in NZD.');
-      return;
-    }
-    if (repayDate < SPENDING_FLOOR) {
-      setMsg(`Repayment date must be on/after ${SPENDING_FLOOR}.`);
-      return;
-    }
-    setDebtSaving(true);
-    try {
-      const r = await api.debts.addRepayment(repayPersonId, {
-        amountNzd: amount,
-        date: repayDate,
-        notes: repayNotes.trim() || null,
-        transactionId: repayTxnId.trim() || null,
-      });
-      setMsg(
-        `Repaid ${formatNzd(amount)} -> ${r.person.name} · outstanding now ${formatNzd(r.person.outstandingNzd)}`,
-      );
-      setRepayAmount('');
-      setRepayNotes('');
-      setRepayTxnId('');
-      setShowRepayForm(false);
-      await reloadAfterEdit();
-    } catch (err) {
-      setMsg((err as Error).message);
-    } finally {
-      setDebtSaving(false);
-    }
-  }
-
   if (error && (!txns || txns.length === 0)) {
     return (
       <div className="panel warn budget-page">
@@ -1282,88 +1043,81 @@ export function Spending() {
 
   return (
     <div className="stack budget-page">
-      <section className="panel">
-        <h2 className="page-title">Budget</h2>
-        <p className="page-lead">
-          Browse by calendar month (Pacific/Auckland). Import/sync floor stays{' '}
-          <strong>1 Oct 2026</strong>. Sync Kiwibank via Akahu; off-Akahu cards (Nexo, GoMining, …)
-          — add manually with card name and charged cash account.
-        </p>
-        <div className="row gap" style={{ marginBottom: '0.75rem' }}>
-          <Link className="btn" to="/bills" onMouseEnter={() => prefetchNavTarget('/bills')} onFocus={() => prefetchNavTarget('/bills')}>
-            Bills &amp; subscriptions →
-          </Link>
-          <Link className="btn" to="/warranties" onMouseEnter={() => prefetchNavTarget('/warranties')} onFocus={() => prefetchNavTarget('/warranties')}>
-            Warranties →
-          </Link>
-        </div>
-        <div className="period-pager" role="navigation" aria-label="Budget month">
-          <button
-            type="button"
-            className="btn"
-            disabled={!canGoPrev}
-            aria-label="Previous month"
-            onClick={() => setSelectedMonth((m) => addMonths(m, -1))}
-          >
-            {'← Prev'}
-          </button>
-          <div className="period-pager-label">
-            <strong>{monthLong}</strong>
-            <span className="muted small">
-              {periodFrom}{' – '}{periodTo}
-            </span>
-          </div>
-          <button
-            type="button"
-            className="btn"
-            aria-label="Next month"
-            onClick={() => setSelectedMonth((m) => addMonths(m, 1))}
-          >
-            {'Next →'}
-          </button>
-        </div>
+      <BudgetHeader
+        monthLong={monthLong}
+        progress={progress}
+        canGoPrev={canGoPrev}
+        onPrev={() => setSelectedMonth((m) => addMonths(m, -1))}
+        onNext={() => setSelectedMonth((m) => addMonths(m, 1))}
+        addActions={[
+          { key: 'txn', label: 'Add transaction', onSelect: openAddTransactionForm },
+          { key: 'income', label: 'Add income', onSelect: openAddIncomeForm },
+          { key: 'csv', label: 'Import Google Wallet CSV', onSelect: () => setShowCsvModal(true) },
+        ]}
+      />
+      <BudgetSummary
+        moneyInNzd={incomeSummary ? actualIncomeNzd : null}
+        moneyOutNzd={spentThisMonthNzd}
+        used={used}
+        progress={progress}
+        insight={insight}
+        floorLabel="1 Oct 2026"
+      />
+      {msg && <div className="banner" role="status">{msg}</div>}
+
+      <TriageCard
+        txns={uncategorisedTxns}
+        suggestions={suggestions}
+        categories={categories.map((c) => ({
+          id: c.id,
+          name: c.name,
+          tag: categoryTypeShortTag(normalizeCategoryType(c.type, c.isIncome)),
+        }))}
+        savingId={categorySavingId}
+        onPick={(txnId, categoryId) => void onCategoryChange(txnId, categoryId)}
+      />
+
+      <CategoryBudgetList
+        monthLong={monthLong}
+        progress={progress}
+        planned={plannedRows}
+        unplanned={unplannedRows}
+        uncategorisedSpend={uncategorisedSpend}
+        addable={addablePlanCategories}
+        saving={planSaving}
+        onSavePlan={savePlan}
+        onRemovePlan={removePlan}
+        onSeeTransactions={seeTransactions}
+        onManageCategories={() => setShowCategoriesModal(true)}
+      />
+
+      {showCategoriesModal && (
         <div
-          className="grid cards spending-summary-cards"
-          role="group"
-          aria-label="Cash, start of month, spent, and saved summary"
+          className="modal-overlay"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowCategoriesModal(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setShowCategoriesModal(false);
+          }}
         >
-          <div className="card">
-            <p className="eyebrow">Cash</p>
-            <p className="stat-value">{formatNzd(cashBalanceNzd)}</p>
-            <p className="muted small">
-              {liquidCashAccountCount} liquid account
-              {liquidCashAccountCount === 1 ? '' : 's'} · NZD
-            </p>
-          </div>
-          <div className="card">
-            <p className="eyebrow">Start of month</p>
-            <p className="stat-value">
-              {cashStartOfMonthNzd != null ? formatNzd(cashStartOfMonthNzd) : '—'}
-            </p>
-            <p className="muted small">
-              {monthLong} · liquid NZD
-              {cashStartOfMonthNzd == null ? ' · not started' : ''}
-            </p>
-          </div>
-          <div className="card">
-            <p className="eyebrow">Spent</p>
-            <p className="stat-value">{formatNzd(spentThisMonthNzd)}</p>
-            <p className="muted small">
-              {monthLong} · outflows
-            </p>
-          </div>
-          <div className="card">
-            <p className="eyebrow">Saved</p>
-            <p className={`stat-value${savedLeftoverNzd < 0 ? ' budget-over-text' : ''}`}>
-              {formatNzd(savedLeftoverNzd)}
-            </p>
-            <p className="muted small">
-              Leftover · cash − spent
-            </p>
+          <div className="modal-dialog modal-dialog--wide" role="dialog" aria-modal="true" aria-labelledby="manage-categories-title">
+            <div className="modal-header">
+              <h3 id="manage-categories-title">Manage categories</h3>
+              <button
+                type="button"
+                className="btn small modal-close"
+                aria-label="Close"
+                onClick={() => setShowCategoriesModal(false)}
+              >
+                ×
+              </button>
+            </div>
+            <CategoryManager onChanged={reloadAfterEdit} />
           </div>
         </div>
-        {msg && <div className="banner">{msg}</div>}
-      </section>
+      )}
 
       {showTxnModal && (
         <div
@@ -1610,913 +1364,70 @@ export function Spending() {
         </div>
       )}
 
-      <section className="panel">
-        <h3 id="budget-plan-anchor">Budget plan · {monthLabel}</h3>
-        <p className="section-desc">
-          Plan income and spending for {monthLong} (Pacific/Auckland). Income compares{' '}
-          <strong>planned vs received</strong>; spending compares <strong>planned vs spent</strong>{' '}
-          (outflows; Debt = repayments only).
-        </p>
+      <IncomeCard
+        monthLong={monthLong}
+        progress={progress}
+        totalReceived={incomeSummary ? actualIncomeNzd : null}
+        rows={incomeRows}
+        expectedPay={
+          incomeSummary?.expectedPay
+            ? {
+                monthlyNetNzd: incomeSummary.expectedPay.monthlyNetNzd,
+                names: incomeSummary.expectedPay.sources.map((src) => src.name),
+              }
+            : null
+        }
+        addable={incomeCategories
+          .filter((c) => !incomeRows.some((row) => row.categoryId === c.id))
+          .map((c) => ({ id: c.id, name: c.name }))}
+        saving={planIncomeSaving}
+        onSavePlan={saveIncomePlan}
+        onRemovePlan={removeIncomePlan}
+        onDeleteItem={(rec) => void onDeleteIncome(rec)}
+        onAddIncome={openAddIncomeForm}
+      />
 
-        <h4 className="section-subtitle">Planned income</h4>
-        <p className="section-desc">
-          Plan by income category. Received = income records + bank-sync / tagged
-          income-category credits, matched to those categories (linked Add-income txns are not
-          double-counted). Paid dividends recorded on Portfolio are included once, in NZD, when
-          you have an FX rate. See <strong>Income received</strong> below.
-        </p>
-        <div className="grid cards budget-compare-summary" style={{ marginBottom: '0.75rem' }}>
-          <div className="card">
-            <p className="eyebrow">Planned income</p>
-            <p className="stat-value">{formatNzd(plannedIncomeNzd)}</p>
-            <p className="muted small">
-              {incomeCompareRows.filter((r) => r.plannedNzd > 0).length} categor
-              {incomeCompareRows.filter((r) => r.plannedNzd > 0).length === 1 ? 'y' : 'ies'} ·{' '}
-              {monthLong}
-            </p>
-          </div>
-          <div className="card">
-            <p className="eyebrow">Received</p>
-            <p className="stat-value">{formatNzd(actualIncomeNzd)}</p>
-            <p className={`muted small${incomeOverPlan ? ' budget-over-text' : ''}`}>
-              {plannedIncomeNzd > 0
-                ? incomeRemainingNzd >= 0
-                  ? `${formatNzd(incomeRemainingNzd)} still expected`
-                  : `${formatNzd(Math.abs(incomeRemainingNzd))} over plan`
-                : incomeSummary
-                  ? `${incomeSummary.receivedItemCount ?? incomeSummary.recordCount} item${
-                      (incomeSummary.receivedItemCount ?? incomeSummary.recordCount) === 1
-                        ? ''
-                        : 's'
-                    }`
-                  : '—'}
-            </p>
-          </div>
-          {incomeSummary?.expectedPay ? (
-            <div className="card">
-              <p className="eyebrow">Expected from saved pay</p>
-              <p className="stat-value">{formatNzd(incomeSummary.expectedPay.monthlyNetNzd)}</p>
-              <p className="muted small">
-                {formatNzd(incomeSummary.expectedPay.weeklyNetNzd)}/wk ·{' '}
-                {incomeSummary.expectedPay.sources.map((src) => src.name).join(', ')} · set on{' '}
-                <Link to="/paye">PAYE</Link>
-              </p>
-            </div>
-          ) : null}
-        </div>
-
-        {incomeCompareRows.length === 0 ? (
-          hasReceivedIncome ? (
-            <p className="muted small" style={{ marginBottom: '0.75rem' }}>
-              No income plans for {monthLong} yet.
-            </p>
-          ) : null
-        ) : (
-          <div className="grid cards budget-compare-grid" style={{ marginBottom: '1rem' }}>
-            {incomeCompareRows.map((row) => {
-              const pct =
-                row.plannedNzd > 0
-                  ? Math.min(100, (row.actualNzd / row.plannedNzd) * 100)
-                  : row.actualNzd > 0
-                    ? 100
-                    : 0;
-              const over = row.actualNzd > row.plannedNzd && row.plannedNzd > 0;
-              const editing = editingIncomePlanId === row.categoryId;
-              return (
-                <div
-                  key={row.categoryId}
-                  className={`card budget-compare-card${over ? ' budget-over' : ''}`}
-                >
-                  <div className="budget-compare-head">
-                    <strong>{row.categoryName}</strong>
-                    {over && <span className="budget-over-badge">Over plan</span>}
-                  </div>
-                  {editing ? (
-                    <div className="budget-inline-edit row gap">
-                      <input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        value={editIncomePlanAmount}
-                        onChange={(e) => setEditIncomePlanAmount(e.target.value)}
-                        aria-label={`Planned ${row.categoryName} NZD`}
-                        style={{ maxWidth: '8rem' }}
-                      />
-                      <button
-                        type="button"
-                        className="btn small primary"
-                        disabled={planIncomeSaving || !row.plan}
-                        onClick={() => onSaveEditIncomePlan(row.categoryId)}
-                      >
-                        Save
-                      </button>
-                      <button
-                        type="button"
-                        className="btn small"
-                        disabled={planIncomeSaving}
-                        onClick={() => setEditingIncomePlanId(null)}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <dl className="budget-compare-stats">
-                      <div>
-                        <dt>Planned</dt>
-                        <dd>{formatNzd(row.plannedNzd)}</dd>
-                      </div>
-                      <div>
-                        <dt>Received</dt>
-                        <dd>{formatNzd(row.actualNzd)}</dd>
-                      </div>
-                      <div>
-                        <dt>{row.remainingNzd >= 0 ? 'Still expected' : 'Over by'}</dt>
-                        <dd className={row.remainingNzd < 0 ? 'budget-positive-text' : ''}>
-                          {formatNzd(Math.abs(row.remainingNzd))}
-                        </dd>
-                      </div>
-                    </dl>
-                  )}
-                  <div
-                    className="budget-progress"
-                    role="progressbar"
-                    aria-valuenow={Math.round(pct)}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-label={`${row.categoryName} ${Math.round(pct)}% of plan`}
-                  >
-                    <div
-                      className={`budget-progress-fill${over ? ' over' : ''}`}
-                      style={{ width: `${Math.min(100, pct)}%` }}
-                    />
-                  </div>
-                  <p className="budget-progress-meta muted small">
-                    <span>
-                      {row.plannedNzd > 0
-                        ? `${Math.round(pct)}% of plan`
-                        : 'Received only (no plan)'}
-                    </span>
-                  </p>
-                  {!editing && row.plan && (
-                    <div className="row gap budget-card-actions">
-                      <button
-                        type="button"
-                        className="btn small"
-                        disabled={planIncomeSaving}
-                        onClick={() => {
-                          setEditIncomePlanAmount(String(row.plannedNzd));
-                          setEditingIncomePlanId(row.categoryId);
-                        }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="btn small danger"
-                        disabled={planIncomeSaving}
-                        onClick={() => onClearIncomePlan(row.plan!.id, row.categoryName)}
-                      >
-                        Clear
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        <h4 className="section-subtitle">Set / update income plan</h4>
-        <form className="form-grid" onSubmit={onSaveIncomePlan} style={{ marginBottom: '1.25rem' }}>
-          <label>
-            Category
-            <select
-              value={planIncomeCategoryId}
-              onChange={(e) => {
-                const id = e.target.value;
-                setPlanIncomeCategoryId(id);
-                const existing = incomeSummary?.plans?.find((p) => p.categoryId === id);
-                if (existing) setPlanIncomeAmount(String(existing.amountNzd));
-              }}
-              required
-            >
-              <option value="">Select…</option>
-              {incomeCategories.map((c) => {
-                const existing = incomeSummary?.plans?.find((p) => p.categoryId === c.id);
-                return (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                    {existing ? ` · planned ${formatNzd(existing.amountNzd)}` : ''}
-                  </option>
-                );
-              })}
-            </select>
-          </label>
-          <label>
-            Planned (NZD)
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              value={planIncomeAmount}
-              onChange={(e) => setPlanIncomeAmount(e.target.value)}
-              placeholder="e.g. 5500"
-              required
-            />
-          </label>
-          <div className="span-2 row gap">
-            <button type="submit" className="btn primary" disabled={planIncomeSaving}>
-              {planIncomeSaving ? 'Saving…' : 'Save income plan'}
-            </button>
-          </div>
-        </form>
-
-        <h4 className="section-subtitle">Planned spending</h4>
-        <p className="section-desc">
-          Planned NZD per expense category. Cards compare <strong>planned vs spent</strong>.
-        </p>
-
-        {budgetCompareRows.length > 0 && (
-          <div className="grid cards budget-compare-summary">
-            <div className="card">
-              <p className="eyebrow">Planned total</p>
-              <p className="stat-value">{formatNzd(plannedTotal)}</p>
-              <p className="muted small">
-                {budgetCompareRows.length} categor
-                {budgetCompareRows.length === 1 ? 'y' : 'ies'}
-              </p>
-            </div>
-            <div className="card">
-              <p className="eyebrow">Spent vs plan</p>
-              <p className="stat-value">{formatNzd(spentAgainstPlanTotal)}</p>
-              <p className={`muted small${spentAgainstPlanTotal > plannedTotal && plannedTotal > 0 ? ' budget-over-text' : ''}`}>
-                {plannedTotal > 0
-                  ? `${formatNzd(plannedTotal - spentAgainstPlanTotal)} remaining`
-                  : '—'}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {budgetCompareRows.length === 0 ? (
-          <p className="muted small" style={{ marginBottom: '0.75rem' }}>
-            No spending plans for {monthLong} yet. Use the form below to
-            add planned spend for rent, transport, groceries, etc.
-          </p>
-        ) : (
-          <div className="grid cards budget-compare-grid" style={{ marginBottom: '1rem' }}>
-            {budgetCompareRows.map((row) => (
-              <div
-                key={row.budget.id}
-                className={`card budget-compare-card${row.overBudget ? ' budget-over' : ''}`}
-              >
-                <div className="budget-compare-head">
-                  <strong>{row.name}</strong>
-                  {row.overBudget && (
-                    <span className="budget-over-badge">Over budget</span>
-                  )}
-                </div>
-                {editingPlanId === row.budget.id ? (
-                  <div className="budget-inline-edit row gap">
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      value={editPlanAmount}
-                      onChange={(e) => setEditPlanAmount(e.target.value)}
-                      aria-label={`Planned NZD for ${row.name}`}
-                      style={{ maxWidth: '8rem' }}
-                    />
-                    <button
-                      type="button"
-                      className="btn small primary"
-                      disabled={planSaving}
-                      onClick={() => onSaveInlinePlan(row.budget.id)}
-                    >
-                      Save
-                    </button>
-                    <button
-                      type="button"
-                      className="btn small"
-                      disabled={planSaving}
-                      onClick={cancelEditPlan}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <dl className="budget-compare-stats">
-                    <div>
-                      <dt>Planned</dt>
-                      <dd>{formatNzd(row.planned)}</dd>
-                    </div>
-                    <div>
-                      <dt>Spent</dt>
-                      <dd className={row.overBudget ? 'budget-over-text' : ''}>
-                        {formatNzd(row.spent)}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>{row.remaining >= 0 ? 'Remaining' : 'Over by'}</dt>
-                      <dd className={row.remaining < 0 ? 'budget-over-text' : ''}>
-                        {formatNzd(Math.abs(row.remaining))}
-                      </dd>
-                    </div>
-                  </dl>
-                )}
-                <div
-                  className="budget-progress"
-                  role="progressbar"
-                  aria-valuenow={Math.round(row.pct)}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-label={`${row.name} ${Math.round(row.pct)}% of plan`}
-                >
-                  <div
-                    className={`budget-progress-fill${row.overBudget ? ' over' : ''}`}
-                    style={{ width: `${Math.min(100, row.pct)}%` }}
-                  />
-                </div>
-                <p className="budget-progress-meta muted small">
-                  <span>{row.planned > 0 ? `${Math.round(row.pct)}% of plan` : 'No plan amount'}</span>
-                </p>
-                {editingPlanId !== row.budget.id && (
-                  <div className="row gap budget-card-actions">
-                    <button
-                      type="button"
-                      className="btn small"
-                      disabled={planSaving}
-                      onClick={() => startEditPlan(row.budget)}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      className="btn small danger"
-                      disabled={planSaving}
-                      onClick={() => onClearPlan(row.budget.id)}
-                    >
-                      Clear
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        <h4 className="section-subtitle">Set / update spending plan</h4>
-        <form className="form-grid" onSubmit={onSavePlan}>
-          <label>
-            Category
-            <select
-              value={planCategoryId}
-              onChange={(e) => {
-                const id = e.target.value;
-                setPlanCategoryId(id);
-                const existing = budgetsThisPeriod.find((b) => b.categoryId === id);
-                if (existing) setPlanAmount(String(existing.amountNzd));
-              }}
-              required
-            >
-              <option value="">Select…</option>
-              {expenseCategories.map((c) => {
-                const existing = budgetsThisPeriod.find((b) => b.categoryId === c.id);
-                return (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                    {existing ? ` · planned ${formatNzd(existing.amountNzd)}` : ''}
-                  </option>
-                );
-              })}
-            </select>
-          </label>
-          <label>
-            Planned (NZD)
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              value={planAmount}
-              onChange={(e) => setPlanAmount(e.target.value)}
-              placeholder="e.g. 450"
-              required
-            />
-          </label>
-          <div className="span-2 row gap">
-            <button type="submit" className="btn primary" disabled={planSaving}>
-              {planSaving ? 'Saving…' : 'Save plan'}
-            </button>
-          </div>
-        </form>
-      </section>
-
-      <section className="panel">
-        <div className="panel-heading">
-          <h3>Income received · {monthLabel}</h3>
-          <button type="button" className="btn primary" onClick={openAddIncomeForm}>
-            + Add income
-          </button>
-        </div>
-        <p className="section-desc">
-          Money in this month: <strong>Add income</strong> (cash or crypto), bank-sync or manually
-          tagged income-category credits, and paid dividends from Portfolio.
-          A foreign dividend stays out of this NZD total until you record an FX rate. Linked
-          Add-income bank rows are shown once. This is a personal record, not advice.
-        </p>
-        {incomeRecords.length > 0 ? (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Payee</th>
-                  <th>Category</th>
-                  <th>Type</th>
-                  <th>Amount</th>
-                  <th>Detail</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {incomeRecords.map((r) => {
-                  const fromTxn = r.origin === 'category_txn';
-                  const fromDividend = Boolean(r.dividendEventId);
-                  const typeLabel = fromDividend
-                    ? 'Dividend'
-                    : r.kind === 'crypto'
-                      ? 'Crypto'
-                      : fromTxn
-                        ? 'Income txn'
-                        : 'Cash';
-                  const badgeSource = fromDividend
-                    ? 'manual'
-                    : r.kind === 'crypto'
-                      ? 'manual'
-                      : fromTxn
-                        ? (r.txnSource === 'akahu' ? 'akahu' : r.txnSource === 'bank' ? 'bank' : 'manual')
-                        : 'bank';
-                  return (
-                  <tr key={r.id}>
-                    <td className="muted small">{r.date}</td>
-                    <td>{r.description || '—'}</td>
-                    <td className="muted small">{r.categoryName || r.categoryId || '—'}</td>
-                    <td>
-                      <span className={`source-badge source-${badgeSource}`}>
-                        {typeLabel}
-                      </span>
-                    </td>
-                    <td className="amt-in money">{formatNzd(r.amountNzd)}</td>
-                    <td className="muted small">
-                      {r.kind === 'crypto'
-                        ? `${r.cryptoAmount ?? '?'} ${r.cryptoAsset ?? ''}${
-                            r.holdingName ? ` · ${r.holdingName}` : ''
-                          }`
-                        : fromTxn
-                          ? `${r.accountName || r.accountId || '—'}${
-                              r.txnSource ? ` · ${r.txnSource}` : ''
-                            }`
-                          : r.dividendEventId
-                          ? 'Dividend · personal record, not advice'
-                          : r.accountName || r.accountId || '—'}
-                    </td>
-                    <td>
-                      {fromTxn ? (
-                        <span className="muted small" title="Recategorise on the transaction to remove from income">
-                          via txn
-                        </span>
-                      ) : r.dividendEventId ? (
-                        <span className="muted small" title="Update or delete the dividend on Portfolio">
-                          From dividend
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          className="btn small danger"
-                          aria-label={`Delete income ${r.description}`}
-                          onClick={() => onDeleteIncome(r)}
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : hasReceivedIncome ? (
-          <p className="muted">
-            Income was received in {monthLong}
-            {actualIncomeNzd > 0 ? ` (${formatNzd(actualIncomeNzd)})` : ''}.
-          </p>
-        ) : (
-          <p className="muted">No income in {monthLong}.</p>
-        )}
-      </section>
-
-      <section className="panel">
-        <h3>Spend by category · {monthLabel}</h3>
-        <CategorySpendChart
-          rows={categorySpend}
-          periodLabel={`${periodFrom} – ${periodTo}`}
-          embedded
-        />
-      </section>
-
-      <section className="panel">
-        <h3>I owe</h3>
-        <p className="section-desc">
-          People or corporations you owe (NZD). Outstanding reduces net worth but does{' '}
-          <strong>not</strong> appear on spend charts — only repayments on/after {SPENDING_FLOOR}
-          (and linked bank txns categorised as <strong>Debt</strong>) count as spend this month.
-          Balance, interest, payments, term, and debt-to-income for each debt are on{' '}
-          <Link to="/debts">Debts</Link>.
-        </p>
-        <div className="grid cards budget-compare-summary">
-          <div className="card">
-            <p className="eyebrow">Outstanding total</p>
-            <p className="stat-value">{formatNzd(debtOutstandingTotal)}</p>
-            <p className="muted small">
-              {debtPeople.length} creditor{debtPeople.length === 1 ? '' : 's'}
-              {debtPeople.length > 0
-                ? ` · ${debtPeople.filter((p) => p.kind === 'person').length} person` +
-                  (debtPeople.filter((p) => p.kind === 'person').length === 1 ? '' : 's') +
-                  ` · ${debtPeople.filter((p) => p.kind === 'corporation').length} corp`
-                : ''}
-            </p>
-          </div>
-          <div className="card">
-            <p className="eyebrow">Repaid · {monthLabel}</p>
-            <p className="stat-value">
-              {formatNzd(
-                debtRepayments
-                  .filter((r) => r.date >= periodFrom && r.date <= periodTo)
-                  .reduce((s, r) => s + Number(r.amountNzd || 0), 0),
-              )}
-            </p>
-          </div>
-        </div>
-        <div className="row gap" style={{ marginBottom: '0.75rem' }}>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => setShowAddPerson((v) => !v)}
-          >
-            {showAddPerson ? 'Hide' : 'Add creditor'}
-          </button>
-          <button
-            type="button"
-            className="btn"
-            disabled={debtPeople.length === 0}
-            onClick={() => {
-              setShowRepayForm((v) => !v);
-              if (!repayPersonId && debtPeople[0]) setRepayPersonId(debtPeople[0].id);
-            }}
-          >
-            {showRepayForm ? 'Hide repayment' : 'Add repayment'}
-          </button>
-        </div>
-        {showAddPerson && (
-          <form className="form-grid" onSubmit={onAddDebtPerson} style={{ marginBottom: '1rem' }}>
-            <label className="span-2">
-              Creditor type
-              <div className="chart-toggle" role="group" aria-label="Creditor type" style={{ marginTop: '0.35rem' }}>
-                <button
-                  type="button"
-                  className={`btn small${personKind === 'person' ? ' primary' : ''}`}
-                  aria-pressed={personKind === 'person'}
-                  onClick={() => setPersonKind('person')}
-                >
-                  Person
-                </button>
-                <button
-                  type="button"
-                  className={`btn small${personKind === 'corporation' ? ' primary' : ''}`}
-                  aria-pressed={personKind === 'corporation'}
-                  onClick={() => setPersonKind('corporation')}
-                >
-                  Corporation
-                </button>
-              </div>
-            </label>
-            <label>
-              {personKind === 'corporation' ? 'Company name' : 'Name'}
-              <input
-                type="text"
-                value={personName}
-                onChange={(e) => setPersonName(e.target.value)}
-                placeholder={personKind === 'corporation' ? 'Company you owe' : 'Who you owe'}
-                required
-              />
-            </label>
-            <label>
-              Outstanding (NZD)
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                inputMode="decimal"
-                value={personOutstanding}
-                onChange={(e) => setPersonOutstanding(e.target.value)}
-                required
-              />
-            </label>
-            <label className="span-2">
-              Notes (optional)
-              <input
-                type="text"
-                value={personNotes}
-                onChange={(e) => setPersonNotes(e.target.value)}
-                placeholder={
-                  personKind === 'corporation'
-                    ? 'e.g. BNZ credit card, IRD'
-                    : 'e.g. loan for car'
-                }
-              />
-            </label>
-            <div className="span-2 row gap">
-              <button type="submit" className="btn primary" disabled={debtSaving}>
-                {debtSaving ? 'Saving…' : 'Save creditor'}
-              </button>
-            </div>
-          </form>
-        )}
-        {showRepayForm && (
-          <form className="form-grid" onSubmit={onAddRepayment} style={{ marginBottom: '1rem' }}>
-            <label>
-              Creditor
-              <select
-                value={repayPersonId}
-                onChange={(e) => setRepayPersonId(e.target.value)}
-                required
-              >
-                <option value="">Select…</option>
-                {debtPeople.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {debtKindLabel(p.kind)} · {p.name} · {formatNzd(p.outstandingNzd)} owed
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Amount (NZD)
-              <input
-                type="number"
-                step="0.01"
-                min="0.01"
-                inputMode="decimal"
-                value={repayAmount}
-                onChange={(e) => setRepayAmount(e.target.value)}
-                required
-              />
-            </label>
-            <label>
-              Date
-              <input
-                type="date"
-                min={SPENDING_FLOOR}
-                value={repayDate}
-                onChange={(e) => setRepayDate(e.target.value)}
-                required
-              />
-            </label>
-            <label>
-              Linked transaction (optional)
-              <select value={repayTxnId} onChange={(e) => setRepayTxnId(e.target.value)}>
-                <option value="">— None —</option>
-                {txns
-                  .filter((t) => Number(t.amount) < 0)
-                  .map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.date} · {t.description || '(no desc)'} · {formatNzd(Number(t.amount))}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <label className="span-2">
-              Notes (optional)
-              <input
-                type="text"
-                value={repayNotes}
-                onChange={(e) => setRepayNotes(e.target.value)}
-              />
-            </label>
-            <div className="span-2 row gap">
-              <button type="submit" className="btn primary" disabled={debtSaving}>
-                {debtSaving ? 'Saving…' : 'Record repayment'}
-              </button>
-            </div>
-          </form>
-        )}
+      <Link to="/debts" className="card debt-link-card">
         {debtPeople.length === 0 ? (
-          <p className="muted">
-            No creditors yet. Add a person or corporation with an outstanding NZD balance.
-          </p>
+          <span>No debts recorded</span>
         ) : (
-          <div className="table-wrap">
-            <table className="data-table debt-people-table">
-              <thead>
-                <tr>
-                  <th>Type</th>
-                  <th>Name</th>
-                  <th>Outstanding</th>
-                  <th>Repaid (all time)</th>
-                  <th>Notes</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {debtPeople.map((p) => (
-                  <tr key={p.id}>
-                    <td>
-                      <span className="muted small">{debtKindLabel(p.kind)}</span>
-                    </td>
-                    <td>{p.name}</td>
-                    <td>{formatNzd(p.outstandingNzd)}</td>
-                    <td>{formatNzd(p.repaidTotalNzd ?? 0)}</td>
-                    <td className="muted small">{p.notes || '—'}</td>
-                    <td>
-                      <div className="row gap">
-                        <button
-                          type="button"
-                          className="btn small"
-                          onClick={() =>
-                            setHistoryPersonId((cur) => (cur === p.id ? null : p.id))
-                          }
-                        >
-                          {historyPersonId === p.id ? 'Hide' : 'History'}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn small danger"
-                          aria-label={`Delete creditor ${p.name}`}
-                          disabled={debtSaving}
-                          onClick={() => onDeleteDebtPerson(p)}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <span>
+            You owe <strong className="money">{formatNzd(debtOutstandingTotal)}</strong>
+            {' · '}
+            {formatNzd(repaidThisMonth)} repaid this month
+            {' · '}
+            <span className="muted">
+              {debtPeople.slice(0, 3).map((p) => p.name).join(', ')}
+              {debtPeople.length > 3 ? ` +${debtPeople.length - 3} more` : ''}
+            </span>
+          </span>
         )}
-        {historyPersonId && (
-          <div style={{ marginTop: '0.75rem' }}>
-            <h4 style={{ margin: '0 0 0.35rem' }}>
-              Repayment history ·{' '}
-              {debtPeople.find((p) => p.id === historyPersonId)?.name ?? historyPersonId}
-            </h4>
-            {debtRepayments.filter((r) => r.personId === historyPersonId).length === 0 ? (
-              <p className="muted small">No repayments recorded yet for this creditor.</p>
-            ) : (
-              <ul className="plain-list">
-                {debtRepayments
-                  .filter((r) => r.personId === historyPersonId)
-                  .map((r) => (
-                    <li key={r.id}>
-                      {r.date} · {formatNzd(r.amountNzd)}
-                      {r.notes ? ` · ${r.notes}` : ''}
-                      {r.transactionId ? ' · linked txn' : ''}
-                    </li>
-                  ))}
-              </ul>
-            )}
-          </div>
-        )}
-      </section>
+        <span className="debt-link-go">
+          Debts <span aria-hidden="true">→</span>
+        </span>
+      </Link>
 
-      <section className="panel">
-        <h3>Categories</h3>
-        <p className="section-desc">
-          Labels used on transactions. Monthly plans live in Budget plan above.
-        </p>
-        {categories.length === 0 ? (
-          <p className="muted">No categories loaded.</p>
-        ) : (
-          <div className="category-chip-row" role="list">
-            {categories.map((c) => (
-              <span key={c.id} className="category-chip" role="listitem">
-                {c.name}
-                {(() => {
-                  const tag = categoryTypeShortTag(normalizeCategoryType(c.type, c.isIncome));
-                  return tag ? <span className="chip-tag"> · {tag}</span> : null;
-                })()}
-              </span>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="panel">
-        <div className="panel-heading">
-          <h3>Transactions · {monthLabel}</h3>
-          <button type="button" className="btn primary" onClick={openAddTransactionForm}>
-            + Add transaction
-          </button>
-        </div>
-        {txns.length === 0 ? (
-          <p className="muted">
-            No transactions in {monthLong}. Sync bank, add a manual row, or pick another month.
-          </p>
-        ) : (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Description</th>
-                  <th>Amount</th>
-                  <th>Card</th>
-                  <th>Charged account</th>
-                  <th>Category</th>
-                  <th>BTC</th>
-                  <th>Source</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {txns.map((t) => (
-                  <tr key={t.id}>
-                    <td className="muted small">{t.date}</td>
-                    <td className="txn-desc" title={t.description || undefined}>{t.description}</td>
-                    <td className={Number(t.amount) < 0 ? 'amt-out money' : 'amt-in money'}>
-                      {formatNzd(Number(t.amount))}
-                    </td>
-                    <td className="muted small">{t.cardName || '—'}</td>
-                    <td className="muted small">{t.accountName || t.accountId || 'Not charged'}</td>
-                    <td>
-                      <div className="category-cell">
-                        <select
-                          className="category-select"
-                          value={t.categoryId ?? ''}
-                          disabled={categorySavingId === t.id}
-                          aria-label={`Category for ${t.description}`}
-                          onChange={(e) => onCategoryChange(t.id, e.target.value)}
-                        >
-                          <option value="">— Uncategorised —</option>
-                          {categories.map((c) => {
-                            const t = normalizeCategoryType(c.type, c.isIncome);
-                            const tag = categoryTypeShortTag(t);
-                            return (
-                              <option key={c.id} value={c.id}>
-                                {c.name}
-                                {tag ? ` (${tag})` : ''}
-                              </option>
-                            );
-                          })}
-                        </select>
-                        {isCharityCategoryId(t.categoryId) && (
-                          <button
-                            type="button"
-                            className="btn small"
-                            title={t.receiptUrl ? 'View / replace charity receipt' : 'Upload charity receipt for PAYE'}
-                            aria-label={`Charity receipt for ${t.description}`}
-                            onClick={() => openCharityReceiptModal(t)}
-                          >
-                            {t.receiptUrl ? 'Receipt' : 'Add receipt'}
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                    <td>
-                      {t.affectsBtc ? (
-                        <span className="muted small" title={t.btcHoldingName ?? t.btcHoldingId ?? 'BTC'}>
-                          {t.btcDeltaApplied != null
-                            ? `${t.btcDeltaApplied < 0 ? '−' : '+'}${Math.abs(t.btcDeltaApplied).toFixed(6)} BTC`
-                            : 'BTC'}
-                          {t.btcHoldingName ? ` · ${t.btcHoldingName}` : ''}
-                        </span>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td>
-                      <span className={`source-badge source-${t.source ?? 'manual'}`}>
-                        {sourceLabel(t.source)}
-                      </span>
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="btn small danger"
-                        aria-label={`Delete ${t.description}`}
-                        onClick={() => onDeleteTxn(t)}
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+      <TransactionList
+        monthLong={monthLong}
+        txns={txns}
+        categories={categories.map((c) => {
+          const type = normalizeCategoryType(c.type, c.isIncome);
+          return {
+            id: c.id,
+            name: c.name,
+            type,
+            tag: categoryTypeShortTag(type),
+            colour: colourByCategory.get(c.id) ?? validColour(c.colour),
+          };
+        })}
+        filter={txnFilter}
+        onFilterChange={setTxnFilter}
+        savingId={categorySavingId}
+        onCategoryChange={(txnId, categoryId) => void onCategoryChange(txnId, categoryId)}
+        onDelete={(t) => void onDeleteTxn(t)}
+        onCharityReceipt={openCharityReceiptModal}
+        onAdd={openAddTransactionForm}
+      />
 
       {charityModalTxn && (
         <div
@@ -2606,40 +1517,58 @@ export function Spending() {
         </div>
       )}
 
-      <section className="panel">
-        <h3>Import Google Wallet CSV</h3>
-        <p className="section-desc">
-          Optional — no live Wallet API. CSV columns: date, amount, description, card_name{' '}
-          (see docs/IMPORT_FORMATS.md). Prefer bank sync + manual for Nexo/GoMining.
-        </p>
-        <div className="form-grid">
-          <label>
-            Charged account
-            <select
-              value={importAccountId}
-              onChange={(e) => setImportAccountId(e.target.value)}
-            >
-              <option value="">Select…</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            CSV file
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              disabled={importing || !importAccountId}
-              onChange={(e) => onImportCsv(e.target.files?.[0] ?? null)}
-            />
-          </label>
+      {showCsvModal && (
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !importing) setShowCsvModal(false);
+          }}
+        >
+          <div className="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="csv-import-title">
+            <div className="modal-header">
+              <h3 id="csv-import-title">Import Google Wallet CSV</h3>
+              <button
+                type="button"
+                className="btn small modal-close"
+                aria-label="Close"
+                disabled={importing}
+                onClick={() => setShowCsvModal(false)}
+              >
+                ×
+              </button>
+            </div>
+            <p className="section-desc">
+              Columns: date, amount, description, card_name (see docs/IMPORT_FORMATS.md). Rows before 1 Oct 2026 and
+              duplicates are skipped.
+            </p>
+            <div className="form-grid">
+              <label>
+                Charged account
+                <select value={importAccountId} onChange={(e) => setImportAccountId(e.target.value)}>
+                  <option value="">Select…</option>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                CSV file
+                <input
+                  type="file"
+                  accept=".csv,text/csv"
+                  disabled={importing || !importAccountId}
+                  onChange={(e) => {
+                    void onImportCsv(e.target.files?.[0] ?? null).then(() => setShowCsvModal(false));
+                  }}
+                />
+              </label>
+            </div>
+          </div>
         </div>
-      </section>
-
-
+      )}
 
       {showIncomeModal && (
         <div

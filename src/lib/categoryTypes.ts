@@ -50,3 +50,14 @@ export function categoryTypeShortTag(type: CategoryType): string | null {
       return null;
   }
 }
+
+/**
+ * True when a category's type contradicts the money's direction: money in under
+ * Transfer out, or money out under Income / Transfer in. Money in under a spending
+ * category is a refund and is not flagged.
+ */
+export function categoryDirectionMismatch(type: CategoryType, amount: number): boolean {
+  if (!Number.isFinite(amount) || amount === 0) return false;
+  if (amount > 0) return type === 'transfer_out';
+  return type === 'income' || type === 'transfer_in';
+}
