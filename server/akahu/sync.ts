@@ -175,18 +175,14 @@ function upsertPriceQuote(
   }
 
   if (valueNzd != null && Number.isFinite(valueNzd)) {
-    let unit: number | null = null;
-    let status = 'ok';
-    let notes: string | null = `Akahu portfolio value ${fxNote}`;
-    if (shares != null && shares > 0) {
-      unit = valueNzd / shares;
-      notes = `Akahu implied NZD unit from value/shares (${fxNote} / ${shares})`;
-    } else {
-      // Quantity unknown — store NZD *total* as price so cards can still show Value
-      unit = valueNzd;
-      status = 'ok';
-      notes = `Akahu total NZD ${fxNote} (quantity unknown; price holds total NZD)`;
-    }
+    // No share count (e.g. a sold Sharesies position still listed): there is no
+    // per-unit price to share. The holding keeps its own NZD value in its notes;
+    // writing the total here would overwrite STOCK:/CRYPTO: for every holding of
+    // that symbol (a manual BTC holding was valued at the Akahu dust total).
+    if (!(shares != null && shares > 0)) return;
+    const unit = valueNzd / shares;
+    const status = 'ok';
+    const notes = `Akahu implied NZD unit from value/shares (${fxNote} / ${shares})`;
     run(
       db,
       `INSERT INTO price_quotes (id, asset_key, currency, price, status, source, as_of, notes)

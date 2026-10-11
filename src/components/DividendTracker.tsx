@@ -3,8 +3,10 @@
  * Totals are calculated from the signed-in user's rows. Empty when they have none.
  * Paid net NZD is also mirrored into Budgeting income for that user.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { FormEvent } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { FormEvent, ReactNode } from 'react';
+import { InfoTip } from './InfoTip';
+import { MoreMenu } from './MoreMenu';
 import { api, formatMoney, formatNzd } from '../api/client';
 import { beginPageRead, commitPageRead, invalidateFinancial, readPageCache } from '../lib/pageDataCache';
 import { todayAucklandYmd } from '../lib/period';
@@ -81,6 +83,38 @@ function smallNzd(value: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 4,
   }).format(value);
+}
+
+/** "14 Nov 2026". */
+function formatShortDate(ymd: string): string {
+  const d = new Date(`${ymd}T00:00:00Z`);
+  return Number.isNaN(d.getTime())
+    ? ymd
+    : d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
+
+/** Button + region that opens below it (keyboard: a real button with aria-expanded). */
+function Expander({ label, children }: { label: string; children: ReactNode }) {
+  const id = useId();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="dividend-expander">
+      <button
+        type="button"
+        className="debt-link-button"
+        aria-expanded={open}
+        aria-controls={open ? id : undefined}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {label} <span aria-hidden="true">{open ? '▴' : '▾'}</span>
+      </button>
+      {open ? (
+        <div id={id} className="dividend-expander-body">
+          {children}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function shareCount(value: number): string {
@@ -394,235 +428,223 @@ export function DividendTracker({ placement }: { placement: Placement }) {
     );
   }
 
-  const lead = placement === 'portfolio'
-    ? 'Dividends on the stocks and ETFs in this portfolio.'
-    : 'Dividend income from your holdings, in NZD when you record an FX rate.';
   const yearHasTotal = data.yearPaidCount > 0 && data.yearIncomeNzd != null;
+  const today = todayAucklandYmd();
+  const nextPayment = [
+    ...data.forecast.detected
+      .filter((r) => r.paymentDate >= today)
+      .map((r) => ({ date: r.paymentDate, label: r.symbol || r.name, nzd: r.amountNzd, amount: r.amount, currency: r.currency })),
+    ...data.upcoming.map((e) => ({
+      date: e.paymentDate,
+      label: e.symbol || e.companyName,
+      nzd: e.netNzd,
+      amount: e.netDividend,
+      currency: e.currency,
+    })),
+  ].sort((a, b) => a.date.localeCompare(b.date))[0];
+  const reinvestAll = new Set(data.forecast.reinvestAllHoldingIds ?? []);
+  const lead =
+    placement === 'portfolio'
+      ? 'Dividends on the stocks and ETFs in this portfolio.'
+      : 'Dividend income from your holdings, in NZD when you record an FX rate.';
 
   return (
-    <div className="stack" aria-label="Dividends">
-      <section className="hero-card">
-        {error ? <p className="banner">{error}</p> : null}
-        {reinvestError ? <p className="banner">{reinvestError.message}</p> : null}
-        <p className="eyebrow">{data.year} dividend income</p>
-        {yearHasTotal ? (
-          <p className="hero-value">{formatNzd(data.yearIncomeNzd)}</p>
-        ) : (
-          <p className="page-lead">
-            {data.yearPaidCount === 0
-              ? `No dividend income recorded for ${data.year}.`
-              : `Payments are recorded for ${data.year}, but an FX rate to NZD is still needed before they can be totalled.`}
-          </p>
-        )}
-        <p className="muted small">
-          {lead} Paid rows only. {data.disclaimer}
-        </p>
-        {data.yearUnconvertedCount > 0 ? (
-          <p className="muted small">
-            {data.yearUnconvertedCount} paid {data.yearUnconvertedCount === 1 ? 'row is' : 'rows are'} left out of the NZD total until you record an FX rate.
-          </p>
-        ) : null}
-        <div className="period-pager" role="navigation" aria-label="Dividend year">
-          <button type="button" className="btn" disabled={year <= 1980} onClick={() => changeYear(year - 1)} aria-label="Previous year">
-            {'<- Prev'}
-          </button>
-          <div className="period-pager-label">
-            <strong>{data.year}</strong>
+    <div className="stack dividends-tab" aria-label="Dividends">
+      {error ? <p className="banner">{error}</p> : null}
+      {reinvestError ? <p className="banner">{reinvestError.message}</p> : null}
+
+      <section className="card budget-summary" aria-label="Dividends in numbers">
+        <dl className="budget-summary-figures">
+          <div>
+            <dt>Next 12 months (gross)</dt>
+            <dd className="money">
+              {data.forecast.detectedNzd == null ? '—' : formatNzd(data.forecast.detectedNzd)}
+              <span className="budget-figure-note">
+                {data.forecast.detectedCount === 0
+                  ? 'no published dividends to project'
+                  : `${data.forecast.detectedCount} payment${data.forecast.detectedCount === 1 ? '' : 's'} from published history`}
+              </span>
+            </dd>
           </div>
-          <button type="button" className="btn" disabled={year >= 2100} onClick={() => changeYear(year + 1)} aria-label="Next year">
-            {'Next ->'}
+          <div>
+            <dt>Next payment</dt>
+            <dd>
+              {nextPayment ? formatShortDate(nextPayment.date) : '—'}
+              <span className="budget-figure-note">
+                {nextPayment
+                  ? `${nextPayment.label} · ${
+                      nextPayment.nzd != null ? `≈ ${smallNzd(nextPayment.nzd)}` : moneyOrDash(nextPayment.amount, nextPayment.currency)
+                    }`
+                  : 'none projected or entered'}
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt>Received in {data.year}</dt>
+            <dd className="money">
+              {yearHasTotal ? formatNzd(data.yearIncomeNzd) : '—'}
+              <span className="budget-figure-note">
+                {data.yearPaidCount === 0
+                  ? 'no dividends recorded'
+                  : data.yearUnconvertedCount > 0
+                    ? `${data.yearUnconvertedCount} payment${data.yearUnconvertedCount === 1 ? '' : 's'} need an FX rate`
+                    : `net · ${data.yearPaidCount} payment${data.yearPaidCount === 1 ? '' : 's'}`}
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt>Yield · growth</dt>
+            <dd>
+              {data.yield.available ? formatPct(data.yield.yieldPct) : '—'}
+              <span className="budget-figure-note">
+                growth {data.growth.available ? formatPct(data.growth.changePct, true) : '—'}
+              </span>
+            </dd>
+          </div>
+        </dl>
+        <div className="dividends-summary-actions">
+          <button
+            type="button"
+            className="debt-link-button"
+            onClick={() => {
+              if (!showForm) openCreate();
+              window.setTimeout(() => document.getElementById('record-dividend')?.scrollIntoView({ behavior: 'smooth' }), 0);
+            }}
+          >
+            + Record a dividend
           </button>
+          <div className="dividends-year" role="group" aria-label="Dividend year">
+            <button
+              type="button"
+              className="budget-month-step"
+              disabled={year <= 1980}
+              onClick={() => changeYear(year - 1)}
+              aria-label="Previous year"
+            >
+              ‹
+            </button>
+            <span>{data.year}</span>
+            <button
+              type="button"
+              className="budget-month-step"
+              disabled={year >= 2100}
+              onClick={() => changeYear(year + 1)}
+              aria-label="Next year"
+            >
+              ›
+            </button>
+          </div>
         </div>
       </section>
 
-      {data.hasEvents ? (
-        <section className="grid cards spending-summary-cards" aria-label="Dividend summary">
-          <div className="card">
-            <p className="eyebrow">Monthly dividends</p>
-            <p className="stat-value">
-              {data.month && data.month.paidCount > 0 && data.month.netNzd != null
-                ? formatNzd(data.month.netNzd)
-                : '—'}
-            </p>
-            <p className="muted small">
-              {data.month ? data.month.label : 'No paid month in this year'}
-              {data.month && data.month.unconvertedCount > 0 ? ' · FX rate needed' : ''}
-            </p>
-          </div>
-          <div className="card">
-            <p className="eyebrow">Annual dividends</p>
-            <p className="stat-value">{yearHasTotal ? formatNzd(data.yearIncomeNzd) : '—'}</p>
-            <p className="muted small">{data.year} · recorded net in NZD</p>
-          </div>
-          <div className="card">
-            <p className="eyebrow">Dividend growth</p>
-            <p className="stat-value">{data.growth.available ? formatPct(data.growth.changePct, true) : '—'}</p>
-            <p className="muted small">{data.growth.note}</p>
-          </div>
-          <div className="card">
-            <p className="eyebrow">Dividend yield</p>
-            <p className="stat-value">{data.yield.available ? formatPct(data.yield.yieldPct) : '—'}</p>
-            <p className="muted small">{data.yield.note}</p>
-          </div>
-        </section>
-      ) : null}
-
-      {data.hasEvents ? (
-        <section className="panel">
-          <h3>Monthly dividends · {data.year}</h3>
-          <div className="grid cards spending-summary-cards" aria-label={`Monthly dividends ${data.year}`}>
-            {data.months.map((month) => (
-              <div className="card" key={month.yearMonth}>
-                <p className="eyebrow">{month.label}</p>
-                <p className="stat-value">
-                  {month.paidCount === 0 || month.netNzd == null ? '—' : formatNzd(month.netNzd)}
-                </p>
-                <p className="muted small">
-                  {month.paidCount === 0
-                    ? 'No payment recorded'
-                    : month.netNzd == null
-                      ? 'FX rate needed'
-                      : `${month.paidCount} payment${month.paidCount === 1 ? '' : 's'}`}
-                </p>
-              </div>
-            ))}
-          </div>
-          {data.annual.length > 0 ? (
-            <>
-              <h4 className="section-subtitle">Annual dividends</h4>
-              <div className="grid cards spending-summary-cards" aria-label="Annual dividends">
-                {data.annual.map((item) => (
-                  <div className="card" key={item.year}>
-                    <p className="eyebrow">{item.year}</p>
-                    <p className="stat-value">{item.netNzd == null ? '—' : formatNzd(item.netNzd)}</p>
-                    <p className="muted small">
-                      {item.paidCount} paid
-                      {item.unconvertedCount > 0 ? ` · ${item.unconvertedCount} without FX` : ''}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : null}
-        </section>
-      ) : null}
-
-      <section className="panel">
-        <h3>Dividend forecast</h3>
-        <p className="section-desc">{data.forecast.heading}. {data.forecast.note}</p>
-        {data.forecast.historyRunRateNzd == null
-          && data.forecast.statedUpcomingNzd == null
-          && data.forecast.detectedCount === 0 ? (
+      <section className="panel" aria-labelledby="dividend-holdings-title">
+        <h3 id="dividend-holdings-title">By holding · next 12 months</h3>
+        {data.forecast.detected.length === 0 ? (
           <p className="muted">
-            No projection yet. Record a past payment, enter an upcoming payment, or hold a stock or ETF whose published dividend history includes a real amount. Nothing is filled in without that figure.
+            No stock or ETF you hold has a published dividend to project yet. Nothing is filled in without one.
           </p>
         ) : (
-          <>
-            <div className="grid cards budget-compare-summary">
-              <div className="card">
-                <p className="eyebrow">From your history</p>
-                <p className="stat-value">
-                  {data.forecast.historyRunRateNzd == null ? '—' : formatNzd(data.forecast.historyRunRateNzd)}
-                </p>
-                <p className="muted small">
-                  {data.forecast.historyCount > 0
-                    ? `Repeats ${data.forecast.historyCount} recorded payment${data.forecast.historyCount === 1 ? '' : 's'} since ${data.forecast.historyWindowStart}. Not a market forecast.`
-                    : 'No paid dividends with an NZD amount in the last 12 months.'}
-                </p>
-              </div>
-              <div className="card">
-                <p className="eyebrow">Stated upcoming</p>
-                <p className="stat-value">
-                  {data.forecast.statedUpcomingNzd == null ? '—' : formatNzd(data.forecast.statedUpcomingNzd)}
-                </p>
-                <p className="muted small">
-                  {data.forecast.statedUpcomingCount === 0
-                    ? 'No upcoming payments entered.'
-                    : `${data.forecast.statedUpcomingCount} payment${data.forecast.statedUpcomingCount === 1 ? '' : 's'} you entered`}
-                  {data.forecast.statedUnconvertedCount > 0
-                    ? ` · ${data.forecast.statedUnconvertedCount} without an FX rate`
-                    : ''}
-                  . Not a market forecast.
-                </p>
-              </div>
-              <div className="card">
-                <p className="eyebrow">From published history</p>
-                <p className="stat-value">
-                  {data.forecast.detectedNzd == null ? '—' : formatNzd(data.forecast.detectedNzd)}
-                </p>
-                <p className="muted small">
-                  {data.forecast.detectedCount === 0
-                    ? 'No stock or ETF you hold has a published dividend to project. Not a market forecast.'
-                    : data.forecast.detectedUnconvertedCount > 0
-                      ? `12-month total of gross cash from published dividend history. Tax is not estimated. ${data.forecast.detectedUnconvertedCount} published rows still need an FX rate before they join this NZD total. Not a market forecast.`
-                      : '12-month total of gross cash from published dividend history. Tax is not estimated. Not a market forecast.'}
-                </p>
-              </div>
+          <ReinvestPlanSummary
+            rows={data.forecast.detected}
+            reinvestAll={reinvestAll}
+            pendingId={pendingReinvest}
+            error={reinvestError}
+            onToggle={onReinvestAll}
+          />
+        )}
+        <Expander label="How the forecast works">
+          <p className="muted small">
+            The 12-month figure repeats each holding’s published dividends (from Yahoo Finance) on their usual cadence, at
+            the shares you hold: gross cash, with no tax estimated. Turning on Reinvest adds each payment’s shares to the
+            next one, so later payments grow. Dividends you record are kept as your own history and also count as Budget
+            income in NZD once they have an FX rate. It is a personal record, not a market forecast or advice.
+          </p>
+          <dl className="debt-details-list">
+            <div>
+              <dt>From your history</dt>
+              <dd>{data.forecast.historyRunRateNzd == null ? '—' : formatNzd(data.forecast.historyRunRateNzd)}</dd>
             </div>
-            {data.forecast.detected.length > 0 ? (
+            <div>
+              <dt>Upcoming you entered</dt>
+              <dd>{data.forecast.statedUpcomingNzd == null ? '—' : formatNzd(data.forecast.statedUpcomingNzd)}</dd>
+            </div>
+            <div>
+              <dt>From published history</dt>
+              <dd>{data.forecast.detectedNzd == null ? '—' : formatNzd(data.forecast.detectedNzd)}</dd>
+            </div>
+          </dl>
+          <p className="muted small">{lead} {data.disclaimer}</p>
+        </Expander>
+        {data.forecast.detected.length > 0 ? (
+          <Expander label={`Show every payment (${data.forecast.detected.length})`}>
+            <DetectedDividendTable
+              rows={data.forecast.detected}
+              reinvestAll={reinvestAll}
+              pendingId={pendingReinvest}
+              error={reinvestError}
+              onReinvest={onForecastReinvest}
+            />
+          </Expander>
+        ) : null}
+      </section>
+
+      <section className="panel" aria-labelledby="recorded-dividends-title">
+        <h3 id="recorded-dividends-title">Recorded dividends</h3>
+        {data.upcoming.length === 0 && data.history.length === 0 ? (
+          <p className="muted">No upcoming payments entered and no dividends recorded yet.</p>
+        ) : (
+          <>
+            {data.upcoming.length > 0 ? (
               <>
-                <ReinvestPlanSummary
-                  rows={data.forecast.detected}
-                  reinvestAll={new Set(data.forecast.reinvestAllHoldingIds ?? [])}
+                <h4 className="section-subtitle">Upcoming</h4>
+                <DividendList
+                  rows={data.upcoming}
                   pendingId={pendingReinvest}
                   error={reinvestError}
-                  onToggle={onReinvestAll}
-                />
-                <DetectedDividendTable
-                  rows={data.forecast.detected}
-                  reinvestAll={new Set(data.forecast.reinvestAllHoldingIds ?? [])}
-                  pendingId={pendingReinvest}
-                  error={reinvestError}
-                  onReinvest={onForecastReinvest}
+                  onEdit={openEdit}
+                  onDelete={onDelete}
+                  onReinvest={onRecordedReinvest}
                 />
               </>
+            ) : null}
+            {data.history.length > 0 ? (
+              <>
+                <h4 className="section-subtitle">Paid</h4>
+                <DividendList
+                  rows={data.history}
+                  pendingId={pendingReinvest}
+                  error={reinvestError}
+                  onEdit={openEdit}
+                  onDelete={onDelete}
+                  onReinvest={onRecordedReinvest}
+                />
+              </>
+            ) : null}
+            {data.hasEvents ? (
+              <Expander label={`Monthly totals · ${data.year}`}>
+                <ul className="dividend-months">
+                  {data.months.map((month) => (
+                    <li key={month.yearMonth}>
+                      <span>{month.label}</span>
+                      <span className="money">
+                        {month.paidCount === 0 ? '—' : month.netNzd == null ? 'FX rate needed' : formatNzd(month.netNzd)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </Expander>
             ) : null}
           </>
         )}
       </section>
 
-      <section className="panel">
-        <h3>Upcoming dividends</h3>
-        {data.upcoming.length === 0 ? (
-          <p className="muted">No upcoming dividends. A future payment date is one you enter yourself.</p>
-        ) : (
-          <DividendTable
-            rows={data.upcoming}
-            pendingId={pendingReinvest}
-            error={reinvestError}
-            onEdit={openEdit}
-            onDelete={onDelete}
-            onReinvest={onRecordedReinvest}
-          />
-        )}
-      </section>
-
-      <section className="panel">
-        <h3>Dividend history</h3>
-        {data.history.length === 0 ? (
-          <p className="muted">No paid dividends recorded yet.</p>
-        ) : (
-          <DividendTable
-            rows={data.history}
-            pendingId={pendingReinvest}
-            error={reinvestError}
-            onEdit={openEdit}
-            onDelete={onDelete}
-            onReinvest={onRecordedReinvest}
-          />
-        )}
-      </section>
-
-      <section className="panel">
+      <section className="panel" id="record-dividend" aria-labelledby="record-dividend-title">
         <div className="panel-heading">
-          <h3>{editingId ? 'Edit dividend' : 'Record a dividend'}</h3>
-          <button type="button" className="btn primary" onClick={() => (showForm ? setShowForm(false) : openCreate())}>
+          <h3 id="record-dividend-title">{editingId ? 'Edit dividend' : 'Record a dividend'}</h3>
+          <button type="button" className="btn small" onClick={() => (showForm ? setShowForm(false) : openCreate())}>
             {showForm ? 'Hide form' : '+ Record dividend'}
           </button>
         </div>
-        <p className="section-desc">
-          Tied to a stock or ETF you already hold. Gross is shares times dividend per share. Net cash is gross minus tax or withholding. NZ imputation credits are recorded beside that and are not subtracted. Reinvestment is noted here and does not change the share count. This is a personal record, not advice.
-        </p>
         {formError ? <p className="banner">{formError}</p> : null}
         {data.holdings.length === 0 ? (
           <p className="muted">Add a stock or ETF on the Portfolio page before recording a dividend.</p>
@@ -811,7 +833,8 @@ function ReinvestPlanSummary({
             <div>
               <strong>{first.symbol}</strong> <span className="muted small">· {first.name}</span>
               <div className="muted small">
-                {sorted.length} payment{sorted.length === 1 ? '' : 's'} over the next 12 months · {smallNzd(totalNzd)} gross
+                {sorted.length} payment{sorted.length === 1 ? '' : 's'} · next {formatShortDate(first.paymentDate)} ·{' '}
+                {smallNzd(totalNzd)} gross over 12 months
               </div>
               {extraNzd > 0 || addedShares > 1e-9 ? (
                 <div className="small reinvest-gain">
@@ -866,7 +889,6 @@ function DetectedDividendTable({
             <th>Gross cash</th>
             <th>NZD</th>
             <th>Reinvest</th>
-            <th>Where this comes from</th>
           </tr>
         </thead>
         <tbody>
@@ -877,6 +899,12 @@ function DetectedDividendTable({
                 <td className="muted small">{row.paymentDate}</td>
                 <td>
                   {row.symbol} · {row.name}
+                  <InfoTip label={`Where the ${row.symbol} ${row.paymentDate} figure comes from`}>
+                    {row.basis === 'published'
+                      ? `Yahoo Finance published this date and this gross cash (${row.historyCount} published dividend${row.historyCount === 1 ? '' : 's'} on file).`
+                      : `Projected by repeating ${cadencePhrase(row.intervalMonths)} across ${row.historyCount} published dividends. Last cash dividend ${formatPerShare(row.dividendPerShare, row.currency)} on ${row.lastPaidDate}.`}{' '}
+                    Tax is not estimated. Not a market forecast.
+                  </InfoTip>
                 </td>
                 <td className="money">{formatPerShare(row.dividendPerShare, row.currency)}</td>
                 <td>
@@ -908,12 +936,6 @@ function DetectedDividendTable({
                   {note ? <p className="muted small reinvest-note">{note}</p> : null}
                   {error?.id === row.id ? <p className="banner reinvest-note">{error.message}</p> : null}
                 </td>
-                <td className="muted small">
-                  {row.basis === 'published'
-                    ? `Yahoo Finance published this date and this gross cash (${row.historyCount} published dividend${row.historyCount === 1 ? '' : 's'} on file).`
-                    : `Projected by repeating ${cadencePhrase(row.intervalMonths)} across ${row.historyCount} published dividends. Last cash dividend ${formatPerShare(row.dividendPerShare, row.currency)} on ${row.lastPaidDate}.`}
-                  {' '}Tax is not estimated. Not a market forecast.
-                </td>
               </tr>
             );
           })}
@@ -923,7 +945,7 @@ function DetectedDividendTable({
   );
 }
 
-function DividendTable({
+function DividendList({
   rows,
   pendingId,
   error,
@@ -939,72 +961,64 @@ function DividendTable({
   onReinvest: (event: DividendEvent, reinvested: boolean) => void;
 }) {
   return (
-    <div className="table-wrap">
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Payment date</th>
-            <th>Company or ETF</th>
-            <th>Shares</th>
-            <th>Per share</th>
-            <th>Gross</th>
-            <th>Tax</th>
-            <th>Imputation</th>
-            <th>Net</th>
-            <th>FX to NZD</th>
-            <th>Net NZD</th>
-            <th>Reinvest</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => {
-            const note = reinvestNote(row.reinvestment);
-            const label = row.symbol ? `${row.symbol} · ${row.companyName}` : row.companyName;
-            return (
-              <tr key={row.id}>
-                <td className="muted small">{row.paymentDate}</td>
-                <td>
-                  {row.symbol ? `${row.symbol} · ` : ''}
-                  {row.companyName}
-                </td>
-                <td className="money">{row.sharesHeld}</td>
-                <td className="money">{moneyOrDash(row.dividendPerShare, row.currency)}</td>
-                <td className="money">{moneyOrDash(row.grossDividend, row.currency)}</td>
-                <td className="money">{moneyOrDash(row.taxWithholding, row.currency)}</td>
-                <td className="money">{moneyOrDash(row.imputationCredits, row.currency)}</td>
-                <td className="money">{moneyOrDash(row.netDividend, row.currency)}</td>
-                <td className="muted small">{row.fxRateToNzd == null ? '—' : row.fxRateToNzd}</td>
-                <td className="amt-in money">{row.netNzd == null ? '—' : formatNzd(row.netNzd)}</td>
-                <td>
-                  <ReinvestToggle
-                    checked={row.reinvested}
-                    disabled={pendingId !== null}
-                    label={`Reinvest ${label} ${row.paymentDate}`}
-                    onChange={(next) => onReinvest(row, next)}
-                  />
-                  {row.reinvestedAmount != null ? (
-                    <p className="muted small reinvest-note">{moneyOrDash(row.reinvestedAmount, row.currency)}</p>
-                  ) : null}
-                  {note ? <p className="muted small reinvest-note">{note}</p> : null}
-                  {error?.id === row.id ? <p className="banner reinvest-note">{error.message}</p> : null}
-                </td>
-                <td>
-                  <div className="row gap" style={{ marginTop: 0 }}>
-                    <button type="button" className="btn small" onClick={() => onEdit(row)}>
-                      Edit
-                    </button>
-                    <button type="button" className="btn small danger" onClick={() => onDelete(row)}>
-                      Delete
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+    <ul className="dividend-list">
+      {rows.map((row) => {
+        const note = reinvestNote(row.reinvestment);
+        const label = row.symbol ? `${row.symbol} · ${row.companyName}` : row.companyName;
+        return (
+          <li key={row.id}>
+            <span className="muted small dividend-list-date">{formatShortDate(row.paymentDate)}</span>
+            <span className="dividend-list-main">
+              <span className="dividend-list-name">{label}</span>
+              <span className="muted small">
+                {row.sharesHeld} shares × {moneyOrDash(row.dividendPerShare, row.currency)} · gross{' '}
+                {moneyOrDash(row.grossDividend, row.currency)}
+                {row.taxWithholding > 0 ? ` · tax ${moneyOrDash(row.taxWithholding, row.currency)}` : ''}
+                {row.imputationCredits > 0 ? ` · imputation ${moneyOrDash(row.imputationCredits, row.currency)}` : ''}
+                {row.currency !== 'NZD' ? ` · FX ${row.fxRateToNzd ?? 'not set'}` : ''}
+              </span>
+              {note ? <span className="muted small">{note}</span> : null}
+              {error?.id === row.id ? <span className="banner reinvest-note">{error.message}</span> : null}
+            </span>
+            <span className="amt-in money">
+              {row.netNzd == null ? (row.currency === 'NZD' ? '—' : `${moneyOrDash(row.netDividend, row.currency)} · FX needed`) : formatNzd(row.netNzd)}
+            </span>
+            <ReinvestToggle
+              checked={row.reinvested}
+              disabled={pendingId !== null}
+              label={`Reinvest ${label} ${row.paymentDate}`}
+              onChange={(next) => onReinvest(row, next)}
+            />
+            <MoreMenu label={`More actions for the ${label} dividend on ${row.paymentDate}`}>
+              {(close) => (
+                <>
+                  <button
+                    type="button"
+                    className="btn small"
+                    onClick={() => {
+                      close();
+                      onEdit(row);
+                    }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="btn small danger"
+                    onClick={() => {
+                      close();
+                      onDelete(row);
+                    }}
+                  >
+                    Delete
+                  </button>
+                </>
+              )}
+            </MoreMenu>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

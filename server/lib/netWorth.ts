@@ -24,6 +24,7 @@ import {
 } from '../quotes/forexQuotesDb.ts';
 import type { MetalKind, MetalUnit } from '../../src/types/index.ts';
 import { aucklandToday } from '../debts/model.ts';
+import { isTotalNotUnitQuote, parseNzdValueFromNotes } from '../../src/lib/holdingValue.ts';
 import { applyScheduledInterestForUser } from '../debts/store.ts';
 import '../chain/index.ts'; // registers chain adapters for wallet balances
 import { combineValuations, valueWallet, type WalletValuation } from '../chain/valuation.ts';
@@ -182,7 +183,6 @@ export async function computeNetWorth(
   let cryptoMarket = 0;
   let cryptoHaveMarket = false;
   let gominingEst = 0;
-  let gominingHasEst = false;
   let artVal = 0;
   let artHas = false;
   let metalsCost = 0;
@@ -207,15 +207,33 @@ export async function computeNetWorth(
     qty: number | null | undefined,
   ): number | null {
     if (!symbol) return null;
-    const q = queryOne(db, 'SELECT price, status FROM price_quotes WHERE asset_key = ?', [
+    const q = queryOne(db, 'SELECT price, status, notes FROM price_quotes WHERE asset_key = ?', [
       `${prefix}:${symbol}`,
     ]);
     if (!q || q.status !== 'ok' || q.price == null) return null;
+    if (isTotalNotUnitQuote(q.notes as string | null)) return null;
     const unit = Number(q.price);
     const n = qty != null ? Number(qty) : null;
     if (!Number.isFinite(unit) || n == null || !Number.isFinite(n) || n <= 0) return null;
     return unit * n;
   }
+
+  /** NZD value Akahu still reports on a 0-quantity holding (its notes), else 0. */
+  const closedPositionValue = (notes: unknown): number => {
+    const v = parseNzdValueFromNotes(typeof notes === 'string' ? notes : null);
+    return v != null && Number.isFinite(v) && v > 0 ? v : 0;
+  };
+
+  /**
+   * Closed only when a quantity was stored and is not positive.
+   * Null is "not recorded" (a cost-basis holding). Number(null) is 0, so
+   * `!(Number(qty) > 0)` would drop those holdings as if they had been sold.
+   */
+  const isClosedQuantity = (qty: unknown): boolean => {
+    if (qty == null) return false;
+    const n = Number(qty);
+    return Number.isFinite(n) && n <= 0;
+  };
 
   for (const h of holdings) {
     const rawCost = h.cost_basis_nzd;
@@ -227,6 +245,15 @@ export async function computeNetWorth(
 
     switch (h.asset_class) {
       case 'stock': {
+        if (isClosedQuantity(h.shares)) {
+          // Explicit 0 shares: only what Akahu still reports, never the old cost.
+          const left = closedPositionValue(h.notes);
+          // Same in both totals, so it counts whether or not other lines have a quote.
+          stocksMarket += left;
+          stocksCost += left;
+          lineValue = left > 0 ? left : null;
+          break;
+        }
         stocksCost += cost;
         const mv = quoteMarket('STOCK', h.symbol as string, h.shares as number);
         if (mv != null) {
@@ -240,6 +267,14 @@ export async function computeNetWorth(
         break;
       }
       case 'crypto': {
+        if (isClosedQuantity(h.amount)) {
+          const left = closedPositionValue(h.notes);
+          // Same in both totals, so it counts whether or not other lines have a quote.
+          cryptoMarket += left;
+          cryptoCost += left;
+          lineValue = left > 0 ? left : null;
+          break;
+        }
         cryptoCost += cost;
         const mv = quoteMarket('CRYPTO', h.asset as string, h.amount as number);
         if (mv != null) {
@@ -256,7 +291,6 @@ export async function computeNetWorth(
         if (h.estimated_value_nzd != null) {
           const v = Number(h.estimated_value_nzd);
           gominingEst += v;
-          gominingHasEst = true;
           lineValue = v;
         } else {
           gominingEst += cost;

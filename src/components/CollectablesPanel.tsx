@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { InfoTip } from './InfoTip';
 import type { FormEvent, ReactNode } from 'react';
 import { api, formatNzd } from '../api/client';
 import { commitPageRead, beginPageRead, readPageCache } from '../lib/pageDataCache';
@@ -7,7 +8,6 @@ import {
   COLLECTABLE_PRESETS,
   emptyMessageFor,
   inferTypesFromHoldings,
-  isApiCardGame,
   slugifyCollectableTypeId,
   type CollectableTypeDef,
   type CollectableTypeKind,
@@ -98,7 +98,6 @@ export function CollectablesPanel({ holdings, onChanged, renderCard, onBanner }:
   const [openTypeId, setOpenTypeId] = useState<string | null>(null);
   const [mtgColourFilters, setMtgColourFilters] = useState<Set<MtgColourFilter>>(() => new Set());
   const [mtgRarityFilters, setMtgRarityFilters] = useState<Set<MtgRarityFilter>>(() => new Set());
-  const [refreshing, setRefreshing] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [cardForm, setCardForm] = useState(emptyCardForm);
   const [manualForm, setManualForm] = useState(emptyManualForm);
@@ -231,23 +230,6 @@ export function CollectablesPanel({ holdings, onChanged, renderCard, onBanner }:
       else next.add(r);
       return next;
     });
-  }
-
-  async function refreshQuotes() {
-    banner(null);
-    setRefreshing(true);
-    try {
-      const r = await api.holdings.refreshCollectablesValues();
-      banner(
-        `Collectables: ${r.appliedCount}/${r.total} quoted (Scryfall / pokemontcg.io → NZD)` +
-          (r.failedCount ? ` · ${r.failedCount} unavailable (never invent)` : ''),
-      );
-      await onChanged();
-    } catch (err) {
-      banner((err as Error).message);
-    } finally {
-      setRefreshing(false);
-    }
   }
 
   async function onAddCard(e: FormEvent, game: 'mtg' | 'pokemon') {
@@ -408,25 +390,16 @@ export function CollectablesPanel({ holdings, onChanged, renderCard, onBanner }:
     if (openTypeId === id) setOpenTypeId(null);
   }
 
-  const hasApiCards = holdings.some((h) => isApiCardGame(h.cardGame));
-
   return (
     <section className="panel">
       <div className="panel-heading">
-        <h3>Collectables</h3>
-        <div className="row gap" style={{ marginTop: 0 }}>
-          <span className="muted small">
-            Your types only · tiles open scrollable lists · MTG colour/rarity when type is MTG
-          </span>
-          <button
-            type="button"
-            className="btn ghost"
-            onClick={() => void refreshQuotes()}
-            disabled={refreshing || !hasApiCards}
-          >
-            {refreshing ? 'Refreshing…' : 'Refresh card quotes'}
-          </button>
-        </div>
+        <h3>
+          Collectables
+          <InfoTip label="Where collectable values come from">
+            Magic: The Gathering prices from Scryfall and Pokémon prices from pokemontcg.io, converted to NZD. Other types
+            use the value you record. Prices are never estimated; use Refresh all prices at the top for new quotes.
+          </InfoTip>
+        </h3>
       </div>
 
       <div className="collectable-type-grid" role="list">
@@ -448,7 +421,6 @@ export function CollectablesPanel({ holdings, onChanged, renderCard, onBanner }:
                     {items.length} item{items.length === 1 ? '' : 's'}
                   </span>
                 </div>
-                <p className="muted small collectable-type-blurb">{def.blurb}</p>
                 <div className="collectable-type-value">
                   {total != null ? formatNzd(total) : '—'}
                 </div>
@@ -590,7 +562,7 @@ export function CollectablesPanel({ holdings, onChanged, renderCard, onBanner }:
                           (mtgColourFilters.size > 0 && h.cardColours == null) ||
                           (mtgRarityFilters.size > 0 && !h.cardRarity),
                       )
-                      ? 'No cards match — colour/rarity data is missing on these cards. Use Refresh card quotes (or backfill-mtg-meta) to load Scryfall identity & rarity, then filter again.'
+                      ? 'No cards match — colour/rarity data is missing on these cards. Use Refresh all prices (or backfill-mtg-meta) to load Scryfall identity & rarity, then filter again.'
                       : 'No cards match the selected colour/rarity filters.'
                     : emptyMessageFor(openDef)}
                 </p>
