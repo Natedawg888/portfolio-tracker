@@ -5562,6 +5562,7 @@ html:not([data-theme]) .projections-page :focus-visible {
   gap: 1rem 1.5rem;
   flex-wrap: wrap;
 }
+.proj-chart-top > div:first-child { min-width: 0; }
 .proj-kicker { margin: 0; font-size: 0.95rem; }
 .proj-figure {
   margin: 0.1rem 0 0.15rem;
@@ -5649,7 +5650,8 @@ html:not([data-theme]) .projections-page :focus-visible {
 .proj-fold > :not(summary) { margin-top: 0.75rem; }
 @media (max-width: 800px) {
   .proj-sliders { grid-template-columns: 1fr; }
-  .proj-chart-top { align-items: flex-start; }
+  .proj-chart-top { flex-direction: column; align-items: flex-start; }
+  .proj-header { align-items: flex-start; }
 }
 
 /* Budget page only. Header and other screens stay as they are. */
