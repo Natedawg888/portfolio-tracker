@@ -2,13 +2,14 @@
  * Budget transactions: filter pills, the latest N with "See all", and one row per
  * transaction (date, description + account, category chip, amount, ⋯ menu).
  */
-import { useEffect, useId, useRef, useState } from 'react';
+import { useId, useState } from 'react';
 import { formatNzd } from '../../api/client';
 import { maskAccountNumbers } from '../../lib/accountMask';
 import { categoryDirectionMismatch, type CategoryType } from '../../lib/categoryTypes';
 import { matchesTxnFilter, type TxnFilter } from '../../lib/budgetView';
 import { isCharityCategoryId } from '../../lib/charityPayeLink';
 import type { Transaction } from '../../types';
+import { MoreMenu } from '../MoreMenu';
 
 const TXNS_SHOWN_AT_FIRST = 20;
 
@@ -220,48 +221,11 @@ function RowMenu({
   onDelete: (t: Transaction) => void;
   onCharityReceipt: (t: Transaction) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const toggleRef = useRef<HTMLButtonElement>(null);
-  const menuId = useId();
   const selectId = useId();
-  const label = txn.description || txn.date;
-
-  useEffect(() => {
-    if (!open) return;
-    wrapRef.current?.querySelector<HTMLSelectElement>('select')?.focus();
-    const onDown = (event: PointerEvent) => {
-      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setOpen(false);
-        toggleRef.current?.focus();
-      }
-    };
-    document.addEventListener('pointerdown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('pointerdown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
   return (
-    <div className="txn-menu" ref={wrapRef}>
-      <button
-        ref={toggleRef}
-        type="button"
-        className="txn-menu-toggle"
-        aria-expanded={open}
-        aria-controls={open ? menuId : undefined}
-        aria-label={`Actions for ${label}`}
-        onClick={() => setOpen((o) => !o)}
-      >
-        ⋯
-      </button>
-      {open ? (
-        <div id={menuId} className="txn-menu-body">
+    <MoreMenu label={`Actions for ${txn.description || txn.date}`}>
+      {(close) => (
+        <>
           <label htmlFor={selectId}>Category</label>
           <select
             id={selectId}
@@ -269,7 +233,7 @@ function RowMenu({
             disabled={saving}
             onChange={(e) => {
               onCategoryChange(txn.id, e.target.value);
-              setOpen(false);
+              close();
             }}
           >
             <option value="">— Uncategorised —</option>
@@ -285,7 +249,7 @@ function RowMenu({
               type="button"
               className="btn small"
               onClick={() => {
-                setOpen(false);
+                close();
                 onCharityReceipt(txn);
               }}
             >
@@ -296,14 +260,14 @@ function RowMenu({
             type="button"
             className="btn small danger"
             onClick={() => {
-              setOpen(false);
+              close();
               onDelete(txn);
             }}
           >
             Delete transaction
           </button>
-        </div>
-      ) : null}
-    </div>
+        </>
+      )}
+    </MoreMenu>
   );
 }

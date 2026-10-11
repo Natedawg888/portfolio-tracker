@@ -5,6 +5,10 @@
  */
 import {
   debtToIncomeRatio,
+  paymentSliderRange,
+  payoffSchedule,
+  projectedPaymentMonth,
+  sliderPayment,
   interestForPeriod,
   payoffSentence,
   periodStartsAfter,
@@ -251,5 +255,46 @@ assert(missingRate.kind === 'blank', 'recurring interest without a rate does not
 assert(debtToIncomeRatio(400, null) == null, 'debt-to-income is blank when income is missing');
 assert(debtToIncomeRatio(null, 4000) == null, 'debt-to-income is blank when the actual payment is missing');
 eq(debtToIncomeRatio(400, 4000), 0.1, 'debt-to-income divides the entered payment by the recorded income');
+
+// payoffSchedule: same months as projectPayoff, with a smaller final payment.
+const plain = payoffSchedule({ balance: 1000, annualRatePercent: null, actualPayment: 300, interestPeriod: null });
+assert(plain.kind === 'schedule', 'no-interest debt has a schedule');
+if (plain.kind === 'schedule') {
+  eq(plain.totalMonths, 4, '1000 at 300/month takes 4 payments');
+  assert(plain.payments.join() === '300,300,300,100', 'final payment is the remainder');
+}
+const withInterest = { balance: 5000, annualRatePercent: 12, actualPayment: 250, interestPeriod: 'month' as const };
+const sched = payoffSchedule(withInterest);
+const proj = projectPayoff(withInterest);
+assert(sched.kind === 'schedule' && proj.kind === 'debt_free', 'monthly interest schedule exists');
+if (sched.kind === 'schedule' && proj.kind === 'debt_free') {
+  eq(sched.totalMonths, proj.totalMonths, 'schedule length matches projectPayoff');
+  assert(sched.payments.slice(0, -1).every((p) => p === 250), 'every payment but the last is the full payment');
+  assert(sched.payments[sched.payments.length - 1] <= 250, 'last payment is at most the full payment');
+}
+assert(
+  payoffSchedule({ balance: 5000, annualRatePercent: 12, actualPayment: 50, interestPeriod: 'month' }).kind === 'does_not_pay_down',
+  'payment under the interest does not pay down',
+);
+assert(payoffSchedule({ balance: 500, annualRatePercent: null, actualPayment: null, interestPeriod: null }).kind === 'blank', 'no payment is blank');
+
+// End-month assumption: first payment next month.
+assert(projectedPaymentMonth('2026-10-12', 1) === '2026-11', 'first payment is next month');
+assert(projectedPaymentMonth('2026-10-12', 4) === '2027-02', 'fourth payment crosses the year');
+assert(projectedPaymentMonth('2026-12-31', 1) === '2027-01', 'December rolls to January');
+
+// Slider range.
+const range = paymentSliderRange({ currentPayment: 250, balance: 5000, annualRatePercent: 12, interestPeriod: 'month' });
+assert(range != null, 'slider range exists');
+if (range) {
+  eq(range.step, 10, '$10 steps for a $250 payment');
+  eq(sliderPayment(250, range, 0), 250, 'position 0 is the saved payment');
+  assert(sliderPayment(250, range, range.minOffset) > 50, 'lowest slider payment still covers the $50 interest');
+  eq(sliderPayment(250, range, range.minOffset), 60, 'lowest is the first step above the interest');
+  eq(sliderPayment(250, range, range.maxOffset), 750, 'highest is 3 × the payment');
+}
+const small = paymentSliderRange({ currentPayment: 300, balance: 400, annualRatePercent: null, interestPeriod: null });
+assert(small != null && sliderPayment(300, small, small.maxOffset) === 400, 'highest is capped at the balance');
+assert(paymentSliderRange({ currentPayment: 0, balance: 400, annualRatePercent: null, interestPeriod: null }) == null, 'no payment, no slider');
 
 console.log('debt model tests ok');
