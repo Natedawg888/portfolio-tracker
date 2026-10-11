@@ -493,6 +493,12 @@ function migrateSchema(database: Database) {
     `CREATE INDEX IF NOT EXISTS idx_akahu_connections_user ON akahu_connections(user_id)`,
   );
 
+  // Daily net-worth snapshots: 'auto' rows are written on dashboard load, one per Auckland day.
+  const snapshotCols = tableColumns(database, 'valuation_snapshots');
+  if (snapshotCols.size > 0 && !snapshotCols.has('kind')) {
+    database.run(`ALTER TABLE valuation_snapshots ADD COLUMN kind TEXT NOT NULL DEFAULT 'manual'`);
+  }
+
   // Wallet sync scheduling (KAN-41) — wallets table predates these columns.
   const walletCols = tableColumns(database, 'wallets');
   if (walletCols.size > 0 && !walletCols.has('next_sync_at')) {

@@ -143,6 +143,12 @@ txn('txn_sep', userA, 'acct_a', '2026-09-30', -100, salaryA.aFood);
 txn('txn_nov', userA, 'acct_a', '2026-11-01', -2500, salaryA.aFood);
 income('inc_nov', userA, '2026-11-02', 1000, salaryA.aSalary, null);
 income('inc_tiny', userA, '2026-03-02', 0.004, salaryA.aSalary, null);
+// August: nothing categorised, so the breakdown falls back to the top 5 merchants.
+for (const [id, amount] of [['shop_a', -60], ['shop_b', -50], ['shop_c', -40], ['shop_d', -30], ['shop_e', -20], ['shop_f', -10]] as const) {
+  txn(id, userA, 'acct_a', '2026-08-15', amount, null);
+}
+txn('shop_a_again', userA, 'acct_a', '2026-08-16', -5, null);
+run(db, `UPDATE transactions SET description = 'shop_a' WHERE id = 'shop_a_again'`);
 
 run(
   db,
@@ -197,6 +203,7 @@ const KEYS = [
   'periodStart',
   'savingsNzd',
   'savingsRate',
+  'spendingBreakdown',
   'spendingNzd',
   'timezone',
   'yearMonth',
@@ -230,6 +237,24 @@ try {
   assert(october!.periodStart === '2026-10-01', 'October starts on the 1st');
   assert(october!.periodEnd === '2026-10-31', 'October ends on the 31st');
   assertShape(october as unknown as Record<string, unknown>, 'october');
+  const octRows = october!.spendingBreakdown?.rows ?? [];
+  assert(october!.spendingBreakdown?.by === 'category', 'October is broken down by category');
+  eq(octRows.reduce((sum, row) => sum + row.amountNzd, 0), 2000, 'October categories add up to spending');
+  eq(octRows[0]?.amountNzd, 1500, 'largest category first');
+  eq(octRows.find((row) => row.label === 'Uncategorised')?.amountNzd, 200, 'uncategorised debits have their own row');
+  eq(octRows.find((row) => row.label === 'Debt repayments')?.amountNzd, 100, 'open repayment counted once');
+  assert(!octRows.some((row) => /transfer/i.test(row.label)), 'transfers are not spending');
+
+  const august = homeMonthSnapshot(db, userA, '2026-08');
+  assert(august?.spendingBreakdown?.by === 'merchant', 'August falls back to merchants');
+  const augRows = august!.spendingBreakdown!.rows;
+  assert(augRows.length === 5, 'top 5 merchants only');
+  assert(augRows[0].label === 'shop_a', 'merchant totals are grouped');
+  eq(augRows[0].amountNzd, 65, 'shop_a totals both visits');
+  assert(!augRows.some((row) => row.label === 'shop_f'), 'the sixth merchant is left out');
+
+  const emptyMonth = homeMonthSnapshot(db, userA, '2026-01');
+  assert(emptyMonth?.spendingBreakdown == null, 'no spending, no breakdown');
 
   const september = homeMonthSnapshot(db, userA, '2026-09');
   assert(september != null, 'September snapshot exists');

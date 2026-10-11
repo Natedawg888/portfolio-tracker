@@ -516,6 +516,23 @@ export interface HomeMonthSnapshot {
   savingsRate: number | null;
   /** Expected monthly income from saved pay sources (KAN-70). Null when none are saved. */
   expectedPay?: PaySourcesExpected | null;
+  /** Where spendingNzd went. Null when nothing was spent. */
+  spendingBreakdown?: SpendingBreakdown | null;
+}
+
+export interface SpendingBreakdownRow {
+  label: string;
+  amountNzd: number;
+}
+
+/**
+ * Month spending by category (every category, largest first), or, when no
+ * spending is categorised, the top 5 merchants. Merchant rows need not add up
+ * to the month total.
+ */
+export interface SpendingBreakdown {
+  by: 'category' | 'merchant';
+  rows: SpendingBreakdownRow[];
 }
 
 /** A pay calculation saved as an income source (piece rate, contract, share of catch). */

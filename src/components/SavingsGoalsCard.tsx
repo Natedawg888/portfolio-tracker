@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { ApiError, api, formatNzd } from '../api/client';
+import { ApiError, api, formatAuckland, formatNzd } from '../api/client';
 import { beginPageRead, commitPageRead, invalidateFinancial, readPageCache } from '../lib/pageDataCache';
 import { usePageCacheValue } from '../lib/usePageCache';
 import { showQuietToast } from '../lib/quietToast';
@@ -81,7 +81,15 @@ function barPercent(percentComplete: number): number {
 
 const SAVINGS_GOALS = 'savings-goals';
 
-export function SavingsGoalsCard() {
+/** Milestone ticks drawn on each goal bar, as percents of the target. */
+const GOAL_MILESTONES = [25, 50, 75] as const;
+
+export function SavingsGoalsCard({
+  accountUpdatedAt,
+}: {
+  /** Bank account id → last sync time, for goals that follow an account. */
+  accountUpdatedAt?: Record<string, string | undefined>;
+} = {}) {
   const cachedGoals = usePageCacheValue<SavingsGoal[]>(SAVINGS_GOALS);
   const [goalsState, setGoals] = useState<SavingsGoal[] | null>(() => readPageCache<SavingsGoal[]>(SAVINGS_GOALS) ?? null);
   const goals = goalsState ?? cachedGoals ?? null;
@@ -116,6 +124,7 @@ export function SavingsGoalsCard() {
   }, [refresh]);
 
   const closeDialog = useCallback(() => setDialog(null), []);
+  const [addingId, setAddingId] = useState<string | null>(null);
 
   const card = (
     <section className="card savings-goals" aria-labelledby="savings-goals-heading">
@@ -172,14 +181,52 @@ export function SavingsGoalsCard() {
                     aria-valuemin={0}
                     aria-valuemax={100}
                     aria-valuenow={Math.round(fill)}
+                    aria-valuetext={`${Math.round(goal.percentComplete)}% of target`}
                     aria-label={`${goal.name} progress`}
                   >
-                    <div className="savings-goal-bar-fill" style={{ width: `${fill}%` }} />
+                    <div
+                      className={'savings-goal-bar-fill' + (fill > 0 ? ' savings-goal-bar-fill--started' : '')}
+                      style={{ width: `${fill}%` }}
+                    />
+                    {GOAL_MILESTONES.map((m) => (
+                      <span
+                        key={m}
+                        className={'savings-goal-tick' + (fill >= m ? ' savings-goal-tick--passed' : '')}
+                        style={{ left: `${m}%` }}
+                        aria-hidden="true"
+                      />
+                    ))}
                   </div>
                 )}
-                {goal.amountSource === 'account' && goal.accountName ? (
-                  <p className="savings-goal-meta">Saving in {goal.accountName}</p>
-                ) : null}
+                {goal.amountSource === 'account' ? (
+                  <p className="savings-goal-meta savings-goal-sync">
+                    <span aria-hidden="true">↻ </span>
+                    Synced from {goal.accountName ?? 'linked account'}
+                    {goal.accountId && accountUpdatedAt?.[goal.accountId]
+                      ? ` · updated ${formatAuckland(accountUpdatedAt[goal.accountId])}`
+                      : ''}
+                  </p>
+                ) : addingId === goal.id ? (
+                  <AddToGoalForm
+                    goal={goal}
+                    onDone={async (saved) => {
+                      setAddingId(null);
+                      if (saved) {
+                        invalidateFinancial('savings');
+                        await refresh();
+                      }
+                    }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="btn small ghost savings-goal-add"
+                    onClick={() => setAddingId(goal.id)}
+                    aria-label={`Add money to ${goal.name}`}
+                  >
+                    Add $
+                  </button>
+                )}
                 {deadlineLine(goal) ? <p className="savings-goal-meta">{deadlineLine(goal)}</p> : null}
                 {goal.notes ? <p className="savings-goal-meta savings-goal-notes">{goal.notes}</p> : null}
               </li>
@@ -204,6 +251,74 @@ export function SavingsGoalsCard() {
         />
       ) : null}
     </>
+  );
+}
+
+/** Inline "Add $" for a goal whose amount is typed by hand. Adds to the saved amount. */
+function AddToGoalForm({ goal, onDone }: { goal: SavingsGoal; onDone: (saved: boolean) => Promise<void> }) {
+  const inputId = useId();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [amount, setAmount] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  async function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    const add = parsePositiveNzd(amount);
+    if (add == null) {
+      setError('Enter an amount greater than 0.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api.savingsGoals.update(goal.id, { currentAmountNzd: roundNzd(goal.currentAmountNzd + add) });
+    } catch (err) {
+      setBusy(false);
+      if (!isUnauthorized(err)) setError(goalsErrorMessage(err, 'Could not add to this goal.'));
+      return;
+    }
+    await onDone(true);
+  }
+
+  return (
+    <form
+      className="savings-goal-add-form"
+      onSubmit={onSubmit}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && !busy) void onDone(false);
+      }}
+    >
+      <label htmlFor={inputId} className="sr-only">
+        Amount to add to {goal.name} (NZD)
+      </label>
+      <span aria-hidden="true">$</span>
+      <input
+        ref={inputRef}
+        id={inputId}
+        type="number"
+        inputMode="decimal"
+        step="0.01"
+        min="0.01"
+        value={amount}
+        onChange={(event) => setAmount(event.target.value)}
+        disabled={busy}
+      />
+      <button type="submit" className="btn small primary" disabled={busy}>
+        {busy ? 'Adding…' : 'Add'}
+      </button>
+      <button type="button" className="btn small ghost" disabled={busy} onClick={() => void onDone(false)}>
+        Cancel
+      </button>
+      {error ? (
+        <p className="savings-goal-form-error" role="alert">{error}</p>
+      ) : null}
+    </form>
   );
 }
 

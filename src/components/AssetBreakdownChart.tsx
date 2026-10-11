@@ -199,7 +199,7 @@ function BarChart({ rows, chartLabel }: { rows: AssetBreakdownRow[]; chartLabel:
   );
 }
 
-function PieChart({
+export function PieChart({
   rows,
   total,
   centerLabel,
