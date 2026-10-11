@@ -1,13 +1,19 @@
 /**
  * Debts the signed-in user records. Figures stay blank until they are entered.
- * Payoff text and debt-to-income are calculated from those figures only.
+ * Payoff timeline, "What if I paid…" and debt-to-income use those figures only,
+ * through the same payoff maths the server uses (src/lib/debtModel.ts).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api, formatNzd } from '../api/client';
 import { beginPageRead, commitPageRead, invalidateAfterDebtEdit, readPageCache } from '../lib/pageDataCache';
 import { usePageCacheValue } from '../lib/usePageCache';
+import { MIN_INCOME_FOR_RATIOS_NZD } from '../lib/incomeThreshold';
 import { showQuietToast } from '../lib/quietToast';
+import { aucklandToday, monthBounds } from '../lib/debtModel';
+import { debtsOverview } from '../lib/debtView';
+import { DebtsSummary } from '../components/debts/DebtsSummary';
+import { DebtCard, type DebtFormField } from '../components/debts/DebtCard';
 import type {
   DebtCreditorKind,
   DebtInterestPeriod,
@@ -74,46 +80,6 @@ function formFromDebt(debt: DebtPerson): FormState {
   };
 }
 
-function productLabel(kind: DebtProductKind | null | undefined): string {
-  return PRODUCT_OPTIONS.find((option) => option.value === kind)?.label ?? 'Kind not set';
-}
-
-function moneyOrBlank(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return '—';
-  return formatNzd(n);
-}
-
-function formatRate(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return '—';
-  const rounded = Math.round(n * 1000) / 1000;
-  return `${rounded}% per year`;
-}
-
-function formatTerm(months: number | null | undefined): string {
-  if (months == null || !Number.isFinite(months)) return '—';
-  const whole = Math.max(0, Math.trunc(months));
-  const years = Math.floor(whole / 12);
-  const rem = whole % 12;
-  const parts: string[] = [];
-  if (years === 1) parts.push('1 year');
-  else if (years > 1) parts.push(`${years} years`);
-  if (rem === 1) parts.push('1 month');
-  else if (rem > 1) parts.push(`${rem} months`);
-  if (parts.length === 0) return '0 months';
-  return parts.join(' ');
-}
-
-function formatDti(ratio: number | null | undefined): string {
-  if (ratio == null || !Number.isFinite(ratio)) return '—';
-  return new Intl.NumberFormat('en-NZ', { style: 'percent', maximumFractionDigits: 1 }).format(ratio);
-}
-
-function scheduleLabel(period: DebtInterestPeriod | null | undefined): string {
-  if (period === 'month') return 'Monthly, at the start of each month';
-  if (period === 'year') return 'Yearly, at the start of each year';
-  return 'Does not recur';
-}
-
 function formatYearMonth(ym: string | null | undefined): string {
   if (!ym || !/^\d{4}-\d{2}$/.test(ym)) return 'this month';
   const [y, m] = ym.split('-').map(Number);
@@ -140,7 +106,20 @@ function optionalMonths(raw: string): number | null | 'invalid' {
   return n;
 }
 
-type DebtsBundle = { rows: DebtPerson[]; summary: DebtSummary };
+type DebtsBundle = {
+  rows: DebtPerson[];
+  summary: DebtSummary;
+  /** Sum of repayments dated this Auckland month; null if they could not be loaded. */
+  repaidThisMonth: number | null;
+};
+
+/** Edit-form field ids, so a "+ …" prompt on a card can focus the right input. */
+const FIELD_IDS: Record<DebtFormField, string> = {
+  productKind: 'debt-field-kind',
+  interestRate: 'debt-field-rate',
+  minimumPayment: 'debt-field-minimum',
+  actualPayment: 'debt-field-actual',
+};
 
 const DEBTS_KEY = 'debts';
 
@@ -161,14 +140,38 @@ export function Debts() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [focusField, setFocusField] = useState<DebtFormField | null>(null);
+  const [howOpen, setHowOpen] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const [today] = useState(() => aucklandToday());
+  const thisMonth = monthBounds(today);
 
   const load = useCallback(async () => {
     const stamp = beginPageRead(DEBTS_KEY);
-    const [people, sum] = await Promise.all([api.debts.people(), api.debts.summary()]);
-    if (!commitPageRead(stamp, { rows: people, summary: sum })) return;
-    setBundle({ rows: people, summary: sum });
+    const bounds = monthBounds(aucklandToday());
+    const [people, sum, repaid] = await Promise.all([
+      api.debts.people(),
+      api.debts.summary(),
+      bounds
+        ? api.debts
+            .repayments({ from: bounds.from, to: bounds.to })
+            .then((list) => list.reduce((s, r) => s + Number(r.amountNzd || 0), 0))
+            .catch(() => null)
+        : Promise.resolve(null),
+    ]);
+    const next: DebtsBundle = { rows: people, summary: sum, repaidThisMonth: repaid };
+    if (!commitPageRead(stamp, next)) return;
+    setBundle(next);
     setError(null);
   }, []);
+
+  // A "+ Kind / + Interest rate / …" prompt opens the form on that field.
+  useEffect(() => {
+    if (!showForm) return;
+    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const el = focusField ? document.getElementById(FIELD_IDS[focusField]) : null;
+    (el ?? formRef.current?.querySelector<HTMLElement>('input, select'))?.focus({ preventScroll: true });
+  }, [showForm, focusField, editingId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -187,16 +190,52 @@ export function Debts() {
 
   function openCreate() {
     setEditingId(null);
+    setFocusField(null);
     setForm(emptyForm());
     setShowForm(true);
     setMsg(null);
   }
 
-  function openEdit(debt: DebtPerson) {
+  function openEdit(debt: DebtPerson, field: DebtFormField | null = null) {
     setEditingId(debt.id);
     setForm(formFromDebt(debt));
+    setFocusField(field);
     setShowForm(true);
     setMsg(null);
+  }
+
+  async function logRepayment(debt: DebtPerson, amount: number, date: string): Promise<boolean> {
+    setMsg(null);
+    setSaving(true);
+    try {
+      const r = await api.debts.addRepayment(debt.id, { amountNzd: amount, date, notes: null, transactionId: null });
+      setMsg(`Logged ${formatNzd(amount)} to ${debt.name} · balance now ${formatNzd(r.person.outstandingNzd)}.`);
+      invalidateAfterDebtEdit();
+      await load();
+      return true;
+    } catch (err) {
+      setMsg((err as Error).message);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function savePayment(debt: DebtPerson, amount: number): Promise<boolean> {
+    setMsg(null);
+    setSaving(true);
+    try {
+      await api.debts.updatePerson(debt.id, { actualPaymentNzd: amount });
+      setMsg(`Saved a ${formatNzd(amount)} monthly payment for ${debt.name}.`);
+      invalidateAfterDebtEdit();
+      await load();
+      return true;
+    } catch (err) {
+      setMsg((err as Error).message);
+      return false;
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function onSubmit(e: FormEvent) {
@@ -286,44 +325,72 @@ export function Debts() {
   }
 
   const incomeMonth = formatYearMonth(summary?.incomeMonth);
+  const overview = debtsOverview(rows, today);
 
   return (
     <div className="budget-page">
-      <h2 className="page-title">Debts</h2>
-      <p className="section-desc">
-        Record credit cards, personal loans, student loans, car loans, mortgages, and BNPL.
-        Balance, interest rate, payments, remaining term, and interest paid stay blank until you
-        enter them. This is a personal record, not a recommendation to borrow or repay.
-      </p>
-      <p className="section-desc">
-        A debt can be marked as a loan or left unmarked. If interest recurs, choose monthly or
-        yearly. Monthly interest is added to that debt at the start of each month. Yearly interest
-        is added at the start of each year, on 1 January. The amount added is your balance times
-        the annual percent you entered, divided by 12 for a monthly schedule, or the full annual
-        percent for a yearly schedule. Nothing is added for a period that passed before a rate was
-        saved.
-      </p>
-      <p className="section-desc">
-        The payoff line uses only that debt&apos;s balance, annual rate, and actual monthly payment.
-        If the payment does not cover the interest, the line says the debt does not pay down.
-        Debt-to-income divides the actual payment by income you recorded in {incomeMonth}. It stays
-        blank when that income is missing, or when the actual payment is blank.
-        {summary?.recordedIncomeNzd != null
-          ? ` Income recorded in ${incomeMonth}: ${formatNzd(summary.recordedIncomeNzd)}.`
-          : ` No income is recorded for ${incomeMonth}.`}
-      </p>
+      <header className="debts-header">
+        <div>
+          <h2 className="page-title">Debts</h2>
+          <p className="muted small debts-header-line">A personal record of what you owe. Not advice to borrow or repay.</p>
+        </div>
+        <div className="debts-header-actions">
+          <button
+            type="button"
+            className="btn small ghost"
+            aria-expanded={howOpen}
+            aria-controls={howOpen ? 'debts-how' : undefined}
+            onClick={() => setHowOpen((o) => !o)}
+          >
+            How payoff works <span aria-hidden="true">{howOpen ? '▴' : '▾'}</span>
+          </button>
+          <button type="button" className="btn small primary" onClick={openCreate}>
+            {showForm && !editingId ? 'Adding a debt' : 'Add debt'}
+          </button>
+        </div>
+      </header>
+
+      {howOpen ? (
+        <section id="debts-how" className="card debts-how" aria-label="How payoff works">
+          <div>
+            <h3>Interest</h3>
+            <p>
+              Monthly: balance × annual rate ÷ 12, added on the 1st of each month. Yearly: balance × annual rate, added
+              on 1 January. Nothing is added for periods before a rate was saved.
+            </p>
+          </div>
+          <div>
+            <h3>Payoff date</h3>
+            <p>
+              Uses only the debt’s balance, rate and actual monthly payment, starting next month. Blank until a payment
+              is entered (and a rate, if interest recurs). If the payment doesn’t cover the interest, it says the debt
+              doesn’t pay down.
+            </p>
+          </div>
+          <div>
+            <h3>Debt-to-income</h3>
+            <p>
+              Actual payment ÷ income recorded in {incomeMonth}
+              {summary?.recordedIncomeNzd != null ? ` (${formatNzd(summary.recordedIncomeNzd)})` : ''}. Hidden when the
+              payment is blank or that income is under {formatNzd(MIN_INCOME_FOR_RATIOS_NZD)}.
+            </p>
+          </div>
+        </section>
+      ) : null}
+
+      {shown != null && rows.length > 0 ? (
+        <DebtsSummary
+          overview={overview}
+          repaidThisMonth={shown.repaidThisMonth ?? null}
+          monthLabel={thisMonth ? formatYearMonth(thisMonth.yearMonth) : 'this month'}
+        />
+      ) : null}
 
       {error && <p className="warn">{error}</p>}
-      {msg && <p className="muted">{msg}</p>}
-
-      <div className="row gap" style={{ marginBottom: '0.75rem' }}>
-        <button type="button" className="btn primary" onClick={openCreate}>
-          {showForm && !editingId ? 'Adding a debt' : 'Add debt'}
-        </button>
-      </div>
+      {msg && <div className="banner" role="status">{msg}</div>}
 
       {showForm && (
-        <form className="form-grid panel" onSubmit={onSubmit} style={{ marginBottom: '1rem' }}>
+        <form ref={formRef} className="form-grid panel" onSubmit={onSubmit} style={{ marginBottom: '1rem' }}>
           <h3 className="span-2">{editingId ? 'Edit debt' : 'Add debt'}</h3>
           <label>
             Name
@@ -337,6 +404,7 @@ export function Debts() {
           <label>
             Kind
             <select
+              id={FIELD_IDS.productKind}
               value={form.productKind}
               onChange={(e) =>
                 setForm({ ...form, productKind: e.target.value as DebtProductKind | '' })
@@ -375,6 +443,7 @@ export function Debts() {
           <label>
             Interest rate (% per year)
             <input
+              id={FIELD_IDS.interestRate}
               type="number"
               step="0.001"
               min="0"
@@ -408,6 +477,7 @@ export function Debts() {
               step="0.01"
               min="0"
               inputMode="decimal"
+              id={FIELD_IDS.minimumPayment}
               value={form.minimumPayment}
               onChange={(e) => setForm({ ...form, minimumPayment: e.target.value })}
               placeholder="Blank if unknown"
@@ -420,6 +490,7 @@ export function Debts() {
               step="0.01"
               min="0"
               inputMode="decimal"
+              id={FIELD_IDS.actualPayment}
               value={form.actualPayment}
               onChange={(e) => setForm({ ...form, actualPayment: e.target.value })}
               placeholder="Blank if unknown"
@@ -466,6 +537,7 @@ export function Debts() {
               />
               Mark as a loan
             </span>
+            <span className="muted small">A label for your records only. It doesn’t change interest, payoff or any total.</span>
           </label>
           <div className="span-2 row gap">
             <button type="submit" className="btn primary" disabled={saving}>
@@ -493,78 +565,17 @@ export function Debts() {
       ) : (
         <div className="debt-list">
           {rows.map((debt) => (
-            <article key={debt.id} className="card">
-              <h3>
-                {debt.name}{' '}
-                <span className="muted small">
-                  {productLabel(debt.productKind)} · {debt.kind === 'corporation' ? 'Corporation' : 'Person'}
-                </span>
-              </h3>
-              <dl className="debt-facts">
-                <div>
-                  <dt>Balance</dt>
-                  <dd className="money">{formatNzd(debt.outstandingNzd)}</dd>
-                </div>
-                <div>
-                  <dt>Interest rate</dt>
-                  <dd>{formatRate(debt.interestRatePercent)}</dd>
-                </div>
-                <div>
-                  <dt>Minimum payment</dt>
-                  <dd className="money">{moneyOrBlank(debt.minimumPaymentNzd)}</dd>
-                </div>
-                <div>
-                  <dt>Actual payment</dt>
-                  <dd className="money">{moneyOrBlank(debt.actualPaymentNzd)}</dd>
-                </div>
-                <div>
-                  <dt>Remaining term</dt>
-                  <dd>{formatTerm(debt.remainingTermMonths)}</dd>
-                </div>
-                <div>
-                  <dt>Interest paid</dt>
-                  <dd className="money">{moneyOrBlank(debt.interestPaidNzd)}</dd>
-                </div>
-                <div>
-                  <dt>Debt-to-income</dt>
-                  <dd>{formatDti(debt.debtToIncome)}</dd>
-                </div>
-                <div>
-                  <dt>Loan</dt>
-                  <dd>{debt.isLoan ? 'Marked as a loan' : 'Not marked as a loan'}</dd>
-                </div>
-                <div>
-                  <dt>Interest schedule</dt>
-                  <dd>{scheduleLabel(debt.interestPeriod)}</dd>
-                </div>
-                <div>
-                  <dt>Interest added</dt>
-                  <dd className="money">{formatNzd(debt.interestChargedNzd ?? 0)}</dd>
-                </div>
-              </dl>
-              {debt.projectionText ? (
-                <p className="debt-projection">{debt.projectionText}</p>
-              ) : (
-                <p className="debt-projection muted small">
-                  The payoff line stays blank until an actual payment is entered, and until an
-                  annual percent is entered when interest recurs.
-                </p>
-              )}
-              {debt.notes ? <p className="muted small">{debt.notes}</p> : null}
-              <div className="row gap">
-                <button type="button" className="btn small" onClick={() => openEdit(debt)}>
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  className="btn small danger"
-                  disabled={saving}
-                  onClick={() => onDelete(debt)}
-                >
-                  Delete
-                </button>
-              </div>
-            </article>
+            <DebtCard
+              key={debt.id}
+              debt={debt}
+              todayYmd={today}
+              incomeMonthLabel={formatYearMonth(debt.incomeMonth ?? summary?.incomeMonth)}
+              busy={saving}
+              onLogRepayment={(amount, date) => logRepayment(debt, amount, date)}
+              onSavePayment={(amount) => savePayment(debt, amount)}
+              onEdit={(field) => openEdit(debt, field ?? null)}
+              onDelete={() => void onDelete(debt)}
+            />
           ))}
         </div>
       )}

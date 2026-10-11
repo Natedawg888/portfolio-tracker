@@ -11,6 +11,7 @@ import {
 } from '../lib/pageDataCache';
 import { usePageCacheValue } from '../lib/usePageCache';
 import { isMoneyHidden, MONEY_MASK, useMoneyHidden } from '../lib/privacy';
+import { incomeTooLowForRatios } from '../lib/incomeThreshold';
 import { showQuietToast } from '../lib/quietToast';
 import { PieChart, type AssetBreakdownRow } from '../components/AssetBreakdownChart';
 import { InfoTip } from '../components/InfoTip';
@@ -84,20 +85,11 @@ function balanceNumber(raw: unknown): number {
   return coerceBalance(raw) ?? 0;
 }
 
-/**
- * Below this much income in the month, a savings rate (savings ÷ income) swings to
- * meaningless figures like −1,400%, so the dashboard shows an em dash instead.
- */
-const MIN_INCOME_FOR_SAVINGS_RATE_NZD = 100;
-
-function incomeTooLowForRate(incomeNzd: number): boolean {
-  return !Number.isFinite(incomeNzd) || incomeNzd < MIN_INCOME_FOR_SAVINGS_RATE_NZD;
-}
 
 /** savingsRate is a fraction of income. 0.6 is 60%, -1.5 is -150%. Null stays an em dash. */
 function formatSavingsRate(rate: number | null, incomeNzd: number): string {
   if (isMoneyHidden()) return MONEY_MASK;
-  if (rate == null || !Number.isFinite(rate) || incomeTooLowForRate(incomeNzd)) return '—';
+  if (rate == null || !Number.isFinite(rate) || incomeTooLowForRatios(incomeNzd)) return '—';
   return new Intl.NumberFormat('en-NZ', {
     style: 'percent',
     maximumFractionDigits: 1,
@@ -741,7 +733,7 @@ function MonthSnapshot({
             ) : null}
           </div>
           <div className="month-snapshot-figure">
-            {incomeTooLowForRate(snapshot.incomeNzd) && snapshot.savingsNzd < 0 ? (
+            {incomeTooLowForRatios(snapshot.incomeNzd) && snapshot.savingsNzd < 0 ? (
               <>
                 <dt>Savings</dt>
                 <dd className="month-snapshot-plain">
