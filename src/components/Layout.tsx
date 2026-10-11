@@ -316,9 +316,12 @@ export function Layout({ children }: { children?: ReactNode }) {
       </main>
       <QuietToast />
       <PageAds />
-      <footer className="app-footer">
-        Local-first · email/password · {metalProviderFooter(metalProvider)} · sync failures stay quiet
-      </footer>
+      {/* The Dashboard carries this note behind its net worth ⓘ instead. */}
+      {location.pathname === '/' ? null : (
+        <footer className="app-footer">
+          Local-first · email/password · {metalProviderFooter(metalProvider)} · sync failures stay quiet
+        </footer>
+      )}
     </div>
   );
 }

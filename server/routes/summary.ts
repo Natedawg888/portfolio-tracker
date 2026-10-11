@@ -6,16 +6,25 @@ import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { requireUserId } from '../lib/userScope.ts';
 import { getDb, queryAll, queryOne, run, newId } from '../db/index.ts';
 import { computeNetWorth } from '../lib/netWorth.ts';
+import { recordDailySnapshot, snapshotBreakdown } from '../lib/dailySnapshot.ts';
+import { logger } from '../lib/logger.ts';
 
 const router = Router();
 
 router.get('/net-worth', async (req: AuthedRequest, res) => {
   const userId = requireUserId(req, res);
   if (!userId) return;
-  const result = await computeNetWorth(undefined, userId);
-  // Keep public shape stable (omit internal breakdown unless asked)
-  const { breakdown: _b, ...publicShape } = result;
-  res.json(publicShape);
+  const db = await getDb();
+  const result = await computeNetWorth(db, userId);
+  try {
+    recordDailySnapshot(db, userId, result);
+  } catch (err) {
+    // The sparkline can miss a day; the net worth itself must still load.
+    logger.warn('daily snapshot failed', { error: err instanceof Error ? err.message : String(err) });
+  }
+  // Holdings feed the Dashboard drill-downs; byClass stays internal.
+  const { breakdown, ...publicShape } = result;
+  res.json({ ...publicShape, holdings: breakdown.holdings });
 });
 
 const processStartedAt = new Date().toISOString();
@@ -45,6 +54,7 @@ function mapSnapshot(r: Record<string, unknown>) {
     totalNzd: Number(r.total_nzd),
     breakdown,
     notes: r.notes ?? null,
+    kind: r.kind === 'auto' ? 'auto' : 'manual',
   };
 }
 
@@ -94,15 +104,7 @@ router.post('/snapshots', async (req: AuthedRequest, res) => {
       ? req.body.notes.trim()
       : null;
   const id = newId('snap');
-  const breakdown = {
-    byClass: nw.breakdown.byClass,
-    holdings: nw.breakdown.holdings,
-    asOf: nw.asOf,
-    quoteNote: nw.quoteNote,
-    debtOutstandingNzd: nw.debtOutstandingNzd,
-    debtPersonCount: nw.debtPersonCount,
-    assetsKnownNzd: nw.assetsKnownNzd,
-  };
+  const breakdown = snapshotBreakdown(nw);
   run(
     db,
     `INSERT INTO valuation_snapshots (id, user_id, taken_at, total_nzd, breakdown_json, notes)

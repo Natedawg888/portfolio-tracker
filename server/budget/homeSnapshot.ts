@@ -17,7 +17,7 @@
  * a mirrored dividend already sits on income_records when one was recorded.
  */
 import type { Database } from 'sql.js';
-import type { HomeMonthSnapshot } from '../../src/types/index.ts';
+import type { HomeMonthSnapshot, SpendingBreakdown, SpendingBreakdownRow } from '../../src/types/index.ts';
 import { categoryTypeCountsAsSpend, normalizeCategoryType } from '../../src/lib/categoryTypes.ts';
 import { DEBT_SLUG, isDebtCategoryRef, resolveCategoryId } from '../lib/categories.ts';
 import { queryAll, queryOne } from '../db/index.ts';
@@ -86,8 +86,31 @@ function receivedIncomeNzd(
   return roundMoney(total);
 }
 
-/** Spending NZD for the month. Income and transfer categories are excluded. */
-function spentNzd(db: Database, userId: string, from: string, to: string): number {
+/** How many merchants the uncategorised fallback lists. */
+export const TOP_MERCHANTS = 5;
+
+function addTo(map: Map<string, number>, key: string, amount: number): void {
+  map.set(key, (map.get(key) ?? 0) + amount);
+}
+
+function sortedRows(map: Map<string, number>, limit?: number): SpendingBreakdownRow[] {
+  const rows = [...map.entries()]
+    .map(([label, amount]) => ({ label, amountNzd: roundMoney(amount) }))
+    .sort((a, b) => b.amountNzd - a.amountNzd || a.label.localeCompare(b.label));
+  return limit == null ? rows : rows.slice(0, limit);
+}
+
+/**
+ * Spending NZD for the month, plus where it went. Income and transfer categories
+ * are excluded. The breakdown is by category; when no spending is categorised it
+ * falls back to the top merchants (merchant, else description).
+ */
+function spentNzd(
+  db: Database,
+  userId: string,
+  from: string,
+  to: string,
+): { total: number; breakdown: SpendingBreakdown | null } {
   const debtCategoryId = resolveCategoryId(db, userId, DEBT_SLUG);
   const txns = queryAll<{
     id?: string;
@@ -95,9 +118,13 @@ function spentNzd(db: Database, userId: string, from: string, to: string): numbe
     category_id?: string | null;
     type?: string | null;
     is_income?: number | null;
+    category_name?: string | null;
+    merchant?: string | null;
+    description?: string | null;
   }>(
     db,
-    `SELECT t.id, t.amount, t.category_id, c.type AS type, c.is_income AS is_income
+    `SELECT t.id, t.amount, t.category_id, c.type AS type, c.is_income AS is_income,
+            c.name AS category_name, t.merchant, t.description
      FROM transactions t
      LEFT JOIN budget_categories c
        ON c.id = t.category_id AND c.user_id = t.user_id
@@ -106,6 +133,9 @@ function spentNzd(db: Database, userId: string, from: string, to: string): numbe
   );
 
   let total = 0;
+  let categorised = 0;
+  const byCategory = new Map<string, number>();
+  const byMerchant = new Map<string, number>();
   const debtTxnIds = new Set<string>();
   for (const txn of txns) {
     const amount = Number(txn.amount);
@@ -116,6 +146,9 @@ function spentNzd(db: Database, userId: string, from: string, to: string): numbe
       if (!categoryTypeCountsAsSpend(type)) continue;
     }
     total += Math.abs(amount);
+    if (categoryId) categorised += 1;
+    addTo(byCategory, categoryId ? String(txn.category_name ?? '').trim() || 'Other' : UNCATEGORISED, Math.abs(amount));
+    addTo(byMerchant, String(txn.merchant ?? '').trim() || String(txn.description ?? '').trim() || 'Unknown', Math.abs(amount));
     if (isDebtCategoryRef(categoryId, debtCategoryId) && txn.id) {
       debtTxnIds.add(String(txn.id));
     }
@@ -133,10 +166,22 @@ function spentNzd(db: Database, userId: string, from: string, to: string): numbe
     const txnId = repayment.transaction_id ? String(repayment.transaction_id) : '';
     if (txnId && debtTxnIds.has(txnId)) continue;
     const amount = Number(repayment.amount_nzd);
-    if (Number.isFinite(amount) && amount > 0) total += amount;
+    if (Number.isFinite(amount) && amount > 0) {
+      total += amount;
+      addTo(byCategory, DEBT_REPAYMENTS, amount);
+    }
   }
-  return roundMoney(total);
+
+  let breakdown: SpendingBreakdown | null = null;
+  if (categorised > 0) breakdown = { by: 'category', rows: sortedRows(byCategory) };
+  else if (byMerchant.size > 0) breakdown = { by: 'merchant', rows: sortedRows(byMerchant, TOP_MERCHANTS) };
+  else if (byCategory.size > 0) breakdown = { by: 'category', rows: sortedRows(byCategory) };
+  return { total: roundMoney(total), breakdown };
 }
+
+const UNCATEGORISED = 'Uncategorised';
+/** Debt repayments recorded on Debts that no bank transaction already counts. */
+const DEBT_REPAYMENTS = 'Debt repayments';
 
 /** Fraction of income, or null when income is not a positive amount. */
 export function savingsRateOf(savingsNzd: number, incomeNzd: number): number | null {
@@ -156,7 +201,8 @@ export function homeMonthSnapshot(
   if (!bounds) return null;
 
   const incomeNzd = receivedIncomeNzd(db, userId, bounds.from, bounds.to);
-  const spendingNzd = spentNzd(db, userId, bounds.from, bounds.to);
+  const spent = spentNzd(db, userId, bounds.from, bounds.to);
+  const spendingNzd = spent.total;
   const savingsNzd = roundMoney(incomeNzd - spendingNzd);
   return {
     yearMonth: bounds.yearMonth,
@@ -168,6 +214,7 @@ export function homeMonthSnapshot(
     spendingNzd,
     savingsNzd,
     savingsRate: savingsRateOf(savingsNzd, incomeNzd),
+    spendingBreakdown: spent.breakdown,
     expectedPay: paySourcesExpected(db, userId),
   };
 }

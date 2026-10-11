@@ -184,7 +184,8 @@ CREATE TABLE IF NOT EXISTS valuation_snapshots (
   taken_at        TEXT NOT NULL,
   total_nzd       REAL NOT NULL,
   breakdown_json  TEXT NOT NULL DEFAULT '{}',
-  notes           TEXT
+  notes           TEXT,
+  kind            TEXT NOT NULL DEFAULT 'manual'  -- manual (POST /snapshots) | auto (daily, on load)
 );
 
 CREATE TABLE IF NOT EXISTS app_settings (

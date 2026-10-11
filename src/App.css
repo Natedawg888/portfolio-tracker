@@ -4420,7 +4420,8 @@ html:not([data-theme]) .dashboard-page :focus-visible {
   font-feature-settings: "tnum" 1;
 }
 .dashboard-page .savings-goal-bar {
-  height: 0.28rem;
+  position: relative;
+  height: 0.4rem;
   border-radius: 999px;
   background: color-mix(in srgb, var(--text) 12%, var(--surface));
   overflow: hidden;
@@ -8723,3 +8724,393 @@ html.has-bottom-ad body { padding-bottom: calc(var(--ad-bottom-space, 0px) + env
 .ad-prefs { display: grid; gap: 0.35rem; }
 .privacy-page article { max-width: 760px; margin: 0 auto; }
 .privacy-page h4 { margin: 1rem 0 0.25rem; }
+
+/* Dashboard redesign: ⓘ source notes, allocation expander, compact health chip. */
+.info-tip {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 0.3rem;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+}
+.info-tip-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.info-tip-btn:hover,
+.info-tip--open .info-tip-btn { color: var(--text); }
+.info-tip-btn:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 1px;
+}
+.info-tip-body {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 0.35rem);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(18rem, 80vw);
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+  color: var(--text);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  text-align: left;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.info-tip:hover .info-tip-body,
+.info-tip-btn:focus-visible + .info-tip-body,
+.info-tip--open .info-tip-body {
+  visibility: visible;
+  opacity: 1;
+}
+/* Tiles: the whole card opens its drill-down; the ⓘ sits in the corner. */
+.dashboard-tile {
+  position: relative;
+  padding: 0;
+  transition: border-color 0.12s ease;
+}
+.dashboard-tile:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+.dashboard-tile--open {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.dashboard-tile-hit {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  width: 100%;
+  padding: 0.9rem 2.2rem 0.75rem 1rem;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.dashboard-tile-hit:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+.dashboard-tile-title {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.dashboard-tile-cue {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.dashboard-tile-hit:hover .dashboard-tile-cue,
+.dashboard-tile--open .dashboard-tile-cue { color: var(--text); }
+.dashboard-tile > .info-tip {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.6rem;
+  margin: 0;
+}
+.dashboard-tile .info-tip-body {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+.hero-card .eyebrow { display: flex; align-items: center; }
+.hero-sub { margin: 0; }
+
+.allocation { display: flex; flex-direction: column; gap: 0.6rem; }
+.allocation-toggle { align-self: flex-start; }
+.allocation-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  align-items: center;
+  gap: 1.25rem;
+}
+.allocation-pie { max-width: 220px; width: 100%; }
+.allocation-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.35rem 0.9rem;
+}
+.allocation-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+}
+.allocation-legend strong { margin-left: auto; font-variant-numeric: tabular-nums; }
+@media (max-width: 560px) {
+  .allocation-detail { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+  .allocation-legend { width: 100%; }
+}
+
+.health-score-compact { display: flex; flex-direction: column; gap: 0.6rem; }
+.health-score-chip {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.health-score-chip:hover { border-color: var(--accent); }
+.health-score-chip:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+.health-score-chip-caret { color: var(--muted); }
+.health-score-compact-detail { display: flex; flex-direction: column; gap: 0.6rem; }
+
+.cash-empty-toggle { margin-top: 0.6rem; }
+.cash-accounts .section-subtitle { display: flex; align-items: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  .info-tip-body { transition: none; }
+}
+
+/* Goal bars: tiny progress still shows, and notches mark 25 / 50 / 75%. */
+.dashboard-page .savings-goal-bar-fill--started { min-width: 0.4rem; }
+.dashboard-page .savings-goal-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--surface-2);
+  opacity: 0.85;
+}
+.dashboard-page .savings-goal-tick--passed { background: var(--surface); }
+.dashboard-page .month-snapshot-figure dd.month-snapshot-plain {
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--warn);
+}
+
+/* Net worth hero: Total / Accessible, sparkline, ranges. */
+.segmented {
+  display: inline-flex;
+  gap: 0.15rem;
+  padding: 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+}
+.segmented-btn {
+  padding: 0.25rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.segmented-btn:hover { color: var(--text); background: var(--surface-2); }
+.segmented-btn.active {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 24%, var(--surface));
+  border-color: var(--accent);
+}
+.segmented-btn:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+.segmented--small .segmented-btn { padding: 0.15rem 0.6rem; font-size: 0.74rem; }
+.net-worth-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.net-worth-history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.75rem;
+}
+.net-worth-history .segmented { align-self: flex-start; }
+.net-worth-history-empty { margin: 0; }
+.net-worth-delta {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.net-worth-delta--up { color: var(--accent); }
+.net-worth-delta--down { color: var(--danger); }
+.net-worth-delta--flat { color: var(--muted); }
+.net-worth-sparkline {
+  display: block;
+  width: 100%;
+  height: 64px;
+}
+.net-worth-sparkline-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.net-worth-sparkline-area { fill: color-mix(in srgb, var(--accent) 14%, transparent); }
+
+/* Asset drill-down panel. */
+.asset-drill { display: flex; flex-direction: column; gap: 0.6rem; }
+.asset-drill-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.asset-drill-head h2 { margin: 0; font-size: 1.05rem; font-weight: 650; }
+.asset-drill-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.1rem;
+}
+.asset-drill-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 0.88rem;
+}
+.asset-drill-label { min-width: 0; overflow-wrap: anywhere; }
+.asset-drill-note { margin: 0; }
+
+/* Debt: one bar per creditor. */
+.debt-balances { display: flex; flex-direction: column; gap: 0.75rem; }
+.debt-balances-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.debt-balances-head h2 {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  font-size: 1.08rem;
+  font-weight: 650;
+}
+.debt-balances-total { margin: 0; }
+.debt-balances-total strong { font-size: 1.1rem; }
+.debt-balances-list,
+.month-spending-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+.debt-balances-row,
+.month-spending-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.88rem;
+}
+.debt-balances-name,
+.month-spending-label { min-width: 0; overflow-wrap: anywhere; }
+.debt-balances-bar,
+.month-spending-bar {
+  height: 0.4rem;
+  margin-top: 0.3rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 10%, var(--surface));
+  overflow: hidden;
+}
+.debt-balances-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--danger);
+}
+.debt-balances-fill--some { min-width: 0.4rem; }
+.debt-balances-meta { margin: 0.25rem 0 0; }
+
+/* This month: spending breakdown. */
+.month-spending-toggle {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-2);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.month-spending-toggle:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+.month-spending-detail {
+  margin-top: 0.9rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-soft);
+}
+.month-spending-title {
+  display: flex;
+  align-items: center;
+  margin: 0 0 0.6rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.month-spending-bar span {
+  display: block;
+  height: 100%;
+  min-width: 0.3rem;
+  border-radius: 999px;
+  background: var(--accent-2);
+}
+
+/* Savings goals: quick add and sync indicator. */
+.savings-goal-add { align-self: flex-start; margin-top: 0.35rem; }
+.savings-goal-add-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+.savings-goal-add-form input { width: 7rem; }
+.savings-goal-add-form .savings-goal-form-error { flex-basis: 100%; margin: 0; }
+.savings-goal-sync { color: var(--muted); }

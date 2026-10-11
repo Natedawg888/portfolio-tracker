@@ -49,6 +49,30 @@ export function HealthScoreCard() {
     };
   }, []);
 
+  if (!error && data && data.score == null) {
+    const ready = data.checks.filter((c) => c.score != null).length;
+    return (
+      <section className="health-score-compact" aria-label="Financial health">
+        <button
+          type="button"
+          className="health-score-chip"
+          aria-expanded={open}
+          aria-controls="health-score-compact-detail"
+          onClick={() => setOpen((o) => !o)}
+        >
+          Health score: {ready}/{data.checks.length} checks ready
+          <span className="health-score-chip-caret" aria-hidden="true">{open ? '▴' : '▾'}</span>
+        </button>
+        {open ? (
+          <div id="health-score-compact-detail" className="card health-score-compact-detail">
+            <p className="health-score-summary">{data.summary}</p>
+            <HealthChecks data={data} moneyHidden={moneyHidden} />
+          </div>
+        ) : null}
+      </section>
+    );
+  }
+
   return (
     <section className="card health-score" aria-labelledby="health-score-heading">
       <div className="health-score-head">
@@ -80,28 +104,32 @@ export function HealthScoreCard() {
           <button type="button" className="btn small ghost health-score-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
             {open ? 'Hide how it’s worked out' : 'How it’s worked out'}
           </button>
-          {open ? (
-            <ul className="health-score-checks">
-              {data.checks.map((c) => (
-                <li key={c.key}>
-                  <div className="health-score-check-head">
-                    <strong>{c.label}</strong>
-                    <span className="muted small">
-                      {c.score == null ? 'Not enough data' : `${moneyHidden ? '••' : c.score}/100 · ${moneyHidden ? '••' : valueText(c)}`} · weight {c.weight}%
-                    </span>
-                  </div>
-                  <div className="muted small">{moneyHidden ? 'Hidden while amounts are hidden.' : c.explanation}</div>
-                  {c.tip && !moneyHidden ? <div className="small">{c.tip}</div> : null}
-                </li>
-              ))}
-              <li className="muted small">
-                Based on the last {data.windowMonths} complete months of your Budget, your bank balances and Debts. Checks without
-                enough data are left out. Educational only — not financial advice.
-              </li>
-            </ul>
-          ) : null}
+          {open ? <HealthChecks data={data} moneyHidden={moneyHidden} /> : null}
         </>
       )}
     </section>
+  );
+}
+
+function HealthChecks({ data, moneyHidden }: { data: HealthScoreResponse; moneyHidden: boolean }) {
+  return (
+    <ul className="health-score-checks">
+      {data.checks.map((c) => (
+        <li key={c.key}>
+          <div className="health-score-check-head">
+            <strong>{c.label}</strong>
+            <span className="muted small">
+              {c.score == null ? 'Not enough data' : `${moneyHidden ? '••' : c.score}/100 · ${moneyHidden ? '••' : valueText(c)}`} · weight {c.weight}%
+            </span>
+          </div>
+          <div className="muted small">{moneyHidden ? 'Hidden while amounts are hidden.' : c.explanation}</div>
+          {c.tip && !moneyHidden ? <div className="small">{c.tip}</div> : null}
+        </li>
+      ))}
+      <li className="muted small">
+        Based on the last {data.windowMonths} complete months of your Budget, your bank balances and Debts. Checks without
+        enough data are left out. Educational only — not financial advice.
+      </li>
+    </ul>
   );
 }

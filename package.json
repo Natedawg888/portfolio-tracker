@@ -33,6 +33,7 @@
     "test:bills": "node --import tsx src/lib/recurring.test.ts && node --import tsx server/recurring/store.test.ts",
     "test:ads": "node --import tsx src/lib/ads.test.ts && node --import tsx server/routes/ads.test.ts",
     "test:warranties": "node --import tsx src/lib/warranty.test.ts && node --import tsx server/warranties/store.test.ts",
+    "test:dashboard": "node --import tsx src/lib/accountMask.test.ts && node --import tsx src/lib/netWorthHistory.test.ts && node --import tsx server/lib/dailySnapshot.test.ts",
     "test:health-score": "node --import tsx src/lib/healthScore.test.ts && node --import tsx server/health/api.test.ts",
     "test:compound": "node --import tsx src/lib/compoundInterest.test.ts",
     "test:economy-page": "node --import tsx src/lib/economyView.test.ts",

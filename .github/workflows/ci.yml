@@ -28,6 +28,7 @@ jobs:
       - run: npm run test:home-snapshot
       - run: npm run test:savings-goals
       - run: npm run test:page-cache
+      - run: npm run test:dashboard
       - run: npm run test:donations
       - run: npm run test:projections
       - run: npm run test:projections-page
