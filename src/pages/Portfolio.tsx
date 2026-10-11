@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import type { FormEvent, ReactNode } from 'react';
 import { api, formatNzd, formatAuckland } from '../api/client';
 import { maybeAutoSyncBankTransactions, maybeAutoSyncPortfolio } from '../lib/akahuTxnAutoSync';
@@ -14,7 +15,15 @@ import {
   txnSyncChanged,
   writePageCache,
 } from '../lib/pageDataCache';
-import { AssetBreakdownChart, type AssetBreakdownRow } from '../components/AssetBreakdownChart';
+import type { AssetBreakdownRow } from '../components/AssetBreakdownChart';
+import { PortfolioTabs } from '../components/portfolio/PortfolioTabs';
+import { PortfolioHeader, type RefreshProgress } from '../components/portfolio/PortfolioHeader';
+import { OverviewTab, type OverviewRow } from '../components/portfolio/OverviewTab';
+import { StocksTab } from '../components/portfolio/StocksTab';
+import { CryptoList } from '../components/portfolio/CryptoList';
+import { MetalsTab } from '../components/portfolio/MetalsTab';
+import { dailyAverage, monthProgress } from '../lib/budgetView';
+import { monthStart, todayAucklandYmd } from '../lib/period';
 import { HoldingPriceChart } from '../components/HoldingPriceChart';
 import {
   estimateMinerEarnings,
@@ -33,7 +42,6 @@ import {
 } from '../components/MtgFilters';
 import { CollectablesPanel } from '../components/CollectablesPanel';
 import { isApiCardGame, isManualCollectableGame } from '../lib/collectables';
-import type { MtgColour } from '../types';
 import { DividendTracker } from '../components/DividendTracker';
 import {
   AddWalletDetails,
@@ -45,72 +53,30 @@ import { useCryptoWallets } from '../lib/cryptoWallets';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
 import { metalSpotHint, type MetalSpotSource, type MetalSpotStatus } from '../lib/metalSpotCopy';
-
-type Holding = {
-  id: string;
-  assetClass: string;
-  name: string;
-  costBasisNzd: number | null;
-  minerName?: string;
-  hashrateThs?: number;
-  energyEfficiencyWth?: number | null;
-  rarity?: string | null;
-  level?: number | null;
-  estimatedValueNzd?: number | null;
-  estimatedValueAt?: string | null;
-  estimatedValueSource?: string | null;
-  asset?: string;
-  amount?: number;
-  symbol?: string;
-  shares?: number;
-  exchange?: string | null;
-  notes?: string;
-  metal?: string;
-  unit?: string;
-  ownershipPct?: number;
-  purchasePriceNzd?: number | null;
-  purchaseDate?: string | null;
-  lastValuationNzd?: number | null;
-  artworkTitle?: string;
-  artist?: string;
-  artKind?: 'fractional' | 'physical' | null;
-  stoneType?: string;
-  carat?: number;
-  clarity?: string | null;
-  cut?: string | null;
-  colour?: string | null;
-  valuationNzd?: number | null;
-  valuationSource?: string | null;
-  valuationNotes?: string | null;
-  lastValuationAt?: string | null;
-  source?: string;
-  /** Akahu / Sharesies instrument logo (icons only). */
-  logoUrl?: string | null;
-  marketValueNzd?: number | null;
-  spotPriceNzdPerOzT?: number | null;
-  spotAsOf?: string | null;
-  /** forex ISO currency (USD/EUR/GBP) */
-  currency?: string;
-  unitPriceNzd?: number | null;
-  quoteAsOf?: string | null;
-  quoteNotes?: string | null;
-  /** real_estate */
-  propertyValueNzd?: number | null;
-  mortgageOutstandingNzd?: number | null;
-  equityNzd?: number | null;
-  photoPath?: string | null;
-  photoUrl?: string | null;
-  /** collectable */
-  cardGame?: string | null;
-  cardSet?: string | null;
-  cardNumber?: string | null;
-  cardFinish?: string | null;
-  cardApiId?: string | null;
-  cardImageUrl?: string | null;
-  cardColours?: MtgColour[] | null;
-  cardRarity?: string | null;
-  quantity?: number | null;
-};
+import {
+  amountLabel,
+  displayCostBasisNzd,
+  displayName,
+  formatAmount,
+  formatHashrate,
+  marketValueNzd,
+  tickerFor,
+  type Holding,
+} from '../lib/holdingDisplay';
+import {
+  findIssues,
+  formatSignedPct,
+  holdingReturn,
+  panelId,
+  priceSources,
+  tabFromHash,
+  tabId,
+  visibleTabs,
+  type PortfolioTab,
+} from '../lib/portfolioView';
+import { MoreMenu } from '../components/MoreMenu';
+import { InfoTip } from '../components/InfoTip';
+import { AddCostButton } from '../components/portfolio/AddCostButton';
 
 const emptyMiner = {
   minerName: '',
@@ -261,204 +227,10 @@ const emptyStone = {
 
 
 
-/**
- * Parse NZD market value from Akahu / holding notes.
- * Only accepts an explicit NZD figure — never treats USD/other as NZD.
- */
-export function parseNzdValueFromNotes(notes?: string | null): number | null {
-  if (!notes) return null;
-  // Prefer explicit FX conversion: "44.78 USD → 79.33 NZD @ rate"
-  const arrow = notes.match(/→\s*([\d.]+)\s*NZD\b/i);
-  if (arrow) {
-    const n = Number(arrow[1]);
-    return Number.isFinite(n) ? n : null;
-  }
-  // Reject notes that only carry a non-NZD value (e.g. "11.89 USD (no FX applied)")
-  if (/\b(?:USD|AUD|EUR|GBP)\b/i.test(notes) && /\bno FX\b|\bFX unavailable\b/i.test(notes)) {
-    return null;
-  }
-  const nzdMatch = notes.match(
-    /(?:Akahu\s+(?:market\s+)?value[:\s]*|Akahu\s+portfolio\s+value\s+|Akahu\s+total\s+value\s+|value\s+)([\d.]+)\s*NZD\b/i,
-  );
-  if (nzdMatch) {
-    const n = Number(nzdMatch[1]);
-    return Number.isFinite(n) ? n : null;
-  }
-  // Broader: any "NUMBER NZD" in notes
-  const anyNzd = notes.match(/\b([\d.]+)\s*NZD\b/i);
-  if (anyNzd) {
-    const n = Number(anyNzd[1]);
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
-}
-
-/** Market value in NZD when known — never invent FX or prices. */
-export function marketValueNzd(h: Holding): number | null {
-  if (h.assetClass === 'gomining_miner' && h.estimatedValueNzd != null && Number.isFinite(h.estimatedValueNzd)) {
-    return Number(h.estimatedValueNzd);
-  }
-  if (h.assetClass === 'art') {
-    if (h.lastValuationNzd != null && Number.isFinite(h.lastValuationNzd)) {
-      return Number(h.lastValuationNzd);
-    }
-    if (h.purchasePriceNzd != null && Number.isFinite(h.purchasePriceNzd)) {
-      return Number(h.purchasePriceNzd);
-    }
-    return null;
-  }
-  if (h.assetClass === 'stone' && h.valuationNzd != null && Number.isFinite(h.valuationNzd)) {
-    return Number(h.valuationNzd);
-  }
-  if (h.assetClass === 'real_estate') {
-    // Card Value shows equity (value − mortgage); gross in meta
-    if (h.equityNzd != null && Number.isFinite(h.equityNzd)) return Number(h.equityNzd);
-    if (h.propertyValueNzd != null && Number.isFinite(h.propertyValueNzd)) {
-      const mort = h.mortgageOutstandingNzd != null ? Number(h.mortgageOutstandingNzd) : 0;
-      return Number(h.propertyValueNzd) - (Number.isFinite(mort) ? mort : 0);
-    }
-  }
-  if (h.assetClass === 'collectable') {
-    if (h.marketValueNzd != null && Number.isFinite(h.marketValueNzd)) return Number(h.marketValueNzd);
-    if (h.valuationNzd != null && Number.isFinite(h.valuationNzd)) return Number(h.valuationNzd);
-  }
-  // Stocks / crypto / metals: prefer API marketValueNzd (Akahu × live FX or Metals.Dev)
-  if (h.marketValueNzd != null && Number.isFinite(h.marketValueNzd)) {
-    return Number(h.marketValueNzd);
-  }
-  return parseNzdValueFromNotes(h.notes);
-}
-
-/** Display cost: blank/— when unknown; never show fake $0 for Akahu unknowns. */
-export function displayCostBasisNzd(h: Holding): number | null {
-  const c = h.costBasisNzd;
-  if (c == null || !Number.isFinite(c)) {
-    if (
-      h.assetClass === 'art' &&
-      h.purchasePriceNzd != null &&
-      Number.isFinite(h.purchasePriceNzd)
-    ) {
-      return Number(h.purchasePriceNzd);
-    }
-    return null;
-  }
-  if (c === 0 && (h.source === 'Sharesies' || h.source === 'Hatch')) return null;
-  return c;
-}
-
-/**
- * Return ($) / Earnings (%) from value vs cost.
- * Blank/missing/non-finite cost is treated as $0 for P&L (Cost display may still show —).
- * returnNzd = value - cost; pct = return/cost*100, or ±∞% when cost is 0 and value ≠ 0.
- */
-export function computeReturn(
-  valueNzd: number | null,
-  costBasisNzd: number | null,
-): { returnNzd: number; pct: number } | null {
-  if (valueNzd == null || !Number.isFinite(valueNzd)) return null;
-  const cost =
-    costBasisNzd == null || !Number.isFinite(costBasisNzd) ? 0 : costBasisNzd;
-  const returnNzd = valueNzd - cost;
-  let pct: number;
-  if (cost === 0) {
-    if (valueNzd === 0) pct = 0;
-    else pct = valueNzd > 0 ? Infinity : -Infinity;
-  } else {
-    pct = (returnNzd / cost) * 100;
-  }
-  return { returnNzd, pct };
-}
-
 function parseOptionalNumber(value: string): number | null {
   if (value.trim() === '') return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
-}
-
-function formatAmount(n: number | null | undefined, digits = 6): string {
-  if (n == null || Number.isNaN(n)) return '—';
-  return new Intl.NumberFormat('en-NZ', {
-    maximumFractionDigits: digits,
-  }).format(n);
-}
-
-function formatPct(pct: number): string {
-  if (pct === Infinity) return '+∞%';
-  if (pct === -Infinity) return '-∞%';
-  if (!Number.isFinite(pct)) return '—';
-  const sign = pct > 0 ? '+' : '';
-  return `${sign}${pct.toFixed(2)}%`;
-}
-
-function tickerFor(h: Holding): string {
-  if (h.assetClass === 'stock') return (h.symbol ?? h.name).toUpperCase();
-  if (h.assetClass === 'crypto') return (h.asset ?? h.name).toUpperCase();
-  if (h.assetClass === 'gomining_miner') return 'GM';
-  if (h.assetClass === 'metal') return (h.metal ?? 'METAL').toUpperCase().slice(0, 4);
-  if (h.assetClass === 'forex') return (h.currency ?? h.asset ?? 'FX').toUpperCase().slice(0, 3);
-  if (h.assetClass === 'art') return 'ART';
-  if (h.assetClass === 'stone') return (h.stoneType ?? 'ST').toUpperCase().slice(0, 3);
-  if (h.assetClass === 'real_estate') return 'RE';
-  if (h.assetClass === 'collectable') {
-    const g = (h.cardGame ?? 'CARD').toUpperCase();
-    return g === 'POKEMON' ? 'PKMN' : g === 'MTG' ? 'MTG' : g.slice(0, 4);
-  }
-  return h.name.slice(0, 2).toUpperCase();
-}
-
-function displayName(h: Holding): string {
-  if (h.assetClass === 'gomining_miner') return h.minerName ?? h.name;
-  if (h.assetClass === 'art') return h.artworkTitle ?? h.name;
-  if (h.assetClass === 'metal') return h.name || (h.metal ?? 'Metal');
-  if (h.assetClass === 'forex') {
-    const cur = (h.currency ?? h.asset ?? 'FX').toUpperCase();
-    const src = h.source?.trim();
-    return h.name || (src ? `${cur} (${src})` : cur);
-  }
-  if (h.assetClass === 'stone') return h.name || (h.stoneType ?? 'Stone');
-  if (h.assetClass === 'real_estate') return h.name || 'Property';
-  if (h.assetClass === 'collectable') {
-    const bits = [h.name];
-    if (h.cardSet) bits.push(String(h.cardSet).toUpperCase());
-    if (h.cardNumber) bits.push(`#${h.cardNumber}`);
-    return bits.filter(Boolean).join(' · ');
-  }
-  return h.name;
-}
-
-function amountLabel(h: Holding): string {
-  switch (h.assetClass) {
-    case 'stock':
-      return `${formatAmount(h.shares, 4)} shares`;
-    case 'crypto':
-      return `${formatAmount(h.amount)} ${h.asset ?? ''}`.trim();
-    case 'gomining_miner':
-      return `${formatAmount(h.hashrateThs, 2)} TH/s`;
-    case 'metal': {
-      const unit = h.unit === 'oz_t' ? 'oz t' : h.unit === 'g' ? 'g' : h.unit ?? '';
-      return `${formatAmount(h.amount, 4)} ${unit}`.trim();
-    }
-    case 'forex': {
-      const cur = (h.currency ?? h.asset ?? '').toUpperCase();
-      return `${formatAmount(h.amount, 2)} ${cur}`.trim();
-    }
-    case 'art':
-      return h.ownershipPct != null ? `${formatAmount(h.ownershipPct, 2)}% ownership` : '—';
-    case 'stone':
-      return h.carat != null ? `${formatAmount(h.carat, 3)} ct` : '—';
-    case 'real_estate': {
-      const pv = h.propertyValueNzd != null ? formatNzd(h.propertyValueNzd) : '—';
-      const mort = formatNzd(h.mortgageOutstandingNzd ?? 0);
-      return `Value ${pv} · Mortgage ${mort}`;
-    }
-    case 'collectable': {
-      const q = h.quantity ?? h.amount ?? 1;
-      const fin = h.cardFinish ? ` · ${h.cardFinish}` : '';
-      return `${formatAmount(q, 0)}× ${(h.cardGame ?? 'card').toUpperCase()}${fin}`;
-    }
-    default:
-      return '—';
-  }
 }
 
 const PERIOD_LABELS: { key: EarningsPeriod; label: string }[] = [
@@ -505,92 +277,17 @@ function networkFromUi(s: GominingUiSettings): GoMiningNetworkParams {
   };
 }
 
-function EarningsPeriodsGrid({
-  estimate,
-  displayCurrency,
-  fxNote,
-}: {
-  estimate: GoMiningEarningsEstimate | null;
-  displayCurrency: EarningsDisplayCurrency;
-  fxNote?: string | null;
-}) {
-  if (!estimate) {
-    return (
-      <p className="muted small holding-card-meta">Earnings estimate: unavailable</p>
-    );
-  }
-  const hasNet = estimate.netBtcStatus === 'ok';
-  const hasPool = estimate.poolRewardStatus === 'ok';
-  const preferNet = hasNet;
-  const currencies: Array<'BTC' | 'USD' | 'NZD'> =
-    displayCurrency === 'ALL' ? ['BTC', 'USD', 'NZD'] : [displayCurrency];
-
-  return (
-    <div className="earnings-periods">
-      <p className="earnings-periods-label muted small">
-        Earnings estimate
-        {hasNet ? ' (net)' : hasPool ? ' (pool — maint. incomplete)' : ' (stubbed)'}
-        {fxNote ? ` · ${fxNote}` : ''}
-      </p>
-      {currencies.map((cur) => (
-        <div key={cur} className="earnings-currency-block">
-          {displayCurrency === 'ALL' && (
-            <p className="earnings-currency-tag muted small">{cur}</p>
-          )}
-          <dl className="earnings-periods-grid">
-            {PERIOD_LABELS.map(({ key, label }) => {
-              const slice = estimate.periods[key];
-              return (
-                <div key={`${cur}-${key}`}>
-                  <dt>{label}</dt>
-                  <dd>
-                    {hasNet || hasPool
-                      ? formatEarningsAmount(slice, cur, preferNet)
-                      : '—'}
-                  </dd>
-                </div>
-              );
-            })}
-          </dl>
-        </div>
-      ))}
-      {estimate.maintenanceUsdAfterDiscount != null && (
-        <p className="muted small holding-card-meta">
-          Maint. ~${estimate.maintenanceUsdAfterDiscount.toFixed(4)}/day
-          {estimate.discountPct > 0 ? ` (−${estimate.discountPct}% on C1+C2)` : ''}
-        </p>
-      )}
-      {!hasNet && estimate.netBtcMessage && (
-        <p className="muted small holding-card-meta" title={estimate.netBtcMessage}>
-          {estimate.netBtcMessage}
-        </p>
-      )}
-    </div>
-  );
-}
-
 function HoldingCard({
   holding,
   onRefresh,
   onDelete,
-  onUpdateMiner,
   onUpdateQuantity,
   onUpdateArt,
-  earnings,
-  displayCurrency = 'ALL',
-  fxNote,
+  onSetCost,
 }: {
   holding: Holding;
   onRefresh?: (id: string) => void;
   onDelete?: (id: string) => void;
-  onUpdateMiner?: (
-    id: string,
-    patch: {
-      hashrateThs: number;
-      energyEfficiencyWth: number | null;
-      estimatedValueNzd?: number | null;
-    },
-  ) => Promise<void>;
   onUpdateQuantity?: (id: string, quantity: number) => Promise<void>;
   onUpdateArt?: (
     id: string,
@@ -602,16 +299,14 @@ function HoldingCard({
       purchaseDate?: string | null;
     },
   ) => Promise<void>;
-  earnings?: GoMiningEarningsEstimate | null;
-  displayCurrency?: EarningsDisplayCurrency;
-  fxNote?: string | null;
+  /** "+ Add cost" when the holding has no cost. */
+  onSetCost?: (id: string, costNzd: number) => Promise<boolean>;
 }) {
   const ticker = tickerFor(holding);
   const value = marketValueNzd(holding);
   const cost = displayCostBasisNzd(holding);
-  const ret = computeReturn(value, cost);
+  const ret = holdingReturn(value, cost);
   const showRefresh =
-    holding.assetClass === 'gomining_miner' ||
     holding.assetClass === 'crypto' ||
     holding.assetClass === 'metal' ||
     holding.assetClass === 'stock' ||
@@ -623,16 +318,19 @@ function HoldingCard({
       Boolean(holding.colour) &&
       Boolean(holding.clarity));
 
+  const canDelete =
+    holding.assetClass === 'stock' ||
+    holding.assetClass === 'crypto' ||
+    holding.assetClass === 'forex' ||
+    holding.assetClass === 'real_estate' ||
+    holding.assetClass === 'collectable' ||
+    holding.assetClass === 'art' ||
+    holding.assetClass === 'metal' ||
+    holding.assetClass === 'stone';
+
   const [editing, setEditing] = useState(false);
   const [editQuantity, setEditQuantity] = useState(
     String(holding.assetClass === 'stock' ? holding.shares ?? '' : holding.amount ?? ''),
-  );
-  const [editTh, setEditTh] = useState(String(holding.hashrateThs ?? ''));
-  const [editEe, setEditEe] = useState(
-    holding.energyEfficiencyWth != null ? String(holding.energyEfficiencyWth) : '',
-  );
-  const [editEst, setEditEst] = useState(
-    holding.estimatedValueNzd != null ? String(holding.estimatedValueNzd) : '',
   );
   const [editArtVal, setEditArtVal] = useState(
     holding.lastValuationNzd != null ? String(holding.lastValuationNzd) : '',
@@ -646,20 +344,12 @@ function HoldingCard({
   const [editArtDate, setEditArtDate] = useState(holding.purchaseDate ?? '');
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
-  const minerThInputRef = useRef<HTMLInputElement>(null);
 
   // Keep edit fields in sync when holding updates from parent reload.
   useEffect(() => {
     if (!editing) {
       setEditQuantity(
         String(holding.assetClass === 'stock' ? holding.shares ?? '' : holding.amount ?? ''),
-      );
-      setEditTh(String(holding.hashrateThs ?? ''));
-      setEditEe(
-        holding.energyEfficiencyWth != null ? String(holding.energyEfficiencyWth) : '',
-      );
-      setEditEst(
-        holding.estimatedValueNzd != null ? String(holding.estimatedValueNzd) : '',
       );
       setEditArtVal(
         holding.lastValuationNzd != null ? String(holding.lastValuationNzd) : '',
@@ -676,31 +366,12 @@ function HoldingCard({
     holding.assetClass,
     holding.shares,
     holding.amount,
-    holding.hashrateThs,
-    holding.energyEfficiencyWth,
-    holding.estimatedValueNzd,
     holding.lastValuationNzd,
     holding.ownershipPct,
     holding.purchasePriceNzd,
     holding.purchaseDate,
     editing,
   ]);
-
-  useEffect(() => {
-    if (!editing || holding.assetClass !== 'gomining_miner') return;
-    minerThInputRef.current?.focus();
-  }, [editing, holding.assetClass]);
-
-  useEffect(() => {
-    if (!editing || holding.assetClass !== 'gomining_miner') return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || savingEdit) return;
-      setEditing(false);
-      setEditError(null);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [editing, holding.assetClass, savingEdit]);
 
   async function saveQuantity(e: FormEvent) {
     e.preventDefault();
@@ -725,68 +396,6 @@ function HoldingCard({
       setSavingEdit(false);
     }
   }
-
-  function openMinerEdit() {
-    if (editing) return;
-    setEditTh(String(holding.hashrateThs ?? ''));
-    setEditEe(
-      holding.energyEfficiencyWth != null ? String(holding.energyEfficiencyWth) : '',
-    );
-    setEditEst(
-      holding.estimatedValueNzd != null ? String(holding.estimatedValueNzd) : '',
-    );
-    setEditError(null);
-    setEditing(true);
-  }
-
-  function closeMinerEdit() {
-    if (savingEdit) return;
-    setEditing(false);
-    setEditError(null);
-  }
-
-  async function saveMinerSpecs(e: FormEvent) {
-    e.preventDefault();
-    if (!onUpdateMiner) return;
-    setEditError(null);
-    const th = Number(editTh);
-    if (!Number.isFinite(th) || th <= 0) {
-      setEditError('TH/s must be a positive number');
-      return;
-    }
-    const eeRaw = editEe.trim();
-    const ee = eeRaw === '' ? null : Number(eeRaw);
-    if (eeRaw !== '' && (!Number.isFinite(ee!) || ee! < 0)) {
-      setEditError('Energy efficiency must be ≥ 0 or blank');
-      return;
-    }
-    const estRaw = editEst.trim();
-    let estimatedValueNzd: number | null | undefined = undefined;
-    if (estRaw === '') {
-      estimatedValueNzd = null;
-    } else {
-      const est = Number(estRaw);
-      if (!Number.isFinite(est) || est < 0) {
-        setEditError('Est. NZD must be ≥ 0 or blank');
-        return;
-      }
-      estimatedValueNzd = est;
-    }
-    setSavingEdit(true);
-    try {
-      await onUpdateMiner(holding.id, {
-        hashrateThs: th,
-        energyEfficiencyWth: ee,
-        estimatedValueNzd,
-      });
-      setEditing(false);
-    } catch (err) {
-      setEditError((err as Error).message);
-    } finally {
-      setSavingEdit(false);
-    }
-  }
-
 
   async function saveArt(e: FormEvent) {
     e.preventDefault();
@@ -900,30 +509,20 @@ function HoldingCard({
         </div>
         <div>
           <dt>Return</dt>
-          <dd
-            className={
-              ret == null
-                ? undefined
-                : ret.pct >= 0
-                  ? 'return-pos'
-                  : 'return-neg'
-            }
-          >
-            {ret == null ? '—' : formatPct(ret.pct)}
+          <dd className={ret.kind === 'ok' ? (ret.pct >= 0 ? 'return-pos' : 'return-neg') : undefined}>
+            {ret.kind === 'ok' ? (
+              formatSignedPct(ret.pct)
+            ) : ret.kind === 'no_cost' && onSetCost ? (
+              <AddCostButton name={displayName(holding)} onSave={(c) => onSetCost(holding.id, c)} />
+            ) : (
+              '—'
+            )}
           </dd>
         </div>
         <div>
           <dt>Earnings</dt>
-          <dd
-            className={
-              ret == null
-                ? undefined
-                : ret.returnNzd >= 0
-                  ? 'return-pos'
-                  : 'return-neg'
-            }
-          >
-            {ret == null ? '—' : formatNzd(ret.returnNzd)}
+          <dd className={ret.kind === 'ok' ? (ret.returnNzd >= 0 ? 'return-pos' : 'return-neg') : undefined}>
+            {ret.kind === 'ok' ? `${ret.returnNzd > 0 ? '+' : ''}${formatNzd(ret.returnNzd)}` : '—'}
           </dd>
         </div>
       </dl>
@@ -1087,152 +686,6 @@ function HoldingCard({
         </div>
       )}
 
-      {holding.assetClass === 'gomining_miner' && (
-        <>
-          <p className="muted small holding-card-meta">
-            {[
-              holding.energyEfficiencyWth != null
-                ? `${formatAmount(holding.energyEfficiencyWth, 2)} W/TH`
-                : null,
-              holding.rarity,
-              holding.level != null ? `Lv ${holding.level}` : null,
-            ]
-              .filter(Boolean)
-              .join(' · ') || 'Miner'}
-            {holding.estimatedValueNzd != null && (
-              <>
-                {' '}
-                · est.{' '}
-                {holding.estimatedValueSource === 'gomining'
-                  ? 'marketplace'
-                  : holding.estimatedValueSource === 'gomining_extrapolated'
-                    ? 'estimate extrapolated from primary 12/15 W/TH'
-                    : holding.estimatedValueSource === 'manual'
-                      ? 'manual'
-                      : holding.estimatedValueSource ?? 'value'}{' '}
-                {formatNzd(holding.estimatedValueNzd)}
-              </>
-            )}
-            {holding.estimatedValueAt && (
-              <> · valued {formatAuckland(holding.estimatedValueAt)}</>
-            )}
-          </p>
-          {earnings?.netSatPerTh != null && (
-            <p className="muted small holding-card-meta">
-              ~{earnings.netSatPerTh.toFixed(4)} sat/TH/day net
-              {earnings.goBtcPaySatPerTh > 0
-                ? ` · GBP ${earnings.goBtcPaySatPerTh.toFixed(4)}`
-                : ''}
-            </p>
-          )}
-          {onUpdateMiner && (
-            <div className="miner-edit">
-              <button
-                type="button"
-                className="btn ghost holding-card-action"
-                aria-haspopup="dialog"
-                aria-expanded={editing}
-                aria-controls={`miner-edit-dialog-${holding.id}`}
-                onClick={openMinerEdit}
-              >
-                Edit TH / EE / Est. NZD
-              </button>
-            </div>
-          )}
-          {onUpdateMiner && editing && (
-            <div
-              className="modal-overlay"
-              role="presentation"
-              onClick={(e) => {
-                if (e.target === e.currentTarget) closeMinerEdit();
-              }}
-            >
-              <div
-                className="modal-dialog miner-edit-dialog"
-                id={`miner-edit-dialog-${holding.id}`}
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby={`miner-edit-title-${holding.id}`}
-                aria-describedby={`miner-edit-desc-${holding.id}`}
-              >
-                <div className="modal-header">
-                  <h3 id={`miner-edit-title-${holding.id}`}>Edit {displayName(holding)}</h3>
-                  <button
-                    type="button"
-                    className="btn small modal-close"
-                    aria-label="Close"
-                    disabled={savingEdit}
-                    onClick={closeMinerEdit}
-                  >
-                    ×
-                  </button>
-                </div>
-                <p className="section-desc" id={`miner-edit-desc-${holding.id}`}>
-                  TH/s is this miner’s computing power. EE is energy efficiency in watts per
-                  terahash; leave it blank if you don’t have it. Est. NZD is a manual value:
-                  a number stores that override, and a blank field clears it. Save writes these
-                  three fields only. The earnings estimate still uses the same formula.
-                </p>
-                <form className="miner-edit-form" onSubmit={saveMinerSpecs}>
-                  <label>
-                    TH/s
-                    <input
-                      ref={minerThInputRef}
-                      type="number"
-                      step="any"
-                      min={0}
-                      value={editTh}
-                      onChange={(e) => setEditTh(e.target.value)}
-                      required
-                      aria-label="Computing power TH/s"
-                    />
-                  </label>
-                  <label>
-                    EE (W/TH)
-                    <input
-                      type="number"
-                      step="any"
-                      min={0}
-                      value={editEe}
-                      onChange={(e) => setEditEe(e.target.value)}
-                      placeholder="optional"
-                      aria-label="Energy efficiency W/TH"
-                    />
-                  </label>
-                  <label className="span-2">
-                    Est. NZD
-                    <input
-                      type="number"
-                      step="any"
-                      min={0}
-                      value={editEst}
-                      onChange={(e) => setEditEst(e.target.value)}
-                      placeholder="manual if EE outside 12/15"
-                      aria-label="Manual estimated value NZD"
-                    />
-                  </label>
-                  <div className="miner-edit-actions">
-                    <button type="submit" className="btn primary" disabled={savingEdit}>
-                      {savingEdit ? 'Saving…' : 'Save'}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn ghost"
-                      disabled={savingEdit}
-                      onClick={closeMinerEdit}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                  {editError && <p className="muted small miner-edit-error">{editError}</p>}
-                </form>
-              </div>
-            </div>
-          )}
-          <EarningsPeriodsGrid estimate={earnings ?? null} displayCurrency={displayCurrency} fxNote={fxNote} />
-        </>
-      )}
-
       {holding.assetClass === 'metal' && (
         <p className="muted small holding-card-meta">
           {holding.spotPriceNzdPerOzT != null
@@ -1353,33 +806,40 @@ function HoldingCard({
         </p>
       )}
 
-      <div className="holding-card-actions">
-        {showRefresh && onRefresh && (
-          <button
-            type="button"
-            className="btn ghost holding-card-action"
-            onClick={() => onRefresh(holding.id)}
-          >
-            Refresh value
-          </button>
-        )}
-        {(holding.assetClass === 'stock' ||
-          holding.assetClass === 'crypto' ||
-          holding.assetClass === 'forex' ||
-          holding.assetClass === 'real_estate' ||
-          holding.assetClass === 'collectable' ||
-          holding.assetClass === 'art') &&
-          onDelete && (
-            <button
-              type="button"
-              className="btn danger holding-card-action"
-              onClick={() => onDelete(holding.id)}
-              aria-label={`Delete ${displayName(holding)}`}
-            >
-              Delete
-            </button>
-          )}
-      </div>
+      {(showRefresh && onRefresh) || (canDelete && onDelete) ? (
+        <div className="holding-card-actions">
+          <MoreMenu label={`More actions for ${displayName(holding)}`}>
+            {(close) => (
+              <>
+                {showRefresh && onRefresh ? (
+                  <button
+                    type="button"
+                    className="btn small"
+                    onClick={() => {
+                      close();
+                      onRefresh(holding.id);
+                    }}
+                  >
+                    Refresh value
+                  </button>
+                ) : null}
+                {canDelete && onDelete ? (
+                  <button
+                    type="button"
+                    className="btn small danger"
+                    onClick={() => {
+                      close();
+                      onDelete(holding.id);
+                    }}
+                  >
+                    Delete
+                  </button>
+                ) : null}
+              </>
+            )}
+          </MoreMenu>
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -1415,9 +875,10 @@ function Section({
   onDelete,
   onUpdateQuantity,
   onUpdateArt,
-  earningsById,
+  onSetCost,
   headerExtra,
   extraCards,
+  before,
   children,
 }: {
   title: string;
@@ -1436,11 +897,13 @@ function Section({
       purchaseDate?: string | null;
     },
   ) => Promise<void>;
-  earningsById?: Record<string, GoMiningEarningsEstimate>;
+  onSetCost?: (id: string, costNzd: number) => Promise<boolean>;
   /** Shown beside the title (e.g. a section total). */
   headerExtra?: ReactNode;
   /** Extra cards rendered in the same grid after the holdings (e.g. crypto wallets). */
   extraCards?: ReactNode[];
+  /** Rendered between the heading and the card grid (e.g. the crypto list). */
+  before?: ReactNode;
   children?: ReactNode;
 }) {
   const hasExtra = Boolean(extraCards?.length);
@@ -1454,8 +917,9 @@ function Section({
       ) : (
         <h3>{title}</h3>
       )}
+      {before}
       {items.length === 0 && !hasExtra ? (
-        <p className="muted">{empty}</p>
+        empty ? <p className="muted">{empty}</p> : null
       ) : (
         <div className="holding-cards">
           {items.map((h) => (
@@ -1466,7 +930,7 @@ function Section({
               onDelete={onDelete}
               onUpdateQuantity={onUpdateQuantity}
               onUpdateArt={onUpdateArt}
-              earnings={earningsById?.[h.id]}
+              onSetCost={onSetCost}
             />
           ))}
           {extraCards}
@@ -1481,9 +945,9 @@ function GoMiningMinersSection({
   items,
   empty,
   onRefresh,
-  onRefreshMarketplace,
-  refreshingMarketplace,
   marketplaceReport,
+  received,
+  onSetCost,
   onUpdateMiner,
   settings,
   onSettingsChange,
@@ -1494,8 +958,9 @@ function GoMiningMinersSection({
   items: Holding[];
   empty: string;
   onRefresh?: (id: string) => void;
-  onRefreshMarketplace?: () => void;
-  refreshingMarketplace?: boolean;
+  /** Mining income recorded on Budget this month; null if it couldn't be loaded. */
+  received: { total: number; count: number; avgPerDay: number | null } | null;
+  onSetCost: (id: string, costNzd: number) => Promise<boolean>;
   marketplaceReport?: {
     appliedCount: number;
     total: number;
@@ -1642,132 +1107,187 @@ function GoMiningMinersSection({
     return any ? sum : null;
   }, [items]);
 
-  const [minersExpanded, setMinersExpanded] = useState(false);
+  const [period, setPeriod] = useState<EarningsPeriod>('month');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const currency: 'NZD' | 'USD' | 'BTC' = settings.displayCurrency === 'ALL' ? 'NZD' : settings.displayCurrency;
+  const totalEarnings = totals.periods[period];
+  const totalsHaveFigures = totals.netBtcPerDay != null || totals.poolRewardBtcPerDay != null;
+  const sorted = [...items].sort((a, b) => (Number(b.hashrateThs) || 0) - (Number(a.hashrateThs) || 0));
 
   return (
-    <section className="panel">
-      <div className="gomining-section-head">
-        <h3>GoMining miners</h3>
-        {onRefreshMarketplace && items.length > 0 && (
-          <button
-            type="button"
-            className="btn ghost"
-            onClick={onRefreshMarketplace}
-            disabled={refreshingMarketplace}
-            title="Primary generative USD/TH × BTC FX → NZD; out-of-band EE extrapolated from live 12/15"
-          >
-            {refreshingMarketplace ? 'Refreshing values…' : 'Refresh marketplace values'}
-          </button>
-        )}
+    <section className="panel mining-panel" aria-labelledby="mining-title">
+      <div className="panel-heading">
+        <h3 id="mining-title">GoMining miners</h3>
       </div>
-      <p className="muted small">
-        Card Value / Return use estimated NZD from public primary generative list{' '}
-        (priceUsdt ÷ TH × BTC FX). Live generative EE bands are typically{' '}
-        <strong>12 and 15 W/TH only</strong>. Miners outside those bands (~19–23
-        W/TH) get an <strong>estimate extrapolated from primary 12/15 W/TH</strong>{' '}
-        (linear usd/TH vs EE from live anchors × TH × FX), labelled{' '}
-        <code>gomining_extrapolated</code>. Manual Est. NZD override still works.
-        Refresh reports per-miner failures.
-      </p>
-      {marketplaceReport && (
-        <div className="marketplace-report" role="status">
-          <p className="muted small">
-            Last refresh: {marketplaceReport.appliedCount}/{marketplaceReport.total}{' '}
-            applied
-            {marketplaceReport.availableEeBands.length > 0 && (
-              <>
-                {' '}
-                · primary EE bands{' '}
-                {marketplaceReport.availableEeBands.join(', ')} W/TH
-              </>
-            )}
-            {marketplaceReport.failedCount > 0 && (
-              <> · {marketplaceReport.failedCount} failed</>
-            )}
-          </p>
-          {marketplaceReport.note && (
-            <p className="muted small">{marketplaceReport.note}</p>
-          )}
-          {marketplaceReport.failures.length > 0 && (
-            <ul className="marketplace-fail-list muted small">
-              {marketplaceReport.failures.map((f) => (
-                <li key={`${f.minerName}-${f.ee}`}>
-                  <strong>{f.minerName}</strong> ({f.ee}): {f.reason}
-                </li>
+
+      {items.length > 0 ? (
+        <dl className="budget-summary-figures mining-summary">
+          <div>
+            <dt>Est. value</dt>
+            <dd className="money">
+              {formatNzd(totalEstNzd)}
+              <span className="budget-figure-note">GoMining marketplace or your own figure</span>
+            </dd>
+          </div>
+          <div>
+            <dt>Hashrate</dt>
+            <dd>
+              {formatAmount(totalThs, 2)} TH/s
+              <span className="budget-figure-note">
+                {avgEeWeighted != null ? `avg ${formatAmount(avgEeWeighted, 2)} W/TH (TH-weighted)` : 'no W/TH recorded'}
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt>Received this month</dt>
+            <dd className="money">
+              {received == null ? '—' : formatNzd(received.total)}
+              <span className="budget-figure-note">
+                {received == null
+                  ? 'income records unavailable'
+                  : received.count === 0
+                    ? 'no mining income recorded on Budget'
+                    : `${received.count} payment${received.count === 1 ? '' : 's'}${
+                        received.avgPerDay != null ? ` · avg ${formatNzd(received.avgPerDay)}/day` : ''
+                      }`}
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt>Maintenance</dt>
+            <dd>
+              {totals.maintenanceUsdAfterDiscount != null ? `US$${totals.maintenanceUsdAfterDiscount.toFixed(2)}/day` : '—'}
+              <span className="budget-figure-note">
+                {settings.discountPct > 0 ? `after ${settings.discountPct}% discount` : 'electricity + service'}
+              </span>
+            </dd>
+          </div>
+        </dl>
+      ) : null}
+
+      {marketplaceReport && marketplaceReport.failures.length > 0 ? (
+        <details className="marketplace-report">
+          <summary className="muted small">
+            Last value refresh: {marketplaceReport.appliedCount}/{marketplaceReport.total} miners valued ·{' '}
+            {marketplaceReport.failedCount} not
+          </summary>
+          <ul className="marketplace-fail-list muted small">
+            {marketplaceReport.failures.map((f) => (
+              <li key={`${f.minerName}-${f.ee}`}>
+                <strong>{f.minerName}</strong> ({f.ee}): {f.reason}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+
+      {items.length === 0 ? (
+        <p className="muted">{empty}</p>
+      ) : (
+        <>
+          <div className="mining-toggles">
+            <div className="segmented segmented--small" role="group" aria-label="Earnings period">
+              {PERIOD_LABELS.map(({ key, label }) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={'segmented-btn' + (period === key ? ' active' : '')}
+                  aria-pressed={period === key}
+                  onClick={() => setPeriod(key)}
+                >
+                  {label}
+                </button>
               ))}
-            </ul>
-          )}
-        </div>
+            </div>
+            <div className="segmented segmented--small" role="group" aria-label="Earnings currency">
+              {(['NZD', 'USD', 'BTC'] as const).map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  className={'segmented-btn' + (currency === c ? ' active' : '')}
+                  aria-pressed={currency === c}
+                  onClick={() => onSettingsChange({ ...settings, displayCurrency: c })}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+          <ul className="asset-list asset-list--miners">
+            <li className="asset-list-head" aria-hidden="true">
+              <span>Miner</span>
+              <span>Cost</span>
+              <span>Value</span>
+              <span className="mining-earn-head">
+                Est. earnings / {period}
+                <InfoTip label="Where the earnings estimate comes from">{fxNote}</InfoTip>
+              </span>
+              <span />
+            </li>
+            {sorted.map((h) => (
+              <MinerRow
+                key={h.id}
+                holding={h}
+                estimate={earningsById[h.id] ?? null}
+                period={period}
+                currency={currency}
+                onRefresh={onRefresh}
+                onUpdateMiner={onUpdateMiner}
+                onSetCost={onSetCost}
+              />
+            ))}
+            <li className="asset-row mining-total-row">
+              <div className="asset-row-hit asset-row-static">
+                <span className="asset-row-title">All miners</span>
+                <span />
+                <span className="money">{formatNzd(totalEstNzd)}</span>
+                <span className="money">
+                  {totalsHaveFigures ? formatEarningsAmount(totalEarnings, currency, totals.anyCompleteNet) : '—'}
+                </span>
+                <span />
+              </div>
+            </li>
+          </ul>
+          {!totals.anyCompleteNet ? (
+            <p className="muted small">
+              Some figures are pool earnings before maintenance: set W/TH on each miner and keep BTC FX and pool income
+              available for a full net estimate.
+            </p>
+          ) : null}
+        </>
       )}
 
-      <div className="gomining-discount-bar">
-        <div className="gomining-discount-row">
-          <label className="gomining-discount-label">
-            GoMining discount applied
-            <span className="muted small">
-              {' '}
-              (C1 electricity + C2 service — not secondary NZD value)
-            </span>
-            <div className="gomining-discount-input-row">
+      <div className="mining-settings">
+        <button
+          type="button"
+          className="debt-link-button"
+          aria-expanded={settingsOpen}
+          aria-controls={settingsOpen ? 'mining-settings-body' : undefined}
+          onClick={() => setSettingsOpen((o) => !o)}
+        >
+          Discount and network settings <span aria-hidden="true">{settingsOpen ? '▴' : '▾'}</span>
+        </button>
+        {settingsOpen ? (
+          <div id="mining-settings-body" className="form-grid gomining-params-grid">
+            <label>
+              GoMining discount (%)
               <input
                 type="number"
                 min={0}
                 max={100}
                 step={0.1}
                 value={settings.discountPct}
-                onChange={(e) =>
-                  onSettingsChange({
-                    ...settings,
-                    discountPct: Number(e.target.value) || 0,
-                  })
-                }
-                aria-label="GoMining discount percent"
+                onChange={(e) => onSettingsChange({ ...settings, discountPct: Number(e.target.value) || 0 })}
               />
-              <span className="muted">%</span>
-              <button
-                type="button"
-                className="btn primary"
-                onClick={onSaveDiscount}
-                disabled={savingDiscount}
-              >
-                {savingDiscount ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-          </label>
-        </div>
-        <div className="earnings-currency-toggle" role="group" aria-label="Earnings display currency">
-          <span className="muted small">Show earnings in</span>
-          {(['BTC', 'USD', 'NZD', 'ALL'] as EarningsDisplayCurrency[]).map((c) => (
-            <button
-              key={c}
-              type="button"
-              className={
-                settings.displayCurrency === c ? 'btn primary' : 'btn ghost'
-              }
-              onClick={() =>
-                onSettingsChange({ ...settings, displayCurrency: c })
-              }
-            >
-              {c === 'ALL' ? 'All' : c}
-            </button>
-          ))}
-          <span className="muted small">{fxNote}</span>
-        </div>
-        <details className="gomining-network-params">
-          <summary className="muted small">
-            Network params for estimate (optional — never invent rates)
-          </summary>
-          <div className="form-grid gomining-params-grid">
+            </label>
             <label>
               BTC / USD
               <input
                 type="number"
                 step="any"
                 value={settings.btcUsd}
-                onChange={(e) =>
-                  onSettingsChange({ ...settings, btcUsd: e.target.value })
-                }
-                placeholder="Leave blank if unknown"
+                onChange={(e) => onSettingsChange({ ...settings, btcUsd: e.target.value })}
+                placeholder="Blank uses GoMining’s rate"
               />
             </label>
             <label>
@@ -1776,13 +1296,8 @@ function GoMiningMinersSection({
                 type="number"
                 step="any"
                 value={settings.networkHashrateEhs}
-                onChange={(e) =>
-                  onSettingsChange({
-                    ...settings,
-                    networkHashrateEhs: e.target.value,
-                  })
-                }
-                placeholder="Live mempool/blockchain if blank"
+                onChange={(e) => onSettingsChange({ ...settings, networkHashrateEhs: e.target.value })}
+                placeholder="Blank uses live network"
               />
             </label>
             <label>
@@ -1791,13 +1306,8 @@ function GoMiningMinersSection({
                 type="number"
                 step="any"
                 value={settings.dailyBtcIssuance}
-                onChange={(e) =>
-                  onSettingsChange({
-                    ...settings,
-                    dailyBtcIssuance: e.target.value,
-                  })
-                }
-                placeholder="Default 450 (protocol)"
+                onChange={(e) => onSettingsChange({ ...settings, dailyBtcIssuance: e.target.value })}
+                placeholder="Blank uses 450"
               />
             </label>
             <label>
@@ -1806,150 +1316,181 @@ function GoMiningMinersSection({
                 type="number"
                 step="any"
                 value={settings.kWhCostUsd}
-                onChange={(e) =>
-                  onSettingsChange({ ...settings, kWhCostUsd: e.target.value })
-                }
-                placeholder="Default 0.05 (app / API c1)"
+                onChange={(e) => onSettingsChange({ ...settings, kWhCostUsd: e.target.value })}
+                placeholder="Blank uses GoMining’s"
               />
             </label>
-            <button
-              type="button"
-              className="btn"
-              onClick={onSaveDiscount}
-              disabled={savingDiscount}
-            >
-              Save network params
-            </button>
-          </div>
-          <p className="muted small">{settings.note}</p>
-        </details>
-
-        {items.length > 0 && (
-          <div className="gomining-section-totals">
-            <p className="muted small">
-              Section totals · {items.length} miner{items.length === 1 ? '' : 's'} ·{' '}
-              {formatAmount(totalThs, 2)} TH/s · labeled estimates
-            </p>
-            <EarningsPeriodsGrid
-              estimate={
-                {
-                  label: 'estimate' as const,
-                  discountPct: settings.discountPct,
-                  discountFraction: settings.discountPct / 100,
-                  kWhCostUsd: 0,
-                  kWhCostSource: 'docs_default' as const,
-                  dailyBtcIssuance: 450,
-                  dailyBtcIssuanceSource: 'protocol_default' as const,
-                  electricityUsdPerDay: null,
-                  electricityUsdStatus: 'stubbed' as const,
-                  electricityUsdMessage: null,
-                  serviceUsdPerDay: null,
-                  serviceUsdStatus: 'stubbed' as const,
-                  serviceUsdMessage: null,
-                  maintenanceUsdPerDay: totals.maintenanceUsdAfterDiscount,
-                  maintenanceUsdAfterDiscount: totals.maintenanceUsdAfterDiscount,
-                  maintenanceUsdStatus: totals.maintenanceUsdAfterDiscount != null ? 'ok' as const : 'stubbed' as const,
-                  electricityBtcPerDay: null,
-                  serviceBtcPerDay: null,
-                  maintenanceBtcPerDay: null,
-                  maintenanceBtcAfterDiscount: null,
-                  maintenanceBtcStatus: 'stubbed' as const,
-                  maintenanceBtcMessage: null,
-                  poolRewardSatPerTh: null,
-                  goBtcPaySatPerTh: 0,
-                  goBtcPayStatus: 'stubbed' as const,
-                  goBtcPayMessage: null,
-                  electricitySatPerThAfterDiscount: null,
-                  serviceSatPerThAfterDiscount: null,
-                  netSatPerTh: null,
-                  poolRewardBtcPerDay: totals.poolRewardBtcPerDay,
-                  goBtcPayBtcPerDay: totals.goBtcPayBtcPerDay ?? 0,
-                  poolRewardStatus: totals.poolRewardBtcPerDay != null ? 'ok' as const : 'unavailable' as const,
-                  poolRewardMessage: null,
-                  poolRewardSource: totals.poolRewardBtcPerDay != null ? ('gomining_income' as const) : null,
-                  netBtcPerDay: totals.netBtcPerDay,
-                  netBtcStatus: totals.anyCompleteNet ? 'ok' as const : 'stubbed' as const,
-                  netBtcMessage: totals.anyCompleteNet
-                    ? null
-                    : 'Set EE + BTC FX + GoMining pool income (or network EH/s) for full net estimate',
-                  summary: '',
-                  periods: totals.periods,
-                }
-              }
-              displayCurrency={settings.displayCurrency}
-              fxNote={fxNote}
-            />
-          </div>
-        )}
-      </div>
-
-      {items.length === 0 ? (
-        <p className="muted">{empty}</p>
-      ) : (
-        <>
-          <div className="gomining-miners-summary" aria-label="GoMining miners summary">
-            <div className="gomining-summary-stat">
-              <span className="gomining-summary-label">Miners</span>
-              <span className="gomining-summary-value">{items.length}</span>
-            </div>
-            <div className="gomining-summary-stat">
-              <span className="gomining-summary-label">Total TH/s</span>
-              <span className="gomining-summary-value">{formatAmount(totalThs, 2)}</span>
-            </div>
-            <div className="gomining-summary-stat">
-              <span className="gomining-summary-label">Avg EE</span>
-              <span className="gomining-summary-value">
-                {avgEeWeighted != null
-                  ? `${formatAmount(avgEeWeighted, 2)} W/TH`
-                  : '—'}
-              </span>
-              <span className="muted small">TH-weighted</span>
-            </div>
-            {totalEstNzd != null && (
-              <div className="gomining-summary-stat">
-                <span className="gomining-summary-label">Est. value</span>
-                <span className="gomining-summary-value">{formatNzd(totalEstNzd)}</span>
-              </div>
-            )}
-            <div className="gomining-summary-actions">
-              <button
-                type="button"
-                className="btn ghost"
-                onClick={() => setMinersExpanded((v) => !v)}
-                aria-expanded={minersExpanded}
-              >
-                {minersExpanded ? 'Hide miners' : 'Show miners'}
+            <div className="span-2 row gap">
+              <button type="button" className="btn small primary" onClick={onSaveDiscount} disabled={savingDiscount}>
+                {savingDiscount ? 'Saving…' : 'Save settings'}
               </button>
             </div>
+            {settings.note ? <p className="muted small span-2">{settings.note}</p> : null}
           </div>
-
-          {minersExpanded && (
-            <div className="gomining-miners-expanded">
-              <p className="muted small">
-                Manage individual miners (edit TH/EE, refresh value). Collapsed by default.
-              </p>
-              <div className="holding-cards">
-                {items.map((h) => (
-                  <HoldingCard
-                    key={h.id}
-                    holding={h}
-                    onRefresh={onRefresh}
-                    onUpdateMiner={onUpdateMiner}
-                    earnings={earningsById[h.id]}
-                    displayCurrency={settings.displayCurrency}
-                    fxNote={fxNote}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-        </>
-      )}
+        ) : null}
+      </div>
       {children}
     </section>
   );
 }
 
+function MinerRow({
+  holding: h,
+  estimate,
+  period,
+  currency,
+  onRefresh,
+  onUpdateMiner,
+  onSetCost,
+}: {
+  holding: Holding;
+  estimate: GoMiningEarningsEstimate | null;
+  period: EarningsPeriod;
+  currency: 'NZD' | 'USD' | 'BTC';
+  onRefresh?: (id: string) => void;
+  onUpdateMiner?: (
+    id: string,
+    patch: { hashrateThs: number; energyEfficiencyWth: number | null; estimatedValueNzd?: number | null },
+  ) => Promise<void>;
+  onSetCost: (id: string, costNzd: number) => Promise<boolean>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const cost = displayCostBasisNzd(h);
+  const value = marketValueNzd(h);
+  const hasNet = estimate?.netBtcStatus === 'ok';
+  const hasPool = estimate?.poolRewardStatus === 'ok';
+  const earnings = estimate && (hasNet || hasPool) ? formatEarningsAmount(estimate.periods[period], currency, hasNet) : '—';
+
+  return (
+    <li className="asset-row">
+      <div className="asset-row-hit asset-row-static">
+        <span className="asset-row-name">
+          <span className="asset-row-title">{displayName(h)}</span>
+          <span className="muted small">
+            {formatHashrate(h.hashrateThs)} TH/s
+            {h.energyEfficiencyWth != null ? ` · ${formatAmount(h.energyEfficiencyWth, 2)} W/TH` : ' · W/TH not set'}
+          </span>
+        </span>
+        <span className="asset-row-num small">
+          {cost != null && cost > 0 ? (
+            formatNzd(cost)
+          ) : (
+            <AddCostButton name={displayName(h)} onSave={(c) => onSetCost(h.id, c)} />
+          )}
+        </span>
+        <span className="money">{formatNzd(value)}</span>
+        <span className="money">
+          {earnings}
+          {estimate && !hasNet && hasPool ? <span className="muted small"> pool</span> : null}
+        </span>
+        <MoreMenu label={`More actions for ${displayName(h)}`}>
+          {(close) => (
+            <>
+              {onUpdateMiner ? (
+                <button
+                  type="button"
+                  className="btn small"
+                  onClick={() => {
+                    close();
+                    setEditing(true);
+                  }}
+                >
+                  Edit TH / W/TH / value
+                </button>
+              ) : null}
+              {onRefresh ? (
+                <button
+                  type="button"
+                  className="btn small"
+                  onClick={() => {
+                    close();
+                    onRefresh(h.id);
+                  }}
+                >
+                  Refresh value
+                </button>
+              ) : null}
+            </>
+          )}
+        </MoreMenu>
+      </div>
+      {editing && onUpdateMiner ? (
+        <MinerEditForm holding={h} onSave={onUpdateMiner} onClose={() => setEditing(false)} />
+      ) : null}
+    </li>
+  );
+}
+
+function MinerEditForm({
+  holding: h,
+  onSave,
+  onClose,
+}: {
+  holding: Holding;
+  onSave: (
+    id: string,
+    patch: { hashrateThs: number; energyEfficiencyWth: number | null; estimatedValueNzd?: number | null },
+  ) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [th, setTh] = useState(String(h.hashrateThs ?? ''));
+  const [ee, setEe] = useState(h.energyEfficiencyWth != null ? String(h.energyEfficiencyWth) : '');
+  const [est, setEst] = useState(h.estimatedValueNzd != null ? String(h.estimatedValueNzd) : '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    const thN = Number(th);
+    if (!Number.isFinite(thN) || thN <= 0) return setError('TH/s must be a positive number.');
+    const eeN = ee.trim() === '' ? null : Number(ee);
+    if (eeN != null && (!Number.isFinite(eeN) || eeN < 0)) return setError('W/TH must be 0 or more, or blank.');
+    const estN = est.trim() === '' ? null : Number(est);
+    if (estN != null && (!Number.isFinite(estN) || estN < 0)) return setError('Value must be 0 or more, or blank.');
+    setBusy(true);
+    setError(null);
+    try {
+      await onSave(h.id, { hashrateThs: thN, energyEfficiencyWth: eeN, estimatedValueNzd: estN });
+      onClose();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form
+      className="plan-editor miner-inline-edit"
+      onSubmit={submit}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape' && !busy) onClose();
+      }}
+    >
+      <div className="plan-editor-row">
+        <label>
+          TH/s <input type="number" step="any" min={0} value={th} onChange={(e) => setTh(e.target.value)} disabled={busy} autoFocus />
+        </label>
+        <label>
+          W/TH <input type="number" step="any" min={0} value={ee} onChange={(e) => setEe(e.target.value)} disabled={busy} placeholder="optional" />
+        </label>
+        <label>
+          Value NZD{' '}
+          <input type="number" step="any" min={0} value={est} onChange={(e) => setEst(e.target.value)} disabled={busy} placeholder="blank = marketplace" />
+        </label>
+        <button type="submit" className="btn small primary" disabled={busy}>
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+        <button type="button" className="btn small ghost" disabled={busy} onClick={onClose}>
+          Cancel
+        </button>
+      </div>
+      {error ? (
+        <p className="plan-editor-error" role="alert">{error}</p>
+      ) : null}
+    </form>
+  );
+}
 
 type PortfolioNetWorth = {
   cashNzd: number;
@@ -1974,6 +1515,34 @@ type PortfolioNetWorth = {
 };
 
 type PortfolioBundle = { holdings: Holding[]; summary: PortfolioNetWorth };
+
+/** Holding asset class → the preference that enables it. */
+const CLASS_PREF: Record<string, AssetClassPrefKey> = {
+  stock: 'stock',
+  crypto: 'crypto',
+  gomining_miner: 'gomining',
+  metal: 'metal',
+  forex: 'forex',
+  real_estate: 'real_estate',
+  art: 'art',
+  stone: 'stone',
+  collectable: 'collectable',
+};
+
+/** Overview rows: one-line description and where the row leads. */
+const OVERVIEW_ROW_META: Record<string, { description: string; tab?: PortfolioTab; href?: string }> = {
+  cash: { description: 'Bank balances synced from Akahu and accounts you added', href: '/' },
+  stocks: { description: 'Sharesies and Hatch via Akahu, plus manual tickers', tab: 'stocks' },
+  crypto: { description: 'Wallets and holdings, valued at market quotes', tab: 'crypto' },
+  gomining: { description: 'GoMining miners at marketplace or your own value', tab: 'mining' },
+  metals: { description: 'Bullion valued at the live spot price', tab: 'metals' },
+  collectables: { description: 'Trading cards and other collectables', tab: 'collectables' },
+  forex: { description: 'Foreign cash held outside your bank', tab: 'other' },
+  realEstate: { description: 'Property equity: your value minus the mortgage', tab: 'other' },
+  art: { description: 'Art at your recorded valuation', tab: 'other' },
+  stones: { description: 'Precious stones at a quote or your valuation', tab: 'other' },
+  kiwiSaver: { description: 'Sharesies KiwiSaver and bank-held KiwiSaver', href: '/kiwisaver' },
+};
 
 const PORTFOLIO_KEY = 'portfolio';
 const PORTFOLIO_GM = 'portfolio:gomining';
@@ -2010,7 +1579,6 @@ export function Portfolio() {
     inflight: false,
   });
   const [msg, setMsg] = useState<string | null>(null);
-  const [refreshingMarketplace, setRefreshingMarketplace] = useState(false);
   const [marketplaceReport, setMarketplaceReport] = useState<{
     appliedCount: number;
     total: number;
@@ -2022,9 +1590,20 @@ export function Portfolio() {
   const [metalsConfigured, setMetalsConfigured] = useState<boolean | null>(
     () => readPageCache<boolean>(PORTFOLIO_METALS) ?? null,
   );
-  const [refreshingMetals, setRefreshingMetals] = useState(false);
-  const [refreshingForex, setRefreshingForex] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshProgress, setRefreshProgress] = useState<RefreshProgress | null>(null);
+  const [miningReceived, setMiningReceived] = useState<{ total: number; count: number; avgPerDay: number | null } | null>(
+    null,
+  );
+  // Tabs: the selected tab lives in the URL hash so links and back/forward work.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const tabs = visibleTabs((pref) => assetEnabled(pref as AssetClassPrefKey));
+  const tab = tabFromHash(location.hash, tabs);
+  const selectTab = useCallback(
+    (next: PortfolioTab) => navigate({ hash: next === 'overview' ? '' : next }),
+    [navigate],
+  );
   const [gmSettings, setGmSettings] = useState<GominingUiSettings>(
     initialGm ? { ...initialGm, fxLoading: false } : emptyGmSettings,
   );
@@ -2152,6 +1731,34 @@ export function Portfolio() {
         if (readPageCache<boolean>(PORTFOLIO_METALS) == null) setMetalsConfigured(false);
       });
   }, [load]);
+
+  const gominingOn = assetEnabled('gomining');
+  useEffect(() => {
+    if (!gominingOn) return;
+    let live = true;
+    const today = todayAucklandYmd();
+    const ym = { year: Number(today.slice(0, 4)), month: Number(today.slice(5, 7)) };
+    api.income
+      .list({ month: monthStart(ym).slice(0, 7) })
+      .then((rows) => {
+        if (!live) return;
+        const mining = rows.filter(
+          (r) => /^cat-income-mining/.test(r.categoryId ?? '') || /mining/i.test(r.categoryName ?? ''),
+        );
+        const total = mining.reduce((sum, r) => sum + (Number(r.amountNzd) || 0), 0);
+        setMiningReceived({
+          total,
+          count: mining.length,
+          avgPerDay: dailyAverage(total, mining.map((r) => r.date), monthProgress(ym, today)),
+        });
+      })
+      .catch(() => {
+        if (live) setMiningReceived(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [gominingOn]);
 
   // Silent background Akahu auto-sync on open / refresh (banks + holdings).
   // Mount-only + loadRef so Strict Mode remount / stable load identity never
@@ -2647,59 +2254,6 @@ export function Portfolio() {
     }
   }
 
-  async function refreshMarketplace() {
-    setMsg(null);
-    setMarketplaceReport(null);
-    setRefreshingMarketplace(true);
-    try {
-      const r = await api.holdings.refreshGominingValues();
-      const failures = (r.results ?? [])
-        .filter((row) => !row.applied)
-        .map((row) => ({
-          minerName: String(row.minerName ?? row.holdingId),
-          ee:
-            row.energyEfficiencyWth != null
-              ? `${row.energyEfficiencyWth} W/TH`
-              : 'EE unknown',
-          reason: String(
-            row.failReason ??
-              row.quote?.message ??
-              'No marketplace match — never invent',
-          ),
-        }));
-      const bands = r.availableEeBands ?? [];
-      setMarketplaceReport({
-        appliedCount: r.appliedCount,
-        total: r.total,
-        failedCount: r.failedCount ?? failures.length,
-        availableEeBands: bands,
-        note: r.note ?? null,
-        failures,
-      });
-      const failSummary =
-        failures.length === 0
-          ? ''
-          : ` · ${failures.length} failed: ` +
-            failures
-              .slice(0, 4)
-              .map((f) => `${f.minerName} (${f.ee})`)
-              .join('; ') +
-            (failures.length > 4 ? '…' : '');
-      setMsg(
-        `GoMining marketplace: ${r.appliedCount}/${r.total} updated` +
-          (bands.length ? ` · EE bands ${bands.join(', ')} W/TH` : '') +
-          failSummary +
-          (r.note ? ` · ${r.note}` : ''),
-      );
-      await reloadAfterEdit();
-    } catch (err) {
-      setMsg((err as Error).message);
-    } finally {
-      setRefreshingMarketplace(false);
-    }
-  }
-
-
   async function onAddRealEstate(e: FormEvent) {
     e.preventDefault();
     setMsg(null);
@@ -2838,46 +2392,83 @@ export function Portfolio() {
     await reloadAfterEdit();
   }
 
-  async function refreshMetalsAll() {
+  async function setHoldingCost(id: string, costNzd: number): Promise<boolean> {
     setMsg(null);
-    setRefreshingMetals(true);
     try {
-      const status = await api.quotes.metalsStatus();
-      setMetalsConfigured(status.configured);
-      const r = await api.quotes.refreshMetals();
-      const ok = r.quotes.filter(
-        (q) => (q.status === 'ok' || q.status === 'stale') && q.price != null,
-      ).length;
-      setMsg(
-        status.configured
-          ? `Metals.Dev: ${ok}/${r.quotes.length} NZD spots refreshed · reload holdings`
-          : ok > 0
-            ? `gold-api.com: ${ok}/${r.quotes.length} NZD spots refreshed · reload holdings`
-            : 'gold-api.com returned no NZD spots. Metal value stays cost / —. Not inventing prices.',
-      );
+      await api.holdings.update(id, { costBasisNzd: costNzd });
+      const h = holdings.find((x) => x.id === id);
+      setMsg(`Saved a cost of ${formatNzd(costNzd)}${h ? ` for ${displayName(h)}` : ''}.`);
       await reloadAfterEdit();
+      return true;
     } catch (err) {
       setMsg((err as Error).message);
-    } finally {
-      setRefreshingMetals(false);
+      return false;
     }
   }
 
-  async function refreshForexAll() {
-    setMsg(null);
-    setRefreshingForex(true);
-    try {
-      const r = await api.holdings.refreshForexValues();
-      setMsg(
-        `Forex FX: ${r.appliedCount}/${r.totalCurrencies} currencies refreshed via Frankfurter → NZD` +
-          (r.failedCount ? ` · ${r.failedCount} unavailable (never invent)` : ''),
-      );
-      await reloadAfterEdit();
-    } catch (err) {
-      setMsg((err as Error).message);
-    } finally {
-      setRefreshingForex(false);
+  /** Runs every existing refresh in turn (per-holding for stocks / crypto, bulk for the rest). */
+  async function refreshAllPrices() {
+    if (refreshProgress) return;
+    const pricedStocks = assetEnabled('stock') ? grouped.stocks.filter((h) => Number(h.shares) > 0) : [];
+    const pricedCrypto = assetEnabled('crypto') ? grouped.crypto.filter((h) => Number(h.amount) > 0) : [];
+    const steps: Array<{ label: string; run: () => Promise<unknown> }> = [];
+    for (const h of pricedStocks) steps.push({ label: `Stocks: ${displayName(h)}`, run: () => api.holdings.refreshValue(h.id) });
+    for (const h of pricedCrypto) steps.push({ label: `Crypto: ${displayName(h)}`, run: () => api.holdings.refreshValue(h.id) });
+    if (assetEnabled('metal') && grouped.metals.length > 0) {
+      steps.push({ label: 'Metal quotes', run: () => api.quotes.refreshMetals() });
     }
+    if (assetEnabled('collectable') && grouped.collectables.some((h) => isApiCardGame(h.cardGame))) {
+      steps.push({ label: 'Card quotes', run: () => api.holdings.refreshCollectablesValues() });
+    }
+    if (assetEnabled('gomining') && grouped.miners.length > 0) {
+      steps.push({
+        label: 'GoMining miner values',
+        run: async () => {
+          const r = await api.holdings.refreshGominingValues();
+          setMarketplaceReport({
+            appliedCount: r.appliedCount,
+            total: r.total,
+            failedCount: r.failedCount ?? 0,
+            availableEeBands: r.availableEeBands ?? [],
+            note: r.note ?? null,
+            failures: (r.results ?? [])
+              .filter((row) => !row.applied)
+              .map((row) => ({
+                minerName: String(row.minerName ?? row.holdingId),
+                ee: row.energyEfficiencyWth != null ? `${row.energyEfficiencyWth} W/TH` : 'W/TH unknown',
+                reason: String(row.failReason ?? row.quote?.message ?? 'No marketplace match'),
+              })),
+          });
+          loadGmSettings();
+        },
+      });
+    }
+    if (assetEnabled('forex') && grouped.forex.length > 0) {
+      steps.push({ label: 'FX rates', run: () => api.holdings.refreshForexValues() });
+    }
+    if (steps.length === 0) {
+      setMsg('Nothing to refresh yet.');
+      return;
+    }
+    setMsg(null);
+    const failed: string[] = [];
+    for (let i = 0; i < steps.length; i++) {
+      setRefreshProgress({ label: steps[i].label, step: i + 1, steps: steps.length });
+      try {
+        await steps[i].run();
+      } catch {
+        failed.push(steps[i].label);
+      }
+    }
+    setRefreshProgress(null);
+    await reloadAfterEdit();
+    setMsg(
+      failed.length === 0
+        ? `Refreshed ${steps.length} price${steps.length === 1 ? '' : 's'}.`
+        : `Refreshed ${steps.length - failed.length} of ${steps.length}. Not refreshed: ${failed.slice(0, 4).join('; ')}${
+            failed.length > 4 ? '…' : ''
+          }. Values that couldn't refresh keep their last price.`,
+    );
   }
 
   const breakdownPref: Record<string, AssetClassPrefKey> = {
@@ -2928,6 +2519,41 @@ export function Portfolio() {
     0,
   );
 
+  const metalsInfo = summary?.metalsSpotStatus
+    ? metalSpotHint({
+        status: summary.metalsSpotStatus,
+        source: summary.metalsSpotSource,
+        configured: summary.metalsConfigured,
+      })
+    : metalsConfigured == null
+      ? 'Checking metal spots…'
+      : metalsConfigured
+        ? 'Metal spots: Metals.Dev, NZD per oz t.'
+        : 'Metal spots: gold-api.com, NZD per oz t (no key needed).';
+  const sources = priceSources(
+    holdings.filter((h) => assetEnabled(CLASS_PREF[h.assetClass] ?? ('stock' as AssetClassPrefKey))),
+    summary?.metalsSpotSource ?? null,
+  );
+  const overviewRows: OverviewRow[] = assetBreakdown.map((row) => ({
+    key: row.key,
+    name: row.name,
+    value: row.value,
+    colour: row.colour,
+    ...OVERVIEW_ROW_META[row.key],
+  }));
+  const issues = findIssues(
+    holdings.map((h) => ({
+      id: h.id,
+      assetClass: h.assetClass,
+      name: displayName(h),
+      source: h.source ?? null,
+      shares: h.shares ?? null,
+      amount: h.amount ?? null,
+      costNzd: displayCostBasisNzd(h),
+      valueNzd: marketValueNzd(h),
+    })),
+  ).filter((i) => tabs.includes(i.tab));
+
   if (error && holdings.length === 0) {
     return (
       <div className="panel warn portfolio-page">
@@ -2939,66 +2565,52 @@ export function Portfolio() {
 
   return (
     <div className="stack portfolio-page">
-      {summary ? (
-        <>
-          <section className="hero-card hero-card--centered">
-            <h2 className="page-title">Portfolio</h2>
-            <p className="eyebrow">Total asset value · NZD</p>
-            <p className="hero-value">{formatNzd(totalAssetValueNzd)}</p>
-            <p className="muted small">
-              As of {formatAuckland(summary.asOf)} NZT
-              {' · '}
-              Enabled asset classes only
-              {summary.quoteNote ? ` · ${summary.quoteNote}` : ''}
-            </p>
-          </section>
-          <AssetBreakdownChart
-            rows={assetBreakdown}
-            asOf={formatAuckland(summary.asOf)}
-            title="Assets by class"
-            subtitle="NZD totals · classes enabled in portfolio preferences"
-            centerLabel="Assets"
-            barTitle="By class"
-            note="Values come from known quotes and recorded balances — never invented. Toggle classes in the account menu → Settings."
-            headingId="portfolio-asset-breakdown-title"
-            showPie={false}
-            showTotal={false}
-          />
-        </>
-      ) : (
-        <div className="panel">
-          <h2 className="page-title">Portfolio</h2>
-          Loading total asset value…
-        </div>
+      <PortfolioHeader
+        total={summary ? totalAssetValueNzd : null}
+        asOf={summary?.asOf ?? null}
+        sources={sources}
+        info={
+          <>
+            Total of the asset classes you have turned on (Settings → asset classes). Values come from known quotes and
+            recorded balances; nothing is estimated. {metalsInfo}
+            {summary?.quoteNote ? ` ${summary.quoteNote}` : ''}
+          </>
+        }
+        progress={refreshProgress}
+        onRefreshAll={() => void refreshAllPrices()}
+      />
+      <PortfolioTabs tabs={tabs} active={tab} onSelect={selectTab} />
+      {msg && (
+        <p className="banner" role="status">
+          {msg}
+        </p>
       )}
-      {msg && <p className="banner">{msg}</p>}
 
-{assetEnabled('stock') ? (
-      <section className="panel">
-        <div className="panel-heading">
-          <h3>Stocks</h3>
-          <div className="row gap" style={{ marginTop: 0 }}>
-            <span className="muted small">
-              Value = Akahu market × live FX (Frankfurter; USD fallback BTC FX) → NZD.
-              Connect / re-link in the account menu → Settings; initial sync is during signup.
-            </span>
-          </div>
-        </div>
-        {grouped.stocks.length === 0 ? (
-          <p className="muted">No stock holdings yet. Connect Akahu during signup, or later in the account menu → Settings, or add manually below (ticker required).</p>
+      <div
+        id={panelId(tab)}
+        role="tabpanel"
+        aria-labelledby={tabId(tab)}
+        tabIndex={0}
+        className="portfolio-panel stack"
+      >
+{tab === 'overview' ? (
+        summary ? (
+          <OverviewTab rows={overviewRows} issues={issues} onOpenTab={selectTab} />
         ) : (
-          <div className="holding-cards" style={{ marginTop: '0.75rem' }}>
-            {grouped.stocks.map((h) => (
-              <HoldingCard
-                key={h.id}
-                holding={h}
-                onRefresh={refresh}
-                onDelete={deleteHolding}
-                onUpdateQuantity={updateHoldingQuantity}
-              />
-            ))}
-          </div>
-        )}
+          <p className="muted">Loading your portfolio…</p>
+        )
+      ) : null}
+
+{tab === 'stocks' && assetEnabled('stock') ? (
+      <>
+        <StocksTab
+          holdings={grouped.stocks}
+          onRefresh={refresh}
+          onDelete={deleteHolding}
+          onUpdateQuantity={updateHoldingQuantity}
+          onSetCost={setHoldingCost}
+        />
+      <section className="panel">
         <InlineAddDetails label="Add stock">
           <form className="form-grid" onSubmit={onAddStock}>
             <h4>Add stock (manual)</h4>
@@ -3067,22 +2679,29 @@ export function Portfolio() {
           </form>
         </InlineAddDetails>
       </section>
+      </>
       ) : null}
 
-      <DividendTracker placement="portfolio" />
+{tab === 'dividends' && assetEnabled('stock') ? <DividendTracker placement="portfolio" /> : null}
 
-{assetEnabled('crypto') ? (
+{tab === 'crypto' && assetEnabled('crypto') ? (
       <Section
         title="Crypto"
-        items={grouped.crypto}
-        empty="No crypto lines yet."
-        onRefresh={refresh}
-        onDelete={deleteHolding}
-        onUpdateQuantity={updateHoldingQuantity}
+        items={[]}
+        empty=""
         headerExtra={<WalletsTotal state={cryptoWallets} />}
         extraCards={cryptoWallets.entries.map((e) => (
           <WalletCard key={`wallet-${e.wallet.id}`} entry={e} state={cryptoWallets} />
         ))}
+        before={
+          <CryptoList
+            holdings={grouped.crypto}
+            onRefresh={refresh}
+            onDelete={deleteHolding}
+            onSetCost={setHoldingCost}
+            onUpdateQuantity={updateHoldingQuantity}
+          />
+        }
       >
         <WalletNotices state={cryptoWallets} />
         {grouped.crypto.length > 0 && cryptoWallets.entries.length > 0 ? (
@@ -3149,13 +2768,13 @@ export function Portfolio() {
       </Section>
       ) : null}
 
-{assetEnabled('gomining') ? (
+{tab === 'mining' && assetEnabled('gomining') ? (
       <GoMiningMinersSection
         items={grouped.miners}
         empty="No miners yet. Add one below."
         onRefresh={refresh}
-        onRefreshMarketplace={refreshMarketplace}
-        refreshingMarketplace={refreshingMarketplace}
+        received={miningReceived}
+        onSetCost={setHoldingCost}
         marketplaceReport={marketplaceReport}
         onUpdateMiner={updateMinerSpecs}
         settings={gmSettings}
@@ -3256,50 +2875,14 @@ export function Portfolio() {
       </GoMiningMinersSection>
       ) : null}
 
-{assetEnabled('metal') ? (
-      <section className="panel">
-        <div className="panel-heading">
-          <h3>Metals</h3>
-          <div className="row gap" style={{ marginTop: 0 }}>
-            <span className="muted small">
-              {summary?.metalsSpotStatus
-                ? metalSpotHint({
-                    status: summary.metalsSpotStatus,
-                    source: summary.metalsSpotSource,
-                    configured: summary.metalsConfigured,
-                  })
-                : metalsConfigured == null
-                  ? 'Checking metal spots…'
-                  : metalsConfigured
-                    ? 'Metals.Dev spot NZD'
-                    : 'Live NZD/oz t via gold-api.com (no key)'}
-            </span>
-            <button
-              type="button"
-              className="btn ghost"
-              onClick={refreshMetalsAll}
-              disabled={refreshingMetals}
-            >
-              {refreshingMetals ? 'Refreshing metals…' : 'Refresh metal quotes'}
-            </button>
-          </div>
-        </div>
-        {grouped.metals.length === 0 ? (
-          <p className="muted">
-            No metal holdings yet. Add below, then Refresh metal quotes.
-          </p>
-        ) : (
-          <div className="holding-cards" style={{ marginTop: '0.75rem' }}>
-            {grouped.metals.map((h) => (
-              <HoldingCard
-                key={h.id}
-                holding={h}
-                onRefresh={refresh}
-                onDelete={deleteHolding}
-              />
-            ))}
-          </div>
-        )}
+{tab === 'metals' && assetEnabled('metal') ? (
+      <MetalsTab
+        holdings={grouped.metals}
+        sourceInfo={metalsInfo}
+        onRefresh={refresh}
+        onDelete={deleteHolding}
+        onSetCost={setHoldingCost}
+      >
         <InlineAddDetails label="Add metal">
           <form className="form-grid" onSubmit={onAddMetal}>
             <h4>Add metal</h4>
@@ -3378,26 +2961,19 @@ export function Portfolio() {
             </button>
           </form>
         </InlineAddDetails>
-      </section>
+      </MetalsTab>
       ) : null}
 
-{assetEnabled('forex') ? (
+{tab === 'other' && assetEnabled('forex') ? (
       <section className="panel">
         <div className="panel-heading">
-          <h3>Forex</h3>
-          <div className="row gap" style={{ marginTop: 0 }}>
-            <span className="muted small">
-              Foreign cash outside bank (e.g. Revolut) · Frankfurter → NZD (never invent)
-            </span>
-            <button
-              type="button"
-              className="btn ghost"
-              onClick={refreshForexAll}
-              disabled={refreshingForex || grouped.forex.length === 0}
-            >
-              {refreshingForex ? 'Refreshing FX…' : 'Refresh FX rates'}
-            </button>
-          </div>
+          <h3>
+            Forex
+            <InfoTip label="About forex values">
+              Foreign cash held outside your bank (e.g. Revolut), converted to NZD at Frankfurter rates. Use Refresh all
+              prices for new rates.
+            </InfoTip>
+          </h3>
         </div>
         {grouped.forex.length === 0 ? (
           <p className="muted">
@@ -3412,6 +2988,7 @@ export function Portfolio() {
                 onRefresh={refresh}
                 onDelete={deleteHolding}
                 onUpdateQuantity={updateHoldingQuantity}
+                onSetCost={setHoldingCost}
               />
             ))}
           </div>
@@ -3482,7 +3059,7 @@ export function Portfolio() {
       </section>
       ) : null}
 
-{assetEnabled('real_estate') ? (
+{tab === 'other' && assetEnabled('real_estate') ? (
       <section className="panel">
         <div className="panel-heading">
           <h3>Real estate</h3>
@@ -3495,7 +3072,7 @@ export function Portfolio() {
         ) : (
           <div className="holding-cards" style={{ marginTop: '0.75rem' }}>
             {grouped.realEstate.map((h) => (
-              <HoldingCard key={h.id} holding={h} onDelete={deleteHolding} />
+              <HoldingCard key={h.id} holding={h} onDelete={deleteHolding} onSetCost={setHoldingCost} />
             ))}
           </div>
         )}
@@ -3574,7 +3151,7 @@ export function Portfolio() {
       </section>
       ) : null}
 
-{assetEnabled('collectable') ? (
+{tab === 'collectables' && assetEnabled('collectable') ? (
       <CollectablesPanel
         holdings={grouped.collectables}
         onChanged={reloadAfterEdit}
@@ -3585,18 +3162,20 @@ export function Portfolio() {
             holding={h as Holding}
             onRefresh={refresh}
             onDelete={deleteHolding}
+            onSetCost={setHoldingCost}
           />
         )}
       />
       ) : null}
 
-{assetEnabled('art') ? (
+{tab === 'other' && assetEnabled('art') ? (
       <Section
         title="Art"
         items={grouped.art}
         empty="No art holdings yet. Add fractional (Masterworks-style) or physical below — manual valuation only."
         onDelete={deleteHolding}
         onUpdateArt={updateArtHolding}
+        onSetCost={setHoldingCost}
       >
         <InlineAddDetails label="Add art">
           <form className="form-grid" onSubmit={onAddArt}>
@@ -3761,13 +3340,14 @@ export function Portfolio() {
       </Section>
       ) : null}
 
-{assetEnabled('stone') ? (
+{tab === 'other' && assetEnabled('stone') ? (
       <Section
         title="Precious stones"
         items={grouped.stones}
         empty="No precious stones yet. Add diamonds (OpenFacet live) or other gems (manual NZD) below."
         onRefresh={refresh}
         onDelete={deleteHolding}
+        onSetCost={setHoldingCost}
       >
         <InlineAddDetails label="Add precious stone">
           <form className="form-grid" onSubmit={onAddStone}>
@@ -3908,6 +3488,7 @@ export function Portfolio() {
       ) : null}
 
 
+      </div>
     </div>
   );
 }

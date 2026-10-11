@@ -9718,3 +9718,221 @@ html.has-bottom-ad body { padding-bottom: calc(var(--ad-bottom-space, 0px) + env
 }
 .debt-details-list dt { font-size: 0.75rem; color: var(--muted); }
 .debt-details-list dd { margin: 0.1rem 0 0; font-size: 0.86rem; font-weight: 600; overflow-wrap: anywhere; }
+
+/* Portfolio redesign. */
+.portfolio-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+  flex-wrap: wrap;
+}
+.portfolio-header-main { min-width: 0; }
+.portfolio-header .eyebrow { display: flex; align-items: center; }
+.portfolio-header-line { margin: 0; }
+.portfolio-header-refresh { display: grid; justify-items: end; gap: 0.3rem; min-width: 12rem; }
+.portfolio-refresh-status { margin: 0; min-height: 1.1em; text-align: right; }
+.portfolio-refresh-bar {
+  width: 12rem;
+  height: 0.25rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 10%, var(--surface));
+  overflow: hidden;
+}
+.portfolio-refresh-bar span { display: block; height: 100%; background: var(--accent); transition: width 0.2s ease; }
+
+.portfolio-tabs {
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: thin;
+}
+.portfolio-tab {
+  flex-shrink: 0;
+  padding: 0.55rem 0.85rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.portfolio-tab:hover { color: var(--text); }
+.portfolio-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.portfolio-tab:focus-visible { outline: 2px solid var(--accent-2); outline-offset: -2px; }
+.portfolio-panel:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 4px; border-radius: 4px; }
+
+.portfolio-overview { display: grid; gap: 1rem; }
+.needs-look { border-left: 3px solid var(--warn); }
+.needs-look h3 { margin: 0 0 0.5rem; font-size: 0.95rem; color: var(--text); text-transform: none; letter-spacing: normal; }
+.needs-look ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.45rem; }
+.needs-look li { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; font-size: 0.86rem; }
+.allocation-strip {
+  display: flex;
+  height: 0.55rem;
+  margin: 0.25rem 0 0.85rem;
+  border-radius: 999px;
+  overflow: hidden;
+  gap: 2px;
+}
+.allocation-strip span { display: block; min-width: 3px; }
+.class-list { list-style: none; margin: 0; padding: 0; }
+.class-list-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.6rem 0.4rem;
+  border: 0;
+  border-bottom: 1px solid var(--border-soft);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+div.class-list-row { cursor: default; }
+.class-list-row:hover { background: color-mix(in srgb, var(--text) 3%, transparent); }
+.class-list-row:focus-visible { outline: 2px solid var(--accent-2); outline-offset: -2px; }
+.class-list-text { display: grid; gap: 0.1rem; min-width: 0; }
+.class-list-name { font-weight: 600; }
+.class-list-pct { min-width: 3rem; text-align: right; }
+.class-list-value { min-width: 6.5rem; text-align: right; font-weight: 600; }
+.class-list-go { color: var(--muted); }
+
+.asset-list { list-style: none; margin: 0.5rem 0 0; padding: 0; }
+.asset-list-head,
+.asset-row-hit {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) 5.5rem 5.5rem 7rem;
+  align-items: center;
+  gap: 0.75rem;
+}
+.asset-list--crypto .asset-list-head,
+.asset-list--crypto .asset-row-hit { grid-template-columns: 2rem minmax(0, 1fr) 6rem 6.5rem 7rem 2rem; }
+.asset-list--metals .asset-list-head,
+.asset-list--metals .asset-row-hit,
+.asset-list--miners .asset-list-head,
+.asset-list--miners .asset-row-hit { grid-template-columns: minmax(0, 1fr) 7rem 6rem 8rem 2rem; }
+.asset-list-head {
+  padding: 0 0.4rem 0.35rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.asset-list-head > span:nth-last-child(-n + 3) { text-align: right; }
+.asset-row { border-bottom: 1px solid var(--border-soft); }
+.asset-row-hit {
+  width: 100%;
+  padding: 0.6rem 0.4rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.asset-row-static { cursor: default; }
+button.asset-row-hit:hover { background: color-mix(in srgb, var(--text) 3%, transparent); }
+.asset-row-hit:focus-visible { outline: 2px solid var(--accent-2); outline-offset: -2px; }
+.asset-row--open { background: color-mix(in srgb, var(--text) 2%, transparent); }
+.asset-row-name { display: grid; gap: 0.1rem; min-width: 0; }
+.asset-row-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asset-row-num { text-align: right; }
+.asset-row-hit > .money { text-align: right; font-weight: 600; }
+.asset-row-value { text-align: right; font-weight: 600; }
+.asset-row-detail { display: grid; gap: 0.6rem; padding: 0.2rem 0.4rem 0.85rem 3.15rem; }
+.asset-row-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.5rem 1rem;
+  margin: 0;
+}
+.asset-row-facts dt { font-size: 0.74rem; color: var(--muted); }
+.asset-row-facts dd { margin: 0.1rem 0 0; font-size: 0.88rem; font-weight: 600; }
+.asset-row-fact-wide { grid-column: 1 / -1; }
+.asset-row-fact-wide dd { font-weight: 500; overflow-wrap: anywhere; }
+.asset-row-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+@media (max-width: 640px) {
+  .asset-list-head { display: none; }
+  .asset-row-hit,
+  .asset-list--crypto .asset-row-hit,
+  .asset-list--metals .asset-row-hit,
+  .asset-list--miners .asset-row-hit {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+  .asset-row-hit > :first-child:not(.asset-row-name) { display: none; }
+  .asset-row-detail { padding-left: 0.4rem; }
+}
+
+.closed-positions { margin-top: 0.75rem; }
+.closed-list { list-style: none; margin: 0.4rem 0 0; padding: 0; display: grid; gap: 0.4rem; }
+.closed-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+}
+.closed-list-main { display: grid; gap: 0.15rem; min-width: 0; font-size: 0.86rem; }
+
+.add-cost-btn {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-2);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.add-cost-btn:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.add-cost-form { display: inline-flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+.add-cost-form input { width: 6.5rem; }
+.add-cost-error { color: var(--danger); font-size: 0.78rem; }
+
+.metal-spots { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: 0.75rem; margin: 0.5rem 0 0.75rem; }
+.metal-spot-head h4 { margin: 0; font-size: 0.9rem; }
+.metal-spot-price { margin: 0.2rem 0; font-size: 1.15rem; font-weight: 700; }
+.metal-spot-head p { margin: 0; }
+
+.mining-summary { margin: 0.25rem 0 0.75rem; }
+.mining-toggles { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end; }
+.mining-earn-head { display: inline-flex; align-items: center; justify-content: flex-end; }
+.mining-total-row { border-bottom: 0; border-top: 1px solid var(--border); }
+.mining-total-row .asset-row-title { font-weight: 700; }
+.mining-settings { margin-top: 0.75rem; }
+.miner-inline-edit label { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.82rem; }
+.miner-inline-edit input { width: 6.5rem; }
+
+.dividends-summary-actions { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+.dividends-year { display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 600; font-size: 0.86rem; }
+.dividend-expander { margin-top: 0.6rem; }
+.dividend-expander-body { display: grid; gap: 0.5rem; margin-top: 0.45rem; }
+.dividend-list { list-style: none; margin: 0 0 0.5rem; padding: 0; }
+.dividend-list li {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 0.2rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+.dividend-list-main { display: grid; gap: 0.1rem; min-width: 0; }
+.dividend-list-name { font-weight: 600; }
+.dividend-months { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: 0.3rem 1rem; }
+.dividend-months li { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.85rem; }
+@media (max-width: 640px) {
+  .dividend-list li { grid-template-columns: minmax(0, 1fr) auto; }
+  .dividend-list-date { grid-column: 1 / -1; }
+}

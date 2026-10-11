@@ -1,5 +1,6 @@
 
 import { Router } from 'express';
+import { isTotalNotUnitQuote } from '../../src/lib/holdingValue.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { requireUserId } from '../lib/userScope.ts';
 import { unlinkDividendsForHolding } from '../dividends/store.ts';
@@ -172,12 +173,13 @@ function lookupAkahuMarketNzd(
   const notes = (q.notes as string) ?? null;
   let market: number | null = null;
   let unitOut: number | null = unit;
-  if (n != null && Number.isFinite(n) && n > 0) {
-    market = unit * n;
-  } else if (notes && /quantity unknown|price holds total/i.test(notes)) {
-    // Quote price is the NZD total (Akahu value with no share count)
-    market = unit;
+  if (isTotalNotUnitQuote(notes)) {
+    // Written by older syncs: an Akahu total for some position, not a price per unit.
+    // The holding's own notes carry its value; never multiply this by a quantity.
+    market = null;
     unitOut = null;
+  } else if (n != null && Number.isFinite(n) && n > 0) {
+    market = unit * n;
   }
   return {
     marketValueNzd: market,
