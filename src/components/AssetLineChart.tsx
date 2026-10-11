@@ -17,6 +17,8 @@ export type LineSeries = {
   label: string;
   colour: string;
   points: LinePoint[];
+  /** Drawn as a dashed stroke. Legend uses a dashed sample when any series is dashed. */
+  dashed?: boolean;
 };
 
 /** Chart time resolution — only real snapshot buckets, never filled gaps. */
@@ -104,6 +106,14 @@ type Props = {
    * draw order stays the series order. Legend order is always the series order.
    */
   foregroundKey?: string;
+  /** Point dots. Off for a clean stroke; a one-point series still draws a dot. */
+  markers?: boolean;
+  /** Anchor a non-negative series at 0 so a projection reads from today upward. */
+  zeroBaseline?: boolean;
+  /** Prefix axis labels with $. Other charts leave this off. */
+  moneyAxis?: boolean;
+  /** Keep the title for the chart name, but only for assistive tech. */
+  hideTitle?: boolean;
 };
 
 function parseAt(at: string): number {
@@ -138,7 +148,7 @@ function axisLabel(at: string, resolution: ChartResolution): string {
  * point used to count as "crossing" zero and was padded downward).
  * A line that is exactly 0 uses a zero-height domain so the axis can show one 0.
  */
-export function computeYDomain(values: number[]): { vMin: number; vMax: number } {
+export function computeYDomain(values: number[], zeroBaseline = false): { vMin: number; vMax: number } {
   const finite = values.filter((v) => Number.isFinite(v));
   if (finite.length === 0) return { vMin: 0, vMax: 1 };
 
@@ -167,6 +177,12 @@ export function computeYDomain(values: number[]): { vMin: number; vMax: number }
   }
 
   if (dataMin >= 0) vMin = Math.max(0, vMin);
+
+  if (zeroBaseline) {
+    if (dataMin >= 0) vMin = 0;
+    if (dataMax > 0) vMax = Math.max(vMax, dataMax + Math.max(dataMax * 0.08, pad));
+    else if (dataMax < 0) vMax = 0;
+  }
 
   if (vMax <= vMin) {
     vMax = vMin + Math.max(magnitude * 0.02, 1);
@@ -236,6 +252,10 @@ export function AssetLineChart({
   showResolutionNote = false,
   fullWidth = false,
   foregroundKey,
+  markers = true,
+  zeroBaseline = false,
+  moneyAxis = false,
+  hideTitle = false,
 }: Props) {
   const resampled = resampleSeries(series, resolution);
   const active = resampled.filter((s) => s.points.length > 0);
@@ -244,7 +264,7 @@ export function AssetLineChart({
   if (allPoints.length === 0) {
     return (
       <div className={'line-chart' + (fullWidth ? ' line-chart-full' : '')}>
-        {title && <h4 className="line-chart-title">{title}</h4>}
+        {title && <h4 className={'line-chart-title' + (hideTitle ? ' sr-only' : '')}>{title}</h4>}
         <p className="muted small line-chart-empty">{emptyHint}</p>
       </div>
     );
@@ -260,7 +280,7 @@ export function AssetLineChart({
   const values = allPoints.map((p) => p.value);
   const tMin = Math.min(...times);
   const tMax = Math.max(...times);
-  const { vMin, vMax } = computeYDomain(values);
+  const { vMin, vMax } = computeYDomain(values, zeroBaseline);
   const tSpan = Math.max(tMax - tMin, 1);
   const vSpan = vMax - vMin;
 
@@ -288,7 +308,7 @@ export function AssetLineChart({
 
   return (
     <div className={'line-chart' + (fewPoints ? ' line-chart-compact' : '') + (fullWidth ? ' line-chart-full' : '')}>
-      {title && <h4 className="line-chart-title">{title}</h4>}
+      {title && <h4 className={'line-chart-title' + (hideTitle ? ' sr-only' : '')}>{title}</h4>}
       {showResolutionNote && (
         <p className="muted small line-chart-meta">
           {resolution === 'day' ? 'Daily' : 'Monthly'} snapshots only
@@ -316,7 +336,7 @@ export function AssetLineChart({
               dominantBaseline="middle"
               className="line-chart-axis"
             >
-              {compactNzd(v)}
+              {compactNzd(v, moneyAxis)}
             </text>
           </g>
         ))}
@@ -350,18 +370,27 @@ export function AssetLineChart({
             .join(' ');
           return (
             <g key={s.key}>
-              <path d={d} fill="none" stroke={s.colour} strokeWidth={2} strokeLinejoin="round" />
-              {sorted.map((p) => (
-                <circle
-                  key={`${s.key}-${p.at}`}
-                  cx={xOf(p.at)}
-                  cy={yOf(p.value)}
-                  r={3.5}
-                  fill={s.colour}
-                >
-                  <title>{`${s.label}: ${formatNzd(p.value)} @ ${axisLabel(p.at, resolution)}`}</title>
-                </circle>
-              ))}
+              <path
+                d={d}
+                fill="none"
+                stroke={s.colour}
+                strokeWidth={2}
+                strokeLinejoin="round"
+                strokeDasharray={s.dashed ? '7 5' : undefined}
+              />
+              {markers
+                ? sorted.map((p) => (
+                    <circle
+                      key={`${s.key}-${p.at}`}
+                      cx={xOf(p.at)}
+                      cy={yOf(p.value)}
+                      r={3.5}
+                      fill={s.colour}
+                    >
+                      <title>{`${s.label}: ${formatNzd(p.value)} @ ${axisLabel(p.at, resolution)}`}</title>
+                    </circle>
+                  ))
+                : null}
             </g>
           );
         })}
@@ -369,7 +398,15 @@ export function AssetLineChart({
       <ul className="line-chart-legend" aria-label="Series">
         {active.map((s) => (
           <li key={s.key}>
-            <span className="spend-swatch" style={{ background: s.colour }} aria-hidden />
+            {active.some((item) => item.dashed) ? (
+              <span
+                className={'line-chart-key' + (s.dashed ? ' line-chart-key--dashed' : '')}
+                style={{ color: s.colour }}
+                aria-hidden
+              />
+            ) : (
+              <span className="spend-swatch" style={{ background: s.colour }} aria-hidden />
+            )}
             <span>{s.label}</span>
           </li>
         ))}
@@ -378,7 +415,11 @@ export function AssetLineChart({
   );
 }
 
-function compactNzd(n: number): string {
+function compactNzd(n: number, moneyAxis: boolean): string {
   if (isMoneyHidden()) return MONEY_MASK;
-  return axisTickKey(n);
+  const key = axisTickKey(n);
+  if (!moneyAxis) return key;
+  if (key === '0' || key === '-0') return '$0';
+  if (key.startsWith('-')) return `−$${key.slice(1)}`;
+  return `$${key}`;
 }

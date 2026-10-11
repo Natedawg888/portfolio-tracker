@@ -299,3 +299,197 @@ export function scenarioFrameFromSearch<T>(
     loaded: paint.kind === 'cached',
   };
 }
+
+function finiteOrNull(value: number | null | undefined): number | null {
+  return value != null && Number.isFinite(value) ? value : null;
+}
+
+function roundCents(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/** "10 years" for a known horizon; otherwise a plain month count. */
+export function horizonPhrase(months: number): string {
+  const known = HORIZONS.find((h) => h.months === months);
+  if (known) return known.label;
+  if (months > 0 && months % 12 === 0) {
+    const years = months / 12;
+    return years === 1 ? '1 year' : `${years} years`;
+  }
+  return `${months} months`;
+}
+
+/** Compact range label: 120 → "10Y". */
+export function horizonPill(months: number): string {
+  if (months > 0 && months % 12 === 0) return `${months / 12}Y`;
+  return `${months}M`;
+}
+
+export type ProjectionFigureInput = {
+  startNetWorthNzd: number | null;
+  endNetWorthNzd: number | null;
+  /** Null when the response has no asset-class breakdown. An empty list sums to 0. */
+  classAddedNzd: number[] | null;
+  classGrowthNzd: number[] | null;
+  /** Cumulative budget saving at the horizon. Null when no saving figure exists. */
+  savingsAddedNzd: number | null;
+  /** Cumulative KiwiSaver contributions. Null when none were observed. */
+  kiwiSaverAddedNzd: number | null;
+};
+
+export type ProjectionFigures = {
+  todayNzd: number | null;
+  endNzd: number | null;
+  youAddNzd: number | null;
+  growthNzd: number | null;
+};
+
+/** Sum a list of real numbers. Any non-finite value makes the whole sum unavailable. */
+export function sumMoney(values: number[] | null | undefined): number | null {
+  if (values == null) return null;
+  let sum = 0;
+  for (const value of values) {
+    if (!Number.isFinite(value)) return null;
+    sum += value;
+  }
+  return roundCents(sum);
+}
+
+/**
+ * Headline figures from a projection response.
+ * "You add" is the asset-class additions when that breakdown exists (that is what
+ * the model actually adds). Otherwise it is budget saving plus KiwiSaver contributions.
+ * Missing pieces stay null so the page can show "—".
+ */
+export function projectionFigures(input: ProjectionFigureInput): ProjectionFigures {
+  let youAdd: number | null;
+  if (input.classAddedNzd != null) {
+    youAdd = sumMoney(input.classAddedNzd);
+  } else {
+    const saving = finiteOrNull(input.savingsAddedNzd);
+    const kiwi = finiteOrNull(input.kiwiSaverAddedNzd);
+    youAdd = saving == null && kiwi == null ? null : roundCents((saving ?? 0) + (kiwi ?? 0));
+  }
+  return {
+    todayNzd: finiteOrNull(input.startNetWorthNzd),
+    endNzd: finiteOrNull(input.endNetWorthNzd),
+    youAddNzd: youAdd,
+    growthNzd: sumMoney(input.classGrowthNzd),
+  };
+}
+
+/** "Today $1 · you add $2 · growth $3". The formatter decides how a missing amount reads. */
+export function projectionBreakdown(
+  figures: ProjectionFigures,
+  formatMoney: (value: number | null) => string,
+): string {
+  return `Today ${formatMoney(figures.todayNzd)} · you add ${formatMoney(figures.youAddNzd)} · growth ${formatMoney(figures.growthNzd)}`;
+}
+
+export type DatedWorth = { date: string; monthIndex: number; netWorthNzd: number };
+
+/** Beyond two years, one point a year (plus the last month) keeps the line readable. */
+export function sampleProjectionPoints<T extends { monthIndex: number }>(points: T[], horizonMonths: number): T[] {
+  if (horizonMonths > 24) {
+    return points.filter((point) => point.monthIndex % 12 === 0 || point.monthIndex === horizonMonths);
+  }
+  return points;
+}
+
+/**
+ * Additions are a straight ramp when nothing steps them up and no month-by-month
+ * schedule (mining flows) replaces the constant amount.
+ */
+export function additionsAreEven(input: {
+  defaultGrowthPercent: number | null;
+  classGrowthPercents: Array<number | null | undefined>;
+  hasMonthlySchedule: boolean;
+}): boolean {
+  if (input.hasMonthlySchedule) return false;
+  const percents = [input.defaultGrowthPercent ?? 0, ...input.classGrowthPercents.map((value) => value ?? 0)];
+  return percents.every((value) => value === 0);
+}
+
+/**
+ * "Today plus what you add" from real totals.
+ * Even additions: each sampled month is today + the share of the horizon total (exact for a constant monthly amount).
+ * Uneven additions: only the two real endpoints, today and today + the total. No invented months in between.
+ * Null when the total added is unknown or there is no starting point.
+ */
+export function todayPlusAddedPoints(
+  points: DatedWorth[],
+  youAddNzd: number | null,
+  even: boolean,
+): Array<{ at: string; value: number }> | null {
+  if (youAddNzd == null || points.length === 0) return null;
+  const start = points[0];
+  if (!Number.isFinite(start.netWorthNzd)) return null;
+  const horizon = points[points.length - 1]?.monthIndex ?? 0;
+  const at = (point: DatedWorth): { at: string; value: number } => {
+    const share = horizon === 0 ? 0 : point.monthIndex / horizon;
+    return { at: point.date, value: roundCents(start.netWorthNzd + youAddNzd * share) };
+  };
+  if (!even) {
+    const end = points[points.length - 1];
+    return end === start ? [at(start)] : [at(start), at(end)];
+  }
+  return points.map(at);
+}
+
+/** Typed scenario text wins. A blank field shows the figure the projection is already using. */
+export function typedOrInUse(typed: string, inUse: number | null): number | null {
+  const text = typed.trim();
+  if (text !== '') {
+    const parsed = Number(text);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return finiteOrNull(inUse);
+}
+
+/** Whole percents stay whole. One decimal otherwise. Missing stays "—". */
+export function sliderPercentLabel(value: number | null): string {
+  if (value == null || !Number.isFinite(value)) return '—';
+  const rounded = Math.round(value * 10) / 10;
+  return `${rounded}%`;
+}
+
+/** Slider runs to 100% unless the figure in use is already higher (the API allows 500). */
+export function growthSliderMax(value: number | null): number {
+  if (value == null || !Number.isFinite(value) || value <= 100) return 100;
+  return Math.min(500, Math.ceil(value));
+}
+
+export function yearlyIncreaseCaption(percent: number | null): string {
+  if (percent == null || percent === 0) return 'Same amount every year';
+  return 'Steps up by this much each year';
+}
+
+/**
+ * A saving slider that always includes 0, the amount in use, and the budget average.
+ * The top stays at least $2,000 so a $0 scenario can still be dragged upward.
+ */
+export function savingSliderBounds(value: number | null, observed: number | null): { min: number; max: number; step: number } {
+  const current = finiteOrNull(value) ?? 0;
+  const seen = finiteOrNull(observed) ?? 0;
+  const low = Math.min(0, current, seen);
+  const high = Math.max(2000, current, seen, Math.abs(seen) * 2);
+  const min = Math.floor(low / 50) * 50;
+  const max = Math.max(Math.ceil(high / 50) * 50, min + 50);
+  const span = max - min;
+  const step = span > 20_000 ? 100 : span > 5_000 ? 50 : 10;
+  return { min, max, step };
+}
+
+export function budgetAverageLabel(windowMonths: number, amountLabel: string): string {
+  const months = Number.isFinite(windowMonths) && windowMonths > 0 ? windowMonths : 3;
+  return `Budget average (last ${months} ${months === 1 ? 'month' : 'months'}): ${amountLabel}`;
+}
+
+export function canUseBudgetAverage(observed: number | null): boolean {
+  return observed != null && Number.isFinite(observed);
+}
+
+/** The observed average, in cents, as the saving field text. */
+export function budgetAverageInput(observed: number): string {
+  return String(roundCents(observed));
+}

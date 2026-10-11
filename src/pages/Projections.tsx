@@ -5,7 +5,7 @@
  * Inputs live in the URL (?months=&annualReturnPercent=&monthlySavingNzd=&savingWindowMonths=)
  * so a scenario can be bookmarked or shared.
  */
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ApiError, api, formatNzd } from '../api/client';
 import { AssetLineChart, type LineSeries } from '../components/AssetLineChart';
@@ -23,19 +23,46 @@ import {
 import {
   HORIZONS,
   WINDOWS,
+  additionsAreEven,
+  budgetAverageInput,
+  budgetAverageLabel,
+  canUseBudgetAverage,
   classNumbers,
   emptyClassFields,
   emptyMiningFields,
+  growthSliderMax,
+  horizonPhrase,
+  horizonPill,
   miningPlanFromFields,
   type MiningFields,
   flatLineNote,
   inputsToParams,
+  projectionBreakdown,
   projectionCacheKey,
+  projectionFigures,
   readInputs,
+  sampleProjectionPoints,
+  savingSliderBounds,
   scenarioFrameFromSearch,
   scenarioRequestFailure,
+  sliderPercentLabel,
+  todayPlusAddedPoints,
+  typedOrInUse,
+  yearlyIncreaseCaption,
   type Inputs,
 } from './projectionsView';
+
+const WITH_GROWTH = '#3d9a6a';
+const TODAY_PLUS_ADDED = '#4a8fd4';
+type ProjectionMode = 'worth' | 'compound';
+
+/** Keep a range input on its step so the thumb matches a real amount. */
+function onSliderStep(value: number, min: number, max: number, step: number): number {
+  if (!Number.isFinite(value) || step <= 0) return min;
+  const clamped = Math.min(max, Math.max(min, value));
+  const snapped = min + Math.round((clamped - min) / step) * step;
+  return Math.round(Math.min(max, Math.max(min, snapped)) * 100) / 100;
+}
 
 const SOURCE_LABEL: Record<ProjectionAssumption['source'], string> = {
   user_data: 'From your data',
@@ -90,7 +117,7 @@ function signedNzd(n: number): string {
 function reasonText(a: ProjectionAssumption): string | null {
   if (a.source !== 'query' || !a.reason) return a.reason;
   const rest = a.reason.replace(/^Taken from the \w+ query parameter\.\s*/, '');
-  return `You entered this in Scenario above.${rest ? ` ${rest}` : ''}`;
+  return `You entered this above.${rest ? ` ${rest}` : ''}`;
 }
 
 function Assumption({ title, a, value }: { title: string; a: ProjectionAssumption; value: string }) {
@@ -131,13 +158,9 @@ function MiningPlanFields({
       <h4 style={{ margin: '0.75rem 0 0.25rem' }}>Mining (GoMining)</h4>
       <p className="muted small" style={{ margin: 0 }}>
         {mining.inputs
-          ? `${mining.inputs.th.toLocaleString('en-NZ')} TH at ${mining.inputs.avgWth ?? '—'} W/TH${
-              mining.inputs.poolSatPerThDay != null ? ` · pool ${mining.inputs.poolSatPerThDay} sat/TH/day` : ''
-            } · ${mining.inputs.discountPct}% discount · kWh $${mining.inputs.kWhCostUsd}. `
+          ? `${mining.inputs.th.toLocaleString('en-NZ')} TH at ${mining.inputs.avgWth ?? '—'} W/TH. `
           : ''}
-        Rewards use the same GoMining formula as Portfolio (pool reward − electricity − service). Add TH or lower
-        W/TH a little each month to see how rewards grow — upgrades stop at 12 W/TH, the lowest GoMining offers, and
-        apply to added TH too. The BTC price changes by your Crypto return.
+        Blank fields keep the plan already in use. Upgrades stop at 12 W/TH.
       </p>
       {mining.status === 'unavailable' ? <p className="banner" style={{ marginTop: '0.5rem' }}>{mining.reason}</p> : null}
       <div className="form-grid" style={{ marginTop: '0.5rem' }}>
@@ -179,8 +202,8 @@ function MiningResults({ mining, months }: { mining: ProjectionMining; months: n
   const years = months / 12;
   const yearly = p ? p.months.filter((m) => m.monthIndex % 12 === 0 || m.monthIndex === months) : [];
   return (
-    <section className="panel">
-      <h3>Mining (GoMining)</h3>
+    <details className="proj-fold">
+      <summary>Mining (GoMining)</summary>
       {!p ? (
         <p className="muted">{mining.reason ?? 'Mining rewards are not projected.'}</p>
       ) : (
@@ -254,7 +277,7 @@ function MiningResults({ mining, months }: { mining: ProjectionMining; months: n
           </ul>
         </>
       )}
-    </section>
+    </details>
   );
 }
 
@@ -323,16 +346,55 @@ export function Projections() {
     };
   }, [applied]);
 
+  const formRef = useRef(form);
+  useEffect(() => {
+    formRef.current = form;
+  }, [form]);
+  const commitTimer = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (commitTimer.current != null) window.clearTimeout(commitTimer.current);
+  }, []);
+
+  const commitNow = (patch: Partial<Inputs>) => {
+    if (commitTimer.current != null) window.clearTimeout(commitTimer.current);
+    const next = { ...formRef.current, ...patch };
+    formRef.current = next;
+    setForm(next);
+    setParams(inputsToParams(next), { replace: true });
+  };
+
+  const commitSoon = (patch: Partial<Inputs>) => {
+    const next = { ...formRef.current, ...patch };
+    formRef.current = next;
+    setForm(next);
+    if (commitTimer.current != null) window.clearTimeout(commitTimer.current);
+    commitTimer.current = window.setTimeout(() => {
+      setParams(inputsToParams(formRef.current), { replace: true });
+    }, 350);
+  };
+
   const onApply = (e: FormEvent) => {
     e.preventDefault();
-    setParams(inputsToParams(form), { replace: true });
+    commitNow({});
   };
 
   const onReset = () => {
-    const base = { months: applied.months, window: 3, returnPct: '', saving: '', classReturns: emptyClassFields(), classAdds: emptyClassFields(), classGrowth: emptyClassFields(), mining: emptyMiningFields(), addGrowth: '' };
-    setForm(base);
-    setParams(new URLSearchParams({ months: String(base.months) }), { replace: true });
+    commitNow({
+      window: 3,
+      returnPct: '',
+      saving: '',
+      classReturns: emptyClassFields(),
+      classAdds: emptyClassFields(),
+      classGrowth: emptyClassFields(),
+      mining: emptyMiningFields(),
+      addGrowth: '',
+    });
   };
+
+  const [mode, setMode] = useState<ProjectionMode>(() =>
+    window.location.hash === '#calculators' || window.location.hash === '#compound-interest' ? 'compound' : 'worth',
+  );
+  const [fineOpen, setFineOpen] = useState(false);
 
   const [savingDefaults, setSavingDefaults] = useState(false);
   const [defaultsMsg, setDefaultsMsg] = useState<string | null>(null);
@@ -392,39 +454,50 @@ export function Projections() {
     }
   };
 
+  const figures = useMemo(() => {
+    if (!data) return null;
+    const endPoint = data.points.at(-1);
+    return projectionFigures({
+      startNetWorthNzd: data.points[0]?.netWorthNzd ?? null,
+      endNetWorthNzd: endPoint?.netWorthNzd ?? null,
+      classAddedNzd: data.assetClasses ? data.assetClasses.map((c) => c.addedNzd) : null,
+      classGrowthNzd: data.assetClasses ? data.assetClasses.map((c) => c.growthNzd) : null,
+      savingsAddedNzd: endPoint?.savingsAddedNzd ?? null,
+      kiwiSaverAddedNzd: endPoint?.kiwiSaverContributionsAddedNzd ?? null,
+    });
+  }, [data]);
+
   const series: LineSeries[] = useMemo(() => {
-    if (!data) return [];
-    // Beyond two years, one point a year keeps the lines readable (the table has every year).
-    const pts = data.horizonMonths > 24
-      ? data.points.filter((p) => p.monthIndex % 12 === 0 || p.monthIndex === data.horizonMonths)
-      : data.points;
+    if (!data || !figures) return [];
+    const pts = sampleProjectionPoints(data.points, data.horizonMonths);
     const out: LineSeries[] = [
-      { key: 'netWorth', label: 'Net worth', colour: '#3d9a6a', points: pts.map((p) => ({ at: p.date, value: p.netWorthNzd })) },
-      { key: 'assets', label: 'Assets that grow', colour: '#4a8fd4', points: pts.map((p) => ({ at: p.date, value: p.compoundingAssetsNzd })) },
+      {
+        key: 'withGrowth',
+        label: 'With growth',
+        colour: WITH_GROWTH,
+        points: pts.map((p) => ({ at: p.date, value: p.netWorthNzd })),
+      },
     ];
-    for (const key of PROJECTION_CLASS_KEYS) {
-      const c = data.assetClasses?.find((x) => x.key === key);
-      if (!c || (Math.abs(c.startNzd) < 0.005 && Math.abs(c.endNzd) < 0.005)) continue;
+    const added = todayPlusAddedPoints(
+      pts,
+      figures.youAddNzd,
+      additionsAreEven({
+        defaultGrowthPercent: data.additionGrowthPercentYear?.value ?? null,
+        classGrowthPercents: (data.assetClasses ?? []).map((c) => c.additionGrowthPercentYear),
+        hasMonthlySchedule: data.mining?.projection != null,
+      }),
+    );
+    if (added) {
       out.push({
-        key: `class-${key}`,
-        label: PROJECTION_CLASS_LABELS[key],
-        colour: CLASS_COLOURS[key],
-        points: pts.map((p) => ({ at: p.date, value: p.byClassNzd?.[key] ?? 0 })),
-      });
-    }
-    if (pts.some((p) => p.debtOutstandingNzd > 0)) {
-      out.push({ key: 'debt', label: 'Debt outstanding', colour: '#d45a7a', points: pts.map((p) => ({ at: p.date, value: p.debtOutstandingNzd })) });
-    }
-    if (pts.some((p) => p.savingsAddedNzd != null)) {
-      out.push({
-        key: 'saved',
-        label: 'Savings added',
-        colour: '#c47a2c',
-        points: pts.filter((p) => p.savingsAddedNzd != null).map((p) => ({ at: p.date, value: p.savingsAddedNzd! })),
+        key: 'todayPlusAdded',
+        label: 'Today plus what you add',
+        colour: TODAY_PLUS_ADDED,
+        dashed: true,
+        points: added,
       });
     }
     return out;
-  }, [data]);
+  }, [data, figures]);
 
   const start = data?.points[0];
   const end = data?.points.at(-1);
@@ -432,449 +505,479 @@ export function Projections() {
   const flat = Boolean(data && start && end && Math.abs(change) < 0.005);
   const a = data?.assumptions;
   const savingValue = a?.monthlySavingNzd.value;
+  const observedSaving = a?.monthlySavingNzd.observedMonthlyNzd ?? null;
   const yearly = data?.points.filter((p) => p.monthIndex % 12 === 0 || p.monthIndex === data.horizonMonths) ?? [];
+  const returnInUse = typedOrInUse(form.returnPct, a?.annualReturnPercent.value ?? null);
+  const savingInUse = typedOrInUse(form.saving, savingValue ?? null);
+  const growthInUse = typedOrInUse(form.addGrowth, data?.additionGrowthPercentYear?.value ?? null);
+  const savingBounds = savingSliderBounds(savingInUse, observedSaving);
+  const windowMonths = a?.monthlySavingNzd.windowMonths ?? form.window;
+  const breakdown = projectionBreakdown(figures ?? { todayNzd: null, endNzd: null, youAddNzd: null, growthNzd: null }, (value) =>
+    value == null ? '—' : formatNzd(value),
+  );
 
   return (
     <div className="stack projections-page">
-      <section className="hero-card hero-card--centered">
-        <h2 className="page-title">Projections</h2>
-        <p className="page-lead">
-          Where your net worth heads if today&apos;s balances, debt payments and saving carry on. Educational only —
-          not a forecast of prices or financial advice. Change the return or saving below to try a scenario.
-        </p>
-        <div className="row gap" style={{ justifyContent: 'center' }}>
+      <header className="proj-header">
+        <div>
+          <h2 className="page-title">Projections</h2>
+          <p className="muted small proj-tagline">Your own assumptions played forward. Not a forecast or financial advice.</p>
+        </div>
+        <div className="segmented" role="group" aria-label="Projection mode">
           <button
             type="button"
-            className="btn small"
-            onClick={() => document.getElementById('calculators')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            className={'segmented-btn' + (mode === 'worth' ? ' active' : '')}
+            aria-pressed={mode === 'worth'}
+            onClick={() => setMode('worth')}
           >
-            Calculators ↓
+            My net worth
+          </button>
+          <button
+            type="button"
+            className={'segmented-btn' + (mode === 'compound' ? ' active' : '')}
+            aria-pressed={mode === 'compound'}
+            onClick={() => setMode('compound')}
+          >
+            Compound interest
           </button>
         </div>
-      </section>
+      </header>
 
-      <section className="panel" aria-label="Scenario">
-        <h3>Scenario</h3>
-        <form className="form-grid projection-form" onSubmit={onApply}>
-          <label>
-            Time ahead
-            <select value={form.months} onChange={(e) => setForm({ ...form, months: Number(e.target.value) })}>
-              {HORIZONS.map((h) => (
-                <option key={h.months} value={h.months}>
-                  {h.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Default yearly return (%)
-            <input
-              type="number"
-              step="0.1"
-              min={-50}
-              max={50}
-              inputMode="decimal"
-              placeholder="0 (default)"
-              value={form.returnPct}
-              onChange={(e) => setForm({ ...form, returnPct: e.target.value })}
-            />
-            <span className="muted small">For asset classes below without a return of their own.</span>
-          </label>
-          <label>
-            Monthly saving (NZD)
-            <input
-              type="number"
-              step="1"
-              min={-10000000}
-              max={10000000}
-              inputMode="decimal"
-              placeholder="From your budget"
-              value={form.saving}
-              onChange={(e) => setForm({ ...form, saving: e.target.value })}
-            />
-          </label>
-          <label>
-            Default increase in what&apos;s added each year (%)
-            <input
-              type="number"
-              step="1"
-              min={0}
-              max={500}
-              inputMode="decimal"
-              placeholder={
-                data?.additionGrowthPercentYear && data.additionGrowthPercentYear.source === 'saved'
-                  ? `${data.additionGrowthPercentYear.value}% saved`
-                  : '0 (same every year)'
-              }
-              value={form.addGrowth}
-              onChange={(e) => setForm({ ...form, addGrowth: e.target.value })}
-            />
-            <span className="muted small">100% = $500 a month this year, $1,000 next year. For classes below without their own.</span>
-          </label>
-          <label>
-            Budget months to average
-            <select value={form.window} onChange={(e) => setForm({ ...form, window: Number(e.target.value) })}>
-              {WINDOWS.map((w) => (
-                <option key={w} value={w}>
-                  Last {w} months
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="span-2">
-            <h4 style={{ margin: '0.5rem 0 0.25rem' }}>By asset class</h4>
-            <p className="muted small" style={{ margin: 0 }}>
-              Set an average yearly return and a monthly amount for each kind of asset. Blank fields use what the
-              projection shows in grey: your saved default, your data, or the default return. Returns are your own
-              assumptions — nothing here is a price forecast. Money moved to the <strong>Investments</strong> budget
-              category counts as added to Shares &amp; funds and is taken out of cash, so it isn&apos;t counted twice.
-              KiwiSaver contributions come out of pay. Mining rewards recorded as Mining income are already in your saving.
-            </p>
-            <div className="table-wrap" style={{ overflowX: 'auto', marginTop: '0.5rem' }}>
-              <table className="data-table projection-class-inputs">
-                <thead>
-                  <tr>
-                    <th>Asset class</th>
-                    <th style={{ textAlign: 'right' }}>Today</th>
-                    <th>Yearly return (%)</th>
-                    <th>Added each month (NZD)</th>
-                    <th>Increase each year (%)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {PROJECTION_CLASS_KEYS.map((key) => {
-                    const c = classesByKey.get(key);
-                    return (
-                      <tr key={key}>
-                        <td>{PROJECTION_CLASS_LABELS[key]}</td>
-                        <td className="money" style={{ textAlign: 'right' }}>{c ? formatNzd(c.startNzd) : '—'}</td>
-                        <td>
-                          <input
-                            type="number"
-                            step="0.1"
-                            min={-50}
-                            max={50}
-                            inputMode="decimal"
-                            aria-label={`${PROJECTION_CLASS_LABELS[key]} yearly return`}
-                            placeholder={usedReturnHint(c)}
-                            value={form.classReturns[key]}
-                            onChange={(e) => setForm({ ...form, classReturns: { ...form.classReturns, [key]: e.target.value } })}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            step="1"
-                            min={-10000000}
-                            max={10000000}
-                            inputMode="decimal"
-                            aria-label={`${PROJECTION_CLASS_LABELS[key]} added each month`}
-                            placeholder={usedAddHint(c)}
-                            value={form.classAdds[key]}
-                            onChange={(e) => setForm({ ...form, classAdds: { ...form.classAdds, [key]: e.target.value } })}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            step="1"
-                            min={0}
-                            max={500}
-                            inputMode="decimal"
-                            aria-label={`${PROJECTION_CLASS_LABELS[key]} increase each year`}
-                            placeholder={
-                              c?.additionGrowthPercentYear == null
-                                ? 'Default'
-                                : `${c.additionGrowthPercentYear}%${c.growthSource === 'saved' ? ' saved' : c.growthSource === 'query' ? '' : ' (default)'}`
-                            }
-                            value={form.classGrowth[key]}
-                            onChange={(e) => setForm({ ...form, classGrowth: { ...form.classGrowth, [key]: e.target.value } })}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-          {data?.mining && data.mining.status !== 'no_miners' ? (
-            <MiningPlanFields
-              mining={data.mining}
-              fields={form.mining}
-              onChange={(mining) => setForm({ ...form, mining })}
-            />
-          ) : null}
-          <div className="span-2 row gap" style={{ flexWrap: 'wrap' }}>
-            <button type="submit" className="btn primary" disabled={loading}>
-              {loading ? 'Projecting…' : 'Update projection'}
-            </button>
-            <button type="button" className="btn ghost" onClick={onReset} disabled={loading}>
-              Use my data only
-            </button>
-            <button type="button" className="btn" onClick={() => void onSaveDefaults()} disabled={loading || savingDefaults}>
-              Save class rates as my defaults
-            </button>
-            {[...classesByKey.values()].some((c) => c.returnSource === 'saved' || c.additionSource === 'saved') ||
-            Object.keys(data?.mining?.plan ?? {}).some((k) => k !== 'rewardsTo') ? (
-              <button type="button" className="btn ghost" onClick={() => void onSaveDefaults(true)} disabled={loading || savingDefaults}>
-                Forget saved rates
-              </button>
-            ) : null}
-          </div>
-          {defaultsMsg ? <p className="muted small span-2" role="status">{defaultsMsg}</p> : null}
-        </form>
-        {applied.ignored.length ? (
-          <p className="muted small" role="status">
-            Ignored from the link: {applied.ignored.join('; ')}.
-          </p>
-        ) : null}
-        {error ? (
-          <p className="auth-error" role="alert">
-            {error}
-          </p>
-        ) : null}
-      </section>
-
-      {!data && loading ? <p className="muted">Loading projection…</p> : null}
-
-      {data && start && end ? (
+      {mode === 'compound' ? (
+        <CompoundInterestCalculator startingAmountNzd={data?.starting.compoundingAssetsNzd ?? null} />
+      ) : (
         <>
-          <section className="grid cards">
-            <div className="card">
-              <p className="eyebrow">Net worth today</p>
-              <p className="stat-value">{formatNzd(start.netWorthNzd)}</p>
-              <p className="muted small">As of {formatDate(data.asOf)}</p>
-            </div>
-            <div className="card">
-              <p className="eyebrow">In {HORIZONS.find((h) => h.months === data.horizonMonths)?.label ?? `${data.horizonMonths} months`}</p>
-              <p className="stat-value">{formatNzd(end.netWorthNzd)}</p>
-              <p className="muted small">
-                {signedNzd(change)} by {formatDate(end.date)}
-              </p>
-            </div>
-            <div className="card">
-              <p className="eyebrow">Monthly saving used</p>
-              <p className="stat-value">{savingValue == null ? '—' : formatNzd(savingValue)}</p>
-              <p className="muted small">{a ? SOURCE_LABEL[a.monthlySavingNzd.source] : ''}</p>
-            </div>
-            <div className="card">
-              <p className="eyebrow">Investment growth</p>
-              <p className="stat-value">
-                {signedNzd((data.assetClasses ?? []).reduce((sum, c) => sum + c.growthNzd, 0))}
-              </p>
-              <p className="muted small">From each class&apos;s own return · compounded monthly</p>
-            </div>
-          </section>
-
-          {flat ? (
-            <p className="panel projection-flat" role="note">
-              {flatLineNote({
-                annualReturnPercent: a?.annualReturnPercent.value ?? null,
-                compoundingAssetsNzd: data.starting.compoundingAssetsNzd,
-                monthlySavingNzd: savingValue ?? null,
-                debtHasSavedPayment: data.debts.some((d) => d.stepped),
-              })}
+          {error ? (
+            <p className="auth-error" role="alert">
+              {error}
             </p>
           ) : null}
 
-          <section className="panel">
-            <AssetLineChart
-              series={series}
-              title="Projected net worth (NZD)"
-              emptyHint="Nothing to plot yet."
-              resolution="month"
-              fullWidth
-              foregroundKey="netWorth"
-            />
-            <p className="muted small">{data.note}</p>
+          <section className="panel proj-chart-card" aria-busy={loading} aria-label="Projected net worth">
+            <div className="proj-chart-top">
+              <div>
+                <p className="proj-kicker">{data ? `Net worth in ${horizonPhrase(data.horizonMonths)}` : 'Net worth'}</p>
+                <p className="proj-figure">{figures?.endNzd == null ? '—' : formatNzd(figures.endNzd)}</p>
+                <p className="proj-breakdown">{data ? breakdown : 'Today — · you add — · growth —'}</p>
+              </div>
+              <div className="segmented segmented--small" role="group" aria-label="Time ahead">
+                {HORIZONS.map((h) => (
+                  <button
+                    key={h.months}
+                    type="button"
+                    className={'segmented-btn' + (form.months === h.months ? ' active' : '')}
+                    aria-pressed={form.months === h.months}
+                    onClick={() => commitNow({ months: h.months })}
+                  >
+                    {horizonPill(h.months)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {!data && loading ? <p className="muted">Loading projection…</p> : null}
+            {data ? (
+              <AssetLineChart
+                series={series}
+                title="Projected net worth"
+                hideTitle
+                emptyHint="Nothing to plot yet."
+                resolution="month"
+                fullWidth
+                foregroundKey="withGrowth"
+                markers={false}
+                zeroBaseline
+                moneyAxis
+                height={300}
+              />
+            ) : null}
           </section>
 
-          {data.assetClasses?.length ? (
-            <section className="panel">
-              <h3>By asset class</h3>
-              <p className="section-desc">
-                Each class grows on its own yearly return, plus what is added to it each month
-                {data.assetClasses.some((c) => (c.additionGrowthPercentYear ?? 0) > 0)
-                  ? ' — and what’s added goes up each year by the class’s increase (Added / month shows year 1; Added in total covers every year)'
-                  : ''}
-                .
+          <section className="panel proj-scenario" aria-label="Try a scenario">
+            <div className="proj-scenario-head">
+              <h3>Try a scenario</h3>
+              <button type="button" className="btn small ghost" onClick={onReset}>
+                Reset
+              </button>
+            </div>
+            <div className="proj-sliders">
+              <div className="proj-slider">
+                <label htmlFor="proj-return" className="proj-slider-label">
+                  <span>Yearly return</span>
+                  <strong>{sliderPercentLabel(returnInUse)}</strong>
+                </label>
+                <input
+                  id="proj-return"
+                  type="range"
+                  min={-50}
+                  max={50}
+                  step={0.1}
+                  aria-valuetext={sliderPercentLabel(returnInUse)}
+                  disabled={!data}
+                  value={returnInUse == null ? 0 : onSliderStep(returnInUse, -50, 50, 0.1)}
+                  onChange={(e) => commitSoon({ returnPct: e.target.value })}
+                />
+                <p className="proj-slider-caption">For classes without their own rate</p>
+              </div>
+              <div className="proj-slider">
+                <label htmlFor="proj-saving" className="proj-slider-label">
+                  <span>Saving each month</span>
+                  <strong>{savingInUse == null ? '—' : formatNzd(savingInUse)}</strong>
+                </label>
+                <input
+                  id="proj-saving"
+                  type="range"
+                  min={savingBounds.min}
+                  max={savingBounds.max}
+                  step={savingBounds.step}
+                  aria-valuetext={savingInUse == null ? 'Not set' : formatNzd(savingInUse)}
+                  disabled={!data}
+                  value={savingInUse == null ? savingBounds.min : onSliderStep(savingInUse, savingBounds.min, savingBounds.max, savingBounds.step)}
+                  onChange={(e) => commitSoon({ saving: e.target.value })}
+                />
+                <p className="proj-slider-caption">
+                  {budgetAverageLabel(windowMonths, observedSaving == null ? '—' : formatNzd(observedSaving))}
+                  {canUseBudgetAverage(observedSaving) ? (
+                    <>
+                      {' · '}
+                      <button type="button" className="proj-use-it" onClick={() => commitNow({ saving: budgetAverageInput(observedSaving as number) })}>
+                        use it
+                      </button>
+                    </>
+                  ) : null}
+                </p>
+              </div>
+              <div className="proj-slider">
+                <label htmlFor="proj-growth" className="proj-slider-label">
+                  <span>Saving goes up each year</span>
+                  <strong>{sliderPercentLabel(growthInUse)}</strong>
+                </label>
+                <input
+                  id="proj-growth"
+                  type="range"
+                  min={0}
+                  max={growthSliderMax(growthInUse)}
+                  step={1}
+                  aria-valuetext={sliderPercentLabel(growthInUse)}
+                  disabled={!data}
+                  value={onSliderStep(growthInUse ?? 0, 0, growthSliderMax(growthInUse), 1)}
+                  onChange={(e) => commitSoon({ addGrowth: e.target.value })}
+                />
+                <p className="proj-slider-caption">{yearlyIncreaseCaption(growthInUse)}</p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="btn ghost proj-finetune"
+              aria-expanded={fineOpen}
+              aria-controls={fineOpen ? 'proj-finetune' : undefined}
+              onClick={() => setFineOpen((open) => !open)}
+            >
+              Fine-tune by asset class <span aria-hidden="true">{fineOpen ? '▴' : '▾'}</span>
+            </button>
+
+            {fineOpen ? (
+              <form id="proj-finetune" className="proj-finetune-body" onSubmit={onApply}>
+                <label className="proj-window">
+                  Budget months to average
+                  <select value={form.window} onChange={(e) => commitNow({ window: Number(e.target.value) })}>
+                    {WINDOWS.map((w) => (
+                      <option key={w} value={w}>
+                        Last {w} months
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="table-wrap" style={{ overflowX: 'auto' }}>
+                  <table className="data-table projection-class-inputs">
+                    <thead>
+                      <tr>
+                        <th>Asset class</th>
+                        <th style={{ textAlign: 'right' }}>Today</th>
+                        <th>Yearly return (%)</th>
+                        <th>Added each month (NZD)</th>
+                        <th>Increase each year (%)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {PROJECTION_CLASS_KEYS.map((key) => {
+                        const c = classesByKey.get(key);
+                        return (
+                          <tr key={key}>
+                            <td>
+                              <span className="proj-class-swatch" style={{ background: CLASS_COLOURS[key] }} aria-hidden />
+                              {PROJECTION_CLASS_LABELS[key]}
+                            </td>
+                            <td className="money" style={{ textAlign: 'right' }}>{c ? formatNzd(c.startNzd) : '—'}</td>
+                            <td>
+                              <input
+                                type="number"
+                                step="0.1"
+                                min={-50}
+                                max={50}
+                                inputMode="decimal"
+                                aria-label={`${PROJECTION_CLASS_LABELS[key]} yearly return`}
+                                placeholder={usedReturnHint(c)}
+                                value={form.classReturns[key]}
+                                onChange={(e) => setForm({ ...form, classReturns: { ...form.classReturns, [key]: e.target.value } })}
+                              />
+                            </td>
+                            <td>
+                              <input
+                                type="number"
+                                step="1"
+                                min={-10000000}
+                                max={10000000}
+                                inputMode="decimal"
+                                aria-label={`${PROJECTION_CLASS_LABELS[key]} added each month`}
+                                placeholder={usedAddHint(c)}
+                                value={form.classAdds[key]}
+                                onChange={(e) => setForm({ ...form, classAdds: { ...form.classAdds, [key]: e.target.value } })}
+                              />
+                            </td>
+                            <td>
+                              <input
+                                type="number"
+                                step="1"
+                                min={0}
+                                max={500}
+                                inputMode="decimal"
+                                aria-label={`${PROJECTION_CLASS_LABELS[key]} increase each year`}
+                                placeholder={
+                                  c?.additionGrowthPercentYear == null
+                                    ? 'Default'
+                                    : `${c.additionGrowthPercentYear}%${c.growthSource === 'saved' ? ' saved' : c.growthSource === 'query' ? '' : ' (default)'}`
+                                }
+                                value={form.classGrowth[key]}
+                                onChange={(e) => setForm({ ...form, classGrowth: { ...form.classGrowth, [key]: e.target.value } })}
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {data?.mining && data.mining.status !== 'no_miners' ? (
+                  <MiningPlanFields
+                    mining={data.mining}
+                    fields={form.mining}
+                    onChange={(mining) => setForm({ ...form, mining })}
+                  />
+                ) : null}
+                <div className="row gap" style={{ flexWrap: 'wrap' }}>
+                  <button type="submit" className="btn primary" disabled={loading}>
+                    {loading ? 'Projecting…' : 'Apply'}
+                  </button>
+                  <button type="button" className="btn" onClick={() => void onSaveDefaults()} disabled={loading || savingDefaults}>
+                    Save as my defaults
+                  </button>
+                  {[...classesByKey.values()].some((c) => c.returnSource === 'saved' || c.additionSource === 'saved' || c.growthSource === 'saved') ||
+                  data?.additionGrowthPercentYear?.source === 'saved' ||
+                  Object.keys(data?.mining?.plan ?? {}).some((k) => k !== 'rewardsTo') ? (
+                    <button type="button" className="btn ghost" onClick={() => void onSaveDefaults(true)} disabled={loading || savingDefaults}>
+                      Forget saved rates
+                    </button>
+                  ) : null}
+                </div>
+                {defaultsMsg ? <p className="muted small" role="status">{defaultsMsg}</p> : null}
+              </form>
+            ) : null}
+            {applied.ignored.length ? (
+              <p className="muted small" role="status">
+                Ignored from the link: {applied.ignored.join('; ')}.
               </p>
-              <div className="table-wrap" style={{ overflowX: 'auto' }}>
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Asset class</th>
-                      <th style={{ textAlign: 'right' }}>Today</th>
-                      <th style={{ textAlign: 'right' }}>Return</th>
-                      <th style={{ textAlign: 'right' }}>Added / month</th>
-                      <th style={{ textAlign: 'right' }}>Increase / yr</th>
-                      <th style={{ textAlign: 'right' }}>Added in total</th>
-                      <th style={{ textAlign: 'right' }}>Growth</th>
-                      <th style={{ textAlign: 'right' }}>At the end</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.assetClasses
-                      .filter((c) => Math.abs(c.startNzd) >= 0.005 || Math.abs(c.endNzd) >= 0.005)
-                      .map((c) => (
-                        <tr key={c.key}>
-                          <td>
-                            {c.label}
-                            {c.additionReason ? <div className="muted small">{c.additionReason}</div> : null}
-                          </td>
-                          <td className="money" style={{ textAlign: 'right' }}>{formatNzd(c.startNzd)}</td>
-                          <td style={{ textAlign: 'right' }}>
-                            {pctText(c.annualReturnPercent)}
-                            <div className="muted small">{CLASS_SOURCE_LABEL[c.returnSource]}</div>
-                          </td>
-                          <td className="money" style={{ textAlign: 'right' }}>
-                            {c.monthlyAdditionNzd == null ? '—' : formatNzd(c.monthlyAdditionNzd)}
-                            <div className="muted small">{CLASS_SOURCE_LABEL[c.additionSource]}</div>
-                          </td>
-                          <td style={{ textAlign: 'right' }}>
-                            {pctText(c.additionGrowthPercentYear ?? 0)}
-                            {c.growthSource ? <div className="muted small">{CLASS_SOURCE_LABEL[c.growthSource]}</div> : null}
-                          </td>
-                          <td className="money" style={{ textAlign: 'right' }}>{signedNzd(c.addedNzd)}</td>
-                          <td className="money" style={{ textAlign: 'right' }}>{signedNzd(c.growthNzd)}</td>
-                          <td className="money" style={{ textAlign: 'right' }}>{formatNzd(c.endNzd)}</td>
+            ) : null}
+          </section>
+
+          {data && start && end ? (
+            <div className="proj-more">
+              {data.assetClasses?.some((c) => Math.abs(c.startNzd) >= 0.005 || Math.abs(c.endNzd) >= 0.005) ? (
+                <details className="proj-fold">
+                  <summary>By asset class</summary>
+                  <div className="table-wrap" style={{ overflowX: 'auto' }}>
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Asset class</th>
+                          <th style={{ textAlign: 'right' }}>Today</th>
+                          <th style={{ textAlign: 'right' }}>Return</th>
+                          <th style={{ textAlign: 'right' }}>Added / month</th>
+                          <th style={{ textAlign: 'right' }}>Increase / yr</th>
+                          <th style={{ textAlign: 'right' }}>Added in total</th>
+                          <th style={{ textAlign: 'right' }}>Growth</th>
+                          <th style={{ textAlign: 'right' }}>At the end</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.assetClasses
+                          .filter((c) => Math.abs(c.startNzd) >= 0.005 || Math.abs(c.endNzd) >= 0.005)
+                          .map((c) => (
+                            <tr key={c.key}>
+                              <td>
+                                <span className="proj-class-swatch" style={{ background: CLASS_COLOURS[c.key] }} aria-hidden />
+                                {c.label}
+                                {c.additionReason ? <div className="muted small">{c.additionReason}</div> : null}
+                              </td>
+                              <td className="money" style={{ textAlign: 'right' }}>{formatNzd(c.startNzd)}</td>
+                              <td style={{ textAlign: 'right' }}>
+                                {pctText(c.annualReturnPercent)}
+                                <div className="muted small">{CLASS_SOURCE_LABEL[c.returnSource]}</div>
+                              </td>
+                              <td className="money" style={{ textAlign: 'right' }}>
+                                {c.monthlyAdditionNzd == null ? '—' : formatNzd(c.monthlyAdditionNzd)}
+                                <div className="muted small">{CLASS_SOURCE_LABEL[c.additionSource]}</div>
+                              </td>
+                              <td style={{ textAlign: 'right' }}>
+                                {pctText(c.additionGrowthPercentYear ?? 0)}
+                                {c.growthSource ? <div className="muted small">{CLASS_SOURCE_LABEL[c.growthSource]}</div> : null}
+                              </td>
+                              <td className="money" style={{ textAlign: 'right' }}>{signedNzd(c.addedNzd)}</td>
+                              <td className="money" style={{ textAlign: 'right' }}>{signedNzd(c.growthNzd)}</td>
+                              <td className="money" style={{ textAlign: 'right' }}>{formatNzd(c.endNzd)}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              ) : null}
+
+              {data.mining && data.mining.status !== 'no_miners' ? <MiningResults mining={data.mining} months={data.horizonMonths} /> : null}
+
+              <details className="proj-fold">
+                <summary>Assumptions</summary>
+                {a ? (
+                  <ul className="security-list projection-assumptions">
+                    <Assumption title="Default yearly return (classes without their own)" a={a.annualReturnPercent} value={a.annualReturnPercent.value == null ? '—' : `${a.annualReturnPercent.value}%`} />
+                    <Assumption title="Monthly saving" a={a.monthlySavingNzd} value={savingValue == null ? '—' : formatNzd(savingValue)} />
+                    <Assumption title="KiwiSaver contributions" a={a.kiwiSaverContributionMonthlyNzd} value={a.kiwiSaverContributionMonthlyNzd.value == null ? '—' : `${formatNzd(a.kiwiSaverContributionMonthlyNzd.value)}/mo`} />
+                    <Assumption title="Inflation" a={a.inflationPercent} value={a.inflationPercent.value == null ? 'Not applied' : `${a.inflationPercent.value}%`} />
+                    <Assumption title="Dividends" a={a.dividends} value="In saving" />
+                    <Assumption title="Savings goals" a={a.savingsGoals} value="Not used" />
+                  </ul>
+                ) : null}
+                <p className="muted small">
+                  Budget months used: {a?.monthlySavingNzd.windowStart} to {a?.monthlySavingNzd.windowEnd} · income{' '}
+                  {a?.monthlySavingNzd.incomeNzd == null ? '—' : formatNzd(a.monthlySavingNzd.incomeNzd)} · spending{' '}
+                  {a?.monthlySavingNzd.spendingNzd == null ? '—' : formatNzd(a.monthlySavingNzd.spendingNzd)} ·{' '}
+                  {a?.monthlySavingNzd.monthsWithActivity ?? 0} month(s) with activity.
+                  {a?.monthlySavingNzd.expectedPayMonthlyNzd != null ? (
+                    <>
+                      {' '}Saved pay sources: {formatNzd(a.monthlySavingNzd.expectedPayMonthlyNzd)}/mo
+                      {a.monthlySavingNzd.usedExpectedPay ? ' (used, because no income is recorded in the window).' : ' (not used — recorded income is used instead).'}
+                    </>
+                  ) : null}
+                </p>
+                {flat && a ? (
+                  <p className="projection-flat" role="note">
+                    {flatLineNote({
+                      annualReturnPercent: a.annualReturnPercent.value,
+                      compoundingAssetsNzd: data.starting.compoundingAssetsNzd,
+                      monthlySavingNzd: savingValue ?? null,
+                      debtHasSavedPayment: data.debts.some((d) => d.stepped),
+                    })}
+                  </p>
+                ) : null}
+                <p className="muted small">{data.note}</p>
+              </details>
+
+              {data.debts.length > 0 || data.propertyMortgage.balanceNzd > 0 || data.bankLiabilities.balanceNzd !== 0 ? (
+                <details className="proj-fold">
+                  <summary>Debts</summary>
+                  <div className="table-wrap">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Debt</th>
+                          <th>Today</th>
+                          <th>At the end</th>
+                          <th>Rate</th>
+                          <th>Payment</th>
+                          <th>How it&apos;s projected</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.debts.map((d) => (
+                          <tr key={d.id}>
+                            <td>{d.name}</td>
+                            <td className="money">{formatNzd(d.startingBalanceNzd)}</td>
+                            <td className="money">{formatNzd(d.endingBalanceNzd)}</td>
+                            <td className="muted small">
+                              {d.annualRatePercent == null ? '—' : `${d.annualRatePercent}% / ${d.interestPeriod ?? 'year'}`}
+                            </td>
+                            <td className="money">{d.actualPaymentNzd == null ? '—' : `${formatNzd(d.actualPaymentNzd)}/mo`}</td>
+                            <td className="muted small">
+                              {d.reason ?? (d.paysDown === false ? 'Payment doesn’t cover interest — balance grows.' : 'Paid down monthly.')}
+                            </td>
+                          </tr>
+                        ))}
+                        {data.propertyMortgage.balanceNzd > 0 ? (
+                          <tr>
+                            <td>Property mortgage</td>
+                            <td className="money">{formatNzd(data.propertyMortgage.balanceNzd)}</td>
+                            <td className="money">{formatNzd(data.propertyMortgage.balanceNzd)}</td>
+                            <td className="muted small">—</td>
+                            <td className="money">—</td>
+                            <td className="muted small">{data.propertyMortgage.reason}</td>
+                          </tr>
+                        ) : null}
+                        {data.bankLiabilities.balanceNzd !== 0 ? (
+                          <tr>
+                            <td>Credit cards &amp; loans</td>
+                            <td className="money">{formatNzd(data.bankLiabilities.balanceNzd)}</td>
+                            <td className="money">{formatNzd(data.bankLiabilities.balanceNzd)}</td>
+                            <td className="muted small">—</td>
+                            <td className="money">—</td>
+                            <td className="muted small">{data.bankLiabilities.reason}</td>
+                          </tr>
+                        ) : null}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              ) : null}
+
+              <details className="proj-fold">
+                <summary>Year by year</summary>
+                <div className="table-wrap table-wrap--scroll" tabIndex={0} aria-label="Projection year by year">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Net worth</th>
+                        <th>Assets</th>
+                        <th>Savings added</th>
+                        <th>Debt</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {yearly.map((p) => (
+                        <tr key={p.date}>
+                          <td className="muted small">{formatDate(p.date)}</td>
+                          <td className="money">{formatNzd(p.netWorthNzd)}</td>
+                          <td className="money">{formatNzd(p.compoundingAssetsNzd)}</td>
+                          <td className="money">{p.savingsAddedNzd == null ? '—' : formatNzd(p.savingsAddedNzd)}</td>
+                          <td className="money">{formatNzd(p.debtOutstandingNzd)}</td>
                         </tr>
                       ))}
-                  </tbody>
-                </table>
-              </div>
-              <p className="muted small">Classes with nothing in them and nothing added are hidden. Set them in Scenario above.</p>
-            </section>
-          ) : null}
-
-          {data.mining && data.mining.status !== 'no_miners' ? <MiningResults mining={data.mining} months={data.horizonMonths} /> : null}
-
-          <section className="panel">
-            <h3>Assumptions</h3>
-            <p className="section-desc">Where every number in this projection comes from.</p>
-            {a ? (
-              <ul className="security-list projection-assumptions">
-                <Assumption title="Default yearly return (classes without their own)" a={a.annualReturnPercent} value={a.annualReturnPercent.value == null ? '—' : `${a.annualReturnPercent.value}%`} />
-                <Assumption title="Monthly saving" a={a.monthlySavingNzd} value={savingValue == null ? '—' : formatNzd(savingValue)} />
-                <Assumption title="KiwiSaver contributions" a={a.kiwiSaverContributionMonthlyNzd} value={a.kiwiSaverContributionMonthlyNzd.value == null ? '—' : `${formatNzd(a.kiwiSaverContributionMonthlyNzd.value)}/mo`} />
-                <Assumption title="Inflation" a={a.inflationPercent} value={a.inflationPercent.value == null ? 'Not applied' : `${a.inflationPercent.value}%`} />
-                <Assumption title="Dividends" a={a.dividends} value="In saving" />
-                <Assumption title="Savings goals" a={a.savingsGoals} value="Not used" />
-              </ul>
-            ) : null}
-            <p className="muted small">
-              Budget months used: {a?.monthlySavingNzd.windowStart} to {a?.monthlySavingNzd.windowEnd} · income{' '}
-              {a?.monthlySavingNzd.incomeNzd == null ? '—' : formatNzd(a.monthlySavingNzd.incomeNzd)} · spending{' '}
-              {a?.monthlySavingNzd.spendingNzd == null ? '—' : formatNzd(a.monthlySavingNzd.spendingNzd)} ·{' '}
-              {a?.monthlySavingNzd.monthsWithActivity ?? 0} month(s) with activity.
-              {a?.monthlySavingNzd.expectedPayMonthlyNzd != null ? (
-                <>
-                  {' '}Saved pay sources: {formatNzd(a.monthlySavingNzd.expectedPayMonthlyNzd)}/mo
-                  {a.monthlySavingNzd.usedExpectedPay ? ' (used, because no income is recorded in the window).' : ' (not used — recorded income is used instead).'}
-                </>
-              ) : null}
-            </p>
-          </section>
-
-          {data.debts.length > 0 || data.propertyMortgage.balanceNzd > 0 || data.bankLiabilities.balanceNzd !== 0 ? (
-            <section className="panel">
-              <h3>Debts</h3>
-              <div className="table-wrap">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Debt</th>
-                      <th>Today</th>
-                      <th>At the end</th>
-                      <th>Rate</th>
-                      <th>Payment</th>
-                      <th>How it&apos;s projected</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.debts.map((d) => (
-                      <tr key={d.id}>
-                        <td>{d.name}</td>
-                        <td className="money">{formatNzd(d.startingBalanceNzd)}</td>
-                        <td className="money">{formatNzd(d.endingBalanceNzd)}</td>
-                        <td className="muted small">
-                          {d.annualRatePercent == null ? '—' : `${d.annualRatePercent}% / ${d.interestPeriod ?? 'year'}`}
-                        </td>
-                        <td className="money">{d.actualPaymentNzd == null ? '—' : `${formatNzd(d.actualPaymentNzd)}/mo`}</td>
-                        <td className="muted small">
-                          {d.reason ?? (d.paysDown === false ? 'Payment doesn’t cover interest — balance grows.' : 'Paid down monthly.')}
-                        </td>
-                      </tr>
-                    ))}
-                    {data.propertyMortgage.balanceNzd > 0 ? (
-                      <tr>
-                        <td>Property mortgage</td>
-                        <td className="money">{formatNzd(data.propertyMortgage.balanceNzd)}</td>
-                        <td className="money">{formatNzd(data.propertyMortgage.balanceNzd)}</td>
-                        <td className="muted small">—</td>
-                        <td className="money">—</td>
-                        <td className="muted small">{data.propertyMortgage.reason}</td>
-                      </tr>
-                    ) : null}
-                    {data.bankLiabilities.balanceNzd !== 0 ? (
-                      <tr>
-                        <td>Credit cards &amp; loans</td>
-                        <td className="money">{formatNzd(data.bankLiabilities.balanceNzd)}</td>
-                        <td className="money">{formatNzd(data.bankLiabilities.balanceNzd)}</td>
-                        <td className="muted small">—</td>
-                        <td className="money">—</td>
-                        <td className="muted small">{data.bankLiabilities.reason}</td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          ) : null}
-
-          <section className="panel">
-            <h3>Year by year</h3>
-            <div className="table-wrap table-wrap--scroll" tabIndex={0} aria-label="Projection year by year">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Net worth</th>
-                    <th>Assets</th>
-                    <th>Savings added</th>
-                    <th>Debt</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {yearly.map((p) => (
-                    <tr key={p.date}>
-                      <td className="muted small">{formatDate(p.date)}</td>
-                      <td className="money">{formatNzd(p.netWorthNzd)}</td>
-                      <td className="money">{formatNzd(p.compoundingAssetsNzd)}</td>
-                      <td className="money">{p.savingsAddedNzd == null ? '—' : formatNzd(p.savingsAddedNzd)}</td>
-                      <td className="money">{formatNzd(p.debtOutstandingNzd)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                    </tbody>
+                  </table>
+                </div>
+                <details className="projection-formula">
+                  <summary className="muted small">How it&apos;s calculated</summary>
+                  <ul className="muted small">
+                    <li>Net worth = {data.formula.netWorth}</li>
+                    <li>Assets each month = {data.formula.compoundingAssets}</li>
+                    <li>Monthly saving = {data.formula.monthlySaving}</li>
+                    <li>Debt: {data.formula.debt}</li>
+                  </ul>
+                </details>
+              </details>
             </div>
-            <details className="projection-formula">
-              <summary className="muted small">How it&apos;s calculated</summary>
-              <ul className="muted small">
-                <li>Net worth = {data.formula.netWorth}</li>
-                <li>Assets each month = {data.formula.compoundingAssets}</li>
-                <li>Monthly saving = {data.formula.monthlySaving}</li>
-                <li>Debt: {data.formula.debt}</li>
-              </ul>
-            </details>
-          </section>
+          ) : null}
         </>
-      ) : null}
-      <section className="stack" id="calculators" aria-labelledby="calculators-heading">
-        <h2 id="calculators-heading" className="page-title projection-calculators-title">Calculators</h2>
-        <CompoundInterestCalculator startingAmountNzd={data?.starting.compoundingAssetsNzd ?? null} />
-      </section>
+      )}
     </div>
   );
 }
