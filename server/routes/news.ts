@@ -14,6 +14,7 @@ import {
   normalizeHoldingRow,
   planNewsSections,
 } from '../news/sections.ts';
+import { readNewsState, saveNewsState } from '../news/state.ts';
 
 const router = Router();
 
@@ -30,13 +31,43 @@ function uid(req: { scopeUserId?: string; user?: { id?: string } | null }): stri
     || '';
 }
 
+function includeClosedQuery(raw: unknown, saved: boolean): boolean {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (value === '1' || value === 'true') return true;
+  if (value === '0' || value === 'false') return false;
+  return saved;
+}
+
+router.get('/state', async (req, res) => {
+  res.json(await readNewsState(uid(req)));
+});
+
+router.put('/state', async (req, res) => {
+  const body = req.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    res.status(400).json({ error: 'News settings must be an object' });
+    return;
+  }
+  const saved = await saveNewsState(uid(req), body);
+  if (!saved) {
+    res.status(404).json({ error: 'Account not found' });
+    return;
+  }
+  res.json(saved);
+});
+
 router.get('/', async (req, res) => {
   const refresh = req.query.refresh === '1' || req.query.refresh === 'true';
   try {
     const db = await getDb();
+    const prefs = await readNewsState(uid(req));
+    const includeClosed = includeClosedQuery(req.query.includeClosed, prefs.includeClosedPositions);
     const rows = queryAll<Record<string, unknown>>(db, HOLDINGS_FOR_NEWS_SQL, [uid(req)]);
     const sections = await loadNewsSections(
-      planNewsSections(rows.map((row) => normalizeHoldingRow(row))),
+      planNewsSections(
+        rows.map((row) => normalizeHoldingRow(row)),
+        { includeClosed },
+      ),
       { refresh },
     );
     const payload: NewsFeedResponse = {

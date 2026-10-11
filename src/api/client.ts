@@ -17,6 +17,7 @@ import type {
   DonationWriteBody,
   HomeMonthSnapshot,
   NewsFeedResponse,
+  NewsUserState,
   ProjectionResponse,
   PayeeSetting,
   PaySource,
@@ -1528,12 +1529,17 @@ export const api = {
       }),
   },
   news: {
-    feed: (opts?: { refresh?: boolean }) => {
+    feed: (opts?: { refresh?: boolean; includeClosed?: boolean }) => {
       const q = new URLSearchParams();
       if (opts?.refresh) q.set('refresh', '1');
+      if (opts?.includeClosed === true) q.set('includeClosed', '1');
+      if (opts?.includeClosed === false) q.set('includeClosed', '0');
       const search = q.toString();
       return req<NewsFeedResponse>(`/news${search ? `?${search}` : ''}`);
     },
+    state: () => req<NewsUserState>('/news/state'),
+    saveState: (body: Partial<NewsUserState>) =>
+      req<NewsUserState>('/news/state', { method: 'PUT', body: JSON.stringify(body) }),
   },
 };
 
