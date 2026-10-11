@@ -129,8 +129,8 @@ export function CompoundInterestCalculator({ startingAmountNzd }: { startingAmou
     const pts = [start, ...result.rows.map((r) => ({ at: addMonths(r.months), balance: r.balance }))];
     const contrib = [{ at: start.at, value: start.balance }, ...result.rows.map((r) => ({ at: addMonths(r.months), value: r.contributed }))];
     return [
-      { key: 'balance', label: 'Balance', colour: '#3d9a6a', points: pts.map((p) => ({ at: p.at, value: p.balance })) },
-      { key: 'contributed', label: 'You put in', colour: '#4a8fd4', points: contrib },
+      { key: 'balance', label: 'With growth', colour: '#3d9a6a', points: pts.map((p) => ({ at: p.at, value: p.balance })) },
+      { key: 'contributed', label: 'You put in', colour: '#4a8fd4', dashed: true, points: contrib },
     ];
   }, [result, f.principal]);
 
@@ -139,12 +139,37 @@ export function CompoundInterestCalculator({ startingAmountNzd }: { startingAmou
   const span = `${years ? `${years} year${years === 1 ? '' : 's'}` : ''}${years && months ? ' ' : ''}${months ? `${months} month${months === 1 ? '' : 's'}` : ''}` || 'no time';
 
   return (
-    <section className="panel" id="compound-interest" aria-labelledby="compound-heading">
-      <h3 id="compound-heading">Compound interest calculator</h3>
-      <p className="section-desc">
-        What a starting amount and regular contributions grow to when interest is added to the balance and then earns
-        interest itself. Uses only the numbers you enter — not a forecast or advice.
+    <div className="stack" id="calculators">
+    <section className="panel proj-chart-card" id="compound-interest" aria-labelledby="compound-heading">
+      <p id="compound-heading" className="proj-kicker">After {span}</p>
+      <p className="proj-figure">{formatNzd(result.futureValue)}</p>
+      <p className="proj-breakdown">
+        You put in {formatNzd(result.totalContributed)} · interest {formatNzd(result.totalInterest)}
+        {result.totalTax > 0 || result.totalFees > 0 ? ` · tax and fees ${formatNzd(result.totalTax + result.totalFees)}` : ''}
+        {' · '}
+        {result.effectiveAnnualRatePct}% a year before tax and fees
       </p>
+      {result.rows.length > 0 ? (
+        <AssetLineChart
+          series={series}
+          title="Balance over time"
+          hideTitle
+          emptyHint="Nothing to plot yet."
+          resolution="month"
+          fullWidth
+          foregroundKey="balance"
+          markers={false}
+          zeroBaseline
+          moneyAxis
+          height={280}
+        />
+      ) : (
+        <p className="muted">Enter a period to see the balance.</p>
+      )}
+    </section>
+    <section className="panel proj-scenario" aria-label="Compound interest">
+      <h3 className="proj-scenario-title">Compound interest</h3>
+      <p className="muted small proj-tagline">Uses only the numbers you enter.</p>
       <div className="form-grid">
         <label>
           Starting amount (NZD)
@@ -238,35 +263,10 @@ export function CompoundInterestCalculator({ startingAmountNzd }: { startingAmou
         </label>
       </div>
 
-      <div className="grid cards" style={{ marginTop: '1rem' }}>
-        <div className="card">
-          <p className="eyebrow">After {span}</p>
-          <p className="stat-value">{formatNzd(result.futureValue)}</p>
-        </div>
-        <div className="card">
-          <p className="eyebrow">You put in</p>
-          <p className="stat-value">{formatNzd(result.totalContributed)}</p>
-        </div>
-        <div className="card">
-          <p className="eyebrow">{result.totalTax > 0 || result.totalFees > 0 ? 'Interest after tax and fees' : 'Interest earned'}</p>
-          <p className="stat-value">{formatNzd(result.totalInterest)}</p>
-          <p className="muted small">Effective yearly rate {result.effectiveAnnualRatePct}% before tax and fees</p>
-        </div>
-        {result.totalTax > 0 || result.totalFees > 0 ? (
-          <div className="card">
-            <p className="eyebrow">Tax and fees</p>
-            <p className="stat-value">{formatNzd(result.totalTax + result.totalFees)}</p>
-            <p className="muted small">
-              Tax {formatNzd(result.totalTax)} · fees {formatNzd(result.totalFees)} · interest before them {formatNzd(result.grossInterest)}
-            </p>
-          </div>
-        ) : null}
-      </div>
-
       {result.rows.length > 0 ? (
-        <>
-          <AssetLineChart series={series} title="Balance over time (NZD)" emptyHint="Nothing to plot yet." resolution="month" fullWidth foregroundKey="balance" />
-          <div className="table-wrap" style={{ overflowX: 'auto', marginTop: '0.75rem' }}>
+        <details className="proj-fold">
+          <summary>Year by year</summary>
+          <div className="table-wrap" style={{ overflowX: 'auto' }}>
             <table className="data-table">
               <thead>
                 <tr>
@@ -292,12 +292,12 @@ export function CompoundInterestCalculator({ startingAmountNzd }: { startingAmou
               </tbody>
             </table>
           </div>
-        </>
+        </details>
       ) : null}
       <p className="muted small" style={{ marginTop: '0.5rem' }}>
-        Tax is taken each time interest is credited; fees come off the balance each period. Tax and fees are
-        totals so far in the table. Not tax advice — check your PIR or RWT rate with IRD.
+        Tax is taken each time interest is credited; fees come off the balance. Not tax advice.
       </p>
     </section>
+    </div>
   );
 }

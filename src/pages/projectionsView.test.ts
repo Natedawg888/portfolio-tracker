@@ -7,13 +7,28 @@ import { clearPageCache, readPageCache, syncPageCacheUser, writePageCache } from
 import { formatNzd } from '../api/client.ts';
 import { setMoneyHidden } from '../lib/privacy.tsx';
 import {
+  additionsAreEven,
+  budgetAverageInput,
+  budgetAverageLabel,
+  canUseBudgetAverage,
   classNumbers,
+  growthSliderMax,
+  horizonPhrase,
+  horizonPill,
   inputsToParams,
   flatLineNote,
+  projectionBreakdown,
   projectionCacheKey,
+  projectionFigures,
   readInputs,
+  sampleProjectionPoints,
+  savingSliderBounds,
   scenarioFrameFromSearch,
   scenarioRequestFailure,
+  sliderPercentLabel,
+  todayPlusAddedPoints,
+  typedOrInUse,
+  yearlyIncreaseCaption,
 } from './projectionsView.ts';
 
 function assert(condition: boolean, message: string): void {
@@ -154,5 +169,121 @@ try {
   assert(g.classGrowth.crypto === '' && g.ignored.some((m) => m.startsWith('Crypto yearly increase')), 'out of range dropped');
   assert(inputsToParams(g).get('growShares') === '100', 'written back to the link');
 }
+
+assert(horizonPhrase(12) === '1 year', '12 months reads as 1 year');
+assert(horizonPhrase(120) === '10 years', '120 months reads as 10 years');
+assert(horizonPhrase(24) === '2 years', 'the 2-year horizon keeps its label');
+assert(horizonPill(12) === '1Y' && horizonPill(24) === '2Y' && horizonPill(360) === '30Y', 'range pills use year labels');
+
+const withClasses = projectionFigures({
+  startNetWorthNzd: 33033,
+  endNetWorthNzd: 40000,
+  classAddedNzd: [1000, -200],
+  classGrowthNzd: [500, 250.5],
+  savingsAddedNzd: 9999,
+  kiwiSaverAddedNzd: 100,
+});
+assert(withClasses.todayNzd === 33033 && withClasses.endNzd === 40000, 'today and the end come from the points');
+assert(withClasses.youAddNzd === 800, 'you add is the class additions, not the saving field');
+assert(withClasses.growthNzd === 750.5, 'growth is the sum of class growth');
+
+const noClasses = projectionFigures({
+  startNetWorthNzd: 1000,
+  endNetWorthNzd: 1500,
+  classAddedNzd: null,
+  classGrowthNzd: null,
+  savingsAddedNzd: 400,
+  kiwiSaverAddedNzd: 50,
+});
+assert(noClasses.youAddNzd === 450, 'without classes, you add is saving plus KiwiSaver');
+assert(noClasses.growthNzd === null, 'growth stays unknown when there is no class breakdown');
+
+const unknownAdd = projectionFigures({
+  startNetWorthNzd: 10,
+  endNetWorthNzd: 10,
+  classAddedNzd: null,
+  classGrowthNzd: [0],
+  savingsAddedNzd: null,
+  kiwiSaverAddedNzd: null,
+});
+assert(unknownAdd.youAddNzd === null, 'a missing saving figure is not shown as zero');
+assert(
+  projectionFigures({
+    startNetWorthNzd: 10,
+    endNetWorthNzd: 10,
+    classAddedNzd: [Number.NaN],
+    classGrowthNzd: [1],
+    savingsAddedNzd: 5,
+    kiwiSaverAddedNzd: null,
+  }).youAddNzd === null,
+  'a non-finite class addition makes you-add unavailable',
+);
+
+assert(
+  projectionBreakdown(
+    { todayNzd: 33033, endNzd: 33033, youAddNzd: 0, growthNzd: 0 },
+    (value) => (value == null ? '—' : `$${value}`),
+  ) === 'Today $33033 · you add $0 · growth $0',
+  'the breakdown line names today, what you add, and growth',
+);
+assert(
+  projectionBreakdown(
+    { todayNzd: null, endNzd: null, youAddNzd: null, growthNzd: null },
+    (value) => (value == null ? '—' : String(value)),
+  ) === 'Today — · you add — · growth —',
+  'missing figures stay em dashes',
+);
+
+const monthly = [
+  { date: '2026-10-01', monthIndex: 0, netWorthNzd: 1000 },
+  { date: '2026-11-01', monthIndex: 1, netWorthNzd: 1100 },
+  { date: '2027-10-01', monthIndex: 12, netWorthNzd: 2000 },
+];
+assert(sampleProjectionPoints(monthly, 12).length === 3, 'a one-year line keeps every month');
+const decade = Array.from({ length: 121 }, (_, monthIndex) => ({ monthIndex, date: `m${monthIndex}` }));
+const sampled = sampleProjectionPoints(decade, 120);
+assert(sampled.length === 11 && sampled[0].monthIndex === 0 && sampled.at(-1)?.monthIndex === 120, 'a ten-year line keeps one point a year');
+assert(sampled.every((point) => point.monthIndex % 12 === 0), 'the yearly sample has no mid-year points');
+
+const evenLine = todayPlusAddedPoints(monthly, 600, true);
+assert(evenLine?.[0].value === 1000 && evenLine?.[1].value === 1050 && evenLine?.[2].value === 1600, 'even additions ramp from today to today plus the total');
+const uneven = todayPlusAddedPoints(monthly, 600, false);
+assert(uneven?.length === 2 && uneven[0].value === 1000 && uneven[1].value === 1600, 'uneven additions plot only the two real endpoints');
+assert(todayPlusAddedPoints(monthly, null, true) === null, 'an unknown total is not drawn as zero');
+assert(todayPlusAddedPoints([], 0, true) === null, 'no points means no contributions line');
+
+assert(
+  additionsAreEven({ defaultGrowthPercent: 0, classGrowthPercents: [0, null], hasMonthlySchedule: false }),
+  'a constant monthly amount is an even ramp',
+);
+assert(
+  !additionsAreEven({ defaultGrowthPercent: 10, classGrowthPercents: [0], hasMonthlySchedule: false }),
+  'a yearly step-up is not treated as even',
+);
+assert(
+  !additionsAreEven({ defaultGrowthPercent: 0, classGrowthPercents: [0], hasMonthlySchedule: true }),
+  'a mining schedule is not treated as even',
+);
+
+assert(typedOrInUse('', 4) === 4, 'a blank field shows the figure already in use');
+assert(typedOrInUse('7.5', 4) === 7.5, 'a typed value wins over the figure in use');
+assert(typedOrInUse('nope', null) === null, 'an unreadable field with nothing in use stays blank');
+assert(sliderPercentLabel(null) === '—', 'a missing percent is an em dash');
+assert(sliderPercentLabel(0) === '0%' && sliderPercentLabel(5.04) === '5%' && sliderPercentLabel(5.25) === '5.3%', 'percent labels round to one decimal');
+assert(growthSliderMax(0) === 100 && growthSliderMax(150) === 150 && growthSliderMax(900) === 500, 'the step-up slider grows with the value, up to the API limit');
+assert(yearlyIncreaseCaption(0) === 'Same amount every year', 'zero step-up says the amount stays the same');
+assert(yearlyIncreaseCaption(25) === 'Steps up by this much each year', 'a positive step-up says so');
+assert(yearlyIncreaseCaption(null) === 'Same amount every year', 'an unknown step-up uses the zero caption');
+
+const bounds = savingSliderBounds(0, null);
+assert(bounds.min === 0 && bounds.max >= 2000 && bounds.step > 0, 'a zero saving slider still reaches upward');
+const wide = savingSliderBounds(8000, 1500);
+assert(wide.min <= 0 && wide.max >= 8000, 'the slider includes the amount in use');
+const negative = savingSliderBounds(-320, 100);
+assert(negative.min <= -320 && negative.max >= 2000, 'a negative saving stays on the slider');
+assert(budgetAverageLabel(3, '$420') === 'Budget average (last 3 months): $420', 'the budget caption names the window and the amount');
+assert(budgetAverageLabel(1, '—') === 'Budget average (last 1 month): —', 'a one-month window stays singular');
+assert(canUseBudgetAverage(420) && !canUseBudgetAverage(null), 'use-it needs a real budget average');
+assert(budgetAverageInput(420.126) === '420.13', 'the budget average is applied in cents');
 
 console.log('projections view tests passed');

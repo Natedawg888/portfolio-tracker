@@ -34,6 +34,14 @@ assert(
   painted.map((series) => series.key).join(',') === 'assets,saved,netWorth',
   'net worth is painted last so it stays visible',
 );
+const anchored = computeYDomain([33_033, 33_033], true);
+assert(anchored.vMin === 0, 'a zero baseline starts at 0');
+assert(anchored.vMax > 33_033, 'a zero baseline leaves room above a flat line');
+const stillZoomed = computeYDomain([33_033, 33_033]);
+assert(stillZoomed.vMin > 30_000, 'without a zero baseline a flat balance stays zoomed');
+const negativeBaseline = computeYDomain([-1_000, 5_000], true);
+assert(negativeBaseline.vMin < 0, 'a zero baseline still shows negative values');
+
 const unchanged = seriesPaintOrder([{ key: 'balance' }, { key: 'contributions' }]);
 assert(
   unchanged.map((series) => series.key).join(',') === 'balance,contributions',
