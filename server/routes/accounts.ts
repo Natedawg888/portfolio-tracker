@@ -6,6 +6,7 @@ import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { requireUserId } from '../lib/userScope.ts';
 import { CHARITY_SLUG, resolveCategoryIdOrSlug } from '../lib/categories.ts';
 import { createCategoryPredictor } from '../lib/categoryPredict.ts';
+import { suggestCategories } from '../lib/categorySuggest.ts';
 import { getDb, queryAll, queryOne, run, newId } from '../db/index.ts';
 import { coerceAkahuBalance } from '../akahu/sync.ts';
 import { TXN_SYNC_FROM_DATE } from '../akahu/syncTransactions.ts';
@@ -166,6 +167,32 @@ router.get('/transactions', async (req: AuthedRequest, res) => {
     to ? [userId, from, to] : [userId, from],
   );
   res.json(rows.map(mapTransaction));
+});
+
+/**
+ * Category suggestions for uncategorised transactions in [from, to] (Budget triage).
+ * Read-only: GET /accounts/transactions/suggestions?from=YYYY-MM-DD&to=YYYY-MM-DD
+ */
+router.get('/transactions/suggestions', async (req: AuthedRequest, res) => {
+  const userId = requireUserId(req, res);
+  if (!userId) return;
+  const ymd = (v: unknown) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+  const from = ymd(req.query.from) ?? TXN_SYNC_FROM_DATE;
+  const to = ymd(req.query.to);
+  if (!to) {
+    res.status(400).json({ error: 'to must be YYYY-MM-DD' });
+    return;
+  }
+  const db = await getDb();
+  const rows = queryAll<{ id: string; merchant: string | null; description: string | null; amount: number }>(
+    db,
+    `SELECT id, merchant, description, amount FROM transactions
+     WHERE user_id = ? AND category_id IS NULL AND date >= ? AND date <= ?
+     ORDER BY date DESC
+     LIMIT 500`,
+    [userId, from, to],
+  );
+  res.json(suggestCategories(db, userId, rows));
 });
 
 router.post('/transactions', async (req: AuthedRequest, res) => {
