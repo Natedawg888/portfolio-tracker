@@ -183,7 +183,6 @@ export async function computeNetWorth(
   let cryptoMarket = 0;
   let cryptoHaveMarket = false;
   let gominingEst = 0;
-  let gominingHasEst = false;
   let artVal = 0;
   let artHas = false;
   let metalsCost = 0;
@@ -225,6 +224,17 @@ export async function computeNetWorth(
     return v != null && Number.isFinite(v) && v > 0 ? v : 0;
   };
 
+  /**
+   * Closed only when a quantity was stored and is not positive.
+   * Null is "not recorded" (a cost-basis holding). Number(null) is 0, so
+   * `!(Number(qty) > 0)` would drop those holdings as if they had been sold.
+   */
+  const isClosedQuantity = (qty: unknown): boolean => {
+    if (qty == null) return false;
+    const n = Number(qty);
+    return Number.isFinite(n) && n <= 0;
+  };
+
   for (const h of holdings) {
     const rawCost = h.cost_basis_nzd;
     const cost =
@@ -235,8 +245,8 @@ export async function computeNetWorth(
 
     switch (h.asset_class) {
       case 'stock': {
-        if (!(Number(h.shares) > 0)) {
-          // Closed position (0 shares): only what Akahu still reports for it, never its cost.
+        if (isClosedQuantity(h.shares)) {
+          // Explicit 0 shares: only what Akahu still reports, never the old cost.
           const left = closedPositionValue(h.notes);
           // Same in both totals, so it counts whether or not other lines have a quote.
           stocksMarket += left;
@@ -257,7 +267,7 @@ export async function computeNetWorth(
         break;
       }
       case 'crypto': {
-        if (!(Number(h.amount) > 0)) {
+        if (isClosedQuantity(h.amount)) {
           const left = closedPositionValue(h.notes);
           // Same in both totals, so it counts whether or not other lines have a quote.
           cryptoMarket += left;
@@ -281,7 +291,6 @@ export async function computeNetWorth(
         if (h.estimated_value_nzd != null) {
           const v = Number(h.estimated_value_nzd);
           gominingEst += v;
-          gominingHasEst = true;
           lineValue = v;
         } else {
           gominingEst += cost;

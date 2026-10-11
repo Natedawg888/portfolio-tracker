@@ -41,7 +41,14 @@ quote('STOCK:QYLD', 33);
 quote('STOCK:TSLA', 1.37, 'Akahu total NZD 0.77 USD → 1.37 NZD @ 1.78 (quantity unknown; price holds total NZD)');
 quote('CRYPTO:BTC', 0.11, 'Akahu total NZD 0.06 USD → 0.11 NZD @ 1.78 (quantity unknown; price holds total NZD)');
 
-const holding = (id: string, cls: 'stock' | 'crypto', sym: string, qty: number, cost: number, notes: string | null) =>
+const holding = (
+  id: string,
+  cls: 'stock' | 'crypto',
+  sym: string,
+  qty: number | null,
+  cost: number,
+  notes: string | null,
+) =>
   run(
     db,
     `INSERT INTO holdings (id, user_id, asset_class, name, symbol, shares, asset, amount, cost_basis_nzd, notes, created_at, updated_at)
@@ -51,15 +58,18 @@ const holding = (id: string, cls: 'stock' | 'crypto', sym: string, qty: number, 
   );
 holding('qyld', 'stock', 'QYLD', 0.64, 135.1, null);
 holding('tsla', 'stock', 'TSLA', 0, 914.45, 'Akahu market value: 0.77 USD → 1.37 NZD @ 1.78 (frankfurter)');
+holding('cost_only', 'stock', 'EXAMPLE', null, 5000, null);
 holding('btc_sold', 'crypto', 'BTC', 0, 23.12, 'Akahu market value: 0.06 USD → 0.11 NZD @ 1.78 (frankfurter)');
 holding('xrp_sold', 'crypto', 'XRP', 0, 36.72, null);
 holding('btc_manual', 'crypto', 'BTC', 0.001, 3.18, null);
+holding('eth_cost', 'crypto', 'ETH', null, 40, null);
 
 const nw = await computeNetWorth(db, user, async () => ({ ok: true, totalNzd: 0, items: [], complete: true }) as never);
 
 // QYLD 0.64 × 33 = 21.12, plus Tesla's own 1.37 — not Tesla's 914.45 cost.
-eq(nw.stocksNzd, 21.12 + 1.37, 'closed stock adds what Akahu reports, never its cost');
-// Sold BTC 0.11 + sold XRP 0 + manual BTC: the "total" quote is not a unit price, so it falls back to cost 3.18.
-eq(nw.cryptoNzd, 0.11 + 3.18, 'closed crypto adds no cost; a total quote is never multiplied by a quantity');
+// The share-less EXAMPLE line is not closed: it still counts at its 5000 cost.
+eq(nw.stocksNzd, 21.12 + 1.37 + 5000, 'closed stock adds what Akahu reports, never its cost; a missing share count still counts at cost');
+// Sold BTC 0.11 + sold XRP 0 + manual BTC (cost 3.18; the "total" quote is not a unit price) + ETH with no amount at cost 40.
+eq(nw.cryptoNzd, 0.11 + 3.18 + 40, 'closed crypto adds no cost; a missing amount still counts at cost');
 
 console.log('net worth closed-position tests ok');
