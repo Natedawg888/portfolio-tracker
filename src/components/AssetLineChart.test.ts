@@ -3,7 +3,7 @@
  * tick for an all-zero line. Large balances (KiwiSaver, History) stay zoomed.
  * Run: npm run test:projections-page
  */
-import { computeYDomain, computeYTicks, seriesPaintOrder } from './AssetLineChart.tsx';
+import { chartPointTabIndex, computeYDomain, computeYTicks, focusablePointName, seriesPaintOrder } from './AssetLineChart.tsx';
 
 function assert(condition: boolean, message: string): void {
   if (!condition) throw new Error(message);
@@ -47,5 +47,14 @@ assert(
   unchanged.map((series) => series.key).join(',') === 'balance,contributions',
   'charts that do not set a foreground series keep their order',
 );
+
+assert(focusablePointName(undefined) === null, 'charts that do not label points stay presentational');
+assert(focusablePointName('  ') === null, 'a blank point label is not an accessible name');
+assert(
+  focusablePointName('12 Oct 2026, $29,628.83') === '12 Oct 2026, $29,628.83',
+  'a date and value is the point name',
+);
+assert(chartPointTabIndex(null) === undefined, 'presentational dots stay out of the tab order');
+assert(chartPointTabIndex('12 Oct 2026, $29,628.83') === 0, 'a labelled point is focusable');
 
 console.log('line chart tests passed');

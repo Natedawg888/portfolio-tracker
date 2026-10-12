@@ -255,7 +255,12 @@ router.get('/', async (req, res) => {
   res.json(rows.map(mapKs));
 });
 
-/** Balance history points recorded on Akahu sync / manual / CSV save. */
+/**
+ * Balance history points recorded on Akahu sync / manual / CSV save.
+ * Valuation snapshots are net-worth class totals and are not merged in:
+ * a stale snapshot must not appear as, or cover, a real KiwiSaver point.
+ * Days with no sync or save are absent.
+ */
 router.get('/history', async (req, res) => {
   const db = await getDb();
   const accountId =
@@ -291,54 +296,15 @@ router.get('/history', async (req, res) => {
     source: String(p.source ?? 'akahu'),
   }));
 
-  const snapExtra: Array<{ at: string; balanceNzd: number; returnsNzd: null; source: string }> =
-    [];
-  try {
-    const snaps = queryAll(
-      db,
-      `SELECT taken_at, breakdown_json FROM valuation_snapshots WHERE user_id = ? ORDER BY taken_at ASC`,
-      [uid(req)],
-    );
-    for (const s of snaps) {
-      let breakdown: { byClass?: Record<string, number | null> } = {};
-      try {
-        breakdown = JSON.parse(String(s.breakdown_json ?? '{}'));
-      } catch {
-        continue;
-      }
-      const v = breakdown.byClass?.kiwiSaver;
-      if (v == null || !Number.isFinite(Number(v))) continue;
-      snapExtra.push({
-        at: String(s.taken_at).slice(0, 10),
-        balanceNzd: Number(v),
-        returnsNzd: null,
-        source: 'valuation_snapshot',
-      });
-    }
-  } catch {
-    /* table may be empty */
-  }
-
-  const byDay = new Map<string, (typeof points)[0]>();
-  for (const p of snapExtra) {
-    byDay.set(p.at.slice(0, 10), p);
-  }
-  for (const p of points) {
-    byDay.set(p.at.slice(0, 10), p);
-  }
-  const merged = [...byDay.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([, p]) => p);
-
   const ds = dataSourceOf(account);
   res.json({
-    status: merged.length ? 'ok' : 'empty',
-    message: merged.length
+    status: points.length ? 'ok' : 'empty',
+    message: points.length
       ? null
       : 'No balance history points yet. History builds from Akahu syncs and manual/CSV saves (no invented timeseries).',
     source: ds.dataSource === 'akahu' ? 'akahu_sync_local' : 'manual_local',
     accountId: account.id,
-    points: merged,
+    points,
   });
 });
 
