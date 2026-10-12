@@ -23,6 +23,7 @@ export function MoreMenu({
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
+  const focusedOpen = useRef(false);
   const menuId = useId();
 
   function menuItems(): HTMLElement[] {
@@ -46,7 +47,7 @@ export function MoreMenu({
       let left = rect.right - width;
       if (left < 8) left = 8;
       if (left + width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - 8 - width);
-      setPos({ top, left });
+      setPos((prev) => (prev && prev.top === top && prev.left === left ? prev : { top, left }));
     };
     place();
     window.addEventListener('resize', place);
@@ -58,11 +59,22 @@ export function MoreMenu({
   }, [open, menu]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      focusedOpen.current = false;
+      return;
+    }
+    // A fixed menu is hidden until it has been measured. Focusing then does nothing.
+    if (menu && pos == null) return;
+    if (focusedOpen.current) return;
+    focusedOpen.current = true;
     const selector = menu
       ? '.more-menu-body [role="menuitem"]:not([disabled])'
       : '.more-menu-body select, .more-menu-body button, .more-menu-body input';
     wrapRef.current?.querySelector<HTMLElement>(selector)?.focus();
+  }, [open, menu, pos]);
+
+  useEffect(() => {
+    if (!open) return;
     const onDown = (event: PointerEvent) => {
       if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
     };
@@ -78,7 +90,7 @@ export function MoreMenu({
       document.removeEventListener('pointerdown', onDown);
       document.removeEventListener('keydown', onKey);
     };
-  }, [open, menu]);
+  }, [open]);
 
   function onKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (!menu) return;
