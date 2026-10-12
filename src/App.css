@@ -1538,6 +1538,28 @@ code { background: var(--surface-2); padding: 0.1rem 0.35rem; border-radius: 4px
   flex: none;
 }
 .line-chart-key--dashed { border-top-style: dashed; }
+.line-chart-plot { position: relative; }
+.line-chart-point { cursor: pointer; }
+.line-chart-point-hit { pointer-events: all; }
+.line-chart-point--open .line-chart-point-dot,
+.line-chart-point:focus-visible .line-chart-point-dot {
+  stroke: var(--text);
+  stroke-width: 1.5px;
+}
+.line-chart-tip {
+  position: absolute;
+  z-index: 3;
+  padding: 0.28rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-3);
+  color: var(--text);
+  font-size: 0.75rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
 
 
 /* Card price history sparkline */
@@ -6616,6 +6638,8 @@ html:not([data-theme]) .kiwisaver-page {
   --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.28);
   --return-neg: #e89284;
   --ks-chart: #8fcb9a;
+  --ks-split-invested: #2f6b4f;
+  --ks-split-returns: #8fcb9a;
   accent-color: #2f6b4f;
   color: #f3eee4;
 }
@@ -6628,6 +6652,147 @@ html:not([data-theme]) .kiwisaver-page {
   text-transform: none;
   font-variant-caps: normal;
   margin: 0 0 0.25rem;
+}
+
+.ks-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1.25rem;
+  flex-wrap: wrap;
+}
+.ks-header-main { min-width: 0; }
+.kiwisaver-page .ks-header .page-title {
+  margin: 0;
+  font-size: clamp(1.8rem, 3vw, 2.15rem);
+}
+.ks-header-line {
+  margin: 0.25rem 0 0;
+  max-width: 44rem;
+  line-height: 1.5;
+}
+.ks-header-actions { flex: 0 0 auto; }
+.ks-balance-source { margin: 0.35rem 0 0; }
+.ks-balance-actions { margin-top: 0.85rem; flex-wrap: wrap; }
+.ks-balance-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.85rem 1.75rem;
+}
+.ks-balance-figure { min-width: min(100%, 12rem); }
+.kiwisaver-page .ks-balance-value {
+  margin: 0;
+  font-size: clamp(2.1rem, 6vw, 3rem);
+  line-height: 1.05;
+}
+.ks-balance-side {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem 1.5rem;
+}
+.kiwisaver-page .ks-balance .ks-metric {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  min-width: 7.5rem;
+}
+.ks-change {
+  margin: 0.35rem 0 0;
+  font-size: 0.95rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.ks-split { margin-top: 1rem; }
+.ks-split-bar {
+  display: flex;
+  height: 0.45rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface-3);
+}
+.ks-split-invested { background: var(--ks-split-invested, var(--accent)); }
+.ks-split-returns { background: var(--ks-split-returns, var(--ks-chart, #3d9a6a)); }
+.ks-split-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0.4rem 0 0;
+  font-size: 0.8rem;
+}
+.ks-history {
+  margin-top: 1.1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+.ks-history-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+}
+.ks-history-title {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 650;
+}
+.ks-history .line-chart { margin-top: 0.35rem; }
+.ks-schemes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 0.75rem;
+}
+.ks-scheme {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.ks-scheme-pick {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  min-width: 10rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ks-scheme-pick[aria-pressed="true"] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.ks-scheme-pick:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+.ks-scheme-name { font-weight: 650; }
+.ks-scheme-selected {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+@media (max-width: 640px) {
+  .ks-header { align-items: stretch; }
+  .ks-header-actions,
+  .ks-header-actions .btn { width: 100%; }
+  .ks-scheme,
+  .ks-scheme-pick { width: 100%; }
+  .ks-balance-head { align-items: stretch; }
+  .ks-balance-side,
+  .ks-history-head .segmented { width: 100%; }
+  .ks-history-head .segmented-btn { flex: 1 1 auto; text-align: center; }
 }
 
 html[data-theme="light"] .kiwisaver-page h2,
@@ -6757,6 +6922,17 @@ html:not([data-theme]) .kiwisaver-page.panel {
   color: #f3eee4;
   border-color: #6f8276;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+html[data-theme="light"] .kiwisaver-page .ks-balance .ks-metric,
+html[data-theme="dark"] .kiwisaver-page .ks-balance .ks-metric,
+html:not([data-theme]) .kiwisaver-page .ks-balance .ks-metric {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+html[data-theme="light"] .kiwisaver-page {
+  --ks-split-invested: #1b4332;
+  --ks-split-returns: #3d9a6a;
 }
 html[data-theme="dark"] .kiwisaver-page .holding-card-selected,
 html:not([data-theme]) .kiwisaver-page .holding-card-selected {
@@ -7136,6 +7312,224 @@ html[data-theme="dark"] .paye-page :focus-visible,
 html:not([data-theme]) .paye-page :focus-visible {
   outline: 2px solid #c5d5c8;
   outline-offset: 2px;
+}
+
+/* PAYE layout: compact intro, "What's included", sticky result. Scoped to .paye-page. */
+.paye-page .paye-intro {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+.paye-page .paye-subtitle {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+.paye-page .paye-included-toggle {
+  margin-top: 0.1rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-2);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.paye-page .paye-included-toggle:hover { color: var(--text); }
+.paye-page .paye-included {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: min(100%, 46rem);
+  margin-top: 0.2rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.paye-page .paye-included[hidden] { display: none; }
+.paye-page .paye-included p {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+.paye-page .paye-included h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  margin: 0 0 0.35rem;
+}
+.paye-page .paye-included .info-tip { margin-left: 0.15rem; }
+.paye-page .paye-sources {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.25rem;
+}
+.paye-page .paye-bracket-wrap {
+  overflow-x: auto;
+  max-width: 28rem;
+}
+.paye-page .paye-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16.5rem, 22.5rem);
+  gap: 1.1rem;
+  align-items: start;
+}
+.paye-page .paye-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  min-width: 0;
+}
+.paye-page .paye-inputs > .panel > .form-grid:first-child { margin-top: 0; }
+.paye-page .paye-result {
+  position: sticky;
+  top: 0.75rem;
+  z-index: 2;
+  min-width: 0;
+  max-height: calc(100dvh - 1.5rem);
+  overflow: auto;
+}
+.paye-page .paye-result-figure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.5rem;
+  margin: 0.35rem 0 0;
+}
+.paye-page .paye-result-figure .hero-value { margin: 0; }
+.paye-page .paye-result-meta { margin: 0.45rem 0 0; }
+.paye-page .paye-result-list {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+.paye-page .paye-result-empty { margin: 0; }
+.paye-page .paye-result-range {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0.7rem 0 0;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+}
+.paye-page .paye-result-range-values {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.paye-page .paye-choice {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.paye-page .paye-choice + .form-grid,
+.paye-page .paye-choice + .paye-choice { margin-top: 0.85rem; }
+.paye-page .form-grid + .paye-choice { margin-top: 0.85rem; }
+.paye-page .paye-choice-legend {
+  padding: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.paye-page .paye-tax-code {
+  font-weight: 500;
+  color: var(--muted);
+}
+.paye-page .paye-choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+}
+.paye-page .paye-choice-btn {
+  flex: 1 1 auto;
+  min-width: 5.5rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.paye-page .paye-choice-btn:hover { border-color: var(--accent); }
+.paye-page .paye-choice-btn.active,
+.paye-page .paye-choice-btn[aria-checked="true"] {
+  background: color-mix(in srgb, var(--accent) 24%, var(--surface));
+  border-color: var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}
+.paye-page .paye-period {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+.paye-page .paye-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+.paye-page .paye-field-label {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.paye-page .form-grid .paye-field-label label {
+  display: inline;
+  font-size: inherit;
+  color: inherit;
+}
+.paye-page .paye-period .segmented { flex-wrap: wrap; align-self: flex-start; }
+.paye-page .paye-rate-used {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0;
+  align-self: end;
+  font-weight: 600;
+  color: var(--text);
+}
+.paye-page .paye-vary {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.15rem;
+  color: var(--text);
+  font-size: 0.88rem;
+}
+.paye-page .paye-inputs > .panel { overflow: visible; }
+
+@media (max-width: 800px) {
+  .paye-page .paye-layout { grid-template-columns: minmax(0, 1fr); }
+  .paye-page .paye-result {
+    position: static;
+    grid-column: 1;
+    grid-row: 1;
+    max-height: none;
+    overflow: visible;
+    padding: 0.7rem 0.85rem;
+  }
+  .paye-page .paye-inputs {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .paye-page .paye-result .hero-value { font-size: 1.45rem; }
+  .paye-page .paye-result .panel-heading h2 { font-size: 1rem; }
+  .paye-page .paye-choice-btn { min-width: calc(50% - 0.4rem); flex-basis: calc(50% - 0.4rem); }
 }
 
 /* History page only. Header and other screens stay as they are. */
@@ -8482,10 +8876,10 @@ html:not([data-theme]) .settings-page :focus-visible {
 }
 .invoice-line-row {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1.2fr);
-  gap: 0.4rem;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) auto auto;
+  gap: 0.45rem 0.5rem;
   align-items: end;
-  padding: 0.5rem 0;
+  padding: 0.65rem 0;
   border-bottom: 1px solid var(--border);
 }
 .invoice-line-row label {
@@ -8501,19 +8895,40 @@ html:not([data-theme]) .settings-page :focus-visible {
   min-width: 0;
   box-sizing: border-box;
 }
-.invoice-line-row .invoice-line-total {
+.invoice-line-row .invoice-line-desc,
+.invoice-line-row .invoice-line-unit {
   grid-column: 1 / -1;
+}
+.invoice-line-row .invoice-line-unit {
+  max-width: 12rem;
+}
+.invoice-line-row .invoice-line-amount {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 5.5rem;
+}
+.invoice-line-row .invoice-line-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.invoice-line-row .invoice-line-amount-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  padding: 0.45rem 0;
+}
+.invoice-line-row .invoice-line-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
   align-items: center;
-  gap: 0.5rem;
 }
 @media (max-width: 640px) {
   .invoice-line-row {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
-  .invoice-line-row > label:first-child {
-    grid-column: 1 / -1;
+  .invoice-line-row .invoice-line-actions {
+    justify-content: flex-end;
   }
 }
 .invoice-totals-row {

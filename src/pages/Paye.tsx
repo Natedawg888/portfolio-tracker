@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, formatNzd } from '../api/client';
+import { InfoTip } from '../components/InfoTip';
 import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import {
+  buildTaxCode,
   calculatePaye,
   periodiseBreakdown,
+  pickSecondaryCode,
   type EmploymentKind,
   type ExtraTaxCreditInput,
   type PayFrequency,
@@ -24,8 +27,8 @@ import {
 } from '../lib/payePrefs';
 import { charityLinksTotal } from '../lib/charityPayeLink';
 import { OutputPayInputs, OutputPayResults, SavedPaySources } from '../components/OutputPay';
-import type { OutputPayType, PieceRatePayeOptions } from '../lib/outputPayCalc';
-import { loadOutputPayPrefs, saveOutputPayPrefs, type OutputPayPrefs } from '../lib/outputPayPrefs';
+import { calculatePieceRate, type OutputPayType, type PieceRatePayeOptions } from '../lib/outputPayCalc';
+import { loadOutputPayPrefs, pieceUnitsPerWeek, saveOutputPayPrefs, type OutputPayPrefs } from '../lib/outputPayPrefs';
 import {
   ACC_MAX_EARNINGS,
   ACC_MAX_LEVY,
@@ -38,7 +41,6 @@ import {
   KIWISAVER_EMPLOYEE_RATES,
   KIWISAVER_EMPLOYER_MIN_RATE,
   PAYE_DEFAULT_HOURS_PER_WEEK,
-  PAYE_TAX_YEAR_LABEL,
   INVESTING_CREDIT_KIND_OPTIONS,
   RATE_SOURCES,
   STUDENT_LOAN_ANNUAL_THRESHOLD,
@@ -46,13 +48,27 @@ import {
   STUDENT_LOAN_RATE,
   payTaxYearRates,
   type InvestingCreditKind,
+  type PayTaxYearRates,
 } from '../lib/payeRates';
+import {
+  PAYE_NET_NZ_CREDIT_LEAD,
+  PAYE_NET_NZ_NAME,
+  PAYE_NET_NZ_URL,
+  formatPayeTaxDay,
+  incomeBracketRows,
+  convertSalaryHourly,
+  payeIncludedCopy,
+  payePageSubtitle,
+  payeSourceLinks,
+  ratesInUseNote,
+  salaryHourlySwitch,
+} from '../lib/payeView';
 
 const PAY_TYPES: { value: PayePayType; label: string }[] = [
-  { value: 'salary', label: 'Salary / wages' },
+  { value: 'salary', label: 'Salary' },
   { value: 'hourly', label: 'Hourly' },
-  { value: 'piece', label: 'Piece rate (employee)' },
-  { value: 'schedular', label: 'Contract (schedular)' },
+  { value: 'piece', label: 'Piece rate' },
+  { value: 'schedular', label: 'Contract' },
   { value: 'share_of_catch', label: 'Share of catch' },
 ];
 
@@ -60,13 +76,60 @@ function isOutputPayType(t: PayePayType): t is OutputPayType {
   return t === 'piece' || t === 'schedular' || t === 'share_of_catch';
 }
 
-/** Salary frequencies; hourly pay has its own pay type. */
-const FREQUENCIES: { value: PayFrequency; label: string }[] = [
-  { value: 'week', label: 'Weekly' },
-  { value: 'fortnight', label: 'Fortnightly' },
-  { value: 'month', label: 'Monthly' },
-  { value: 'year', label: 'Yearly' },
+/** Salary period. Hourly pay has its own pay type, so "hour" is not a choice here. */
+const SALARY_PERIODS: { value: PayFrequency; label: string }[] = [
+  { value: 'year', label: 'Year' },
+  { value: 'month', label: 'Month' },
+  { value: 'fortnight', label: 'Fortnight' },
+  { value: 'week', label: 'Week' },
 ];
+
+const EMPLOYMENT_OPTIONS: { value: EmploymentKind; label: string }[] = [
+  { value: 'primary', label: 'Main job' },
+  { value: 'secondary', label: 'Second job' },
+];
+
+function PayeChoiceRow<T extends string>({
+  label,
+  ariaLabel,
+  value,
+  options,
+  onChange,
+  aside,
+}: {
+  label: string;
+  ariaLabel?: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (next: T) => void;
+  aside?: ReactNode;
+}) {
+  return (
+    <fieldset className="paye-choice">
+      <legend className="paye-choice-legend">
+        {label}
+        {aside}
+      </legend>
+      <div className="paye-choice-row" role="radiogroup" aria-label={ariaLabel ?? label}>
+        {options.map((opt) => {
+          const active = value === opt.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              className={'paye-choice-btn' + (active ? ' active' : '')}
+              onClick={() => onChange(opt.value)}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
 
 const PERIOD_COLS: { key: 'hour' | 'week' | 'fortnight' | 'month' | 'year'; label: string }[] = [
   { key: 'hour', label: 'Hour' },
@@ -192,6 +255,131 @@ function CharityLinksFromBudget() {
   );
 }
 
+function WhatsIncluded({ open, rates }: { open: boolean; rates: PayTaxYearRates }) {
+  const brackets = incomeBracketRows(INCOME_TAX_BRACKETS);
+  const sources = payeSourceLinks(RATE_SOURCES, SCHEDULAR_SOURCES);
+  return (
+    <div id="paye-included" className="paye-included" hidden={!open}>
+      <p>{payeIncludedCopy()}</p>
+      <p>
+        {PAYE_NET_NZ_CREDIT_LEAD}{' '}
+        <a href={PAYE_NET_NZ_URL} target="_blank" rel="noreferrer">
+          {PAYE_NET_NZ_NAME}
+        </a>
+        .
+      </p>
+      <div>
+        <h3>
+          Income tax
+          <InfoTip label="About these income tax rates">
+            Marginal rates on annual income for this tax year. ACC earners’ levy is charged separately, below.
+          </InfoTip>
+        </h3>
+        <div className="paye-bracket-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Income (annual)</th>
+                <th style={{ textAlign: 'right' }}>Tax rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {brackets.map((row) => (
+                <tr key={row.label}>
+                  <td>{row.label}</td>
+                  <td style={{ textAlign: 'right' }}>{row.rate}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p>
+        {ratesInUseNote(
+          {
+            accRate: ACC_RATE,
+            accMaxEarnings: ACC_MAX_EARNINGS,
+            accMaxLevy: ACC_MAX_LEVY,
+            accountDefaultEmployeeRate: KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE,
+            statutoryEmployeeRates: KIWISAVER_EMPLOYEE_RATES,
+            statutoryMinimumEmployeeRate: KIWISAVER_DEFAULT_EMPLOYEE_RATE,
+            statutoryFrom: formatPayeTaxDay(rates.start),
+            minimumWageAdultHourly: rates.minimumWageAdultHourly,
+            holidayPayPaygRate: rates.holidayPayPaygRate,
+          },
+          money,
+        )}{' '}
+        Full notes in <code>docs/PAYE_RATES.md</code>.
+      </p>
+      <div>
+        <h3>Sources</h3>
+        <ul className="paye-sources muted small">
+          {sources.map((source) => (
+            <li key={source.url}>
+              <a href={source.url} target="_blank" rel="noreferrer">
+                {source.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function SalaryResult({
+  result,
+  periods,
+}: {
+  result: NonNullable<ReturnType<typeof calculatePaye>>;
+  periods: ReturnType<typeof periodiseBreakdown>;
+}) {
+  return (
+    <>
+      <div className="panel-heading">
+        <h2>Take-home pay</h2>
+        <span className="muted small">Tax code · {result.taxCode}</span>
+      </div>
+      <p className="paye-result-figure">
+        <span className="hero-value">{money(result.takeHome)}</span>
+        <span className="muted">/ year</span>
+      </p>
+      <p className="muted small paye-result-meta">
+        {money(periods.takeHome.week)}/wk · {money(periods.takeHome.month)}/mo
+      </p>
+      <p className="muted small paye-result-meta">
+        Annual gross {money(result.annualGross)}
+        {result.annualPackage !== result.annualGross
+          ? ` (package ${money(result.annualPackage)})`
+          : ''}
+        {' · '}Effective PAYE rate {pct(result.effectiveTaxRate)}
+        {result.ietcApplied ? ` · IETC ${money(result.ietcCredit)}` : ''}
+        {result.charityCredit > 0 ? ` · Donation tax credit ${money(result.charityCredit)}` : ''}
+        {result.extraCreditsTotal > 0 ? ` · Investing credits ${money(result.extraCreditsTotal)}` : ''}
+      </p>
+      {result.extraCredits.length > 0 && result.extraCreditsTotal > 0 && (
+        <ul className="muted small paye-result-list">
+          {result.extraCredits
+            .filter((c) => c.credit > 0)
+            .map((c) => (
+              <li key={c.id}>
+                {c.label}: {money(c.credit)}/yr
+                {' · assessment / year-end'}
+              </li>
+            ))}
+        </ul>
+      )}
+      {result.notes.length > 0 && (
+        <ul className="muted small paye-result-list">
+          {result.notes.map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
 export function Paye() {
 
   const initial = useMemo(() => loadPayePrefs(), []);
@@ -242,7 +430,7 @@ export function Paye() {
     if (!rows) return initial.extraCredits;
     return mergePortfolioInvestingCredits(initial.extraCredits, investingCreditsFromPortfolioIncome(rows));
   });
-  const [showSources, setShowSources] = useState(false);
+  const [includedOpen, setIncludedOpen] = useState(false);
 
   // Persist last inputs (incl. investing + charity credits) and re-apply on next load.
   // Preserve charityLinks written from Budget so we do not wipe receipt links.
@@ -405,102 +593,173 @@ export function Paye() {
 
   const periods = result ? periodiseBreakdown(result, hours) : null;
 
+  const salaryPeriod: PayFrequency = frequency === 'hour' ? 'year' : frequency;
+
+  const employmentTaxCode = useMemo(() => {
+    if (payType === 'piece') {
+      return calculatePieceRate(
+        {
+          ratePerUnit: Number(outputPrefs.pieceRate) || 0,
+          unitsPerWeek: pieceUnitsPerWeek(outputPrefs),
+          hoursPerWeek: Number(outputPrefs.pieceHours) || 0,
+          holidayPayWithWages: outputPrefs.holidayPay,
+        },
+        payeOptions,
+        rates,
+      ).paye.taxCode;
+    }
+    if (result) return result.taxCode;
+    return buildTaxCode({
+      employment,
+      studentLoan,
+      ietcApplied: false,
+      secondaryCode:
+        employment === 'secondary' ? pickSecondaryCode(Number(secondaryTotal) || 0).code : null,
+    });
+  }, [payType, outputPrefs, payeOptions, rates, result, employment, studentLoan, secondaryTotal]);
+
+  function selectPayType(next: PayePayType) {
+    if (next === payType) return;
+    const fields = {
+      amount,
+      frequency: payType === 'hourly' ? ('hour' as const) : salaryPeriod,
+      hoursPerWeek,
+    };
+    // Salary ↔ Hourly converts. Other switches do not copy this amount anywhere.
+    const converted = salaryHourlySwitch(payType, next, fields);
+    if (converted) {
+      setAmount(converted.amount);
+      setFrequency(converted.frequency);
+    } else if (payType === 'hourly') {
+      // Park the shared amount as an annual salary so a later Salary view
+      // does not treat the hourly rate as yearly pay. Output prefs stay as saved.
+      const parked = convertSalaryHourly('hourly', fields);
+      setAmount(parked.amount);
+      setFrequency(parked.frequency);
+    } else if (next === 'hourly') {
+      const parked = convertSalaryHourly('salary', fields);
+      setAmount(parked.amount);
+      setFrequency(parked.frequency);
+    } else if (next === 'salary' && frequency === 'hour') {
+      setFrequency('year');
+    }
+    setPayType(next);
+  }
+
   return (
     <div className="stack paye-page">
-      <section className="panel">
-        <div className="panel-heading">
-          <h2 className="page-title">PAYE</h2>
-          <span className="muted small">{PAYE_TAX_YEAR_LABEL}</span>
-        </div>
-        <p className="page-lead">
-          Estimate NZ take-home pay from gross — income tax, ACC, KiwiSaver, student loan, IETC,
-          payroll giving, charity donation tax credits (IR526), and investing credits (imputation /
-          RWT / PIE / foreign). Applied credits are restored on load; only real savings-interest or
-          dividend income/transactions can auto-fill investing credits (no $0 placeholders). Rates from IRD
-          for the current tax year (never invented). Feature set inspired by{' '}
-          <a href="https://www.paye.net.nz/calculator/" target="_blank" rel="noreferrer">
-            paye.net.nz
-          </a>
-          ; UI matches this app. Annual progressive model — IRD weekly tables can differ slightly.
-          Paid by output? Choose piece rate, contract (schedular) or share of catch.
-        </p>
+      <header className="paye-intro">
+        <h2 className="page-title">Take-home pay</h2>
+        <p className="paye-subtitle">{payePageSubtitle(rates.start, rates.end)}</p>
+        <button
+          type="button"
+          className="paye-included-toggle"
+          aria-expanded={includedOpen}
+          aria-controls="paye-included"
+          onClick={() => setIncludedOpen((open) => !open)}
+        >
+          What&apos;s included <span aria-hidden="true">{includedOpen ? '▴' : '▾'}</span>
+        </button>
+        <WhatsIncluded open={includedOpen} rates={rates} />
+      </header>
 
-        <div className="form-grid">
-          <label>
-            Pay type
-            <select
-              value={payType}
-              onChange={(e) => {
-                const next = e.target.value as PayePayType;
-                setPayType(next);
-                if (next === 'salary' && frequency === 'hour') setFrequency('year');
-              }}
-            >
-              {PAY_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {outputType == null && (
-          <label>
-            {payType === 'hourly' ? 'Hourly rate' : 'Gross income'}
-            <input
-              type="number"
-              min={0}
-              step="any"
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder={payType === 'hourly' ? 'e.g. 32' : 'e.g. 75000'}
-            />
-          </label>
-          )}
-          {payType === 'salary' && (
-          <label>
-            Frequency
-            <select
-              value={effectiveFrequency}
-              onChange={(e) => setFrequency(e.target.value as PayFrequency)}
-            >
-              {FREQUENCIES.map((f) => (
-                <option key={f.value} value={f.value}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          )}
-          {outputType == null && (
-          <label>
-            Hours / week
-            <input
-              type="number"
-              min={1}
-              max={168}
-              step={0.5}
-              value={hoursPerWeek}
-              onChange={(e) => setHoursPerWeek(e.target.value)}
-            />
-          </label>
-          )}
-          {showPayeSections && (
-          <label>
-            Employment
-            <select
-              value={employment}
-              onChange={(e) => setEmployment(e.target.value as EmploymentKind)}
-            >
-              <option value="primary">Primary (main job)</option>
-              <option value="secondary">Secondary</option>
-            </select>
-          </label>
-          )}
-        </div>
+      <div className="paye-layout">
+      <div className="paye-inputs">
+      <section className="panel">
+        <PayeChoiceRow
+          label="Pay type"
+          value={payType}
+          options={PAY_TYPES}
+          onChange={selectPayType}
+        />
+
+        {payType === 'salary' && (
+          <div className="form-grid">
+            <label>
+              Gross income
+              <input
+                type="number"
+                min={0}
+                step="any"
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="e.g. 75000"
+              />
+            </label>
+            <div className="paye-period">
+              <span className="paye-field-label" id="paye-period-label">
+                Period
+              </span>
+              <div className="segmented" role="group" aria-labelledby="paye-period-label">
+                {SALARY_PERIODS.map((period) => (
+                  <button
+                    key={period.value}
+                    type="button"
+                    className={'segmented-btn' + (salaryPeriod === period.value ? ' active' : '')}
+                    aria-pressed={salaryPeriod === period.value}
+                    onClick={() => setFrequency(period.value)}
+                  >
+                    {period.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label>
+              Hours / week
+              <input
+                type="number"
+                min={1}
+                max={168}
+                step={0.5}
+                value={hoursPerWeek}
+                onChange={(e) => setHoursPerWeek(e.target.value)}
+              />
+            </label>
+          </div>
+        )}
+
+        {payType === 'hourly' && (
+          <div className="form-grid">
+            <label>
+              Hourly rate
+              <input
+                type="number"
+                min={0}
+                step="any"
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="e.g. 32"
+              />
+            </label>
+            <label>
+              Hours / week
+              <input
+                type="number"
+                min={1}
+                max={168}
+                step={0.5}
+                value={hoursPerWeek}
+                onChange={(e) => setHoursPerWeek(e.target.value)}
+              />
+            </label>
+          </div>
+        )}
 
         {outputType && (
           <OutputPayInputs payType={outputType} prefs={outputPrefs} set={setOutput} rates={rates} />
+        )}
+
+        {showPayeSections && (
+          <PayeChoiceRow
+            label="Employment"
+            ariaLabel={`Employment, tax code ${employmentTaxCode}`}
+            value={employment}
+            options={EMPLOYMENT_OPTIONS}
+            onChange={setEmployment}
+            aside={<span className="paye-tax-code"> · tax code {employmentTaxCode}</span>}
+          />
         )}
 
         {showPayeSections && employment === 'secondary' && (
@@ -847,64 +1106,33 @@ export function Paye() {
 
       </>
       )}
+      </div>
 
-      {outputType == null && !hasIncome && (
-        <section className="panel">
-          <p className="muted" style={{ margin: 0 }}>
+      <aside
+        className="paye-result panel hero-card"
+        aria-live="polite"
+        aria-atomic="true"
+        aria-label="Take-home result"
+      >
+        {outputType ? (
+          <OutputPayResults
+            part="summary"
+            payType={outputType}
+            prefs={outputPrefs}
+            payeOptions={payeOptions}
+            rates={rates}
+          />
+        ) : result && periods ? (
+          <SalaryResult result={result} periods={periods} />
+        ) : (
+          <p className="muted paye-result-empty">
             Enter a gross income above to calculate take-home pay.
           </p>
-        </section>
-      )}
+        )}
+      </aside>
+      </div>
 
       {result && periods && (
-        <>
-          <section className="panel hero-card">
-            <div className="panel-heading">
-              <h2>Take-home pay</h2>
-              <span className="muted small">Tax code · {result.taxCode}</span>
-            </div>
-            <div className="row gap" style={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
-              <strong style={{ fontSize: '1.75rem' }}>{money(result.takeHome)}</strong>
-              <span className="muted">/ year</span>
-              <span className="muted small">
-                · {money(periods.takeHome.week)}/wk · {money(periods.takeHome.month)}/mo
-              </span>
-            </div>
-            <p className="muted small" style={{ marginTop: '0.65rem' }}>
-              Annual gross {money(result.annualGross)}
-              {result.annualPackage !== result.annualGross
-                ? ` (package ${money(result.annualPackage)})`
-                : ''}
-              {' · '}Effective PAYE rate {pct(result.effectiveTaxRate)}
-              {result.ietcApplied ? ` · IETC ${money(result.ietcCredit)}` : ''}
-              {result.charityCredit > 0
-                ? ` · Donation tax credit ${money(result.charityCredit)}`
-                : ''}
-              {result.extraCreditsTotal > 0
-                ? ` · Investing credits ${money(result.extraCreditsTotal)}`
-                : ''}
-            </p>
-            {result.extraCredits.length > 0 && result.extraCreditsTotal > 0 && (
-              <ul className="muted small" style={{ margin: '0.5rem 0 0', paddingLeft: '1.1rem' }}>
-                {result.extraCredits
-                  .filter((c) => c.credit > 0)
-                  .map((c) => (
-                    <li key={c.id}>
-                      {c.label}: {money(c.credit)}/yr
-                      {' · assessment / year-end'}
-                    </li>
-                  ))}
-              </ul>
-            )}
-            {result.notes.length > 0 && (
-              <ul className="muted small" style={{ margin: '0.75rem 0 0', paddingLeft: '1.1rem' }}>
-                {result.notes.map((n) => (
-                  <li key={n}>{n}</li>
-                ))}
-              </ul>
-            )}
-          </section>
-
           <section className="panel">
             <h3>Breakdown</h3>
             <div style={{ overflowX: 'auto' }}>
@@ -951,81 +1179,27 @@ export function Paye() {
               fortnight because year ÷ 12 vs year ÷ 26.
             </p>
           </section>
-        </>
       )}
 
       {outputType && (
         <>
-          <OutputPayResults payType={outputType} prefs={outputPrefs} payeOptions={payeOptions} rates={rates} />
+          <OutputPayResults
+            part="breakdown"
+            payType={outputType}
+            prefs={outputPrefs}
+            payeOptions={payeOptions}
+            rates={rates}
+          />
           <SavedPaySources
             payType={outputType}
             prefs={outputPrefs}
             setPrefs={setOutputPrefs}
             payeOptions={payeOptions}
             rates={rates}
-            onLoadPayType={setPayType}
+            onLoadPayType={selectPayType}
           />
         </>
       )}
-
-      <section className="panel">
-        <div className="panel-heading">
-          <h3>Rates in use</h3>
-          <button
-            type="button"
-            className="btn small"
-            onClick={() => setShowSources((s) => !s)}
-          >
-            {showSources ? 'Hide sources' : 'Show sources'}
-          </button>
-        </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table className="data-table" style={{ marginTop: '0.5rem' }}>
-            <thead>
-              <tr>
-                <th>Income (annual)</th>
-                <th style={{ textAlign: 'right' }}>Tax rate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {INCOME_TAX_BRACKETS.map((b, i) => {
-                const prev = i === 0 ? 0 : INCOME_TAX_BRACKETS[i - 1].upTo;
-                const label =
-                  b.upTo === Number.POSITIVE_INFINITY
-                    ? `Over $${prev.toLocaleString('en-NZ')}`
-                    : `$${prev === 0 ? '0' : (prev + 1).toLocaleString('en-NZ')} – $${b.upTo.toLocaleString('en-NZ')}`;
-                return (
-                  <tr key={b.upTo}>
-                    <td>{label}</td>
-                    <td style={{ textAlign: 'right' }}>{(b.rate * 100).toFixed(1)}%</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <p className="muted small" style={{ marginTop: '0.75rem' }}>
-          ACC {(ACC_RATE * 100).toFixed(2)}% on liable earnings up to {money(ACC_MAX_EARNINGS)}{' '}
-          (max levy {money(ACC_MAX_LEVY)}). KiwiSaver employee rate saved for this account{' '}
-          (starting choice {KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE}%). Statutory rates from 1 April
-          2026: {KIWISAVER_EMPLOYEE_RATES.map((r) => `${r}%`).join(', ')} (IRD minimum{' '}
-          {KIWISAVER_DEFAULT_EMPLOYEE_RATE}%). Adult minimum wage {money(rates.minimumWageAdultHourly)}/h;
-          holiday pay with wages {Math.round(rates.holidayPayPaygRate * 100)}%; schedular withholding from IRD&apos;s
-          IR330C. Full notes in{' '}
-          <code>docs/PAYE_RATES.md</code>.
-        </p>
-        {showSources && (
-          <ul className="muted small" style={{ marginTop: '0.75rem', paddingLeft: '1.1rem' }}>
-            {[...RATE_SOURCES, ...SCHEDULAR_SOURCES].map((s) => (
-              <li key={s.url}>
-                <a href={s.url} target="_blank" rel="noreferrer">
-                  {s.label}
-                </a>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
     </div>
   );
 }

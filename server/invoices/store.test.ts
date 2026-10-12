@@ -104,6 +104,26 @@ try {
   });
   assert(biz.status === 200 && biz.json.gstRegistered === true, 'business saved');
 
+  // A registered business can leave GST off, and an inclusive draft stays inclusive.
+  const gstOff = await call('POST', '/api/invoices', A, {
+    clientName: 'Exempt Client', issueDate: '2026-10-01', duePreset: 'days_7', gstMode: 'none',
+    lines: [{ description: 'Exempt supply', quantity: 1, unit: 'hour', rate: 40 }],
+  });
+  assert(gstOff.status === 201, `GST-off draft created (${gstOff.status} ${gstOff.text})`);
+  assert(gstOff.json.gstMode === 'none', 'registered business can leave GST off');
+  assert(gstOff.json.title === 'Invoice', 'GST off is not titled Tax invoice');
+  eq(gstOff.json.gstNzd, 0, 'GST off stores no GST');
+  eq(gstOff.json.subtotalNzd, 40, 'GST off subtotal');
+  eq(gstOff.json.amountDueNzd, 40, 'GST off amount due');
+  const gstIncl = await call('POST', '/api/invoices', A, {
+    clientName: 'Incl Client', issueDate: '2026-10-01', gstMode: 'inclusive',
+    lines: [{ description: 'Inclusive', quantity: 1, unit: 'hour', rate: 115 }],
+  });
+  assert(gstIncl.status === 201 && gstIncl.json.gstMode === 'inclusive', 'inclusive draft is preserved');
+  eq(gstIncl.json.gstNzd, 15, 'inclusive GST is backed out');
+  assert((await call('DELETE', `/api/invoices/${gstOff.json.id}`, A)).status === 200, 'GST-off draft removed');
+  assert((await call('DELETE', `/api/invoices/${gstIncl.json.id}`, A)).status === 200, 'inclusive draft removed');
+
   // Clients.
   const client = await call('POST', '/api/invoices/clients', A, { name: 'Mātai Orchards', email: 'accounts@matai.nz', address: '1 Orchard Rd' });
   assert(client.status === 201, 'client created');

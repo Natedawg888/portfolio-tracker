@@ -1,7 +1,7 @@
 /**
  * Net worth history (Dashboard sparkline). Run: npm run test:dashboard
  */
-import { accessibleOf, dailySeries, historyDelta, pointsInRange, rangeStart } from './netWorthHistory.ts';
+import { accessibleOf, dailySeries, HISTORY_RANGES, historyDelta, pointsInRange, rangeStart } from './netWorthHistory.ts';
 
 function eq(a: unknown, b: unknown, msg: string): void {
   if (a !== b) throw new Error(`FAIL: ${msg} (got ${String(a)}, expected ${String(b)})`);
@@ -31,8 +31,11 @@ eq(accessible[1].value, 1500, 'no KiwiSaver held takes nothing off');
 eq(accessibleOf(1000, null), 1000, 'accessibleOf with no KiwiSaver');
 
 eq(rangeStart('1M', '2026-10-11'), '2026-09-11', '1M');
+eq(rangeStart('3M', '2026-10-11'), '2026-07-11', '3M');
+eq(rangeStart('3M', '2026-03-31'), '2025-12-31', '3M month end clamps');
 eq(rangeStart('6M', '2026-10-11'), '2026-04-11', '6M');
 eq(rangeStart('1Y', '2026-10-11'), '2025-10-11', '1Y');
+eq(HISTORY_RANGES.join(','), '1M,6M,1Y,All', 'dashboard ranges stay 1M, 6M, 1Y, All');
 eq(rangeStart('1M', '2026-03-31'), '2026-02-28', 'month end clamps');
 eq(rangeStart('1M', '2026-01-15'), '2025-12-15', 'crosses the year');
 eq(rangeStart('All', '2026-10-11'), null, 'All has no start');
