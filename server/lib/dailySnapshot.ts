@@ -8,11 +8,15 @@
  *
  * Nothing is estimated. If a wallet could not be valued the total is short by an
  * unknown amount, so that load is skipped and the day keeps its last full reading.
+ *
+ * Users can turn this off (preferences_json.snapshots.dailySnapshot). Off only
+ * stops new rows; existing snapshots are left as they are.
  */
 import type { Database } from 'sql.js';
-import { newId, queryAll, run } from '../db/index.ts';
+import { newId, queryAll, queryOne, run } from '../db/index.ts';
 import { aucklandToday } from '../debts/model.ts';
 import type { NetWorthResult } from './netWorth.ts';
+import { normalizeSnapshotPrefs } from '../../src/lib/snapshotPrefs.ts';
 
 /** Same breakdown shape POST /snapshots stores, so History reads both alike. */
 export function snapshotBreakdown(nw: NetWorthResult) {
@@ -27,7 +31,21 @@ export function snapshotBreakdown(nw: NetWorthResult) {
   };
 }
 
-export type DailySnapshotResult = 'inserted' | 'updated' | 'skipped';
+export type DailySnapshotResult = 'inserted' | 'updated' | 'skipped' | 'disabled';
+
+export function dailySnapshotEnabled(db: Database, userId: string): boolean {
+  const row = queryOne<{ preferences_json: string | null }>(
+    db,
+    `SELECT preferences_json FROM users WHERE id = ?`,
+    [userId],
+  );
+  try {
+    const prefs = JSON.parse(row?.preferences_json ?? '{}') as { snapshots?: unknown } | null;
+    return normalizeSnapshotPrefs(prefs?.snapshots).dailySnapshot;
+  } catch {
+    return normalizeSnapshotPrefs(null).dailySnapshot;
+  }
+}
 
 export function recordDailySnapshot(
   db: Database,
@@ -35,6 +53,7 @@ export function recordDailySnapshot(
   nw: NetWorthResult,
   now: Date = new Date(),
 ): DailySnapshotResult {
+  if (!dailySnapshotEnabled(db, userId)) return 'disabled';
   if ((nw.cryptoWalletsFailed ?? 0) > 0 || !Number.isFinite(nw.totalKnownNzd)) return 'skipped';
 
   const today = aucklandToday(now);

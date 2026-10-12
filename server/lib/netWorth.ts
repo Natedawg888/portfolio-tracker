@@ -24,7 +24,7 @@ import {
 } from '../quotes/forexQuotesDb.ts';
 import type { MetalKind, MetalUnit } from '../../src/types/index.ts';
 import { aucklandToday } from '../debts/model.ts';
-import { isTotalNotUnitQuote, parseNzdValueFromNotes } from '../../src/lib/holdingValue.ts';
+import { isClosedQuantity, isTotalNotUnitQuote, parseNzdValueFromNotes } from '../../src/lib/holdingValue.ts';
 import { applyScheduledInterestForUser } from '../debts/store.ts';
 import '../chain/index.ts'; // registers chain adapters for wallet balances
 import { combineValuations, valueWallet, type WalletValuation } from '../chain/valuation.ts';
@@ -222,17 +222,6 @@ export async function computeNetWorth(
   const closedPositionValue = (notes: unknown): number => {
     const v = parseNzdValueFromNotes(typeof notes === 'string' ? notes : null);
     return v != null && Number.isFinite(v) && v > 0 ? v : 0;
-  };
-
-  /**
-   * Closed only when a quantity was stored and is not positive.
-   * Null is "not recorded" (a cost-basis holding). Number(null) is 0, so
-   * `!(Number(qty) > 0)` would drop those holdings as if they had been sold.
-   */
-  const isClosedQuantity = (qty: unknown): boolean => {
-    if (qty == null) return false;
-    const n = Number(qty);
-    return Number.isFinite(n) && n <= 0;
   };
 
   for (const h of holdings) {
