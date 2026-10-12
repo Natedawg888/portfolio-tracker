@@ -1191,6 +1191,12 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify({ enabled, valueSearch }),
       }),
+    getSnapshotPrefs: () => req<{ dailySnapshot: boolean }>('/settings/snapshots'),
+    setSnapshotPrefs: (dailySnapshot: boolean) =>
+      req<{ dailySnapshot: boolean }>('/settings/snapshots', {
+        method: 'PUT',
+        body: JSON.stringify({ dailySnapshot }),
+      }),
     getKiwiSaverEmployeeRate: () =>
       req<{
         employeeRatePct: number;

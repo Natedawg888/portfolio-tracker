@@ -32,6 +32,7 @@ jobs:
       - run: npm run test:budget
       - run: npm run test:debts
       - run: npm run test:portfolio
+      - run: npm run test:history
       - run: npm run test:donations
       - run: npm run test:projections
       - run: npm run test:projections-page

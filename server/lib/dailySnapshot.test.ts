@@ -20,7 +20,7 @@ function assert(cond: unknown, msg: string): void {
 }
 
 const { getDb, queryAll, run } = await import('../db/index.ts');
-const { recordDailySnapshot } = await import('./dailySnapshot.ts');
+const { dailySnapshotEnabled, recordDailySnapshot } = await import('./dailySnapshot.ts');
 type NetWorthResult = import('./netWorth.ts').NetWorthResult;
 
 const db = await getDb();
@@ -69,5 +69,25 @@ assert(list[1].total_nzd === 1300, 'skipped load leaves the day as it was');
 
 assert(recordDailySnapshot(db, other, nw(5), new Date('2026-10-11T11:30:00Z')) === 'inserted', 'each user has their own day');
 assert(rows(other).length === 1, 'other user has one row');
+
+const optOut = 'snap_opt_out';
+run(
+  db,
+  `INSERT INTO users (id, email, password_hash, preferences_json, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
+  [optOut, 'opt-out@example.test', 'x', JSON.stringify({ valueSearch: { showCurrencyExchanger: false } }), 'now', 'now'],
+);
+assert(dailySnapshotEnabled(db, optOut), 'a user who never set the pref takes daily snapshots');
+assert(dailySnapshotEnabled(db, 'no_such_user'), 'no saved prefs means on');
+assert(recordDailySnapshot(db, optOut, nw(10), new Date('2026-10-10T20:00:00Z')) === 'inserted', 'on by default records');
+
+run(db, `UPDATE users SET preferences_json = ? WHERE id = ?`, [
+  JSON.stringify({ valueSearch: { showCurrencyExchanger: false }, snapshots: { dailySnapshot: false } }),
+  optOut,
+]);
+const before = JSON.stringify(rows(optOut));
+assert(!dailySnapshotEnabled(db, optOut), 'saved false turns it off');
+assert(recordDailySnapshot(db, optOut, nw(20), new Date('2026-10-10T21:00:00Z')) === 'disabled', 'same day is not updated when off');
+assert(recordDailySnapshot(db, optOut, nw(30), new Date('2026-10-12T21:00:00Z')) === 'disabled', 'a new day is not inserted when off');
+assert(JSON.stringify(rows(optOut)) === before, 'turning it off leaves existing snapshots as they were');
 
 console.log('daily snapshot tests passed');

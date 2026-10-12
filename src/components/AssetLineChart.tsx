@@ -4,12 +4,14 @@
  * Resolution: by day | by month (bucket last real snapshot; skip empty buckets).
  */
 import { formatNzd } from '../api/client';
-import { isMoneyHidden, MONEY_MASK } from '../lib/privacy';
+import { axisLabel, axisTickKey, compactNzd, parseAt } from '../lib/chartAxis';
 
 export type LinePoint = {
   /** ISO timestamp or YYYY-MM-DD */
   at: string;
   value: number;
+  /** The real snapshot time behind this point; kept when `at` becomes a day/month bucket. */
+  takenAt?: string;
 };
 
 export type LineSeries = {
@@ -79,6 +81,7 @@ export function resampleSeries(
       buckets.set(key, {
         at: resolution === 'month' ? `${key}-01` : key,
         value: p.value,
+        ...(p.takenAt != null && { takenAt: p.takenAt }),
       });
     }
     const points = [...buckets.entries()]
@@ -105,31 +108,6 @@ type Props = {
    */
   foregroundKey?: string;
 };
-
-function parseAt(at: string): number {
-  const t = Date.parse(at.length === 7 ? `${at}-01T00:00:00` : at.length === 10 ? `${at}T00:00:00` : at);
-  return Number.isFinite(t) ? t : 0;
-}
-
-function axisLabel(at: string, resolution: ChartResolution): string {
-  try {
-    if (resolution === 'month') {
-      const d = new Date(parseAt(at));
-      return new Intl.DateTimeFormat('en-NZ', {
-        month: 'short',
-        year: 'numeric',
-        timeZone: 'UTC',
-      }).format(d);
-    }
-    return new Intl.DateTimeFormat('en-NZ', {
-      timeZone: 'Pacific/Auckland',
-      day: 'numeric',
-      month: 'short',
-    }).format(new Date(at.includes('T') || at.length > 10 ? at : `${at}T12:00:00+13:00`));
-  } catch {
-    return at.slice(0, 10);
-  }
-}
 
 /**
  * Auto Y domain padded around data min/max.
@@ -172,15 +150,6 @@ export function computeYDomain(values: number[]): { vMin: number; vMax: number }
     vMax = vMin + Math.max(magnitude * 0.02, 1);
   }
   return { vMin, vMax };
-}
-
-/** Same rounding as the axis text, before hide-amounts masking, so identical labels can collapse. */
-export function axisTickKey(n: number): string {
-  const abs = Math.abs(n);
-  if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (abs >= 10_000) return `${(n / 1_000).toFixed(0)}k`;
-  if (abs >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(Math.round(n));
 }
 
 /**
@@ -376,9 +345,4 @@ export function AssetLineChart({
       </ul>
     </div>
   );
-}
-
-function compactNzd(n: number): string {
-  if (isMoneyHidden()) return MONEY_MASK;
-  return axisTickKey(n);
 }

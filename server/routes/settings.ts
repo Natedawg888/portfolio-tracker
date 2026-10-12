@@ -37,6 +37,7 @@ import {
   readKiwiSaverEmployeeRate,
   saveKiwiSaverEmployeeRate,
 } from '../kiwisaver/employeeRate.ts';
+import { dailySnapshotEnabled } from '../lib/dailySnapshot.ts';
 import { fetchBtcFx } from '../quotes/btc.ts';
 import { fetchGoMiningIncome } from '../quotes/gominingIncome.ts';
 import { fetchNetworkHashrate } from '../quotes/hashrate.ts';
@@ -591,6 +592,28 @@ async function saveUserAssetClassPrefs(
   );
   return { prefs, valueSearch: nextValueSearch };
 }
+
+router.get('/snapshots', async (req: AuthedRequest, res) => {
+  const userId = settingsUserId(req, res);
+  if (!userId) return;
+  const db = await getDb();
+  res.json({ dailySnapshot: dailySnapshotEnabled(db, userId) });
+});
+
+router.put('/snapshots', async (req: AuthedRequest, res) => {
+  const userId = settingsUserId(req, res);
+  if (!userId) return;
+  const dailySnapshot = req.body?.dailySnapshot;
+  if (typeof dailySnapshot !== 'boolean') {
+    return res.status(400).json({ error: 'dailySnapshot boolean required' });
+  }
+  const db = await getDb();
+  const prefs = readUserPrefs(db, userId);
+  if (!prefs) return res.status(404).json({ error: 'User not found' });
+  prefs.snapshots = { dailySnapshot };
+  writeUserPrefs(db, userId, prefs);
+  res.json({ dailySnapshot });
+});
 
 router.get('/kiwisaver-employee-rate', async (req: AuthedRequest, res) => {
   if (!req.user) {
