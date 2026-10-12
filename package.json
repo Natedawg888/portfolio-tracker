@@ -37,7 +37,7 @@
     "test:warranties": "node --import tsx src/lib/warranty.test.ts && node --import tsx src/pages/warrantiesView.test.ts && node --import tsx server/warranties/store.test.ts",
     "test:portfolio": "node --import tsx src/lib/portfolioView.test.ts",
     "test:kiwisaver": "node --import tsx src/pages/kiwisaverView.test.ts && node --import tsx server/kiwisaver/history.test.ts",
-    "test:history": "node --import tsx src/pages/historyView.test.ts",
+    "test:history": "node --import tsx src/lib/historyView.test.ts",
     "test:budget": "node --import tsx src/lib/budgetView.test.ts && node --import tsx server/lib/categorySuggest.test.ts",
     "test:dashboard": "node --import tsx src/lib/accountMask.test.ts && node --import tsx src/lib/netWorthHistory.test.ts && node --import tsx server/lib/dailySnapshot.test.ts",
     "test:health-score": "node --import tsx src/lib/healthScore.test.ts && node --import tsx server/health/api.test.ts",

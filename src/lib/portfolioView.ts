@@ -4,6 +4,8 @@
  * figures the API already returns; nothing here is estimated.
  */
 
+import { isClosedQuantity } from './holdingValue';
+
 export type HoldingReturn =
   | { kind: 'no_value' }
   /** Cost missing or 0: no return can be worked out — show "+ Add cost". */
@@ -133,7 +135,7 @@ const CLASS_PLURAL: Record<string, string> = {
  */
 export function findIssues(holdings: IssueHolding[]): PortfolioIssue[] {
   const issues: PortfolioIssue[] = [];
-  const closed = holdings.filter((h) => h.assetClass === 'stock' && !(qty(h) > 0));
+  const closed = holdings.filter((h) => h.assetClass === 'stock' && isClosedQuantity(h.shares));
   if (closed.length > 0) {
     issues.push({
       key: 'closed-stocks',
@@ -142,7 +144,7 @@ export function findIssues(holdings: IssueHolding[]): PortfolioIssue[] {
       action: 'Review closed positions',
     });
   }
-  const emptyCrypto = holdings.filter((h) => h.assetClass === 'crypto' && !(qty(h) > 0));
+  const emptyCrypto = holdings.filter((h) => h.assetClass === 'crypto' && isClosedQuantity(h.amount));
   if (emptyCrypto.length > 0) {
     issues.push({
       key: 'empty-crypto',
