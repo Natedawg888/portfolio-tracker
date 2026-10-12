@@ -7,6 +7,7 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { api, formatNzd } from '../api/client';
 import { InfoTip } from './InfoTip';
+import { PayeResultPanel } from './PayeResultPanel';
 import {
   calculatePieceRate,
   calculateSchedular,
@@ -28,6 +29,7 @@ import {
   withholdingPct,
   type OutputPayPrefs,
 } from '../lib/outputPayPrefs';
+import { periodiseBreakdown } from '../lib/payeCalc';
 import { PAYE_WEEKS_PER_YEAR, type PayTaxYearRates } from '../lib/payeRates';
 import { schedularActivityOptionLabel } from '../lib/payeView';
 import type { PaySource } from '../types';
@@ -483,31 +485,32 @@ export function OutputPayResults({
     const { r } = view;
     const p = r.paye;
     if (part === 'summary') {
+      const hours = num(prefs.pieceHours);
       return (
-        <>
-          <div className="panel-heading">
-            <h2>Take-home pay</h2>
-            <span className="muted small">Piece rate · tax code {p.taxCode}</span>
-          </div>
-          <p className="paye-result-figure">
-            <span className="hero-value">{money(r.weeklyTakeHome)}</span>
-            <span className="muted">/ week</span>
-          </p>
-          <p className="muted small paye-result-meta">{money(p.takeHome)}/yr</p>
-          <p className="muted small paye-result-meta">
-            Gross {money(r.weeklyGross)}/wk · {money(r.annualGross)}/yr · Effective hourly{' '}
-            {r.effectiveHourly == null ? '—' : `${money(r.effectiveHourly)}/h`} (piece earnings ÷ hours)
-          </p>
-          {r.belowMinimumWage ? (
-            <p className="banner paye-result-meta">
-              {money(r.effectiveHourly ?? 0)}/h is below the adult minimum wage of {money(r.minimumWageHourly)}/h ({rates.label}).
-              Employers must top piece-rate pay up to at least minimum wage for the hours worked. Topped up, this week is{' '}
-              {money(r.earnings)} before holiday pay ({money(r.topUp)} top-up). The figures below use the topped-up amount.
+        <PayeResultPanel
+          result={p}
+          periods={periodiseBreakdown(p, hours)}
+          hoursPerWeek={hours}
+          kiwiSaverOptIn={payeOptions.kiwiSaverOptIn}
+          initialPeriod="week"
+          headingNote={`Piece rate · tax code ${p.taxCode}`}
+          notice={
+            r.belowMinimumWage ? (
+              <p className="banner paye-result-meta">
+                {money(r.effectiveHourly ?? 0)}/h is below the adult minimum wage of {money(r.minimumWageHourly)}/h ({rates.label}).
+                Employers must top piece-rate pay up to at least minimum wage for the hours worked. Topped up, this week is{' '}
+                {money(r.earnings)} before holiday pay ({money(r.topUp)} top-up). The figures below use the topped-up amount.
+              </p>
+            ) : null
+          }
+          preface={<ResultRange points={view.range} label="Take-home range" />}
+          detailExtra={
+            <p className="muted small">
+              Gross {money(r.weeklyGross)}/wk · {money(r.annualGross)}/yr · Effective hourly{' '}
+              {r.effectiveHourly == null ? '—' : `${money(r.effectiveHourly)}/h`} (piece earnings ÷ hours)
             </p>
-          ) : null}
-          <ResultRange points={view.range} label="Take-home range" />
-          <Notes notes={p.notes} />
-        </>
+          }
+        />
       );
     }
     const perWeek = (annual: number) => annual / PAYE_WEEKS_PER_YEAR;

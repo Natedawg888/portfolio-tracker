@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, formatNzd } from '../api/client';
 import { InfoTip } from '../components/InfoTip';
+import { PayeChoiceRow } from '../components/PayeChoiceRow';
+import { PayeResultPanel } from '../components/PayeResultPanel';
 import { isMoneyHidden } from '../lib/privacy';
 import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import {
@@ -107,48 +109,6 @@ const EMPLOYMENT_OPTIONS: { value: EmploymentKind; label: string }[] = [
   { value: 'secondary', label: 'Second job' },
 ];
 
-function PayeChoiceRow<T extends string>({
-  label,
-  ariaLabel,
-  value,
-  options,
-  onChange,
-  aside,
-}: {
-  label: string;
-  ariaLabel?: string;
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (next: T) => void;
-  aside?: ReactNode;
-}) {
-  return (
-    <fieldset className="paye-choice">
-      <legend className="paye-choice-legend">
-        {label}
-        {aside}
-      </legend>
-      <div className="paye-choice-row" role="radiogroup" aria-label={ariaLabel ?? label}>
-        {options.map((opt) => {
-          const active = value === opt.value;
-          return (
-            <button
-              key={opt.value}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              className={'paye-choice-btn' + (active ? ' active' : '')}
-              onClick={() => onChange(opt.value)}
-            >
-              {opt.label}
-            </button>
-          );
-        })}
-      </div>
-    </fieldset>
-  );
-}
-
 function PayeToggle({
   label,
   pressed,
@@ -190,57 +150,6 @@ function PayeToggle({
   );
 }
 
-const PERIOD_COLS: { key: 'hour' | 'week' | 'fortnight' | 'month' | 'year'; label: string }[] = [
-  { key: 'hour', label: 'Hour' },
-  { key: 'week', label: 'Week' },
-  { key: 'fortnight', label: 'Fortnight' },
-  { key: 'month', label: 'Month' },
-  { key: 'year', label: 'Year' },
-];
-
-
-type PeriodRow = {
-  label: string;
-  amounts: { hour: number; week: number; fortnight: number; month: number; year: number };
-  deduct: boolean;
-};
-
-function breakdownRows(
-  result: NonNullable<ReturnType<typeof calculatePaye>>,
-  periods: ReturnType<typeof periodiseBreakdown>,
-  kiwiSaverOptIn: boolean,
-): PeriodRow[] {
-  const rows: PeriodRow[] = [
-    { label: 'Gross pay', amounts: periods.gross, deduct: false },
-    { label: 'Income tax', amounts: periods.incomeTax, deduct: true },
-    { label: 'ACC earners’ levy', amounts: periods.acc, deduct: true },
-    { label: 'PAYE (tax + ACC − credits)', amounts: periods.paye, deduct: true },
-  ];
-  if (result.ietcCredit > 0) {
-    rows.push({ label: 'IETC credit', amounts: periods.ietc, deduct: false });
-  }
-  if (result.charityCredit > 0) {
-    rows.push({ label: 'Donation tax credit', amounts: periods.charityCredit, deduct: false });
-  }
-  if (result.extraCreditsTotal > 0) {
-    rows.push({ label: 'Investing credits', amounts: periods.extraCredits, deduct: false });
-  }
-  if (result.kiwiSaverEmployee > 0 || kiwiSaverOptIn) {
-    rows.push({ label: 'KiwiSaver (employee)', amounts: periods.kiwiSaver, deduct: true });
-  }
-  if (kiwiSaverOptIn) {
-    rows.push({ label: 'KiwiSaver (employer)', amounts: periods.employerKs, deduct: false });
-  }
-  if (result.studentLoan > 0) {
-    rows.push({ label: 'Student loan', amounts: periods.studentLoan, deduct: true });
-  }
-  if (result.payrollGivingDonation > 0) {
-    rows.push({ label: 'Payroll giving', amounts: periods.payrollGiving, deduct: true });
-  }
-  rows.push({ label: 'Take-home pay', amounts: periods.takeHome, deduct: false });
-  return rows;
-}
-
 type CreditDraft = PersistedCreditDraft;
 
 function newCreditId(): string {
@@ -270,10 +179,6 @@ function bandMoney(n: number): string {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   }).format(n);
-}
-
-function pct(n: number): string {
-  return `${(n * 100).toFixed(2)}%`;
 }
 
 function CharityLinksFromBudget() {
@@ -395,59 +300,6 @@ function WhatsIncluded({ open, rates }: { open: boolean; rates: PayTaxYearRates 
         </ul>
       </div>
     </div>
-  );
-}
-
-function SalaryResult({
-  result,
-  periods,
-}: {
-  result: NonNullable<ReturnType<typeof calculatePaye>>;
-  periods: ReturnType<typeof periodiseBreakdown>;
-}) {
-  return (
-    <>
-      <div className="panel-heading">
-        <h2>Take-home pay</h2>
-        <span className="muted small">Tax code · {result.taxCode}</span>
-      </div>
-      <p className="paye-result-figure">
-        <span className="hero-value">{money(result.takeHome)}</span>
-        <span className="muted">/ year</span>
-      </p>
-      <p className="muted small paye-result-meta">
-        {money(periods.takeHome.week)}/wk · {money(periods.takeHome.month)}/mo
-      </p>
-      <p className="muted small paye-result-meta">
-        Annual gross {money(result.annualGross)}
-        {result.annualPackage !== result.annualGross
-          ? ` (package ${money(result.annualPackage)})`
-          : ''}
-        {' · '}Effective PAYE rate {pct(result.effectiveTaxRate)}
-        {result.ietcApplied ? ` · IETC ${money(result.ietcCredit)}` : ''}
-        {result.charityCredit > 0 ? ` · Donation tax credit ${money(result.charityCredit)}` : ''}
-        {result.extraCreditsTotal > 0 ? ` · Investing credits ${money(result.extraCreditsTotal)}` : ''}
-      </p>
-      {result.extraCredits.length > 0 && result.extraCreditsTotal > 0 && (
-        <ul className="muted small paye-result-list">
-          {result.extraCredits
-            .filter((c) => c.credit > 0)
-            .map((c) => (
-              <li key={c.id}>
-                {c.label}: {money(c.credit)}/yr
-                {' · assessment / year-end'}
-              </li>
-            ))}
-        </ul>
-      )}
-      {result.notes.length > 0 && (
-        <ul className="muted small paye-result-list">
-          {result.notes.map((n) => (
-            <li key={n}>{n}</li>
-          ))}
-        </ul>
-      )}
-    </>
   );
 }
 
@@ -1191,7 +1043,13 @@ export function Paye() {
             rates={rates}
           />
         ) : result && periods ? (
-          <SalaryResult result={result} periods={periods} />
+          <PayeResultPanel
+            result={result}
+            periods={periods}
+            hoursPerWeek={hours}
+            kiwiSaverOptIn={kiwiSaverOptIn}
+            headingNote={`Tax code · ${result.taxCode}`}
+          />
         ) : (
           <p className="muted paye-result-empty">
             Enter a gross income above to calculate take-home pay.
@@ -1199,55 +1057,6 @@ export function Paye() {
         )}
       </aside>
       </div>
-
-      {result && periods && (
-          <section className="panel">
-            <h3>Breakdown</h3>
-            <div style={{ overflowX: 'auto' }}>
-              <table className="data-table" style={{ marginTop: '0.75rem' }}>
-                <thead>
-                  <tr>
-                    <th>Item</th>
-                    {PERIOD_COLS.map((c) => (
-                      <th key={c.key} style={{ textAlign: 'right' }}>
-                        {c.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {breakdownRows(result, periods, kiwiSaverOptIn).map((row) => (
-                    <tr key={row.label}>
-                      <td>
-                        {row.label}
-                        {row.deduct ? <span className="muted"> (−)</span> : null}
-                      </td>
-                      {PERIOD_COLS.map((c) => (
-                        <td
-                          key={c.key}
-                          className={
-                            row.label === 'Take-home pay'
-                              ? 'money amt-in'
-                              : row.deduct
-                                ? 'money amt-out'
-                                : 'money'
-                          }
-                          style={{ textAlign: 'right' }}
-                        >
-                          {money(row.amounts[c.key])}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="muted small" style={{ marginTop: '0.75rem' }}>
-              Employer KiwiSaver is paid by the employer (shown for reference). Month ≠ 2 ×
-              fortnight because year ÷ 12 vs year ÷ 26.
-            </p>
-          </section>
-      )}
 
       {outputType && (
         <>
