@@ -24,7 +24,7 @@ import {
 } from '../quotes/forexQuotesDb.ts';
 import type { MetalKind, MetalUnit } from '../../src/types/index.ts';
 import { aucklandToday } from '../debts/model.ts';
-import { isTotalNotUnitQuote, parseNzdValueFromNotes } from '../../src/lib/holdingValue.ts';
+import { isClosedQuantity, isTotalNotUnitQuote, parseNzdValueFromNotes } from '../../src/lib/holdingValue.ts';
 import { applyScheduledInterestForUser } from '../debts/store.ts';
 import '../chain/index.ts'; // registers chain adapters for wallet balances
 import { combineValuations, valueWallet, type WalletValuation } from '../chain/valuation.ts';
@@ -235,7 +235,7 @@ export async function computeNetWorth(
 
     switch (h.asset_class) {
       case 'stock': {
-        if (!(Number(h.shares) > 0)) {
+        if (isClosedQuantity(h.shares)) {
           // Closed position (0 shares): only what Akahu still reports for it, never its cost.
           const left = closedPositionValue(h.notes);
           // Same in both totals, so it counts whether or not other lines have a quote.
@@ -257,7 +257,7 @@ export async function computeNetWorth(
         break;
       }
       case 'crypto': {
-        if (!(Number(h.amount) > 0)) {
+        if (isClosedQuantity(h.amount)) {
           const left = closedPositionValue(h.notes);
           // Same in both totals, so it counts whether or not other lines have a quote.
           cryptoMarket += left;

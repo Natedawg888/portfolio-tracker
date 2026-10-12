@@ -48,10 +48,11 @@ const issues = findIssues([
   { id: 'b', assetClass: 'crypto', name: 'Bitcoin', source: 'Sharesies', amount: 0, costNzd: 23, valueNzd: null },
   { id: 'n', assetClass: 'crypto', name: 'Nexo', source: 'manual', amount: 10, costNzd: null, valueNzd: 15 },
   { id: 'm', assetClass: 'gomining_miner', name: '#1', costNzd: 0, valueNzd: 30 },
+  { id: 'u', assetClass: 'stock', name: 'Unknown qty', source: 'manual', shares: null, costNzd: 300, valueNzd: 300 },
 ]);
 const keys = issues.map((i) => i.key).join();
 eq(keys, 'closed-stocks,empty-crypto,no-cost-crypto,no-cost-gomining_miner,synced-cost', 'only problems that apply');
-eq(issues[0].text.startsWith('Tesla has 0 shares'), true, 'names the closed position');
+eq(issues[0].text.startsWith('Tesla has 0 shares'), true, 'names the closed position, not a stock with no share count');
 eq(issues.find((i) => i.key === 'synced-cost')?.text.startsWith('QYLD, AGNC:'), true, 'flags synced stocks whose cost is over 2× value');
 eq(findIssues([{ id: 'x', assetClass: 'stock', name: 'Fine', shares: 1, costNzd: 10, valueNzd: 12 }]).length, 0, 'no issues, no panel');
 

@@ -54,11 +54,14 @@ holding('tsla', 'stock', 'TSLA', 0, 914.45, 'Akahu market value: 0.77 USD → 1.
 holding('btc_sold', 'crypto', 'BTC', 0, 23.12, 'Akahu market value: 0.06 USD → 0.11 NZD @ 1.78 (frankfurter)');
 holding('xrp_sold', 'crypto', 'XRP', 0, 36.72, null);
 holding('btc_manual', 'crypto', 'BTC', 0.001, 3.18, null);
+// A manual stock saved with a cost and no share count: quantity unknown, not sold.
+run(db, `INSERT INTO holdings (id, user_id, asset_class, name, symbol, cost_basis_nzd, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)`,
+  ['unknown_qty', user, 'stock', 'Manual', 'MANL', 250, now, now]);
 
 const nw = await computeNetWorth(db, user, async () => ({ ok: true, totalNzd: 0, items: [], complete: true }) as never);
 
-// QYLD 0.64 × 33 = 21.12, plus Tesla's own 1.37 — not Tesla's 914.45 cost.
-eq(nw.stocksNzd, 21.12 + 1.37, 'closed stock adds what Akahu reports, never its cost');
+// QYLD 0.64 × 33 = 21.12, plus Tesla's own 1.37 — not Tesla's 914.45 cost — plus the unknown-quantity stock at its 250 cost.
+eq(nw.stocksNzd, 21.12 + 1.37 + 250, 'closed stock adds what Akahu reports, never its cost; no share count keeps cost');
 // Sold BTC 0.11 + sold XRP 0 + manual BTC: the "total" quote is not a unit price, so it falls back to cost 3.18.
 eq(nw.cryptoNzd, 0.11 + 3.18, 'closed crypto adds no cost; a total quote is never multiplied by a quantity');
 

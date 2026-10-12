@@ -42,3 +42,11 @@ export function parseNzdValueFromNotes(notes?: string | null): number | null {
   }
   return null;
 }
+
+/**
+ * True when a quantity is recorded and is 0 (a sold position). A missing
+ * quantity means unknown, not sold: manual stocks can be saved with a cost only.
+ */
+export function isClosedQuantity(quantity: unknown): boolean {
+  return quantity != null && quantity !== '' && !(Number(quantity) > 0);
+}
