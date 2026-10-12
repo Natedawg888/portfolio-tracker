@@ -1,23 +1,41 @@
 /**
- * New / edit draft invoice (KAN-71), with a live preview beside the form.
- * Totals in the preview use the same maths as the server (src/lib/invoiceCalc.ts);
- * the server recomputes them on save.
+ * New / edit draft invoice (KAN-71). Phase 2 builder: bill-to chips, line items,
+ * one-tap due dates, and a GST checkbox, with a live preview beside the form.
+ * Totals use editorInvoiceTotals (invoiceTotals). The server recomputes them on save.
+ * Mark as sent still goes through the existing mark-sent action, which rejects
+ * with sendProblem when the invoice is not ready to send.
  */
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useId, useMemo, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api, formatNzd, type InvoiceWriteBody } from '../api/client';
+import { InfoTip } from '../components/InfoTip';
 import { InvoicePreview } from '../components/InvoicePreview';
 import {
-  dueDateForPreset,
-  DUE_PRESETS,
   INVOICE_UNIT_PRESETS,
-  invoiceTotals,
   type DuePreset,
   type GstMode,
 } from '../lib/invoiceCalc';
 import type { BusinessProfile, InvoiceClient, PaySource, PublicInvoice } from '../types';
+import {
+  BUSINESS_SETTINGS_HREF,
+  DUE_TAP_PRESETS,
+  businessPromptLead,
+  editorDueDate,
+  editorGstMode,
+  editorInvoiceTotals,
+  formatInvoiceDate,
+  gstEditorControl,
+  gstModeFromCheckbox,
+  invoiceActionBlock,
+} from './invoicesView';
 
 type LineDraft = { key: string; description: string; quantity: string; unit: string; rate: string };
+
+const GST_PRESERVED: { value: GstMode; label: string }[] = [
+  { value: 'exclusive', label: 'GST 15% on top' },
+  { value: 'inclusive', label: 'Prices include GST' },
+  { value: 'none', label: 'No GST' },
+];
 
 function newKey(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -36,12 +54,23 @@ function num(text: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function keptDueLabel(preset: DuePreset): string | null {
+  if (preset === 'on_receipt') return 'On receipt';
+  if (preset === 'days_30') return '30 days';
+  return null;
+}
+
 const UNIT_OPTIONS = [...new Set(INVOICE_UNIT_PRESETS.flatMap((g) => [...g.units]))];
+
+const MARK_SENT_CONFIRM = 'Mark as sent without sending from here? You won’t be able to edit it after this.';
 
 export function InvoiceEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const editingId = id ?? null;
+  const navError = (location.state as { sendError?: string } | null)?.sendError ?? null;
+  const actionReasonId = useId();
 
   const [business, setBusiness] = useState<BusinessProfile | null>(null);
   const [clients, setClients] = useState<InvoiceClient[]>([]);
@@ -49,6 +78,7 @@ export function InvoiceEditor() {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [savedId, setSavedId] = useState<string | null>(null);
 
   const [number, setNumber] = useState('');
   const [clientId, setClientId] = useState('');
@@ -56,16 +86,18 @@ export function InvoiceEditor() {
   const [clientEmail, setClientEmail] = useState('');
   const [clientAddress, setClientAddress] = useState('');
   const [clientReference, setClientReference] = useState('');
-  const [saveClient, setSaveClient] = useState(true);
+  const [clientExtraOpen, setClientExtraOpen] = useState(false);
   const [issueDate, setIssueDate] = useState(todayNz());
   const [duePreset, setDuePreset] = useState<DuePreset>('days_14');
   const [customDue, setCustomDue] = useState('');
   const [reference, setReference] = useState('');
-  const [gstMode, setGstMode] = useState<GstMode>('exclusive');
+  const [gstMode, setGstMode] = useState<GstMode>('none');
+  const [inclusiveDraft, setInclusiveDraft] = useState(false);
   const [withholdingOn, setWithholdingOn] = useState(false);
   const [withholdingPct, setWithholdingPct] = useState('');
   const [notes, setNotes] = useState('');
   const [paymentInstructions, setPaymentInstructions] = useState('');
+  const [notesOpen, setNotesOpen] = useState(false);
   const [lines, setLines] = useState<LineDraft[]>([blankLine()]);
 
   useEffect(() => {
@@ -96,23 +128,28 @@ export function InvoiceEditor() {
           setClientEmail(inv.clientEmail);
           setClientAddress(inv.clientAddress);
           setClientReference(inv.clientReference);
-          setSaveClient(false);
+          setClientExtraOpen(Boolean(inv.clientEmail.trim() || inv.clientAddress.trim() || inv.clientReference.trim()));
           setIssueDate(inv.issueDate);
           setDuePreset(inv.duePreset);
           setCustomDue(inv.duePreset === 'custom' ? inv.dueDate : '');
           setReference(inv.reference);
-          setGstMode(inv.gstMode === 'none' ? 'exclusive' : inv.gstMode);
+          setGstMode(inv.gstMode);
+          setInclusiveDraft(inv.gstMode === 'inclusive');
           setWithholdingOn(inv.withholdingRatePct != null);
           setWithholdingPct(inv.withholdingRatePct != null ? String(inv.withholdingRatePct) : '');
           setNotes(inv.notes);
           setPaymentInstructions(inv.paymentInstructions);
+          setNotesOpen(Boolean(inv.notes.trim() || inv.paymentInstructions.trim()));
           setLines(
             inv.lines.length > 0
               ? inv.lines.map((l) => ({ key: newKey(), description: l.description, quantity: String(l.quantity), unit: l.unit, rate: String(l.rate) }))
               : [blankLine()],
           );
+        } else if (biz.gstRegistered) {
+          setGstMode('exclusive');
         }
         setLoaded(true);
+        if (navError) setError(navError);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load the invoice.');
       }
@@ -120,35 +157,45 @@ export function InvoiceEditor() {
     return () => {
       cancelled = true;
     };
-  }, [editingId, navigate]);
+  }, [editingId, navigate, navError]);
 
-  function pickClient(nextId: string) {
-    setClientId(nextId);
-    const c = clients.find((x) => x.id === nextId);
-    if (c) {
-      setClientName(c.name);
-      setClientEmail(c.email);
-      setClientAddress(c.address);
-      setClientReference(c.reference);
-    } else {
-      setClientName('');
-      setClientEmail('');
-      setClientAddress('');
-      setClientReference('');
-    }
+  function applyClient(c: InvoiceClient) {
+    setClientId(c.id);
+    setClientName(c.name);
+    setClientEmail(c.email);
+    setClientAddress(c.address);
+    setClientReference(c.reference);
+    if (c.email.trim() || c.address.trim() || c.reference.trim()) setClientExtraOpen(true);
   }
 
-  const effectiveGst: GstMode = business?.gstRegistered ? gstMode : 'none';
+  function onNameChange(value: string) {
+    setClientName(value);
+    const selected = clients.find((c) => c.id === clientId);
+    if (selected && selected.name !== value) setClientId('');
+  }
+
+  const gstRegistered = business ? business.gstRegistered : null;
+  const effectiveGst = editorGstMode(gstRegistered, gstMode);
+  const gstControl = gstEditorControl({ gstRegistered, gstMode, inclusiveDraft });
   const wt = withholdingOn ? num(withholdingPct) : null;
-  const dueDate = dueDateForPreset(issueDate, duePreset, customDue);
+  const dueDate = editorDueDate(issueDate, duePreset, customDue);
+  const keptDue = keptDueLabel(duePreset);
+
+  const lineInputs = useMemo(
+    () => lines.map((l) => ({ description: l.description, quantity: num(l.quantity), unit: l.unit, rate: num(l.rate) })),
+    [lines],
+  );
+  const totals = useMemo(
+    () => editorInvoiceTotals(lineInputs, effectiveGst, wt),
+    [lineInputs, effectiveGst, wt],
+  );
+  const actionBlock = invoiceActionBlock({ clientName, subtotal: totals.subtotal });
 
   const preview: PublicInvoice | null = useMemo(() => {
     if (!business) return null;
-    const lineInputs = lines.map((l) => ({ description: l.description, quantity: num(l.quantity), unit: l.unit, rate: num(l.rate) }));
-    const totals = invoiceTotals(lineInputs, effectiveGst, wt);
     return {
       number,
-      title: business.gstRegistered ? 'Tax invoice' : 'Invoice',
+      title: business.gstRegistered && effectiveGst !== 'none' ? 'Tax invoice' : 'Invoice',
       status: 'draft',
       business,
       clientName,
@@ -171,7 +218,7 @@ export function InvoiceEditor() {
       notes,
       paymentInstructions,
     };
-  }, [business, lines, effectiveGst, wt, number, clientName, clientEmail, clientAddress, clientReference, issueDate, dueDate, reference, notes, paymentInstructions]);
+  }, [business, lineInputs, lines, totals, effectiveGst, number, clientName, clientEmail, clientAddress, clientReference, issueDate, dueDate, reference, notes, paymentInstructions]);
 
   function updateLine(key: string, patch: Partial<LineDraft>) {
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -201,35 +248,84 @@ export function InvoiceEditor() {
     }
   }
 
-  async function save() {
-    setBusy(true);
-    setError(null);
-    try {
-      let cid: string | null = clientId || null;
-      if (!cid && saveClient && clientName.trim()) {
-        const created = await api.invoices.createClient({ name: clientName, email: clientEmail, address: clientAddress, reference: clientReference });
+  function writeBody(cid: string | null): InvoiceWriteBody {
+    return {
+      number: number.trim() || undefined,
+      clientId: cid,
+      clientName: clientName.trim(),
+      clientEmail: clientEmail.trim(),
+      clientAddress: clientAddress.trim(),
+      clientReference: clientReference.trim(),
+      issueDate,
+      duePreset,
+      dueDate: duePreset === 'custom' ? customDue || null : null,
+      reference,
+      gstMode: effectiveGst,
+      withholdingRatePct: wt,
+      notes,
+      paymentInstructions,
+      lines: lines.map((l) => ({ description: l.description, quantity: num(l.quantity), unit: l.unit, rate: num(l.rate) })),
+    };
+  }
+
+  async function persist(): Promise<{ id: string }> {
+    let cid: string | null = clientId || null;
+    const trimmedName = clientName.trim();
+    if (!cid && trimmedName) {
+      const existing = clients.find((c) => c.name.trim().toLowerCase() === trimmedName.toLowerCase());
+      if (existing) {
+        cid = existing.id;
+        setClientId(existing.id);
+      } else {
+        const created = await api.invoices.createClient({
+          name: trimmedName,
+          email: clientEmail.trim(),
+          address: clientAddress.trim(),
+          reference: clientReference.trim(),
+        });
         cid = created.id;
         setClients((prev) => [...prev, created]);
         setClientId(created.id);
       }
-      const body: InvoiceWriteBody = {
-        number: number.trim() || undefined,
-        clientId: cid,
-        clientName,
-        clientEmail,
-        clientAddress,
-        clientReference,
-        issueDate,
-        duePreset,
-        dueDate: duePreset === 'custom' ? customDue || null : null,
-        reference,
-        gstMode: effectiveGst,
-        withholdingRatePct: wt,
-        notes,
-        paymentInstructions,
-        lines: lines.map((l) => ({ description: l.description, quantity: num(l.quantity), unit: l.unit, rate: num(l.rate) })),
-      };
-      const saved = editingId ? await api.invoices.update(editingId, body) : await api.invoices.create(body);
+    }
+    const id = savedId ?? editingId;
+    const saved = id ? await api.invoices.update(id, writeBody(cid)) : await api.invoices.create(writeBody(cid));
+    setSavedId(saved.id);
+    if (!number.trim()) setNumber(saved.number);
+    return saved;
+  }
+
+  async function save() {
+    if (actionBlock) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = await persist();
+      navigate(`/invoices/${saved.id}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save the invoice.');
+      setBusy(false);
+    }
+  }
+
+  async function markSent() {
+    if (actionBlock) return;
+    if (!window.confirm(MARK_SENT_CONFIRM)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = await persist();
+      try {
+        await api.invoices.action(saved.id, 'mark-sent');
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Could not mark the invoice as sent.';
+        setError(message);
+        setBusy(false);
+        if (!editingId) {
+          navigate(`/invoices/${saved.id}/edit`, { replace: true, state: { sendError: message } });
+        }
+        return;
+      }
       navigate(`/invoices/${saved.id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save the invoice.');
@@ -245,8 +341,11 @@ export function InvoiceEditor() {
     );
   }
 
+  const promptLead = businessPromptLead(business);
+  const actionsDisabled = busy || actionBlock != null;
+
   return (
-    <div className="stack invoices-page">
+    <div className="stack invoices-page invoice-editor">
       <section className="panel">
         <div className="panel-heading">
           <h2 className="page-title">{editingId ? `Edit ${number}` : 'New invoice'}</h2>
@@ -254,100 +353,60 @@ export function InvoiceEditor() {
             Cancel
           </Link>
         </div>
-        {business && !business.businessName.trim() ? (
-          <p className="banner">
-            Add your name or business name in <Link to="/settings?tab=business">Settings → Business</Link> before sending.
-          </p>
-        ) : null}
       </section>
 
       <div className="invoice-editor-layout">
         <div className="stack">
           <section className="panel">
-            <h3>Client</h3>
             <div className="form-grid">
-              <label className="span-2">
-                Saved client
-                <select value={clientId} onChange={(e) => pickClient(e.target.value)}>
-                  <option value="">New client…</option>
+              <label className="span-2 invoice-bill-to">
+                Bill to
+                <input value={clientName} maxLength={120} onChange={(e) => onNameChange(e.target.value)} />
+              </label>
+            </div>
+            {clients.length > 0 ? (
+              <div className="invoice-client-block">
+                <span className="invoice-field-label" id="invoice-saved-clients">Saved clients</span>
+                <div className="invoice-client-chips" role="group" aria-labelledby="invoice-saved-clients">
                   {clients.map((c) => (
-                    <option key={c.id} value={c.id}>
+                    <button
+                      key={c.id}
+                      type="button"
+                      className="invoice-client-chip"
+                      aria-pressed={clientId === c.id}
+                      onClick={() => applyClient(c)}
+                    >
                       {c.name}
-                    </option>
+                    </button>
                   ))}
-                </select>
-              </label>
-              <label>
-                Name
-                <input value={clientName} maxLength={120} onChange={(e) => setClientName(e.target.value)} />
-              </label>
-              <label>
-                Email
-                <input type="email" value={clientEmail} maxLength={254} onChange={(e) => setClientEmail(e.target.value)} />
-              </label>
-              <label className="span-2">
-                Address
-                <textarea rows={2} value={clientAddress} maxLength={400} onChange={(e) => setClientAddress(e.target.value)} />
-              </label>
-              <label>
-                Client reference (optional)
-                <input value={clientReference} maxLength={80} onChange={(e) => setClientReference(e.target.value)} />
-              </label>
-              {!clientId ? (
-                <label className="field checkbox-field">
-                  <label className="inline-check">
-                    <input type="checkbox" checked={saveClient} onChange={(e) => setSaveClient(e.target.checked)} />
-                    Save to my clients
-                  </label>
-                </label>
-              ) : null}
-            </div>
-          </section>
-
-          <section className="panel">
-            <h3>Details</h3>
-            <div className="form-grid">
-              <label>
-                Invoice number
-                <input value={number} maxLength={40} onChange={(e) => setNumber(e.target.value)} />
-              </label>
-              <label>
-                Reference / PO (optional)
-                <input value={reference} maxLength={80} onChange={(e) => setReference(e.target.value)} />
-              </label>
-              <label>
-                Issue date
-                <input type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
-              </label>
-              <label>
-                Due
-                <select value={duePreset} onChange={(e) => setDuePreset(e.target.value as DuePreset)}>
-                  {DUE_PRESETS.map((p) => (
-                    <option key={p.value} value={p.value}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
-                {duePreset !== 'custom' ? <span className="muted small">Due {dueDate}</span> : null}
-              </label>
-              {duePreset === 'custom' ? (
+                </div>
+              </div>
+            ) : null}
+            <details
+              className="invoice-more"
+              open={clientExtraOpen}
+              onToggle={(e) => setClientExtraOpen(e.currentTarget.open)}
+            >
+              <summary>Email and address</summary>
+              <div className="form-grid">
                 <label>
-                  Due date
-                  <input type="date" value={customDue} min={issueDate} onChange={(e) => setCustomDue(e.target.value)} />
+                  Email
+                  <input type="email" value={clientEmail} maxLength={254} onChange={(e) => setClientEmail(e.target.value)} />
                 </label>
-              ) : null}
-            </div>
-          </section>
+                <label>
+                  Reference
+                  <input value={clientReference} maxLength={80} onChange={(e) => setClientReference(e.target.value)} />
+                </label>
+                <label className="span-2">
+                  Address
+                  <textarea rows={2} value={clientAddress} maxLength={400} onChange={(e) => setClientAddress(e.target.value)} />
+                </label>
+              </div>
+            </details>
 
-          <section className="panel">
-            <div className="panel-heading">
-              <h3>Lines</h3>
-              <button type="button" className="btn small" onClick={() => setLines((prev) => [...prev, blankLine()])}>
-                Add line
-              </button>
-            </div>
+            <h3>Lines</h3>
             {contractSources.length > 0 ? (
-              <label style={{ marginTop: '0.35rem' }}>
+              <label className="invoice-contract-source">
                 Add a line from a saved contract calculation (PAYE page)
                 <select value="" onChange={(e) => addFromSource(e.target.value)}>
                   <option value="">Choose…</option>
@@ -366,7 +425,7 @@ export function InvoiceEditor() {
             </datalist>
             {lines.map((l, i) => (
               <div key={l.key} className="invoice-line-row">
-                <label>
+                <label className="invoice-line-desc">
                   Description
                   <input value={l.description} maxLength={500} onChange={(e) => updateLine(l.key, { description: e.target.value })} />
                 </label>
@@ -375,58 +434,135 @@ export function InvoiceEditor() {
                   <input type="number" step="any" inputMode="decimal" value={l.quantity} onChange={(e) => updateLine(l.key, { quantity: e.target.value })} />
                 </label>
                 <label>
+                  Rate
+                  <input type="number" step="any" inputMode="decimal" value={l.rate} onChange={(e) => updateLine(l.key, { rate: e.target.value })} />
+                </label>
+                <div className="invoice-line-amount">
+                  <span className="invoice-line-label">Amount</span>
+                  <span className="invoice-line-amount-value">{formatNzd(totals.lineTotals[i] ?? 0)}</span>
+                </div>
+                <div className="invoice-line-actions">
+                  <button type="button" className="btn small" aria-label="Move line up" disabled={i === 0} onClick={() => moveLine(i, -1)}>
+                    ↑
+                  </button>
+                  <button type="button" className="btn small" aria-label="Move line down" disabled={i === lines.length - 1} onClick={() => moveLine(i, 1)}>
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    className="btn small danger"
+                    onClick={() => setLines((prev) => (prev.length === 1 ? [blankLine()] : prev.filter((x) => x.key !== l.key)))}
+                  >
+                    Remove
+                  </button>
+                </div>
+                <label className="invoice-line-unit">
                   Unit
                   <input list="invoice-units" value={l.unit} maxLength={40} onChange={(e) => updateLine(l.key, { unit: e.target.value })} />
                 </label>
-                <label>
-                  Rate ($)
-                  <input type="number" step="any" inputMode="decimal" value={l.rate} onChange={(e) => updateLine(l.key, { rate: e.target.value })} />
-                </label>
-                <div className="invoice-line-total">
-                  <span className="muted small">Line total {formatNzd(preview?.lines[i]?.lineTotalNzd ?? 0)}</span>
-                  <span className="row gap" style={{ marginTop: 0 }}>
-                    <button type="button" className="btn small" aria-label="Move line up" disabled={i === 0} onClick={() => moveLine(i, -1)}>
-                      ↑
-                    </button>
-                    <button type="button" className="btn small" aria-label="Move line down" disabled={i === lines.length - 1} onClick={() => moveLine(i, 1)}>
-                      ↓
-                    </button>
-                    <button
-                      type="button"
-                      className="btn small danger"
-                      onClick={() => setLines((prev) => (prev.length === 1 ? [blankLine()] : prev.filter((x) => x.key !== l.key)))}
-                    >
-                      Remove
-                    </button>
-                  </span>
-                </div>
               </div>
             ))}
-          </section>
+            <button type="button" className="btn small invoice-add-line" onClick={() => setLines((prev) => [...prev, blankLine()])}>
+              + Add line
+            </button>
 
-          <section className="panel">
-            <h3>Tax</h3>
+            <h3>Due</h3>
             <div className="form-grid">
-              {business?.gstRegistered ? (
-                <label className="span-2">
-                  Prices entered
-                  <select value={gstMode} onChange={(e) => setGstMode(e.target.value as GstMode)}>
-                    <option value="exclusive">Excluding GST (15% added on top)</option>
-                    <option value="inclusive">Including GST</option>
-                  </select>
+              <label>
+                Issue date
+                <input type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
+              </label>
+              <label>
+                Invoice number
+                <input value={number} maxLength={40} onChange={(e) => setNumber(e.target.value)} />
+              </label>
+              <label className="span-2">
+                Reference
+                <input value={reference} maxLength={80} onChange={(e) => setReference(e.target.value)} />
+              </label>
+            </div>
+            <fieldset className="invoice-choice">
+              <legend>Due date</legend>
+              <div className="invoice-choice-row" role="radiogroup" aria-label="Due date">
+                {DUE_TAP_PRESETS.map((preset) => {
+                  const active = duePreset === preset.value;
+                  return (
+                    <button
+                      key={preset.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      className="invoice-choice-btn"
+                      onClick={() => setDuePreset(preset.value)}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {duePreset === 'custom' ? (
+                <label className="invoice-custom-due">
+                  Due date
+                  <input type="date" value={customDue} min={issueDate} onChange={(e) => setCustomDue(e.target.value)} />
                 </label>
-              ) : (
-                <p className="muted small span-2">
-                  No GST is added. If you’re GST registered, turn it on in <Link to="/settings?tab=business">Settings → Business</Link>.
-                </p>
-              )}
-              <label className="field checkbox-field">
+              ) : null}
+              <p className="muted small invoice-due-note">
+                {keptDue ? `Saved choice: ${keptDue}. ` : null}
+                Due {formatInvoiceDate(dueDate)}
+              </p>
+            </fieldset>
+
+            {gstControl.kind === 'checkbox' ? (
+              <div className="invoice-gst-row">
+                <label className="inline-check">
+                  <input
+                    type="checkbox"
+                    checked={gstControl.checked}
+                    onChange={(e) => setGstMode(gstModeFromCheckbox(e.target.checked))}
+                  />
+                  GST 15%
+                </label>
+                <InfoTip label="About GST 15%">
+                  Tick to add 15% on top of the line amounts. Leave it off to charge no GST on this invoice.
+                </InfoTip>
+              </div>
+            ) : null}
+            {gstControl.kind === 'preserved' ? (
+              <div className="invoice-gst-row">
+                <fieldset className="invoice-choice">
+                  <legend>GST</legend>
+                  <div className="invoice-choice-row" role="radiogroup" aria-label="GST">
+                    {GST_PRESERVED.map((choice) => {
+                      const active = gstControl.mode === choice.value;
+                      return (
+                        <button
+                          key={choice.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={active}
+                          className="invoice-choice-btn"
+                          onClick={() => setGstMode(choice.value)}
+                        >
+                          {choice.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+                <InfoTip label="About included GST">
+                  This draft was saved with GST included in the line prices. That choice stays until you pick another.
+                </InfoTip>
+              </div>
+            ) : null}
+
+            <div className="form-grid invoice-withholding">
+              <div className="field checkbox-field">
                 <label className="inline-check">
                   <input type="checkbox" checked={withholdingOn} onChange={(e) => setWithholdingOn(e.target.checked)} />
                   Show withholding tax (schedular payments)
                 </label>
                 <span className="muted small">For contractors whose client deducts tax (IR330C). Taken off the GST-exclusive amount.</span>
-              </label>
+              </div>
               {withholdingOn ? (
                 <label>
                   Withholding rate (%)
@@ -434,37 +570,64 @@ export function InvoiceEditor() {
                 </label>
               ) : null}
             </div>
-          </section>
 
-          <section className="panel">
-            <h3>Notes and payment</h3>
-            <div className="form-grid">
-              <label className="span-2">
-                Payment instructions
-                <textarea rows={2} maxLength={1000} value={paymentInstructions} onChange={(e) => setPaymentInstructions(e.target.value)} />
-                <span className="muted small">
-                  Your bank account ({business?.bankAccount || 'not set'}) and “use the invoice number as the reference” are added for you.
-                </span>
-              </label>
-              <label className="span-2">
-                Notes
-                <textarea rows={3} maxLength={2000} value={notes} onChange={(e) => setNotes(e.target.value)} />
-              </label>
-            </div>
+            <details className="invoice-more" open={notesOpen} onToggle={(e) => setNotesOpen(e.currentTarget.open)}>
+              <summary>Notes and payment</summary>
+              <div className="form-grid">
+                <label className="span-2">
+                  Payment instructions
+                  <textarea rows={2} maxLength={1000} value={paymentInstructions} onChange={(e) => setPaymentInstructions(e.target.value)} />
+                  <span className="muted small">
+                    Your bank account ({business?.bankAccount || 'not set'}) and the invoice number are added as the payment reference.
+                  </span>
+                </label>
+                <label className="span-2">
+                  Notes
+                  <textarea rows={3} maxLength={2000} value={notes} onChange={(e) => setNotes(e.target.value)} />
+                </label>
+              </div>
+            </details>
           </section>
 
           <section className="panel">
             {error ? <p className="auth-error" role="alert">{error}</p> : null}
-            <div className="row gap">
-              <button type="button" className="btn primary" disabled={busy} onClick={() => void save()}>
+            <div className="invoice-editor-actions">
+              <button
+                type="button"
+                className="btn primary"
+                disabled={actionsDisabled}
+                aria-describedby={actionBlock ? actionReasonId : undefined}
+                onClick={() => void markSent()}
+              >
+                Mark as sent
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={actionsDisabled}
+                aria-describedby={actionBlock ? actionReasonId : undefined}
+                onClick={() => void save()}
+              >
                 Save draft
               </button>
-              <span className="muted small">Nothing is sent until you choose to send it.</span>
+              {actionBlock ? (
+                <p id={actionReasonId} className="muted small invoice-action-reason">
+                  {actionBlock}
+                </p>
+              ) : null}
             </div>
           </section>
         </div>
 
-        <div className="invoice-editor-preview">{preview ? <InvoicePreview invoice={preview} /> : null}</div>
+        <section className="invoice-editor-preview" aria-labelledby="invoice-preview-heading">
+          <h3 id="invoice-preview-heading">Preview</h3>
+          {promptLead ? (
+            <p className="invoice-business-prompt">
+              {promptLead} <Link to={BUSINESS_SETTINGS_HREF}>Settings → Business</Link>.
+            </p>
+          ) : null}
+          {preview ? <InvoicePreview invoice={preview} /> : null}
+        </section>
       </div>
     </div>
   );

@@ -1,19 +1,23 @@
 /**
- * Invoices list (KAN-71): totals, filters, the invoice table, CSV export and saved clients.
+ * Invoices list (KAN-71): header, totals, filters, the invoice table, CSV export and saved clients.
+ * With no invoices, a three-step checklist replaces the totals, filters, and empty clients card.
+ * Visibility comes from invoicesView. Amounts, statuses, and dates come from the list response.
  */
-import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { api, formatNzd } from '../api/client';
 import { INVOICE_STATUS_LABELS, type InvoiceStatus } from '../lib/invoiceCalc';
-import type { InvoiceClient, InvoiceListResponse } from '../types';
+import type { BusinessProfile, InvoiceClient, InvoiceListResponse } from '../types';
 import { InvoiceStatusBadge } from '../components/InvoicePreview';
-
-function formatDate(ymd: string): string {
-  const d = new Date(`${ymd}T00:00:00Z`);
-  return Number.isNaN(d.getTime())
-    ? ymd
-    : new Intl.DateTimeFormat('en-NZ', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(d);
-}
+import {
+  BUSINESS_SETTINGS_HREF,
+  INVOICE_TOTALS,
+  formatInvoiceDate,
+  invoiceSetupSteps,
+  invoicesChrome,
+  visibleInvoiceCount,
+  type BusinessDetails,
+} from './invoicesView';
 
 const STATUS_FILTERS: Array<{ value: '' | InvoiceStatus; label: string }> = [
   { value: '', label: 'All statuses' },
@@ -133,16 +137,149 @@ function ClientsPanel({ clients, onChange }: { clients: InvoiceClient[]; onChang
   );
 }
 
+function FirstInvoicePanel({
+  business,
+  clientCount,
+  onCreated,
+}: {
+  business: BusinessDetails | null;
+  clientCount: number;
+  onCreated: (client: InvoiceClient) => void;
+}) {
+  const steps = invoiceSetupSteps({ business, clientCount });
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (adding) nameRef.current?.focus();
+  }, [adding]);
+
+  async function saveClient(event: FormEvent) {
+    event.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await api.invoices.createClient({
+        name: trimmed,
+        email: email.trim(),
+        address: '',
+        reference: '',
+      });
+      setAdding(false);
+      setName('');
+      setEmail('');
+      onCreated(created);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save the client.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="panel invoice-start" aria-labelledby="invoice-start-title">
+      <h3 id="invoice-start-title">Send your first invoice</h3>
+      <ol className="invoice-steps">
+        {steps.map((step, index) => (
+          <li key={step.id} className={'invoice-step' + (step.done ? ' invoice-step--done' : '')}>
+            <span className="invoice-step-mark" aria-hidden="true">
+              {step.done ? '✓' : index + 1}
+            </span>
+            <div>
+              <p className="invoice-step-title">
+                {step.title}
+                <span className="invoice-step-status">{step.done ? 'Done' : 'To do'}</span>
+              </p>
+              {step.id === 'business' && step.promptLead ? (
+                <p className="invoice-step-action">
+                  {step.promptLead} <Link to={BUSINESS_SETTINGS_HREF}>Settings → Business</Link>.
+                </p>
+              ) : null}
+              {step.id === 'invoice' ? (
+                <p className="invoice-step-action">
+                  <Link className="btn small primary" to="/invoices/new">
+                    Create the invoice
+                  </Link>
+                </p>
+              ) : null}
+              {step.id === 'client' && !step.done ? (
+                adding ? (
+                  <form className="form-grid invoice-step-form" onSubmit={(event) => void saveClient(event)}>
+                    <label>
+                      Name
+                      <input
+                        ref={nameRef}
+                        value={name}
+                        maxLength={120}
+                        required
+                        onChange={(e) => setName(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Email (optional)
+                      <input
+                        type="email"
+                        value={email}
+                        maxLength={254}
+                        onChange={(e) => setEmail(e.target.value)}
+                      />
+                    </label>
+                    <div className="row gap" style={{ alignItems: 'end' }}>
+                      <button type="submit" className="btn small primary" disabled={busy || !name.trim()}>
+                        Save client
+                      </button>
+                      <button
+                        type="button"
+                        className="btn small"
+                        onClick={() => {
+                          setAdding(false);
+                          setError(null);
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    {error ? <p className="auth-error span-2" role="alert">{error}</p> : null}
+                  </form>
+                ) : (
+                  <p className="invoice-step-action">
+                    <button type="button" className="btn small" onClick={() => setAdding(true)}>
+                      Add client
+                    </button>
+                  </p>
+                )
+              ) : null}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
 export function Invoices() {
-  const navigate = useNavigate();
   const [status, setStatus] = useState<'' | InvoiceStatus>('');
   const [clientId, setClientId] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [data, setData] = useState<InvoiceListResponse | null>(null);
+  const [appliedKey, setAppliedKey] = useState<string | null>(null);
+  const [catalogCount, setCatalogCount] = useState<number | null>(null);
   const [clients, setClients] = useState<InvoiceClient[]>([]);
+  const [clientsSettled, setClientsSettled] = useState(false);
+  const [business, setBusiness] = useState<BusinessProfile | null>(null);
+  const [businessSettled, setBusinessSettled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
+
+  const filtersActive = Boolean(status || clientId || from || to);
+  const requestKey = `${status}\0${clientId}\0${from}\0${to}\0${reload}`;
 
   useEffect(() => {
     let cancelled = false;
@@ -151,7 +288,9 @@ export function Invoices() {
       .then((d) => {
         if (!cancelled) {
           setData(d);
+          setAppliedKey(requestKey);
           setError(null);
+          if (!status && !clientId && !from && !to) setCatalogCount(d.invoices.length);
         }
       })
       .catch((e: unknown) => {
@@ -160,144 +299,196 @@ export function Invoices() {
     return () => {
       cancelled = true;
     };
-  }, [status, clientId, from, to, reload]);
+  }, [status, clientId, from, to, reload, requestKey]);
 
   useEffect(() => {
     let cancelled = false;
     api.invoices
       .clients()
       .then((c) => {
-        if (!cancelled) setClients(c);
+        if (!cancelled) {
+          setClients(c);
+          setClientsSettled(true);
+        }
       })
       .catch(() => {
-        /* the list still works without saved clients */
+        if (!cancelled) setClientsSettled(true);
       });
     return () => {
       cancelled = true;
     };
   }, [reload]);
 
+  useEffect(() => {
+    let cancelled = false;
+    api.invoices
+      .business()
+      .then((profile) => {
+        if (!cancelled) {
+          setBusiness(profile);
+          setBusinessSettled(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setBusiness(null);
+          setBusinessSettled(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reload]);
+
+  const invoiceCount = visibleInvoiceCount({
+    filteredCount: data ? data.invoices.length : null,
+    catalogCount,
+    filtersActive,
+    responseCurrent: appliedKey === requestKey,
+  });
+  const chrome =
+    data != null && invoiceCount != null
+      ? invoicesChrome({
+          invoiceCount,
+          clientCount: clients.length,
+          taxYearStart: data.totals.taxYearStart,
+        })
+      : null;
+  const checklistReady = Boolean(chrome?.showChecklist && clientsSettled && businessSettled);
   const t = data?.totals;
-  const filtered = Boolean(status || clientId || from || to);
+
+  function onClientCreated(client: InvoiceClient) {
+    setClients((prev) => (prev.some((c) => c.id === client.id) ? prev : [...prev, client]));
+    setClientsSettled(true);
+    setReload((n) => n + 1);
+  }
 
   return (
     <div className="stack invoices-page">
-      <section className="hero-card hero-card--centered">
-        <h2 className="page-title">Invoices</h2>
-        <p className="page-lead">
-          Create, send and keep track of invoices. Your name, bank account and GST details come from{' '}
-          <Link to="/settings?tab=business">Settings → Business</Link>.
-        </p>
-        <div className="row gap" style={{ justifyContent: 'center', flexWrap: 'wrap' }}>
-          <button type="button" className="btn primary" onClick={() => navigate('/invoices/new')}>
-            New invoice
-          </button>
-          <a className="btn" href={api.invoices.csvUrl()} download>
-            Export CSV
-          </a>
+      <header className="invoices-header">
+        <div>
+          <h2 className="page-title">Invoices</h2>
+          {chrome?.subtitle ? <p className="muted small invoices-header-line">{chrome.subtitle}</p> : null}
         </div>
-      </section>
+        <div className="invoices-header-actions">
+          {chrome?.showCsv ? (
+            <a className="btn" href={api.invoices.csvUrl()} download>
+              Export CSV
+            </a>
+          ) : null}
+          <Link className="btn primary" to="/invoices/new">
+            + New invoice
+          </Link>
+        </div>
+      </header>
 
-      <section className="invoice-totals-row" aria-label="Invoice totals">
-        <div className="card">
-          <p className="eyebrow">Outstanding</p>
-          <p className="stat-value">{t ? formatNzd(t.outstandingNzd) : '—'}</p>
-        </div>
-        <div className="card">
-          <p className="eyebrow">Overdue</p>
-          <p className={`stat-value${t && t.overdueNzd > 0 ? ' budget-over-text' : ''}`}>{t ? formatNzd(t.overdueNzd) : '—'}</p>
-        </div>
-        <div className="card">
-          <p className="eyebrow">Paid this month</p>
-          <p className="stat-value">{t ? formatNzd(t.paidThisMonthNzd) : '—'}</p>
-        </div>
-        <div className="card">
-          <p className="eyebrow">Paid this tax year</p>
-          <p className="stat-value">{t ? formatNzd(t.paidTaxYearNzd) : '—'}</p>
-          {t ? <p className="muted small">Since {formatDate(t.taxYearStart)}</p> : null}
-        </div>
-      </section>
+      {!data && error ? <p className="auth-error" role="alert">{error}</p> : null}
+      {!data && !error ? <p className="muted">Loading invoices…</p> : null}
+      {chrome?.showChecklist && !checklistReady ? <p className="muted">Loading invoices…</p> : null}
 
-      <section className="panel">
-        <div className="form-grid">
-          <label>
-            Status
-            <select value={status} onChange={(e) => setStatus(e.target.value as '' | InvoiceStatus)}>
-              {STATUS_FILTERS.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Client
-            <select value={clientId} onChange={(e) => setClientId(e.target.value)}>
-              <option value="">All clients</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Issued from
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-          </label>
-          <label>
-            Issued to
-            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-          </label>
-        </div>
-        {error ? <p className="auth-error" role="alert">{error}</p> : null}
-        {!data ? (
-          <p className="muted">Loading invoices…</p>
-        ) : data.invoices.length === 0 ? (
-          <p className="muted" style={{ marginTop: '0.75rem' }}>
-            {filtered ? 'No invoices match these filters.' : 'No invoices yet. Start with New invoice.'}
-          </p>
-        ) : (
-          <div style={{ overflowX: 'auto', marginTop: '0.75rem' }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Number</th>
-                  <th>Client</th>
-                  <th>Issued</th>
-                  <th>Due</th>
-                  <th>Status</th>
-                  <th style={{ textAlign: 'right' }}>Total</th>
-                  <th style={{ textAlign: 'right' }}>Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.invoices.map((inv) => (
-                  <tr key={inv.id}>
-                    <td>
-                      <Link to={`/invoices/${inv.id}`}>{inv.number}</Link>
-                    </td>
-                    <td>{inv.clientName || <span className="muted">—</span>}</td>
-                    <td>{formatDate(inv.issueDate)}</td>
-                    <td>{formatDate(inv.dueDate)}</td>
-                    <td>
-                      <InvoiceStatusBadge status={inv.status} />
-                    </td>
-                    <td className="money" style={{ textAlign: 'right' }}>
-                      {formatNzd(inv.totalNzd)}
-                    </td>
-                    <td className="money" style={{ textAlign: 'right' }}>
-                      {inv.status === 'draft' || inv.status === 'void' ? <span className="muted">—</span> : formatNzd(inv.balanceNzd)}
-                    </td>
-                  </tr>
+      {checklistReady ? (
+        <FirstInvoicePanel business={business} clientCount={clients.length} onCreated={onClientCreated} />
+      ) : null}
+
+      {chrome?.showTotals && t ? (
+        <section className="invoice-totals-row" aria-label="Invoice totals">
+          {INVOICE_TOTALS.map((card) => {
+            const value = t[card.field];
+            return (
+              <div className="card" key={card.id}>
+                <p className="eyebrow">{card.label}</p>
+                <p className={`stat-value${card.id === 'overdue' && value > 0 ? ' budget-over-text' : ''}`}>{formatNzd(value)}</p>
+                {card.id === 'paidTaxYear' && t.taxYearStart?.trim() ? (
+                  <p className="muted small">Since {formatInvoiceDate(t.taxYearStart)}</p>
+                ) : null}
+              </div>
+            );
+          })}
+        </section>
+      ) : null}
+
+      {chrome?.showFilters && data ? (
+        <section className="panel">
+          <div className="form-grid">
+            <label>
+              Status
+              <select value={status} onChange={(e) => setStatus(e.target.value as '' | InvoiceStatus)}>
+                {STATUS_FILTERS.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
                 ))}
-              </tbody>
-            </table>
+              </select>
+            </label>
+            <label>
+              Client
+              <select value={clientId} onChange={(e) => setClientId(e.target.value)}>
+                <option value="">All clients</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Issued from
+              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+            </label>
+            <label>
+              Issued to
+              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+            </label>
           </div>
-        )}
-      </section>
+          {error ? <p className="auth-error" role="alert">{error}</p> : null}
+          {data.invoices.length === 0 ? (
+            <p className="muted" style={{ marginTop: '0.75rem' }}>
+              No invoices match these filters.
+            </p>
+          ) : (
+            <div style={{ overflowX: 'auto', marginTop: '0.75rem' }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Number</th>
+                    <th>Client</th>
+                    <th>Issued</th>
+                    <th>Due</th>
+                    <th>Status</th>
+                    <th style={{ textAlign: 'right' }}>Total</th>
+                    <th style={{ textAlign: 'right' }}>Balance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.invoices.map((inv) => (
+                    <tr key={inv.id}>
+                      <td>
+                        <Link to={`/invoices/${inv.id}`}>{inv.number}</Link>
+                      </td>
+                      <td>{inv.clientName || <span className="muted">—</span>}</td>
+                      <td>{formatInvoiceDate(inv.issueDate)}</td>
+                      <td>{formatInvoiceDate(inv.dueDate)}</td>
+                      <td>
+                        <InvoiceStatusBadge status={inv.status} />
+                      </td>
+                      <td className="money" style={{ textAlign: 'right' }}>
+                        {formatNzd(inv.totalNzd)}
+                      </td>
+                      <td className="money" style={{ textAlign: 'right' }}>
+                        {inv.status === 'draft' || inv.status === 'void' ? <span className="muted">—</span> : formatNzd(inv.balanceNzd)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      ) : null}
 
-      <ClientsPanel clients={clients} onChange={() => setReload((n) => n + 1)} />
+      {chrome?.showClients && clientsSettled ? (
+        <ClientsPanel clients={clients} onChange={() => setReload((n) => n + 1)} />
+      ) : null}
     </div>
   );
 }

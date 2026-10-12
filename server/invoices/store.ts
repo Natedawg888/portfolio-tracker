@@ -418,10 +418,10 @@ function prepare(
     if (!getClient(db, userId, draft.clientId)) return fail(400, 'Client not found');
     clientId = draft.clientId;
   }
-  // GST is charged only by GST-registered businesses; registered businesses always show it.
+  // GST is charged only by GST-registered businesses. A registered business can leave
+  // it off (the builder's GST checkbox); exclusive and inclusive are kept as entered.
   let gstMode: GstMode = draft.gstMode;
   if (!business.gstRegistered) gstMode = 'none';
-  else if (gstMode === 'none') gstMode = 'exclusive';
   const dueDate = dueDateForPreset(draft.issueDate, draft.duePreset, draft.dueDate);
   const totals = invoiceTotals(draft.lines, gstMode, draft.withholdingRatePct);
   return { ok: true, value: { number, gstMode, dueDate, clientId, totals } };
