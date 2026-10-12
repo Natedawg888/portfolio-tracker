@@ -10370,9 +10370,94 @@ html:not([data-theme]) .bills-page :focus-visible {
   margin-top: 0.9rem;
 }
 .bills-summary-period dd { font-size: 1.2rem; }
+.bills-summary { min-width: 0; }
+.bills-strip {
+  display: flex;
+  gap: 0.4rem;
+  margin: 1.1rem 0 0;
+  padding: 0.15rem 0.15rem 0.5rem;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+}
+.bills-day {
+  flex: 0 0 3.1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  padding: 0.4rem 0.2rem 0.45rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  scroll-snap-align: start;
+}
+.bills-day:hover { background: var(--hover-row); }
+.bills-day-today { border-color: var(--text); box-shadow: inset 0 0 0 1px var(--text); }
+.bills-day[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--btn-primary-text);
+}
+.bills-day-weekday,
+.bills-day-month { font-size: 0.7rem; font-weight: 600; color: inherit; opacity: 0.8; }
+.bills-day-date { font-size: 1.05rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.bills-day-dots {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.15rem;
+  min-height: 0.5rem;
+  max-width: 2.4rem;
+}
+.bills-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  flex: none;
+}
+.bills-coming { margin-top: 1rem; }
+.bills-coming-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  flex-wrap: wrap;
+}
+.bills-coming-head h3 { margin: 0; }
+.bills-page .bills-coming .link-btn { color: var(--accent-2); font-size: 0.88rem; }
+.bills-coming > .muted { margin: 0.6rem 0 0; }
+.bills-coming-list { list-style: none; margin: 0.5rem 0 0; padding: 0; }
+.bills-coming-row {
+  display: grid;
+  grid-template-columns: 6.2rem 0.5rem minmax(0, 1fr) auto 6.5rem;
+  grid-template-areas: "date dot name when amount";
+  align-items: center;
+  gap: 0.2rem 0.65rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--border-soft);
+  font-size: 0.92rem;
+}
+.bills-coming-date { grid-area: date; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bills-coming-row .bills-dot { grid-area: dot; }
+.bills-coming-name { grid-area: name; min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+.bills-coming-when { grid-area: when; color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+.bills-coming-soon { color: var(--text); font-weight: 650; }
+.bills-coming-amount { grid-area: amount; text-align: right; font-variant-numeric: tabular-nums; }
 @media (max-width: 420px) {
   .bills-header { align-items: flex-start; }
   .bills-summary-period { grid-template-columns: 1fr; }
+  .bills-coming-row {
+    grid-template-columns: 0.5rem minmax(0, 1fr) auto;
+    grid-template-areas:
+      "dot name amount"
+      ". date when";
+  }
+  .bills-coming-when { text-align: right; }
 }
 
 /* Financial health score card (KAN-55), styled like the "This month" card. */
