@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, formatAuckland, formatNzd } from '../api/client';
+import { InfoTip } from '../components/InfoTip';
 import { beginPageRead, commitPageRead, invalidateFinancial, readPageCache } from '../lib/pageDataCache';
 import {
   AssetLineChart,
@@ -13,6 +14,15 @@ import {
   type LineSeries,
 } from '../components/AssetLineChart';
 import { DEFAULT_REPORT_YEAR } from '../lib/period';
+import {
+  costFlagChartNote,
+  costFlagIndex,
+  historyPointAriaLabel,
+  historySnapshotCaption,
+  historyYearChange,
+  snapshotPoint,
+  type HistoryYearChange,
+} from './historyView';
 
 type SnapshotBreakdown = {
   byClass?: Record<string, number | null>;
@@ -40,11 +50,25 @@ type HoldingRow = {
   assetClass?: string;
   symbol?: string;
   asset?: string;
+  shares?: number | null;
+  amount?: number | null;
   costBasisNzd?: number | null;
   estimatedValueNzd?: number | null;
   lastValuationNzd?: number | null;
   valuationNzd?: number | null;
 };
+
+function HistoryChange({ change, since }: { change: HistoryYearChange; since: string }) {
+  const arrow = change.direction === 'up' ? '▲' : change.direction === 'down' ? '▼' : '■';
+  const word = change.direction === 'up' ? 'Up ' : change.direction === 'down' ? 'Down ' : 'No change, ';
+  return (
+    <p className={`net-worth-delta net-worth-delta--${change.direction}`}>
+      <span aria-hidden="true">{arrow} </span>
+      <span className="sr-only">{word}</span>
+      {formatNzd(Math.abs(change.amount))} since {since}
+    </p>
+  );
+}
 
 /** Red only when money is actually owed. A zero balance stays uncoloured. */
 function debtOutstandingClass(amount: number): 'return-neg' | 'history-deduction' | undefined {
@@ -204,6 +228,16 @@ export function YearlyReport() {
     }
   }
 
+  const costFlags = useMemo(
+    () =>
+      costFlagIndex(
+        snapshots.map((s) => ({ takenAt: s.takenAt, holdings: s.breakdown?.holdings ?? [] })),
+        holdings,
+      ),
+    [snapshots, holdings],
+  );
+  const costFlagNote = costFlagChartNote(costFlags.labels);
+
   const classSeries: LineSeries[] = useMemo(() => {
     const keys = new Set<string>();
     for (const s of snapshots) {
@@ -229,21 +263,22 @@ export function YearlyReport() {
               ? s.totalNzd
               : s.breakdown?.byClass?.[key];
           if (raw == null || !Number.isFinite(Number(raw))) return null;
-          return { at: s.takenAt, value: Number(raw) };
+          return snapshotPoint(s.takenAt, Number(raw), costFlags.byTakenAt.get(s.takenAt) ?? null);
         })
-        .filter((p): p is { at: string; value: number } => p != null),
+        .filter((p): p is NonNullable<typeof p> => p != null),
     }));
-  }, [snapshots]);
+  }, [snapshots, costFlags]);
 
   const holdingSeries: LineSeries[] = useMemo(() => {
-    const byId = new Map<string, { label: string; points: { at: string; value: number }[] }>();
+    const byId = new Map<string, { label: string; points: ReturnType<typeof snapshotPoint>[] }>();
     for (const s of snapshots) {
       const rows = s.breakdown?.holdings ?? [];
+      const flagNote = costFlags.byTakenAt.get(s.takenAt) ?? null;
       for (const h of rows) {
         if (h.valueNzd == null || !Number.isFinite(Number(h.valueNzd))) continue;
         const prev = byId.get(h.id) ?? { label: h.label || h.id, points: [] };
         prev.label = h.label || prev.label;
-        prev.points.push({ at: s.takenAt, value: Number(h.valueNzd) });
+        prev.points.push(snapshotPoint(s.takenAt, Number(h.valueNzd), flagNote));
         byId.set(h.id, prev);
       }
     }
@@ -255,14 +290,13 @@ export function YearlyReport() {
         colour: seriesColour(i),
         points: row.points,
       }));
-  }, [snapshots]);
+  }, [snapshots, costFlags]);
 
   const latestInYear = snapshots.length ? snapshots[snapshots.length - 1] : null;
   const firstInYear = snapshots.length ? snapshots[0] : null;
-  const growthNzd =
-    latestInYear && firstInYear && snapshots.length >= 2
-      ? latestInYear.totalNzd - firstInYear.totalNzd
-      : null;
+  const yearChange = historyYearChange(snapshots.map((s) => s.totalNzd));
+  const headlineNzd =
+    latestInYear && Number.isFinite(latestInYear.totalNzd) ? latestInYear.totalNzd : null;
 
   const latestHoldings = latestInYear?.breakdown?.holdings ?? [];
 
@@ -317,7 +351,7 @@ export function YearlyReport() {
     return (
       <div className="stack history-page">
         <div className="panel warn">
-          <h2 className="page-title">History</h2>
+          <h2 className="page-title">History · {year}</h2>
           <p>{error}</p>
         </div>
       </div>
@@ -327,13 +361,15 @@ export function YearlyReport() {
   return (
     <div className="stack history-page">
       <section className="panel">
-        <h2 className="page-title">History</h2>
-        <p className="page-lead">
-          Net-worth growth and per-asset lines from <strong>valuation_snapshots</strong> only.
-          Toggle <strong>by day</strong> / <strong>by month</strong> — empty buckets stay empty{' '}
-          (last real snapshot in each bucket). Never invents points. Take a snapshot to start a
-          series for {year}.
-        </p>
+        <h2 className="page-title">
+          History · {year}
+          <InfoTip label="About history">
+            Net-worth growth and per-asset lines from valuation snapshots only. By day and by month
+            keep the last real snapshot in each bucket, and empty buckets stay empty. Nothing is
+            invented. Snapshot now records the balances known right now, for {year}.
+          </InfoTip>
+        </h2>
+        <p className="muted small">{historySnapshotCaption(snapshots.length)}</p>
         <div className="period-pager" role="navigation" aria-label="Report year">
           <button
             type="button"
@@ -341,7 +377,7 @@ export function YearlyReport() {
             aria-label="Previous year"
             onClick={() => setYear((y) => y - 1)}
           >
-            ← Prev
+            ‹
           </button>
           <div className="period-pager-label">
             <strong>{year}</strong>
@@ -353,7 +389,7 @@ export function YearlyReport() {
             aria-label="Next year"
             onClick={() => setYear((y) => y + 1)}
           >
-            Next →
+            ›
           </button>
         </div>
         <div className="row gap">
@@ -402,71 +438,50 @@ export function YearlyReport() {
             </button>
           </div>
         </div>
+        {headlineNzd != null && latestInYear ? (
+          <div className="history-headline">
+            <p className={'hero-value' + (headlineNzd < 0 ? ' return-neg' : '')}>{formatNzd(headlineNzd)}</p>
+            <p className="muted small">Latest snapshot · {formatAuckland(latestInYear.takenAt)}</p>
+            {yearChange && firstInYear ? (
+              <HistoryChange change={yearChange} since={formatAuckland(firstInYear.takenAt)} />
+            ) : null}
+          </div>
+        ) : snapshots.length === 0 ? (
+          <p className="muted">
+            No snapshots in {year} yet. Snapshot now records the balances known right now. Price
+            quotes are current-only and are not used as a history.
+          </p>
+        ) : null}
         {msg && <div className="banner">{msg}</div>}
       </section>
 
-      <section className="panel">
-        <h3>Net worth · {year}</h3>
-        {snapshots.length === 0 ? (
-          <p className="muted">
-            No snapshots in {year} yet. Use <strong>Snapshot now</strong> to record current known
-            balances. Growth fills as more snapshots are taken — price_quotes are current-only and
-            are not used as a fake history.
-          </p>
-        ) : (
-          <>
-            <div className="grid cards">
-              <div className="card">
-                <p className="eyebrow">Snapshots</p>
-                <p className="stat-value">
-                  {snapshots.length}
-                </p>
-              </div>
-              <div className="card">
-                <p className="eyebrow">Latest in year</p>
-                <p className={'stat-value' + (latestInYear!.totalNzd < 0 ? ' return-neg' : '')}>
-                  {formatNzd(latestInYear!.totalNzd)}
-                </p>
-                <p className="muted small">{formatAuckland(latestInYear!.takenAt)}</p>
-              </div>
-              <div className="card">
-                <p className="eyebrow">Change (first → last)</p>
-                <p
-                  className={
-                    'stat-value' +
-                    (growthNzd == null || growthNzd === 0
-                      ? ''
-                      : growthNzd < 0
-                        ? ' return-neg'
-                        : ' return-pos')
-                  }
-                >
-                  {growthNzd == null ? '—' : formatNzd(growthNzd)}
-                </p>
-                <p className="muted small">
-                  {snapshots.length < 2
-                    ? 'Need ≥2 snapshots for growth'
-                    : `${formatAuckland(firstInYear!.takenAt)} → ${formatAuckland(latestInYear!.takenAt)}`}
-                </p>
-              </div>
-            </div>
-            <AssetLineChart
-              title={
-                view === 'class'
-                  ? `Asset class lines · ${year} · ${resolution === 'day' ? 'by day' : 'by month'}`
-                  : `Per-holding lines · ${year} · ${resolution === 'day' ? 'by day' : 'by month'}`
-              }
-              series={view === 'class' ? classSeries : holdingSeries}
-              resolution={resolution}
-              emptyHint={
-                view === 'class'
-                  ? 'Snapshots exist but have no class breakdown yet.'
-                  : 'Snapshots exist but have no per-holding breakdown yet. Take a new snapshot to capture holdings.'
-              }
-            />
-          </>
-        )}
-      </section>
+      {snapshots.length > 0 ? (
+        <section className="panel">
+          <h3>Net worth · {year}</h3>
+          <AssetLineChart
+            title={
+              view === 'class'
+                ? `Asset class lines · ${year} · ${resolution === 'day' ? 'by day' : 'by month'}`
+                : `Per-holding lines · ${year} · ${resolution === 'day' ? 'by day' : 'by month'}`
+            }
+            series={view === 'class' ? classSeries : holdingSeries}
+            resolution={resolution}
+            emptyHint={
+              view === 'class'
+                ? 'Snapshots exist but have no class breakdown yet.'
+                : 'Snapshots exist but have no per-holding breakdown yet. Take a new snapshot to capture holdings.'
+            }
+            pointAriaLabel={(point, series) => {
+              if (!point.flagged || !point.flagNote) return '';
+              const at = resolution === 'day' && point.takenAt ? point.takenAt : point.at;
+              return (
+                historyPointAriaLabel(at, point.value, formatNzd, series.label, point.flagNote, resolution) ?? ''
+              );
+            }}
+          />
+          {costFlagNote ? <p className="muted small history-flag-note">{costFlagNote}</p> : null}
+        </section>
+      ) : null}
 
 
       <section className="panel">
