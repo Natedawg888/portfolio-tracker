@@ -6,7 +6,11 @@ import {
   billsSubtitle,
   calendarDays,
   dayAriaLabel,
+  dismissLabel,
   headerCounts,
+  paidDate,
+  suggestionFacts,
+  suggestionTitle,
   relativeDay,
   upcomingOccurrences,
 } from './billsView.ts';
@@ -90,5 +94,18 @@ eq(dayAriaLabel(calendarDays(today, sameDay)[2], money), 'Thu 15 Oct: Apple $2.0
 eq(relativeDay(0), 'today', 'today');
 eq(relativeDay(1), 'tomorrow', 'tomorrow');
 eq(relativeDay(9), 'in 9 days', 'in N days');
+
+// Suggestion cards (phase 3).
+const adobe = { name: 'Adobe', kind: 'subscription', tier: 'possible', cadence: 'monthly', lastDate: '2026-10-10', occurrences: 1, amountVaries: false, accountName: 'Everyday' } as const;
+const power = { name: 'Contact Energy', kind: 'bill', tier: 'regular', cadence: 'monthly', lastDate: '2025-12-28', occurrences: 4, amountVaries: true, accountName: null } as const;
+eq(suggestionTitle(adobe), 'Is Adobe a subscription?', 'subscription title');
+eq(suggestionTitle(power), 'Is Contact Energy a regular bill?', 'bill title');
+eq(dismissLabel(adobe), 'Not a subscription', 'dismiss label for a subscription');
+eq(dismissLabel(power), 'Not a bill', 'dismiss label for a bill');
+eq(paidDate('2026-10-10', today), '10 Oct', 'this year has no year');
+eq(paidDate('2025-12-28', today), '28 Dec 2025', 'another year shows it');
+eq(suggestionFacts(adobe, today).join(' · '), 'Everyday · Paid 10 Oct · seen once', 'possible tier facts, no frequency');
+eq(suggestionFacts(power, today).join(' · '), 'Last paid 28 Dec 2025 · seen 4 times · monthly · amount varies', 'regular tier facts, no account');
+eq(suggestionFacts({ ...adobe, occurrences: 2 }, today).join(' · '), 'Everyday · Last paid 10 Oct · seen twice', 'seen twice');
 
 console.log('bills view tests ok');

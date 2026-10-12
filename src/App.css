@@ -10448,6 +10448,21 @@ html:not([data-theme]) .bills-page :focus-visible {
 .bills-coming-when { grid-area: when; color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
 .bills-coming-soon { color: var(--text); font-weight: 650; }
 .bills-coming-amount { grid-area: amount; text-align: right; font-variant-numeric: tabular-nums; }
+.bills-suggestions h3 { margin: 0 0 0.55rem; }
+.bills-suggestion-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+  gap: 0.75rem;
+}
+.bills-suggestion { display: grid; gap: 0.45rem; align-content: start; }
+.bills-suggestion-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.75rem; }
+.bills-suggestion-head h4 { margin: 0; font-size: 0.98rem; min-width: 0; overflow-wrap: anywhere; }
+.bills-suggestion-amount { font-size: 1.1rem; font-weight: 700; white-space: nowrap; }
+.bills-suggestion-facts { margin: 0; color: var(--muted); font-size: 0.84rem; line-height: 1.5; }
+.bills-suggestion-facts .bills-chip { margin-right: 0.4rem; }
+.bills-suggestion-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.15rem; }
+.bills-dismissed { margin: 0; text-align: center; }
+.bills-page .bills-dismissed .link-btn { color: var(--muted); font-size: 0.85rem; }
 @media (max-width: 420px) {
   .bills-header { align-items: flex-start; }
   .bills-summary-period { grid-template-columns: 1fr; }
@@ -11632,7 +11647,8 @@ html.has-bottom-ad body { padding-bottom: calc(var(--ad-bottom-space, 0px) + env
   overflow-wrap: anywhere;
 }
 .debt-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
-.debt-chip {
+.debt-chip,
+.bills-chip {
   padding: 0.05rem 0.5rem;
   border: 1px solid var(--border);
   border-radius: 999px;

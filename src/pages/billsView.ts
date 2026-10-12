@@ -1,10 +1,10 @@
 /**
- * Bills page view helpers. Header counts (phase 1) and the 30-day calendar strip
- * and "Coming up" list (phase 2). The summary totals stay on the list response;
+ * Bills page view helpers. Header counts (phase 1), the 30-day calendar strip
+ * and "Coming up" list (phase 2), and suggestion card text (phase 3). The summary totals stay on the list response;
  * occurrences use the same occurrencesWithin walk as the server, so they add up to
  * dueNext30DaysNzd.
  */
-import { daysBetween, occurrencesWithin, type Cadence } from '../lib/recurring';
+import { CADENCE_LABELS, daysBetween, occurrencesWithin, type Cadence } from '../lib/recurring';
 
 export type HeaderCounts = { active: number; paused: number; cancelled: number };
 
@@ -106,4 +106,44 @@ export function relativeDay(daysAway: number): string {
   if (daysAway === 0) return 'today';
   if (daysAway === 1) return 'tomorrow';
   return `in ${daysAway} days`;
+}
+
+type SuggestionLike = {
+  name: string;
+  kind: 'bill' | 'subscription';
+  tier: 'regular' | 'possible';
+  cadence: Cadence;
+  lastDate: string;
+  occurrences: number;
+  amountVaries: boolean;
+  accountName: string | null;
+};
+
+/** "Is Netflix a subscription?" or "Is Contact Energy a regular bill?". */
+export function suggestionTitle(s: Pick<SuggestionLike, 'name' | 'kind'>): string {
+  return `Is ${s.name} a ${s.kind === 'subscription' ? 'subscription' : 'regular bill'}?`;
+}
+
+export function dismissLabel(s: Pick<SuggestionLike, 'kind'>): string {
+  return s.kind === 'subscription' ? 'Not a subscription' : 'Not a bill';
+}
+
+/** "10 Oct", with the year when it is not this year. */
+export function paidDate(ymd: string, today: string): string {
+  const d = utc(ymd);
+  const year = ymd.slice(0, 4) === today.slice(0, 4) ? '' : ` ${d.getUTCFullYear()}`;
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}${year}`;
+}
+
+/** The facts under the title: account, date, times seen, and frequency for the regular tier. */
+export function suggestionFacts(s: SuggestionLike, today: string): string[] {
+  const seen = s.occurrences === 1 ? 'seen once' : s.occurrences === 2 ? 'seen twice' : `seen ${s.occurrences} times`;
+  const facts = [
+    s.accountName,
+    `${s.occurrences === 1 ? 'Paid' : 'Last paid'} ${paidDate(s.lastDate, today)}`,
+    seen,
+    s.tier === 'regular' ? CADENCE_LABELS[s.cadence].toLowerCase() : null,
+    s.amountVaries ? 'amount varies' : null,
+  ];
+  return facts.filter((f): f is string => Boolean(f));
 }
