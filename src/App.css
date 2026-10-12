@@ -7468,6 +7468,104 @@ html:not([data-theme]) .paye-page :focus-visible {
   color: var(--text);
   font-weight: 600;
 }
+.paye-page .paye-inputs > .panel > h3 { margin: 0; }
+.paye-page .paye-toggle-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.7rem;
+}
+.paye-page .paye-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem 0.2rem;
+}
+.paye-page .paye-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex: 1 1 12rem;
+  min-height: 2.45rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-align: left;
+}
+.paye-page .paye-toggle-btn:hover { border-color: var(--accent); }
+.paye-page .paye-toggle-btn.active,
+.paye-page .paye-toggle-btn[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 24%, var(--surface));
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.paye-page .paye-toggle-state {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.paye-page .paye-toggle-btn.active .paye-toggle-state,
+.paye-page .paye-toggle-btn[aria-pressed="true"] .paye-toggle-state {
+  color: var(--text);
+}
+.paye-page .paye-toggle-btn:disabled {
+  cursor: not-allowed;
+  border-style: dashed;
+}
+.paye-page .paye-toggle-note {
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.paye-page .paye-reveal { margin-top: 0.15rem; }
+.paye-page .paye-reveal[hidden] { display: none; }
+.paye-page .paye-reveal-empty { margin: 0.65rem 0 0; }
+.paye-page .paye-disclosure {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.95rem;
+}
+.paye-page .paye-disclosure-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.paye-page .paye-disclosure .paye-toggle-state {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.paye-page .paye-disclosure .btn { margin-left: auto; }
+.paye-page .paye-credit-row {
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+.paye-page .paye-credit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
 .paye-page .paye-period {
   display: flex;
   flex-direction: column;

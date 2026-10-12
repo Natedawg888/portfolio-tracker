@@ -292,7 +292,11 @@ export function calculatePaye(input: PayeInput): PayeBreakdown {
   const ietcCredit = ietcEligible ? calcIetc(annualGross) : 0;
   const ietcApplied = ietcCredit > 0;
   if (input.ietc && input.employment === 'primary' && !ietcApplied) {
-    notes.push('IETC not applied — income outside $24,000–$69,999 band (or eligibility flags off).');
+    const abateCents = Math.round(IETC_ABATE_RATE * 10000) / 100;
+    notes.push(
+      `IETC not applied — full credit from $${IETC_MIN_INCOME.toLocaleString('en-NZ')} to $${IETC_FULL_MAX_INCOME.toLocaleString('en-NZ')}, ` +
+        `then it abates to $${IETC_ABATE_END.toLocaleString('en-NZ')} at ${abateCents}c per dollar above $${IETC_FULL_MAX_INCOME.toLocaleString('en-NZ')}.`,
+    );
   }
   if (input.ietc && input.employment === 'secondary') {
     notes.push('IETC applies via primary (ME) tax code only — ignored for secondary.');

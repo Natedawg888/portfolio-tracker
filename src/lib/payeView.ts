@@ -178,3 +178,118 @@ export function schedularActivityOptionLabel(activity: { label: string; rate: nu
   const pct = Math.round(activity.rate * 1000) / 10;
   return `${schedularActivityShortName(activity.label)} · ${pct}%`;
 }
+
+/**
+ * Cents per dollar from a fractional rate. 0.13 → "13c", 0.175 → "17.5c",
+ * 1/3 → "33.33c". The rate is the caller's.
+ */
+export function centsPerDollar(rate: number): string {
+  const cents = Math.round(rate * 10000) / 100;
+  const text = Number.isInteger(cents) ? String(cents) : cents.toFixed(2).replace(/0$/, '');
+  return `${text}c`;
+}
+
+export type KiwiSaverRateOption = { value: string; label: string };
+
+/** One radio per employee rate passed in. No rate is added. */
+export function kiwiSaverEmployeeRateOptions(rates: readonly number[]): KiwiSaverRateOption[] {
+  return rates.map((rate) => ({ value: String(rate), label: `${rate}%` }));
+}
+
+/** Radiogroup value for a percent that is not one of the statutory choices. */
+export const KIWISAVER_CUSTOM_RATE_VALUE = 'custom';
+
+/**
+ * Which employee-rate radio is selected from the amount string alone.
+ * A number that equals one of the choices selects that choice. A blank or
+ * any other percent selects custom. The page still forces custom when the
+ * user has chosen it, even if the typed number matches a choice.
+ */
+export function kiwiSaverRateSelection(
+  rate: string,
+  choices: readonly number[],
+): { value: string; custom: boolean } {
+  const n = Number(rate);
+  const match = choices.find((choice) => choice === n);
+  if (rate.trim() !== '' && Number.isFinite(n) && match !== undefined) {
+    return { value: String(match), custom: false };
+  }
+  return { value: KIWISAVER_CUSTOM_RATE_VALUE, custom: true };
+}
+
+export function kiwiSaverOptInTip(startingRate: number): string {
+  return (
+    `Employee contribution is gross pay times the rate you choose. ` +
+    `${startingRate}% is the starting rate when this account has not saved one. ` +
+    `The rate is saved for this account. Not advice.`
+  );
+}
+
+export function kiwiSaverEmployerTip(figures: { minimumRate: number; statutoryFrom: string }): string {
+  return (
+    `Statutory minimum ${figures.minimumRate}% from ${figures.statutoryFrom}. ` +
+    `The employer pays it, so it is not deducted from take-home unless salary sacrifice is on.`
+  );
+}
+
+/** No dollar figure. Salary sacrifice is a package split, not a new rate. */
+export const SALARY_SACRIFICE_TIP =
+  'The amount you enter is the package, including employer KiwiSaver. Taxable gross is that package divided by (1 + the employer rate).';
+
+export function studentLoanTip(
+  figures: { rate: number; annualThreshold: number },
+  money: (n: number) => string,
+): string {
+  const pct = Math.round(figures.rate * 1000) / 10;
+  const label = `${pct}%`;
+  return (
+    `${label} of primary pay over ${money(figures.annualThreshold)} a year. ` +
+    `On a second job, ${label} of all gross, with no threshold.`
+  );
+}
+
+export function payrollGivingTip(creditRate: number): string {
+  return (
+    `Tax credit is ${centsPerDollar(creditRate)} per dollar donated, and cannot exceed the tax portion of PAYE. ` +
+    `The donation comes off take-home each pay.`
+  );
+}
+
+export type IetcTipFigures = {
+  minIncome: number;
+  fullMaxIncome: number;
+  abateEnd: number;
+  fullAnnual: number;
+  abateRate: number;
+};
+
+/**
+ * IETC wording. Full credit runs from the minimum to the full-credit cap.
+ * It then abates until the end income, where the credit is nothing.
+ * Figures and the money formatter are the caller's — this does not look up rates.
+ */
+export function ietcCreditTip(figures: IetcTipFigures, money: (n: number) => string): string {
+  const fullFrom = money(figures.minIncome);
+  const fullTo = money(figures.fullMaxIncome);
+  const end = money(figures.abateEnd);
+  return (
+    `Independent earner tax credit. Full credit ${money(figures.fullAnnual)} a year from ${fullFrom} to ${fullTo}. ` +
+    `Abates from ${fullTo} to ${end} at ${centsPerDollar(figures.abateRate)} per dollar above ${fullTo}. ` +
+    `Nothing from ${end}. Main job only, tax code ME or ME SL.`
+  );
+}
+
+export function charityDonationTip(creditRate: number): string {
+  return (
+    `Donations to approved donees outside payroll giving. ` +
+    `Credit is ${centsPerDollar(creditRate)} per dollar, capped at the same share of taxable income. ` +
+    `Claim after year end with receipts. The gift is not taken off salary again.`
+  );
+}
+
+/**
+ * Kept behind the investing-credits ⓘ. No dollar amount: credits are entered,
+ * not calculated.
+ */
+export const INVESTING_CREDITS_TIP =
+  'IRD has no payday PAYE investing-credit field. Imputation, RWT, PIE, and foreign tax credits offset tax on the annual assessment (a refund or less tax to pay). Enter annual NZD from statements or myIR. Amounts are not invented. Credits you apply are saved. Income auto-fills only when a savings-interest or dividend record names a credit kind and a positive amount.';
