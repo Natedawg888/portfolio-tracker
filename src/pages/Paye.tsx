@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, formatNzd } from '../api/client';
 import { InfoTip } from '../components/InfoTip';
 import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import {
+  buildTaxCode,
   calculatePaye,
   periodiseBreakdown,
+  pickSecondaryCode,
   type EmploymentKind,
   type ExtraTaxCreditInput,
   type PayFrequency,
@@ -25,8 +27,8 @@ import {
 } from '../lib/payePrefs';
 import { charityLinksTotal } from '../lib/charityPayeLink';
 import { OutputPayInputs, OutputPayResults, SavedPaySources } from '../components/OutputPay';
-import type { OutputPayType, PieceRatePayeOptions } from '../lib/outputPayCalc';
-import { loadOutputPayPrefs, saveOutputPayPrefs, type OutputPayPrefs } from '../lib/outputPayPrefs';
+import { calculatePieceRate, type OutputPayType, type PieceRatePayeOptions } from '../lib/outputPayCalc';
+import { loadOutputPayPrefs, pieceUnitsPerWeek, saveOutputPayPrefs, type OutputPayPrefs } from '../lib/outputPayPrefs';
 import {
   ACC_MAX_EARNINGS,
   ACC_MAX_LEVY,
@@ -54,17 +56,19 @@ import {
   PAYE_NET_NZ_URL,
   formatPayeTaxDay,
   incomeBracketRows,
+  convertSalaryHourly,
   payeIncludedCopy,
   payePageSubtitle,
   payeSourceLinks,
   ratesInUseNote,
+  salaryHourlySwitch,
 } from '../lib/payeView';
 
 const PAY_TYPES: { value: PayePayType; label: string }[] = [
-  { value: 'salary', label: 'Salary / wages' },
+  { value: 'salary', label: 'Salary' },
   { value: 'hourly', label: 'Hourly' },
-  { value: 'piece', label: 'Piece rate (employee)' },
-  { value: 'schedular', label: 'Contract (schedular)' },
+  { value: 'piece', label: 'Piece rate' },
+  { value: 'schedular', label: 'Contract' },
   { value: 'share_of_catch', label: 'Share of catch' },
 ];
 
@@ -72,13 +76,60 @@ function isOutputPayType(t: PayePayType): t is OutputPayType {
   return t === 'piece' || t === 'schedular' || t === 'share_of_catch';
 }
 
-/** Salary frequencies; hourly pay has its own pay type. */
-const FREQUENCIES: { value: PayFrequency; label: string }[] = [
-  { value: 'week', label: 'Weekly' },
-  { value: 'fortnight', label: 'Fortnightly' },
-  { value: 'month', label: 'Monthly' },
-  { value: 'year', label: 'Yearly' },
+/** Salary period. Hourly pay has its own pay type, so "hour" is not a choice here. */
+const SALARY_PERIODS: { value: PayFrequency; label: string }[] = [
+  { value: 'year', label: 'Year' },
+  { value: 'month', label: 'Month' },
+  { value: 'fortnight', label: 'Fortnight' },
+  { value: 'week', label: 'Week' },
 ];
+
+const EMPLOYMENT_OPTIONS: { value: EmploymentKind; label: string }[] = [
+  { value: 'primary', label: 'Main job' },
+  { value: 'secondary', label: 'Second job' },
+];
+
+function PayeChoiceRow<T extends string>({
+  label,
+  ariaLabel,
+  value,
+  options,
+  onChange,
+  aside,
+}: {
+  label: string;
+  ariaLabel?: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (next: T) => void;
+  aside?: ReactNode;
+}) {
+  return (
+    <fieldset className="paye-choice">
+      <legend className="paye-choice-legend">
+        {label}
+        {aside}
+      </legend>
+      <div className="paye-choice-row" role="radiogroup" aria-label={ariaLabel ?? label}>
+        {options.map((opt) => {
+          const active = value === opt.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              className={'paye-choice-btn' + (active ? ' active' : '')}
+              onClick={() => onChange(opt.value)}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
 
 const PERIOD_COLS: { key: 'hour' | 'week' | 'fortnight' | 'month' | 'year'; label: string }[] = [
   { key: 'hour', label: 'Hour' },
@@ -542,6 +593,59 @@ export function Paye() {
 
   const periods = result ? periodiseBreakdown(result, hours) : null;
 
+  const salaryPeriod: PayFrequency = frequency === 'hour' ? 'year' : frequency;
+
+  const employmentTaxCode = useMemo(() => {
+    if (payType === 'piece') {
+      return calculatePieceRate(
+        {
+          ratePerUnit: Number(outputPrefs.pieceRate) || 0,
+          unitsPerWeek: pieceUnitsPerWeek(outputPrefs),
+          hoursPerWeek: Number(outputPrefs.pieceHours) || 0,
+          holidayPayWithWages: outputPrefs.holidayPay,
+        },
+        payeOptions,
+        rates,
+      ).paye.taxCode;
+    }
+    if (result) return result.taxCode;
+    return buildTaxCode({
+      employment,
+      studentLoan,
+      ietcApplied: false,
+      secondaryCode:
+        employment === 'secondary' ? pickSecondaryCode(Number(secondaryTotal) || 0).code : null,
+    });
+  }, [payType, outputPrefs, payeOptions, rates, result, employment, studentLoan, secondaryTotal]);
+
+  function selectPayType(next: PayePayType) {
+    if (next === payType) return;
+    const fields = {
+      amount,
+      frequency: payType === 'hourly' ? ('hour' as const) : salaryPeriod,
+      hoursPerWeek,
+    };
+    // Salary ↔ Hourly converts. Other switches do not copy this amount anywhere.
+    const converted = salaryHourlySwitch(payType, next, fields);
+    if (converted) {
+      setAmount(converted.amount);
+      setFrequency(converted.frequency);
+    } else if (payType === 'hourly') {
+      // Park the shared amount as an annual salary so a later Salary view
+      // does not treat the hourly rate as yearly pay. Output prefs stay as saved.
+      const parked = convertSalaryHourly('hourly', fields);
+      setAmount(parked.amount);
+      setFrequency(parked.frequency);
+    } else if (next === 'hourly') {
+      const parked = convertSalaryHourly('salary', fields);
+      setAmount(parked.amount);
+      setFrequency(parked.frequency);
+    } else if (next === 'salary' && frequency === 'hour') {
+      setFrequency('year');
+    }
+    setPayType(next);
+  }
+
   return (
     <div className="stack paye-page">
       <header className="paye-intro">
@@ -562,82 +666,100 @@ export function Paye() {
       <div className="paye-layout">
       <div className="paye-inputs">
       <section className="panel">
-        <div className="form-grid">
-          <label>
-            Pay type
-            <select
-              value={payType}
-              onChange={(e) => {
-                const next = e.target.value as PayePayType;
-                setPayType(next);
-                if (next === 'salary' && frequency === 'hour') setFrequency('year');
-              }}
-            >
-              {PAY_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {outputType == null && (
-          <label>
-            {payType === 'hourly' ? 'Hourly rate' : 'Gross income'}
-            <input
-              type="number"
-              min={0}
-              step="any"
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder={payType === 'hourly' ? 'e.g. 32' : 'e.g. 75000'}
-            />
-          </label>
-          )}
-          {payType === 'salary' && (
-          <label>
-            Frequency
-            <select
-              value={effectiveFrequency}
-              onChange={(e) => setFrequency(e.target.value as PayFrequency)}
-            >
-              {FREQUENCIES.map((f) => (
-                <option key={f.value} value={f.value}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          )}
-          {outputType == null && (
-          <label>
-            Hours / week
-            <input
-              type="number"
-              min={1}
-              max={168}
-              step={0.5}
-              value={hoursPerWeek}
-              onChange={(e) => setHoursPerWeek(e.target.value)}
-            />
-          </label>
-          )}
-          {showPayeSections && (
-          <label>
-            Employment
-            <select
-              value={employment}
-              onChange={(e) => setEmployment(e.target.value as EmploymentKind)}
-            >
-              <option value="primary">Primary (main job)</option>
-              <option value="secondary">Secondary</option>
-            </select>
-          </label>
-          )}
-        </div>
+        <PayeChoiceRow
+          label="Pay type"
+          value={payType}
+          options={PAY_TYPES}
+          onChange={selectPayType}
+        />
+
+        {payType === 'salary' && (
+          <div className="form-grid">
+            <label>
+              Gross income
+              <input
+                type="number"
+                min={0}
+                step="any"
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="e.g. 75000"
+              />
+            </label>
+            <div className="paye-period">
+              <span className="paye-field-label" id="paye-period-label">
+                Period
+              </span>
+              <div className="segmented" role="group" aria-labelledby="paye-period-label">
+                {SALARY_PERIODS.map((period) => (
+                  <button
+                    key={period.value}
+                    type="button"
+                    className={'segmented-btn' + (salaryPeriod === period.value ? ' active' : '')}
+                    aria-pressed={salaryPeriod === period.value}
+                    onClick={() => setFrequency(period.value)}
+                  >
+                    {period.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label>
+              Hours / week
+              <input
+                type="number"
+                min={1}
+                max={168}
+                step={0.5}
+                value={hoursPerWeek}
+                onChange={(e) => setHoursPerWeek(e.target.value)}
+              />
+            </label>
+          </div>
+        )}
+
+        {payType === 'hourly' && (
+          <div className="form-grid">
+            <label>
+              Hourly rate
+              <input
+                type="number"
+                min={0}
+                step="any"
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="e.g. 32"
+              />
+            </label>
+            <label>
+              Hours / week
+              <input
+                type="number"
+                min={1}
+                max={168}
+                step={0.5}
+                value={hoursPerWeek}
+                onChange={(e) => setHoursPerWeek(e.target.value)}
+              />
+            </label>
+          </div>
+        )}
 
         {outputType && (
           <OutputPayInputs payType={outputType} prefs={outputPrefs} set={setOutput} rates={rates} />
+        )}
+
+        {showPayeSections && (
+          <PayeChoiceRow
+            label="Employment"
+            ariaLabel={`Employment, tax code ${employmentTaxCode}`}
+            value={employment}
+            options={EMPLOYMENT_OPTIONS}
+            onChange={setEmployment}
+            aside={<span className="paye-tax-code"> · tax code {employmentTaxCode}</span>}
+          />
         )}
 
         {showPayeSections && employment === 'secondary' && (
@@ -1074,7 +1196,7 @@ export function Paye() {
             setPrefs={setOutputPrefs}
             payeOptions={payeOptions}
             rates={rates}
-            onLoadPayType={setPayType}
+            onLoadPayType={selectPayType}
           />
         </>
       )}
