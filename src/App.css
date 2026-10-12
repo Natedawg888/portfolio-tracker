@@ -10142,6 +10142,47 @@ html:not([data-theme]) .bills-page :focus-visible {
 .projection-calculators-title { margin: 0.5rem 0 0; font-size: 1.25rem; }
 
 /* Warranties (KAN-61): uses the Bills theme (.bills-page) plus these. */
+.warranties-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  flex-wrap: wrap;
+}
+html .bills-page.warranties-page a.warranties-back {
+  display: inline-block;
+  margin: 0 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+html .bills-page.warranties-page a.warranties-back:hover,
+html .bills-page.warranties-page a.warranties-back:focus-visible {
+  color: var(--text);
+}
+.warranties-page .warranties-header .page-title {
+  margin: 0;
+  font-size: 1.35rem;
+  text-transform: none;
+  font-variant-caps: normal;
+}
+.warranties-header-line { margin: 0.2rem 0 0; }
+.warranties-header-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.warranties-empty {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: 0.55rem;
+  padding: 1.75rem 1.25rem;
+}
+.warranties-empty h3 { margin: 0; }
+.warranties-empty p { margin: 0; max-width: 28rem; }
+.warranties-empty-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  color: var(--accent);
+}
 .warranties-page .warranty-status {
   display: inline-block;
   padding: 0.05rem 0.5rem;
@@ -10157,8 +10198,6 @@ html:not([data-theme]) .bills-page :focus-visible {
   border-color: var(--budget-over-badge-border);
 }
 .warranties-page .warranty-status--expired { color: var(--muted); }
-.warranties-page .warranty-expiring-list { margin: 0.25rem 0 0.5rem; padding-left: 1.1rem; }
-.warranties-page .warranty-expiring-list li { margin: 0.2rem 0; }
 .warranties-page .warranty-upload { position: relative; cursor: pointer; }
 .warranties-page .warranty-upload input {
   position: absolute;

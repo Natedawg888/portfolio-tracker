@@ -1,13 +1,14 @@
 /**
  * Warranties (KAN-61). Reached from the Budget page (not the nav bar).
- * Record when cover starts and ends for things bought, see what is expiring soon,
- * and link each one to its purchase transaction (and that receipt) or keep its own receipt.
+ * Phase 1: header counts from the list totals, and an empty state when there
+ * are none. The add/edit dialog, tables, purchase link, and receipts are unchanged.
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { api, formatNzd, type WarrantyWriteBody } from '../api/client';
 import { WARRANTY_LENGTHS, daysLeftText, warrantyEndDate } from '../lib/warranty';
 import type { Warranty, WarrantyListResponse, WarrantyPurchase } from '../types';
+import { warrantiesSubtitle } from './warrantiesView';
 
 function formatDate(ymd: string | null): string {
   if (!ymd) return '—';
@@ -309,9 +310,42 @@ function draftFor(w: Warranty): Draft {
 
 type DialogState = { mode: 'add' } | { mode: 'edit'; item: Warranty } | null;
 
+function WarrantyShield() {
+  return (
+    <svg className="warranties-empty-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+        d="M12 3.2 5.2 6.1v5.9c0 4.1 2.7 7 6.8 8.6 4.1-1.6 6.8-4.5 6.8-8.6V6.1L12 3.2z"
+      />
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M8.8 12.1 11 14.3 15.3 10"
+      />
+    </svg>
+  );
+}
+
+function EmptyWarranties({ onAdd }: { onAdd: () => void }) {
+  return (
+    <section className="panel warranties-empty" aria-labelledby="warranties-empty-title">
+      <WarrantyShield />
+      <h3 id="warranties-empty-title">Never miss a free repair</h3>
+      <p>Add what you bought and when the cover ends.</p>
+      <button type="button" className="btn primary" onClick={onAdd}>
+        Add your first warranty
+      </button>
+    </section>
+  );
+}
+
 export function Warranties() {
-  const navigate = useNavigate();
-  const location = useLocation();
   const [data, setData] = useState<WarrantyListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -338,12 +372,6 @@ export function Warranties() {
       cancelled = true;
     };
   }, [reload]);
-
-  // Back to wherever the user came from (normally Budget); Budget when opened directly.
-  const goBack = () => {
-    if (location.key !== 'default') navigate(-1);
-    else navigate('/spending');
-  };
 
   async function act(key: string, fn: () => Promise<unknown>, note: string, confirmText?: string) {
     if (confirmText && !window.confirm(confirmText)) return;
@@ -372,7 +400,6 @@ export function Warranties() {
 
   const today = data?.today ?? '';
   const covered = data?.items.filter((i) => i.status !== 'expired') ?? [];
-  const expiring = covered.filter((i) => i.status === 'expiring');
   const expired = data?.items.filter((i) => i.status === 'expired') ?? [];
   const blank: Draft = { itemName: '', retailer: '', price: '', startsOn: today, length: '12', endsOn: '', purchase: null, notes: '' };
 
@@ -504,25 +531,24 @@ export function Warranties() {
     );
   }
 
+  const openAdd = () => setDialog({ mode: 'add' });
+
   return (
     <div className="stack bills-page warranties-page">
-      <div>
-        <button type="button" className="btn small ghost bills-back" onClick={goBack}>
-          ← Back to Budget
-        </button>
-      </div>
-      <section className="hero-card hero-card--centered">
-        <h2 className="page-title">Warranties</h2>
-        <p className="page-lead">
-          Keep track of what&apos;s still under warranty and when cover ends. Link each one to the purchase in your
-          transactions, or keep the receipt here.
-        </p>
-        <div className="row gap" style={{ justifyContent: 'center' }}>
-          <button type="button" className="btn primary" onClick={() => setDialog({ mode: 'add' })} disabled={!data}>
-            Add a warranty
+      <header className="warranties-header">
+        <div>
+          <Link className="warranties-back" to="/spending">
+            ‹ Budget
+          </Link>
+          <h2 className="page-title">Warranties</h2>
+          {data ? <p className="muted small warranties-header-line">{warrantiesSubtitle(data.totals, data.expiringSoonDays)}</p> : null}
+        </div>
+        <div className="warranties-header-actions">
+          <button type="button" className="btn small primary" onClick={openAdd} disabled={!data}>
+            + Add warranty
           </button>
         </div>
-      </section>
+      </header>
 
       {error ? (
         <section className="panel">
@@ -542,49 +568,14 @@ export function Warranties() {
       {msg ? <p className="banner">{msg}</p> : null}
       {!data && !error ? <p className="muted">Loading warranties…</p> : null}
 
-      {data ? (
+      {data && data.items.length === 0 ? <EmptyWarranties onAdd={openAdd} /> : null}
+
+      {data && data.items.length > 0 ? (
         <>
-          <section className="grid cards" aria-label="Totals">
-            <div className="card">
-              <p className="eyebrow">Covered</p>
-              <p className="stat-value">{data.totals.active + data.totals.expiring}</p>
-            </div>
-            <div className="card">
-              <p className="eyebrow">Ending in the next {data.expiringSoonDays} days</p>
-              <p className="stat-value">{data.totals.expiring}</p>
-            </div>
-            <div className="card">
-              <p className="eyebrow">Expired</p>
-              <p className="stat-value">{data.totals.expired}</p>
-            </div>
-          </section>
-
-          {expiring.length > 0 ? (
-            <section className="panel warranty-expiring" aria-label="Expiring soon">
-              <h3>Expiring soon</h3>
-              <ul className="warranty-expiring-list">
-                {expiring.map((w) => (
-                  <li key={w.id}>
-                    <strong>{w.itemName}</strong> — {daysLeftText(w.endsOn, today).toLowerCase()} (ends {formatDate(w.endsOn)})
-                  </li>
-                ))}
-              </ul>
-              <p className="muted small">Check for faults now while you can still claim.</p>
-            </section>
-          ) : null}
-
           <section className="panel">
             <h3>Under warranty</h3>
             {covered.length === 0 ? (
-              <p className="muted small">
-                {data.items.length === 0 ? (
-                  <>
-                    No warranties yet. Use <strong>Add a warranty</strong> — you can find the purchase in your transactions.
-                  </>
-                ) : (
-                  'Nothing is under warranty right now.'
-                )}
-              </p>
+              <p className="muted small">Nothing is under warranty right now.</p>
             ) : (
               table(covered)
             )}
