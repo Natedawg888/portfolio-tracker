@@ -127,6 +127,8 @@ export type DetectionTxn = {
   merchant: string | null;
   categoryId: string | null;
   categoryName: string | null;
+  /** Display name of the account the payment came from, when known. */
+  accountName?: string | null;
 };
 
 export type RecurringSuggestion = {
@@ -145,6 +147,10 @@ export type RecurringSuggestion = {
   amountVaries: boolean;
   categoryId: string | null;
   categoryName: string | null;
+  /** Account of the latest payment. */
+  accountName: string | null;
+  /** regular: the repeat-payment rule above. possible: a Subscriptions-category payee seen too few times. */
+  tier: 'regular' | 'possible';
   transactionIds: string[];
 };
 
@@ -238,8 +244,57 @@ export function detectRecurring(txns: DetectionTxn[], today: string): RecurringS
       amountVaries: variation > 0.03,
       categoryId: latest.categoryId,
       categoryName,
+      accountName: latest.accountName ?? null,
+      tier: 'regular',
       transactionIds: list.map((t) => t.id),
     });
   }
   return out.sort((a, b) => b.monthlyNzd - a.monthlyNzd || a.name.localeCompare(b.name));
+}
+
+/**
+ * Lower-confidence suggestions: payees filed under a Subscriptions category in Budget
+ * with fewer payments than detectRecurring needs (one or two), paid in the last 35
+ * days. Monthly is assumed; the user picks the real frequency when tracking it.
+ * `skipKeys` are payees already suggested by detectRecurring.
+ */
+export function possibleSubscriptions(txns: DetectionTxn[], today: string, skipKeys: ReadonlySet<string>): RecurringSuggestion[] {
+  const groups = new Map<string, DetectionTxn[]>();
+  for (const t of txns) {
+    if (!(t.amount < 0) || !/subscri/i.test(t.categoryName ?? '')) continue;
+    const key = merchantKey(t.merchant || t.description);
+    if (!key || skipKeys.has(key)) continue;
+    groups.set(key, [...(groups.get(key) ?? []), t]);
+  }
+
+  const out: RecurringSuggestion[] = [];
+  for (const [key, raw] of groups) {
+    const list = [...raw].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const days = [...new Set(list.map((t) => t.date))];
+    if (days.length >= 3) continue; // enough history for the regular rule to decide
+    const lastDate = days[days.length - 1];
+    if (daysBetween(lastDate, today) > CADENCE_DAYS.monthly.max) continue;
+    const amounts = days.map((d) => Math.abs(list.filter((t) => t.date === d).reduce((s, t) => s + t.amount, 0)));
+    const amount = Math.round(amounts[amounts.length - 1] * 100) / 100;
+    const latest = list[list.length - 1];
+    out.push({
+      merchantKey: key,
+      name: displayName(list, key),
+      kind: 'subscription',
+      cadence: 'monthly',
+      amountNzd: amount,
+      monthlyNzd: monthlyEquivalent(amount, 'monthly'),
+      lastDate,
+      nextDue: nextDueOnOrAfter(addCadence(lastDate, 'monthly'), 'monthly', today),
+      occurrences: days.length,
+      confidence: 0,
+      amountVaries: amounts.some((a) => Math.abs(a - amount) > amount * 0.03),
+      categoryId: latest.categoryId,
+      categoryName: latest.categoryName,
+      accountName: latest.accountName ?? null,
+      tier: 'possible',
+      transactionIds: list.map((t) => t.id),
+    });
+  }
+  return out.sort((a, b) => (a.lastDate < b.lastDate ? 1 : a.lastDate > b.lastDate ? -1 : a.name.localeCompare(b.name)));
 }

@@ -4,7 +4,8 @@
  * - Saved items: confirmed from a suggestion or added by hand. Reads roll next_due
  *   forward to the first due date on or after today and attach the last payment seen.
  * - Suggestions: detectRecurring() over the user's spending (transfers and income are
- *   left out), minus payees already saved or dismissed.
+ *   left out), then possibleSubscriptions() for Subscriptions-category payees seen too
+ *   few times, minus payees already saved or dismissed.
  */
 import type { Database } from 'sql.js';
 import type { RecurringItem, RecurringListResponse } from '../../src/types/index.ts';
@@ -16,6 +17,7 @@ import {
   monthlyEquivalent,
   nextDueOnOrAfter,
   occurrencesWithin,
+  possibleSubscriptions,
   type Cadence,
   type DetectionTxn,
   type RecurringKind,
@@ -112,11 +114,12 @@ function ownedCategory(db: Database, userId: string, id: string | null | undefin
 /** The user's money-out transactions for detection and "last paid", newest 15 months. */
 function spendingTxns(db: Database, userId: string, today: string): DetectionTxn[] {
   const from = addCadence(today, 'monthly', -15);
-  return queryAll<{ id: string; date: string; amount: number; description: string; merchant: string | null; category_id: string | null; category_name: string | null; type: string | null; is_income: number | null }>(
+  return queryAll<{ id: string; date: string; amount: number; description: string; merchant: string | null; category_id: string | null; category_name: string | null; type: string | null; is_income: number | null; account_name: string | null }>(
     db,
-    `SELECT t.id, t.date, t.amount, t.description, t.merchant, t.category_id, c.name AS category_name, c.type, c.is_income
+    `SELECT t.id, t.date, t.amount, t.description, t.merchant, t.category_id, c.name AS category_name, c.type, c.is_income, a.name AS account_name
      FROM transactions t
      LEFT JOIN budget_categories c ON c.id = t.category_id AND c.user_id = t.user_id
+     LEFT JOIN bank_accounts a ON a.id = t.account_id AND a.user_id = t.user_id
      WHERE t.user_id = ? AND t.date >= ? AND t.date <= ? AND t.amount < 0`,
     [userId, from, today],
   )
@@ -130,6 +133,7 @@ function spendingTxns(db: Database, userId: string, today: string): DetectionTxn
       merchant: t.merchant,
       categoryId: t.category_id,
       categoryName: t.category_name,
+      accountName: t.account_name,
     }));
 }
 
@@ -178,7 +182,9 @@ export function listRecurring(db: Database, userId: string, today: string): Recu
   const dismissed = new Set(
     queryAll<{ merchant_key: string }>(db, `SELECT merchant_key FROM recurring_dismissed WHERE user_id = ?`, [userId]).map((d) => d.merchant_key),
   );
-  const suggestions = detectRecurring(txns, today)
+  const regular = detectRecurring(txns, today);
+  const possible = possibleSubscriptions(txns, today, new Set(regular.map((s) => s.merchantKey)));
+  const suggestions = [...regular, ...possible]
     .filter((s) => !savedKeys.has(s.merchantKey) && !dismissed.has(s.merchantKey))
     .map(({ transactionIds, ...s }) => ({ ...s, transactionCount: transactionIds.length }));
 

@@ -47,18 +47,21 @@ const subsA = resolveCategoryId(db, userA, 'cat-subscriptions');
 const invA = resolveCategoryId(db, userA, 'cat-investments');
 
 let n = 0;
-function txn(userId: string, date: string, amount: number, description: string, categoryId: string | null = null) {
+function txn(userId: string, date: string, amount: number, description: string, categoryId: string | null = null, accountId: string | null = null) {
   run(
     db,
-    `INSERT INTO transactions (id, user_id, date, description, amount, kind, category_id, currency, source, created_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    [`rt${++n}`, userId, date, description, amount, amount < 0 ? 'debit' : 'credit', categoryId, 'NZD', 'manual', now],
+    `INSERT INTO transactions (id, user_id, date, description, amount, kind, category_id, account_id, currency, source, created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    [`rt${++n}`, userId, date, description, amount, amount < 0 ? 'debit' : 'credit', categoryId, accountId, 'NZD', 'manual', now],
   );
 }
+run(db, `INSERT INTO bank_accounts (id, user_id, name, created_at, updated_at) VALUES (?,?,?,?,?)`, ['rec_acct_a', userA, 'Everyday', now, now]);
+// One recent Adobe payment filed under Subscriptions: a lower-confidence suggestion.
+txn(userA, addCadence(today, 'weekly', -1), -58.08, 'ADOBE CREATIVE CLOUD', subsA, 'rec_acct_a');
 // Four monthly Spotify payments ending last month; a monthly transfer to Sharesies (not a bill).
 for (let i = 4; i >= 1; i -= 1) {
   const d = addCadence(today, 'monthly', -i);
-  txn(userA, d, -14.99, 'SPOTIFY P1234ABCD', subsA);
+  txn(userA, d, -14.99, 'SPOTIFY P1234ABCD', subsA, 'rec_acct_a');
   txn(userA, d, -500, 'Sharesies top-up', invA);
   txn(userB, d, -30, 'Disney Plus');
 }
@@ -92,6 +95,11 @@ try {
   assert(spotify, 'Spotify suggested from transactions');
   assert(spotify.cadence === 'monthly' && spotify.kind === 'subscription' && spotify.amountNzd === 14.99, 'monthly subscription 14.99');
   assert(spotify.nextDue >= today, 'next due on or after today');
+  assert(spotify.tier === 'regular' && spotify.accountName === 'Everyday', 'regular tier with the account name');
+  const adobe = first.json.suggestions.find((s: Json) => /adobe/i.test(s.name));
+  assert(adobe && adobe.tier === 'possible' && adobe.occurrences === 1 && adobe.amountNzd === 58.08, 'single Subscriptions payment is a possible suggestion');
+  assert(adobe.accountName === 'Everyday', 'possible suggestion has the account');
+  assert(first.json.totals.monthlyNzd === 0, 'suggestions do not count towards totals');
   assert(!first.json.suggestions.some((s: Json) => /sharesies/i.test(s.name)), 'transfers to Investments are not bills');
   assert(!first.json.suggestions.some((s: Json) => /disney/i.test(s.name)), 'other users’ payments are not suggested');
 
@@ -145,6 +153,8 @@ try {
   assert((await call('POST', '/api/recurring/dismissed/restore', B)).json.restored === 1, 'restored');
   assert((await call('GET', '/api/recurring', B)).json.suggestions.some((s: Json) => /disney/i.test(s.name)), 'suggestion back');
   assert((await call('POST', '/api/recurring/dismiss', B, {})).status === 400, 'dismiss needs a key');
+  assert((await call('POST', '/api/recurring/dismiss', A, { merchantKey: adobe.merchantKey })).status === 200, 'possible suggestion dismissed');
+  assert(!(await call('GET', '/api/recurring', A)).json.suggestions.some((s: Json) => /adobe/i.test(s.name)), 'dismissed possible suggestion stays hidden');
 
   // Delete and account delete.
   assert((await call('DELETE', `/api/recurring/${rent.json.id}`, A)).status === 200, 'owner delete');
