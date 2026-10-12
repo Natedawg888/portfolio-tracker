@@ -28,7 +28,7 @@ const VALUE_SEARCH_NAV_PREFS: AssetClassPrefKey[] = [
 ];
 
 /** Pages that don't show the local-first / metals / sync footer. */
-const FOOTERLESS_PATHS = new Set(['/', '/debts']);
+const FOOTERLESS_PATHS = new Set(['/', '/debts', '/warranties']);
 
 const links: Array<{
   to: string;
@@ -319,7 +319,7 @@ export function Layout({ children }: { children?: ReactNode }) {
       </main>
       <QuietToast />
       <PageAds />
-      {/* Dashboard carries this note behind its net worth ⓘ; Debts drops it. */}
+      {/* Dashboard carries this note behind its net worth ⓘ; Debts and Warranties drop it. */}
       {FOOTERLESS_PATHS.has(location.pathname) ? null : (
         <footer className="app-footer">
           Local-first · email/password · {metalProviderFooter(metalProvider)} · sync failures stay quiet
