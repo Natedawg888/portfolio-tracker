@@ -4,11 +4,22 @@
  * Amounts go through formatNzd, so they are masked when amounts are hidden.
  */
 import { formatNzd } from '../api/client';
-import { INVOICE_STATUS_LABELS, type InvoiceStatus } from '../lib/invoiceCalc';
+import { INVOICE_STATUS_LABELS } from '../lib/invoiceCalc';
 import type { PublicInvoice } from '../types';
+import { INVOICE_MISSING, invoiceStatusBadge } from '../pages/invoicesView';
 
-export function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
-  return <span className={`invoice-status invoice-status-${status}`}>{INVOICE_STATUS_LABELS[status]}</span>;
+/** Status pill. The word is the name; the mark is a second cue so colour is not the only signal. */
+export function InvoiceStatusBadge({ status }: { status: string | null | undefined }) {
+  const badge = invoiceStatusBadge(status);
+  if (!badge) return <span className="muted">{INVOICE_MISSING}</span>;
+  return (
+    <span className={`invoice-status invoice-status-${badge.status} invoice-status-cue-${badge.cue}`}>
+      <span className="invoice-status-mark" aria-hidden="true">
+        {badge.mark}
+      </span>
+      <span className="invoice-status-label">{badge.label}</span>
+    </span>
+  );
 }
 
 function formatDate(ymd: string): string {
