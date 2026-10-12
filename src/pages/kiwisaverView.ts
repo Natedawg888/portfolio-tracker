@@ -1,8 +1,9 @@
 /**
- * KiwiSaver header, balance-card, and holdings view rules.
+ * KiwiSaver header, balance-card, holdings, and side-column view rules.
  * Missing fields are omitted or shown as —. Nothing here is estimated.
  * Holdings cost and return % are derived only when both recorded inputs exist
  * (balance − returns, then returns / cost). They are display-only, not stored.
+ * Side-column cards only repeat figures the account or ledger already has.
  * Run: npm run test:kiwisaver
  */
 import {
@@ -561,4 +562,341 @@ export function kiwiSaverHoldingsEmpty(input: {
     return { message: 'No fund mix recorded.', offerAdd: true };
   }
   return { message: 'No fund mix recorded.', offerAdd: false };
+}
+
+/** Shown when no scheme is selected. Not a dollar estimate. */
+export const KIWISAVER_GOVERNMENT_UNAVAILABLE =
+  'Government contribution is not tracked as a separate field. Nothing here is estimated.';
+
+const NO_LEDGER_NOTE = 'No contribution rows were recorded.';
+
+export type KiwiSaverSideAddId = 'invested' | 'scheme' | 'provider' | 'pir' | 'observed';
+
+export type KiwiSaverSideFact = {
+  key: string;
+  label: string;
+  text: string;
+  tone: 'up' | 'down' | 'flat' | null;
+  wide: boolean;
+};
+
+export type KiwiSaverSideCard = {
+  id: 'contributions' | 'government' | 'scheme' | 'sync';
+  title: string;
+  tipLabel: string;
+  /** Long copy for the ⓘ. Null when there is nothing further to say. */
+  tip: string | null;
+  value: string;
+  valueTone: 'up' | 'down' | 'flat' | null;
+  /** Word beside the value. Colour is never the only signal. */
+  status: string | null;
+  summary: string | null;
+  /** Null when the card has nothing to expand. */
+  expanderLabel: string | null;
+  details: KiwiSaverSideFact[];
+  adds: Array<{ id: KiwiSaverSideAddId; label: string }>;
+};
+
+export type KiwiSaverSideAccount = {
+  name: string | null;
+  schemeName: string | null;
+  provider: string | null;
+  pir: number | null;
+  dataSource: 'akahu' | 'manual' | 'csv' | 'other' | null;
+  dataSourceLabel: string | null;
+  notes: string | null;
+  observedAt: string | null;
+  amountInvestedNzd: number | null;
+  activityStatus: string | null;
+  activityNote: string | null;
+  governmentContributionNzd: number | null;
+  governmentContributionStatus: string | null;
+  governmentContributionNote: string | null;
+};
+
+export type KiwiSaverSideActivityItem = {
+  id?: string | null;
+  date: string;
+  description?: string | null;
+  amountNzd: number;
+  txnType?: string | null;
+};
+
+export type KiwiSaverSideInput = {
+  account: KiwiSaverSideAccount | null;
+  /** True only while the scheme list itself is still loading. */
+  accountPending: boolean;
+  activity: {
+    /** False while the ledger for this scheme has not come back yet. */
+    loaded: boolean;
+    status: string | null;
+    note: string | null;
+    items: KiwiSaverSideActivityItem[];
+  };
+  /** Manual/CSV entry is open. Read-only provider rows stay without Add. */
+  editable: boolean;
+  syncing: boolean;
+  hasAkahuAccount: boolean;
+  akahuConfigured: boolean | null;
+};
+
+function noteText(value: string | null | undefined): string | null {
+  return present(value);
+}
+
+function activityDateLabel(date: string): string {
+  const trimmed = date.trim();
+  const day = kiwiSaverPointDate(trimmed);
+  if (day) return shortDate(day);
+  return trimmed || '—';
+}
+
+function recordedActivity(items: KiwiSaverSideActivityItem[]): KiwiSaverSideActivityItem[] {
+  return items
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => Number.isFinite(item.amountNzd))
+    .sort((a, b) => {
+      const aKey = kiwiSaverPointDate(a.item.date.trim()) ?? '';
+      const bKey = kiwiSaverPointDate(b.item.date.trim()) ?? '';
+      if (aKey !== bKey) return aKey < bKey ? 1 : -1;
+      return a.index - b.index;
+    })
+    .map(({ item }) => item);
+}
+
+function contributionStatus(status: string | null): string {
+  if (status === 'empty' || status === 'ok') return 'None recorded';
+  if (status === 'unavailable') return 'Unavailable';
+  return 'Not recorded';
+}
+
+function formattedWhen(
+  iso: string | null | undefined,
+  formatTime: (iso: string) => string,
+): string | null {
+  const raw = present(iso);
+  if (!raw) return null;
+  const formatted = formatTime(raw).trim();
+  if (!formatted || formatted === '—') return null;
+  return formatted;
+}
+
+function contributionsCard(
+  input: KiwiSaverSideInput,
+  formatMoney: (n: number) => string,
+): KiwiSaverSideCard {
+  const base = {
+    id: 'contributions' as const,
+    title: 'Contributions',
+    tipLabel: 'About contributions',
+    valueTone: null,
+    expanderLabel: null,
+    details: [] as KiwiSaverSideFact[],
+    adds: [] as KiwiSaverSideCard['adds'],
+  };
+  if (!input.activity.loaded) {
+    return { ...base, tip: null, value: '—', status: 'Checking', summary: null };
+  }
+  const items = recordedActivity(input.activity.items);
+  const note = noteText(input.activity.note) ?? noteText(input.account?.activityNote);
+  if (items.length > 0) {
+    const latest = items[0];
+    const dateLabel = activityDateLabel(latest.date);
+    const details = items.map((item, index) => {
+      const description = present(item.description);
+      const txn = present(item.txnType);
+      const amount = kiwiSaverSignedMoney(item.amountNzd, formatMoney);
+      const text = [description, txn && txn !== description ? txn : null, amount]
+        .filter((part): part is string => part != null)
+        .join(' · ');
+      return {
+        key: present(item.id) ?? `${item.date}:${index}`,
+        label: activityDateLabel(item.date),
+        text,
+        tone: toneOf(item.amountNzd),
+        wide: true,
+      };
+    });
+    return {
+      ...base,
+      tip: note,
+      value: kiwiSaverSignedMoney(latest.amountNzd, formatMoney),
+      valueTone: toneOf(latest.amountNzd),
+      status: 'Latest',
+      summary: dateLabel === '—' ? `${items.length} recorded` : `${items.length} recorded · ${dateLabel}`,
+      expanderLabel: 'Details',
+      details,
+    };
+  }
+  const invested = finiteNumber(input.account?.amountInvestedNzd);
+  if (invested != null) {
+    return {
+      ...base,
+      tip: note ?? NO_LEDGER_NOTE,
+      value: formatMoney(invested),
+      status: "You've put in",
+      summary: null,
+    };
+  }
+  return {
+    ...base,
+    tip: note,
+    value: '—',
+    status: contributionStatus(input.activity.status ?? input.account?.activityStatus ?? null),
+    summary: null,
+    adds:
+      input.editable
+        ? [{ id: 'invested', label: 'Add amount invested' }]
+        : [],
+  };
+}
+
+function governmentCard(
+  input: KiwiSaverSideInput,
+  formatMoney: (n: number) => string,
+): KiwiSaverSideCard {
+  const account = input.account;
+  const note = noteText(account?.governmentContributionNote) ?? KIWISAVER_GOVERNMENT_UNAVAILABLE;
+  const amount = finiteNumber(account?.governmentContributionNzd);
+  const base = {
+    id: 'government' as const,
+    title: 'Government contribution',
+    tipLabel: 'About the government contribution',
+    tip: note,
+    valueTone: null,
+    summary: null,
+    expanderLabel: null,
+    details: [] as KiwiSaverSideFact[],
+    adds: [] as KiwiSaverSideCard['adds'],
+  };
+  if (input.accountPending && !account) {
+    return { ...base, tip: null, value: '—', status: 'Checking' };
+  }
+  if (amount != null) {
+    return { ...base, value: formatMoney(amount), status: 'Recorded' };
+  }
+  const status = present(account?.governmentContributionStatus);
+  return {
+    ...base,
+    value: '—',
+    status: status === 'unavailable' || status == null ? 'Unavailable' : 'Not recorded',
+  };
+}
+
+function schemeCard(input: KiwiSaverSideInput): KiwiSaverSideCard {
+  const base = {
+    id: 'scheme' as const,
+    title: 'Scheme',
+    tipLabel: 'About this scheme',
+    tip: null,
+    valueTone: null,
+    expanderLabel: null,
+    details: [] as KiwiSaverSideFact[],
+    adds: [] as KiwiSaverSideCard['adds'],
+  };
+  if (input.accountPending && !input.account) {
+    return { ...base, value: '—', status: 'Checking', summary: null };
+  }
+  const account = input.account;
+  if (!account) {
+    return {
+      ...base,
+      value: '—',
+      status: 'Not recorded',
+      summary: null,
+      adds: input.editable
+        ? [
+            { id: 'scheme', label: 'Add scheme' },
+            { id: 'provider', label: 'Add provider' },
+            { id: 'pir', label: 'Add PIR' },
+          ]
+        : [],
+    };
+  }
+  const scheme = kiwiSaverSchemeLabel(account);
+  const storedScheme = present(account.schemeName);
+  const provider = present(account.provider);
+  const pir = kiwiSaverPirLabel(account.pir);
+  const summaryParts: string[] = [];
+  if (!provider) summaryParts.push('Provider —');
+  else if (provider.toLowerCase() !== (scheme ?? '').toLowerCase()) summaryParts.push(provider);
+  summaryParts.push(pir ?? 'PIR —');
+  const notes = noteText(account.notes);
+  const adds: KiwiSaverSideCard['adds'] = [];
+  if (input.editable && !storedScheme) adds.push({ id: 'scheme', label: 'Add scheme' });
+  if (input.editable && !provider) adds.push({ id: 'provider', label: 'Add provider' });
+  if (input.editable && !pir) adds.push({ id: 'pir', label: 'Add PIR' });
+  const source = present(account.dataSourceLabel);
+  return {
+    ...base,
+    value: scheme ?? '—',
+    status: source,
+    summary: summaryParts.join(' · '),
+    expanderLabel: notes ? 'Notes' : null,
+    details: notes ? [{ key: 'notes', label: 'Notes', text: notes, tone: null, wide: true }] : [],
+    adds,
+  };
+}
+
+function syncCard(
+  input: KiwiSaverSideInput,
+  formatTime: (iso: string) => string,
+): KiwiSaverSideCard {
+  const tip = `${KIWISAVER_READONLY_NOTE} ${kiwiSaverSyncNote({
+    hasAkahuAccount: input.hasAkahuAccount,
+    akahuConfigured: input.akahuConfigured,
+  })}`;
+  const base = {
+    id: 'sync' as const,
+    title: 'Sync',
+    tipLabel: 'About KiwiSaver sync',
+    tip,
+    valueTone: null,
+    expanderLabel: null,
+    details: [] as KiwiSaverSideFact[],
+    adds: [] as KiwiSaverSideCard['adds'],
+  };
+  if (input.syncing) {
+    return { ...base, value: 'Syncing…', status: 'In progress', summary: null };
+  }
+  const account = input.account;
+  if (input.accountPending && !account && input.akahuConfigured === null) {
+    return { ...base, value: '—', status: 'Checking', summary: null };
+  }
+  const when = formattedWhen(account?.observedAt, formatTime);
+  const source = present(account?.dataSourceLabel);
+  if (when) {
+    const value =
+      account?.dataSource === 'akahu'
+        ? 'Synced'
+        : account?.dataSource === 'manual' || account?.dataSource === 'csv'
+          ? 'Saved'
+          : 'Recorded';
+    return { ...base, value, status: source, summary: when };
+  }
+  return {
+    ...base,
+    value: '—',
+    status: 'Not recorded',
+    summary: source,
+    adds: input.editable ? [{ id: 'observed', label: 'Add date' }] : [],
+  };
+}
+
+/**
+ * Compact side-column cards. Long notes stay in `tip` or `details`.
+ * Add is offered only for a manual/CSV scheme, and only for a fact the form records.
+ * A missing figure is —. Government contribution is never estimated.
+ */
+export function kiwiSaverSideCards(
+  input: KiwiSaverSideInput,
+  formatMoney: (n: number) => string,
+  formatTime: (iso: string) => string,
+): KiwiSaverSideCard[] {
+  return [
+    contributionsCard(input, formatMoney),
+    governmentCard(input, formatMoney),
+    schemeCard(input),
+    syncCard(input, formatTime),
+  ];
 }

@@ -6889,6 +6889,67 @@ html:not([data-theme]) .kiwisaver-page {
   text-transform: uppercase;
   color: var(--accent);
 }
+.ks-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 20rem);
+  gap: 1rem;
+  align-items: start;
+}
+.ks-main,
+.ks-side {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+.kiwisaver-page .ks-side-card {
+  padding: 0.75rem 0.85rem;
+}
+html[data-theme="light"] .kiwisaver-page .ks-side-card h3,
+html[data-theme="dark"] .kiwisaver-page .ks-side-card h3,
+html:not([data-theme]) .kiwisaver-page .ks-side-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.kiwisaver-page .ks-side-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.55rem;
+  margin-top: 0.3rem;
+}
+.ks-side-status {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ks-side-summary { margin: 0.25rem 0 0; }
+.ks-side-toggle {
+  margin-top: 0.45rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+.ks-side-toggle:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.ks-side-details { margin-top: 0.55rem; }
+.ks-side-adds { display: flex; flex-wrap: wrap; gap: 0.45rem 0.75rem; margin-top: 0.5rem; }
+@media (max-width: 900px) {
+  .ks-layout { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 640px) {
   .ks-header { align-items: stretch; }
   .ks-header-actions,

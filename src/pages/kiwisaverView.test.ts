@@ -1,9 +1,10 @@
 /**
- * KiwiSaver header, balance card, and holdings view rules.
+ * KiwiSaver header, balance card, holdings, and side-column view rules.
  * Run: npm run test:kiwisaver
  */
 import { formatAuckland } from '../api/client.ts';
 import {
+  KIWISAVER_GOVERNMENT_UNAVAILABLE,
   KIWISAVER_READONLY_NOTE,
   kiwiSaverActiveRange,
   kiwiSaverAllocationLabel,
@@ -21,6 +22,7 @@ import {
   kiwiSaverHoldingsShowReturns,
   kiwiSaverPointAriaLabel,
   kiwiSaverSchemeLabel,
+  kiwiSaverSideCards,
   kiwiSaverSignedMoney,
   kiwiSaverSplit,
   kiwiSaverSplitLabels,
@@ -30,6 +32,7 @@ import {
   showKiwiSaverSchemePicker,
   showKiwiSaverSyncButton,
   type KiwiSaverHeaderSource,
+  type KiwiSaverSideInput,
 } from './kiwisaverView.ts';
 
 function assert(condition: boolean, message: string): void {
@@ -489,5 +492,218 @@ assert(
   kiwiSaverHoldingsEmpty({ hasScheme: true, dataSource: 'other' }).offerAdd === false,
   'an unknown source does not open the manual form',
 );
+
+function sideInput(partial: Partial<KiwiSaverSideInput> = {}): KiwiSaverSideInput {
+  return {
+    account: null,
+    accountPending: false,
+    activity: { loaded: true, status: null, note: null, items: [] },
+    editable: false,
+    syncing: false,
+    hasAkahuAccount: false,
+    akahuConfigured: false,
+    ...partial,
+  };
+}
+
+const manualAccount: NonNullable<KiwiSaverSideInput['account']> = {
+  name: 'ANZ KiwiSaver',
+  schemeName: null,
+  provider: 'ANZ',
+  pir: null,
+  dataSource: 'manual',
+  dataSourceLabel: 'Manual',
+  notes: null,
+  observedAt: null,
+  amountInvestedNzd: null,
+  activityStatus: null,
+  activityNote: null,
+  governmentContributionNzd: null,
+  governmentContributionStatus: 'unavailable',
+  governmentContributionNote:
+    'Government contribution is not tracked for manual/CSV bank-held KiwiSaver. Check your provider statements / IRD for official figures.',
+};
+
+function cardById(cards: ReturnType<typeof kiwiSaverSideCards>, id: string) {
+  const card = cards.find((item) => item.id === id);
+  if (!card) throw new Error(`missing ${id} card`);
+  return card;
+}
+
+const pending = kiwiSaverSideCards(
+  sideInput({ accountPending: true, akahuConfigured: null, activity: { loaded: false, status: null, note: null, items: [] } }),
+  money,
+  formatTime,
+);
+assert(pending.map((card) => card.id).join(',') === 'contributions,government,scheme,sync', 'the side column is contributions, government, scheme, sync');
+assert(cardById(pending, 'contributions').status === 'Checking', 'a ledger still loading is not reported as missing');
+assert(cardById(pending, 'contributions').adds.length === 0, 'Add waits until the ledger load finishes');
+assert(cardById(pending, 'scheme').status === 'Checking', 'a scheme list still loading is not an empty scheme');
+assert(cardById(pending, 'sync').status === 'Checking', 'unknown Akahu status stays Checking');
+
+let governmentCalls = 0;
+const emptyManual = kiwiSaverSideCards(
+  sideInput({ account: manualAccount, editable: true }),
+  (n) => {
+    governmentCalls += 1;
+    return money(n);
+  },
+  formatTime,
+);
+const contributions = cardById(emptyManual, 'contributions');
+assert(contributions.value === '—', 'no ledger and no invested amount is a dash');
+assert(contributions.status === 'Not recorded', 'a missing ledger says so in words');
+assert(contributions.adds.map((add) => add.id).join(',') === 'invested', 'a manual scheme can add the invested amount');
+assert(contributions.tip === null, 'an empty manual ledger has no invented explanation');
+const government = cardById(emptyManual, 'government');
+assert(government.value === '—', 'a null government contribution is a dash');
+assert(government.status === 'Unavailable', 'unavailable is a word, not a colour');
+assert(government.adds.length === 0, 'government contribution has no field to add');
+assert(government.tip === manualAccount.governmentContributionNote, 'the government note is the server sentence');
+assert(!government.tip?.includes('$'), 'the government note does not invent a dollar amount');
+assert(governmentCalls === 0, 'a missing government contribution is not passed to the money formatter');
+
+const investedOnly = kiwiSaverSideCards(
+  sideInput({
+    account: { ...manualAccount, amountInvestedNzd: 0, activityStatus: 'empty', activityNote: 'No rows.' },
+    activity: { loaded: true, status: 'empty', note: 'No rows.', items: [] },
+    editable: true,
+  }),
+  money,
+  formatTime,
+);
+const investedCard = cardById(investedOnly, 'contributions');
+assert(investedCard.value === '$0.00', 'a recorded zero invested amount is shown');
+assert(investedCard.status === "You've put in", 'the invested fallback is named, not called a ledger total');
+assert(investedCard.adds.length === 0, 'a recorded zero is not an Add prompt');
+assert(investedCard.tip === 'No rows.', 'the stored activity note stays behind the tip');
+
+const ledger = kiwiSaverSideCards(
+  sideInput({
+    account: { ...manualAccount, amountInvestedNzd: 5000, schemeName: 'Growth', pir: 28, observedAt: '2026-10-11T01:30:00.000Z', notes: 'Statement Oct 2026' },
+    editable: true,
+    activity: {
+      loaded: true,
+      status: 'ok',
+      note: 'Akahu account transactions (2 in window).',
+      items: [
+        { id: 'a', date: '2026-10-01', description: 'Employer', amountNzd: 150, txnType: 'EMPLOYER' },
+        { id: 'b', date: '2026-10-12', description: '  ', amountNzd: 250.5, txnType: null },
+        { id: 'c', date: '2026-09-01', description: 'Skip', amountNzd: Number.NaN },
+      ],
+    },
+  }),
+  money,
+  formatTime,
+);
+const ledgerCard = cardById(ledger, 'contributions');
+assert(ledgerCard.value === '+$250.50', 'the face shows the latest recorded amount, signed');
+assert(ledgerCard.valueTone === 'up', 'a positive ledger row is marked up as well as signed');
+assert(ledgerCard.status === 'Latest', 'the face names the figure as the latest row');
+assert(ledgerCard.summary === '2 recorded · 12 Oct 2026', 'the count and latest date stay on one short line');
+assert(ledgerCard.tip === 'Akahu account transactions (2 in window).', 'the ledger note is the tip, not the face');
+assert(ledgerCard.adds.length === 0, 'a ledger does not also ask for an invested amount');
+assert(ledgerCard.details.length === 2, 'a non-finite ledger row is dropped');
+assert(ledgerCard.details[0].text === '+$250.50', 'a blank description is not replaced with a guessed label');
+assert(ledgerCard.details[1].text === 'Employer · EMPLOYER · +$150.00', 'description and type are kept as recorded');
+assert(ledgerCard.details[1].label === '1 Oct 2026', 'a ledger date is the Auckland short date');
+
+const scheme = cardById(ledger, 'scheme');
+assert(scheme.value === 'Growth', 'the scheme card uses the stored scheme name');
+assert(scheme.status === 'Manual', 'the source is a word on the card');
+assert(scheme.summary === 'ANZ · PIR 28%', 'provider and PIR sit on one short line');
+assert(scheme.expanderLabel === 'Notes', 'notes open from the card instead of sitting on the page');
+assert(scheme.details[0].text === 'Statement Oct 2026', 'the note text is unchanged');
+assert(scheme.adds.length === 0, 'recorded scheme, provider, and PIR have no Add');
+
+const gaps = cardById(emptyManual, 'scheme');
+assert(gaps.value === 'ANZ KiwiSaver', 'a missing scheme name still shows the account name');
+assert(gaps.summary === 'ANZ · PIR —', 'a missing PIR is a dash on the card');
+assert(gaps.expanderLabel === null, 'no notes means no expander');
+assert(gaps.adds.map((add) => add.label).join(',') === 'Add scheme,Add PIR', 'manual gaps offer scheme and PIR, not a provider that is present');
+
+const readOnly = kiwiSaverSideCards(
+  sideInput({
+    account: {
+      ...manualAccount,
+      dataSource: 'akahu',
+      dataSourceLabel: 'Akahu (Sharesies)',
+      name: 'Sharesies KiwiSaver',
+      provider: 'sharesies',
+      observedAt: '2026-10-11T01:30:00.000Z',
+      governmentContributionNote: 'Akahu Sharesies KiwiSaver does not expose government contribution as a separate field.',
+    },
+    hasAkahuAccount: true,
+    akahuConfigured: true,
+    editable: false,
+  }),
+  money,
+  formatTime,
+);
+assert(cardById(readOnly, 'scheme').adds.length === 0, 'an Akahu scheme does not offer Add for a missing PIR');
+assert(cardById(readOnly, 'scheme').summary === 'sharesies · PIR —', 'a missing Akahu PIR stays a dash');
+assert(cardById(readOnly, 'contributions').adds.length === 0, 'an Akahu scheme does not offer Add for contributions');
+const readOnlySync = cardById(readOnly, 'sync');
+assert(readOnlySync.value === 'Synced', 'an Akahu observation is Synced');
+assert(readOnlySync.status === 'Akahu (Sharesies)', 'the sync card names the source');
+assert(readOnlySync.summary === 'TIME(2026-10-11T01:30:00.000Z)', 'the sync time is the formatted observation');
+assert(readOnlySync.adds.length === 0, 'a recorded sync time is not an Add');
+assert(readOnlySync.tip?.includes('read-only') === true, 'the read-only sentence stays in the sync tip');
+assert(readOnlySync.tip?.includes('auto-resync on open') === true, 'the sync tip uses the connected sentence');
+
+const saved = cardById(emptyManual, 'sync');
+assert(saved.value === '—', 'a manual scheme with no date is a dash');
+assert(saved.status === 'Not recorded', 'a missing date is named');
+assert(saved.summary === 'Manual', 'the source still shows when the date is missing');
+assert(saved.adds.map((add) => add.id).join(',') === 'observed', 'a manual scheme can add the as-of date');
+
+const syncing = kiwiSaverSideCards(
+  sideInput({ account: { ...manualAccount, observedAt: '2026-10-11' }, syncing: true, editable: true }),
+  money,
+  formatTime,
+);
+assert(cardById(syncing, 'sync').value === 'Syncing…', 'a running sync is labelled');
+assert(cardById(syncing, 'sync').status === 'In progress', 'sync progress is a word');
+assert(cardById(syncing, 'sync').summary === null, 'the previous time is not shown as if the sync had finished');
+assert(cardById(syncing, 'sync').adds.length === 0, 'Add date waits until the sync finishes');
+
+let timeCalls = 0;
+kiwiSaverSideCards(sideInput({ account: manualAccount }), money, () => {
+  timeCalls += 1;
+  return 'TIME';
+});
+assert(timeCalls === 0, 'a missing observation is not sent to the time formatter');
+
+const withAmount = kiwiSaverSideCards(
+  sideInput({
+    account: { ...manualAccount, governmentContributionNzd: 521.43, governmentContributionStatus: 'unavailable' },
+  }),
+  money,
+  formatTime,
+);
+assert(cardById(withAmount, 'government').value === '$521.43', 'a recorded government contribution is shown');
+assert(cardById(withAmount, 'government').status === 'Recorded', 'a recorded government contribution is named');
+
+const noScheme = kiwiSaverSideCards(sideInput({ editable: true, akahuConfigured: false }), money, formatTime);
+assert(cardById(noScheme, 'scheme').adds.map((add) => add.id).join(',') === 'scheme,provider,pir', 'an empty page can add scheme, provider, and PIR');
+assert(cardById(noScheme, 'government').tip === KIWISAVER_GOVERNMENT_UNAVAILABLE, 'no scheme uses the no-estimate government sentence');
+assert(cardById(noScheme, 'government').value === '—', 'no scheme does not invent a government contribution');
+
+const loss = kiwiSaverSideCards(
+  sideInput({
+    activity: {
+      loaded: true,
+      status: 'ok',
+      note: null,
+      items: [{ date: '2026-10-12T01:00:00.000Z', description: 'Withdrawal', amountNzd: -40, txnType: 'Withdrawal' }],
+    },
+  }),
+  money,
+  formatTime,
+);
+assert(cardById(loss, 'contributions').value === '$-40.00', 'a recorded negative row keeps its sign');
+assert(cardById(loss, 'contributions').valueTone === 'down', 'a fall is marked down as well as signed');
+assert(cardById(loss, 'contributions').details[0].text === 'Withdrawal · $-40.00', 'a type that repeats the description is not doubled');
+assert(cardById(loss, 'contributions').summary === '1 recorded · 12 Oct 2026', 'a timestamp is labelled as its Auckland day');
 
 console.log('kiwisaverView.test.ts ok');

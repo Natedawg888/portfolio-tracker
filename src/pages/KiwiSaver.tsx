@@ -4,7 +4,9 @@
  *
  * The balance card shows the recorded balance, invested, returns, and the
  * balance history. Holdings are a recorded allocation bar and compact rows;
- * detail stays behind an expander. The bank-held form stays as it is.
+ * detail stays behind an expander. The side column is four compact cards
+ * (contributions, government contribution, scheme, sync). Long notes sit in
+ * an ⓘ or an expander. The bank-held form stays as it is.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api, formatNzd, formatAuckland } from '../api/client';
@@ -27,6 +29,7 @@ import { InfoTip } from '../components/InfoTip';
 import { aucklandDate, pointsInRange } from '../lib/netWorthHistory';
 import type {
   KiwiSaverAccount,
+  KiwiSaverActivityResponse,
   KiwiSaverFundAllocation,
   KiwiSaverHistoryResponse,
 } from '../types';
@@ -46,6 +49,7 @@ import {
   kiwiSaverHoldingsShowReturns,
   kiwiSaverPointAriaLabel,
   kiwiSaverSchemeLabel,
+  kiwiSaverSideCards,
   kiwiSaverSplit,
   kiwiSaverSplitLabels,
   kiwiSaverSyncNote,
@@ -53,6 +57,8 @@ import {
   showKiwiSaverSchemePicker,
   showKiwiSaverSyncButton,
   type KiwiSaverHistoryRange,
+  type KiwiSaverSideAddId,
+  type KiwiSaverSideCard,
 } from './kiwisaverView';
 
 function formatPct(n: number): string {
@@ -269,6 +275,81 @@ function HoldingsSection({
   );
 }
 
+const SIDE_FIELD: Record<KiwiSaverSideAddId, string> = {
+  invested: 'ks-invested',
+  scheme: 'ks-scheme-name',
+  provider: 'ks-provider',
+  pir: 'ks-pir',
+  observed: 'ks-observed',
+};
+
+function SideColumn({
+  cards,
+  onAdd,
+}: {
+  cards: KiwiSaverSideCard[];
+  onAdd: (id: KiwiSaverSideAddId) => void;
+}) {
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  return (
+    <aside className="ks-side" aria-label="KiwiSaver details">
+      {cards.map((card) => {
+        const expanded = open[card.id] === true && card.details.length > 0;
+        const detailsId = `ks-side-${card.id}`;
+        return (
+          <section key={card.id} className="card ks-side-card" aria-labelledby={`${detailsId}-title`}>
+            <h3 id={`${detailsId}-title`}>
+              {card.title}
+              {card.tip ? <InfoTip label={card.tipLabel}>{card.tip}</InfoTip> : null}
+            </h3>
+            <p className="card-value ks-side-value">
+              <span className={toneClass(card.valueTone)}>{card.value}</span>
+              {card.status ? <span className="ks-side-status">{card.status}</span> : null}
+            </p>
+            {card.summary ? <p className="muted small ks-side-summary">{card.summary}</p> : null}
+            {card.expanderLabel ? (
+              <button
+                type="button"
+                className="ks-side-toggle"
+                aria-expanded={expanded}
+                aria-controls={expanded ? detailsId : undefined}
+                onClick={() => {
+                  setOpen((current) => ({ ...current, [card.id]: !current[card.id] }));
+                  window.setTimeout(() => {
+                    document.getElementById(detailsId)?.scrollIntoView({ block: 'nearest' });
+                  }, 0);
+                }}
+              >
+                {expanded ? 'Hide' : card.expanderLabel}{' '}
+                <span aria-hidden="true">{expanded ? '▴' : '▾'}</span>
+              </button>
+            ) : null}
+            {expanded ? (
+              <dl id={detailsId} className="asset-row-facts ks-side-details">
+                {card.details.map((fact) => (
+                  <div key={fact.key} className={fact.wide ? 'asset-row-fact-wide' : undefined}>
+                    <dt>{fact.label}</dt>
+                    <dd className={toneClass(fact.tone)}>{fact.text}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : null}
+            {card.adds.length > 0 ? (
+              <div className="ks-side-adds">
+                {card.adds.map((add) => (
+                  <button key={add.id} type="button" className="add-cost-btn" onClick={() => onAdd(add.id)}>
+                    {add.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        );
+      })}
+    </aside>
+  );
+}
+
 type ManualForm = {
   id: string | null;
   provider: string;
@@ -277,6 +358,7 @@ type ManualForm = {
   balanceNzd: string;
   amountInvestedNzd: string;
   returnsNzd: string;
+  pir: string;
   observedAt: string;
   notes: string;
   fundMixText: string;
@@ -290,6 +372,7 @@ const emptyForm = (): ManualForm => ({
   balanceNzd: '',
   amountInvestedNzd: '',
   returnsNzd: '',
+  pir: '',
   observedAt: new Date().toISOString().slice(0, 10),
   notes: '',
   fundMixText: '',
@@ -299,6 +382,7 @@ type KiwiSaverBundle = {
   accounts: KiwiSaverAccount[];
   selectedId: string | null;
   history: KiwiSaverHistoryResponse | null;
+  activity: KiwiSaverActivityResponse | null;
   akahuConfigured: boolean | null;
   akahuConnected: boolean | null;
 };
@@ -310,6 +394,10 @@ export function KiwiSaver() {
   const [accounts, setAccounts] = useState<KiwiSaverAccount[]>(initialKs?.accounts ?? []);
   const [selectedId, setSelectedId] = useState<string | null>(initialKs?.selectedId ?? null);
   const [history, setHistory] = useState<KiwiSaverHistoryResponse | null>(initialKs?.history ?? null);
+  const [activity, setActivity] = useState<KiwiSaverActivityResponse | null>(initialKs?.activity ?? null);
+  const [activityAccountId, setActivityAccountId] = useState<string | null>(
+    initialKs ? initialKs.selectedId : null,
+  );
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [akahuConfigured, setAkahuConfigured] = useState<boolean | null>(initialKs?.akahuConfigured ?? null);
@@ -346,10 +434,14 @@ export function KiwiSaver() {
       list[0]?.id ||
       null;
     const hist = (await api.kiwisaver.history(pick ?? undefined)) as KiwiSaverHistoryResponse;
+    const act = pick
+      ? ((await api.kiwisaver.activity(pick).catch(() => null)) as KiwiSaverActivityResponse | null)
+      : null;
     const bundle: KiwiSaverBundle = {
       accounts: list,
       selectedId: pick,
       history: hist,
+      activity: act,
       akahuConfigured: akahuRef.current,
       akahuConnected: akahuConnectedRef.current,
     };
@@ -357,6 +449,8 @@ export function KiwiSaver() {
     setAccounts(list);
     setSelectedId(pick);
     setHistory(hist);
+    setActivity(act);
+    setActivityAccountId(pick);
   }, [selectedId]);
 
   const reloadAfterEdit = useCallback(async (preferAccountId?: string | null) => {
@@ -422,19 +516,26 @@ export function KiwiSaver() {
 
   async function selectAccount(id: string) {
     setSelectedId(id);
+    setActivity(null);
+    setActivityAccountId(null);
     const stamp = beginPageRead(KIWISAVER_KEY);
     try {
       const hist = (await api.kiwisaver.history(id)) as KiwiSaverHistoryResponse;
+      const act = (await api.kiwisaver.activity(id).catch(() => null)) as KiwiSaverActivityResponse | null;
       const bundle: KiwiSaverBundle = {
         accounts,
         selectedId: id,
         history: hist,
+        activity: act,
         akahuConfigured: akahuRef.current,
         akahuConnected: akahuConnectedRef.current,
       };
       if (!commitPageRead(stamp, bundle)) return;
       setHistory(hist);
+      setActivity(act);
+      setActivityAccountId(id);
     } catch (e) {
+      setActivityAccountId(id);
       setMsg((e as Error).message);
     }
   }
@@ -476,6 +577,17 @@ export function KiwiSaver() {
     }, 0);
   }
 
+  function focusManualField(field: KiwiSaverSideAddId) {
+    if (selected && !isAkahuAccount(selected) && form.id !== selected.id) startEdit(selected);
+    window.setTimeout(() => {
+      const el = document.getElementById(SIDE_FIELD[field]);
+      if (el instanceof HTMLElement) {
+        el.focus();
+        el.scrollIntoView({ block: 'center' });
+      }
+    }, 0);
+  }
+
   function startEdit(a: KiwiSaverAccount) {
     setForm({
       id: a.id,
@@ -485,6 +597,7 @@ export function KiwiSaver() {
       balanceNzd: String(a.balanceNzd),
       amountInvestedNzd: a.amountInvestedNzd != null ? String(a.amountInvestedNzd) : '',
       returnsNzd: a.returnsNzd != null ? String(a.returnsNzd) : '',
+      pir: a.pir != null ? String(a.pir) : '',
       observedAt: (a.observedAt ?? new Date().toISOString()).slice(0, 10),
       notes: a.notes ?? '',
       fundMixText: (a.fundMix ?? [])
@@ -530,6 +643,15 @@ export function KiwiSaver() {
       }
       if (form.amountInvestedNzd.trim() !== '') {
         body.amountInvestedNzd = Number(form.amountInvestedNzd);
+      }
+      if (form.pir.trim() === '') {
+        body.pir = null;
+      } else {
+        const pir = Number(form.pir);
+        if (!Number.isFinite(pir) || pir < 0 || pir > 100) {
+          throw new Error('PIR must be a percentage from 0 to 100');
+        }
+        body.pir = pir;
       }
 
       if (form.id) {
@@ -639,6 +761,52 @@ export function KiwiSaver() {
       : null,
     formatAuckland,
   );
+  const accountPending = loading && !selected;
+  const activityReady = selected != null && activityAccountId === selected.id;
+  const sideEditable = showManualEntry && (selected == null || !isAkahuAccount(selected));
+  const sideCards = kiwiSaverSideCards(
+    {
+      account: selected
+        ? {
+            name: selected.name,
+            schemeName: selected.schemeName,
+            provider: selected.provider,
+            pir: selected.pir,
+            dataSource: selected.dataSource,
+            dataSourceLabel: selected.dataSourceLabel,
+            notes: selected.notes,
+            observedAt: selected.observedAt,
+            amountInvestedNzd: selected.amountInvestedNzd,
+            activityStatus: selected.activityStatus,
+            activityNote: selected.activityNote,
+            governmentContributionNzd: selected.governmentContributionNzd,
+            governmentContributionStatus: selected.governmentContributionStatus,
+            governmentContributionNote: selected.governmentContributionNote,
+          }
+        : null,
+      accountPending,
+      activity: {
+        loaded: !accountPending && (selected == null || activityReady),
+        status: activityReady ? activity?.status || selected?.activityStatus || null : null,
+        note: activityReady ? activity?.message || selected?.activityNote || null : null,
+        items: activityReady
+          ? (activity?.items ?? []).map((item) => ({
+              id: item.id,
+              date: item.date,
+              description: item.description,
+              amountNzd: item.amountNzd,
+              txnType: item.txnType,
+            }))
+          : [],
+      },
+      editable: sideEditable,
+      syncing,
+      hasAkahuAccount,
+      akahuConfigured,
+    },
+    formatNzd,
+    formatAuckland,
+  );
   const hasSyncedPart = headerParts.some((part) => part.kind === 'synced');
   const syncTip = (
     <InfoTip label="About KiwiSaver sync">
@@ -695,6 +863,8 @@ export function KiwiSaver() {
         </section>
       ) : null}
 
+      <div className="ks-layout">
+        <div className="ks-main">
       {showKiwiSaverSchemePicker(accounts.length) ? (
         <section className="panel" aria-labelledby="ks-schemes-heading">
           <h3 id="ks-schemes-heading">Schemes</h3>
@@ -822,10 +992,11 @@ export function KiwiSaver() {
           {selected.residualNzd != null && (
             <p className="banner" style={{ marginTop: '0.75rem' }}>
               Residual vs fund mix: {formatNzd(selected.residualNzd)}
-              {selected.residualNote ? ` — ${selected.residualNote}` : ''}
+              {selected.residualNote ? (
+                <InfoTip label="About the residual">{selected.residualNote}</InfoTip>
+              ) : null}
             </p>
           )}
-          {selected.notes && <p className="muted small">{selected.notes}</p>}
           <div className="ks-history">
             <div className="ks-history-head">
               <h3 className="ks-history-title">
@@ -900,6 +1071,9 @@ export function KiwiSaver() {
         editable={holdingsEditable}
         onAdd={focusFundMix}
       />
+        </div>
+        <SideColumn key={selected?.id ?? 'none'} cards={sideCards} onAdd={focusManualField} />
+      </div>
 
       {showManualEntry ? (
         <section className="panel">
@@ -919,6 +1093,7 @@ export function KiwiSaver() {
           <label>
             Provider / bank *
             <input
+              id="ks-provider"
               value={form.provider}
               onChange={(e) => setForm({ ...form, provider: e.target.value })}
               required
@@ -928,6 +1103,7 @@ export function KiwiSaver() {
           <label>
             Scheme name
             <input
+              id="ks-scheme-name"
               value={form.schemeName}
               onChange={(e) => setForm({ ...form, schemeName: e.target.value })}
               placeholder="e.g. Growth, Balanced"
@@ -956,11 +1132,25 @@ export function KiwiSaver() {
           <label>
             Amount invested (NZD, optional)
             <input
+              id="ks-invested"
               type="number"
               step="any"
               min={0}
               value={form.amountInvestedNzd}
               onChange={(e) => setForm({ ...form, amountInvestedNzd: e.target.value })}
+              placeholder="unknown"
+            />
+          </label>
+          <label>
+            PIR (%, optional)
+            <input
+              id="ks-pir"
+              type="number"
+              step="0.01"
+              min={0}
+              max={100}
+              value={form.pir}
+              onChange={(e) => setForm({ ...form, pir: e.target.value })}
               placeholder="unknown"
             />
           </label>
@@ -977,6 +1167,7 @@ export function KiwiSaver() {
           <label>
             As of (date)
             <input
+              id="ks-observed"
               type="date"
               value={form.observedAt}
               onChange={(e) => setForm({ ...form, observedAt: e.target.value })}
