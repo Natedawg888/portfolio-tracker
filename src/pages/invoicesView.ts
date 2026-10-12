@@ -1,8 +1,17 @@
 /**
- * Pure view rules for the Invoices list (phase 1).
+ * Pure view rules for the Invoices list (phase 1) and the invoice builder (phase 2).
  * Totals, counts, and tax-year start come from the list response.
+ * Line amounts, GST, and amount due come from invoiceTotals. Due dates come from dueDateForPreset.
  * Business completeness is derived from the profile; nothing is stored or invented.
  */
+import {
+  dueDateForPreset,
+  invoiceTotals,
+  type DuePreset,
+  type GstMode,
+  type InvoiceLineInput,
+  type InvoiceTotals,
+} from '../lib/invoiceCalc';
 import type { BusinessProfile } from '../types';
 
 /** Settings → Business. Matches the tab read in Settings.tsx. */
@@ -179,4 +188,75 @@ export function invoiceSetupSteps(input: {
       promptLead: null,
     },
   ];
+}
+
+/**
+ * One-tap due dates on the builder. On receipt and 30 days stay valid presets
+ * (dueDateForPreset still resolves them) and are left off this row.
+ */
+export const DUE_TAP_PRESETS: Array<{ value: Extract<DuePreset, 'days_7' | 'days_14' | 'next_month_20' | 'custom'>; label: string }> = [
+  { value: 'days_7', label: '7 days' },
+  { value: 'days_14', label: '14 days' },
+  { value: 'next_month_20', label: '20th of next month' },
+  { value: 'custom', label: 'Custom' },
+];
+
+/** Due date shown in the builder. Custom uses the picked date; other presets ignore it. */
+export function editorDueDate(issueDate: string, preset: DuePreset, custom?: string | null): string {
+  return dueDateForPreset(issueDate, preset, custom);
+}
+
+/** Why Save draft and Mark as sent stay disabled. Null when a client and a positive subtotal are both present. */
+export function invoiceActionBlock(input: { clientName: string; subtotal: number }): string | null {
+  const hasClient = typeof input.clientName === 'string' && input.clientName.trim().length > 0;
+  const hasAmount = typeof input.subtotal === 'number' && Number.isFinite(input.subtotal) && input.subtotal > 0;
+  if (hasClient && hasAmount) return null;
+  if (!hasClient && !hasAmount) return 'Add a client and a line amount to save or mark as sent.';
+  if (!hasClient) return 'Add a client to save or mark as sent.';
+  return 'Add a line amount to save or mark as sent.';
+}
+
+export type GstEditorControl =
+  | { kind: 'hidden' }
+  | { kind: 'checkbox'; checked: boolean }
+  | { kind: 'preserved'; mode: GstMode };
+
+/**
+ * GST 15% checkbox. Hidden until the profile has loaded and only when the business is GST registered.
+ * Checked maps to exclusive; unchecked maps to none. An inclusive draft keeps that choice so the
+ * checkbox cannot rewrite it.
+ */
+export function gstEditorControl(input: {
+  /** True, false, or null when the business profile has not loaded. */
+  gstRegistered: boolean | null;
+  gstMode: GstMode;
+  inclusiveDraft: boolean;
+}): GstEditorControl {
+  if (input.gstRegistered !== true) return { kind: 'hidden' };
+  if (input.inclusiveDraft || input.gstMode === 'inclusive') return { kind: 'preserved', mode: input.gstMode };
+  return { kind: 'checkbox', checked: input.gstMode === 'exclusive' };
+}
+
+/** Checkbox on → prices exclude GST. Checkbox off → no GST. */
+export function gstModeFromCheckbox(checked: boolean): GstMode {
+  return checked ? 'exclusive' : 'none';
+}
+
+/**
+ * GST mode the builder previews and saves.
+ * Unknown and non-registered profiles stay on none, so GST is not defaulted on for them.
+ * A registered business keeps exclusive, none, or an already-saved inclusive mode.
+ */
+export function editorGstMode(gstRegistered: boolean | null, gstMode: GstMode): GstMode {
+  if (gstRegistered !== true) return 'none';
+  return gstMode;
+}
+
+/** Line amount, subtotal, GST, and amount due. Amount due already subtracts withholding. */
+export function editorInvoiceTotals(
+  lines: Pick<InvoiceLineInput, 'quantity' | 'rate'>[],
+  gstMode: GstMode,
+  withholdingRatePct: number | null,
+): InvoiceTotals {
+  return invoiceTotals(lines, gstMode, withholdingRatePct);
 }

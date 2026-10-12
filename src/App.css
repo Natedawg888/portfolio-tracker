@@ -8482,10 +8482,10 @@ html:not([data-theme]) .settings-page :focus-visible {
 }
 .invoice-line-row {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1.2fr);
-  gap: 0.4rem;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) auto auto;
+  gap: 0.45rem 0.5rem;
   align-items: end;
-  padding: 0.5rem 0;
+  padding: 0.65rem 0;
   border-bottom: 1px solid var(--border);
 }
 .invoice-line-row label {
@@ -8501,19 +8501,40 @@ html:not([data-theme]) .settings-page :focus-visible {
   min-width: 0;
   box-sizing: border-box;
 }
-.invoice-line-row .invoice-line-total {
+.invoice-line-row .invoice-line-desc,
+.invoice-line-row .invoice-line-unit {
   grid-column: 1 / -1;
+}
+.invoice-line-row .invoice-line-unit {
+  max-width: 12rem;
+}
+.invoice-line-row .invoice-line-amount {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 5.5rem;
+}
+.invoice-line-row .invoice-line-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.invoice-line-row .invoice-line-amount-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  padding: 0.45rem 0;
+}
+.invoice-line-row .invoice-line-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
   align-items: center;
-  gap: 0.5rem;
 }
 @media (max-width: 640px) {
   .invoice-line-row {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
-  .invoice-line-row > label:first-child {
-    grid-column: 1 / -1;
+  .invoice-line-row .invoice-line-actions {
+    justify-content: flex-end;
   }
 }
 .invoice-totals-row {
@@ -8744,16 +8765,28 @@ html .invoices-page .invoice-paper .invoice-paper-note {
 .invoices-header-line { margin: 0.2rem 0 0; }
 .invoices-header-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .invoices-page .invoices-header .btn:not(.primary),
-.invoices-page .invoice-start .btn:not(.primary) {
+.invoices-page .invoice-start .btn:not(.primary),
+.invoices-page .invoice-editor .btn:not(.primary) {
   background: transparent;
   color: var(--text);
   border-color: var(--border);
 }
 .invoices-page .invoices-header .btn:not(.primary):hover:not(:disabled),
-.invoices-page .invoice-start .btn:not(.primary):hover:not(:disabled) {
+.invoices-page .invoice-start .btn:not(.primary):hover:not(:disabled),
+.invoices-page .invoice-editor .btn:not(.primary):hover:not(:disabled) {
   background: var(--surface-3);
   color: var(--text);
   border-color: var(--border);
+}
+html .invoices-page .invoice-editor .btn.danger {
+  background: transparent;
+  color: var(--danger);
+  border-color: var(--danger);
+}
+html .invoices-page .invoice-editor .btn.danger:hover:not(:disabled) {
+  background: transparent;
+  color: var(--danger);
+  border-color: var(--danger);
 }
 .invoice-start h3 { margin: 0 0 0.85rem; }
 .invoice-steps {
@@ -8798,6 +8831,171 @@ html .invoices-page .invoice-paper .invoice-paper-note {
   .invoices-header { align-items: stretch; }
   .invoices-header-actions { width: 100%; }
   .invoices-header-actions .btn { flex: 1 1 auto; text-align: center; }
+}
+
+/* Invoice builder, phase 2. Scoped to the editor so other pages keep their controls. */
+.invoices-page .invoice-bill-to {
+  font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
+  font-size: 1.15rem;
+  font-weight: 500;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.invoices-page .invoice-bill-to input {
+  font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  font-size: 0.95rem;
+  font-weight: 400;
+  letter-spacing: normal;
+}
+.invoices-page .invoice-field-label {
+  display: block;
+  margin: 0.75rem 0 0.35rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.invoices-page .invoice-client-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.invoices-page .invoice-client-chip {
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.invoices-page .invoice-client-chip:hover {
+  border-color: var(--accent);
+}
+.invoices-page .invoice-client-chip[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--btn-primary-text);
+}
+.invoices-page .invoice-more {
+  margin-top: 0.85rem;
+}
+.invoices-page .invoice-more summary {
+  cursor: pointer;
+  font-weight: 650;
+  color: var(--text);
+}
+.invoices-page .invoice-more .form-grid {
+  margin-top: 0.65rem;
+}
+.invoices-page .invoice-editor .panel > h3 {
+  margin-top: 1.25rem;
+}
+.invoices-page .invoice-add-line {
+  margin-top: 0.75rem;
+}
+.invoices-page .invoice-contract-source {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0.35rem 0 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.invoices-page .invoice-choice {
+  margin: 0.85rem 0 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.invoices-page .invoice-choice legend {
+  padding: 0;
+  font-size: 0.85rem;
+  font-weight: 650;
+  color: var(--text);
+}
+.invoices-page .invoice-choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+}
+.invoices-page .invoice-choice-btn {
+  flex: 1 1 7rem;
+  min-width: 0;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.invoices-page .invoice-choice-btn:hover {
+  border-color: var(--accent);
+}
+.invoices-page .invoice-choice-btn[aria-checked="true"] {
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface));
+  border-color: var(--accent);
+  font-weight: 650;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.invoices-page .invoice-custom-due {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-top: 0.65rem;
+  max-width: 16rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.invoices-page .invoice-due-note {
+  margin: 0.5rem 0 0;
+}
+.invoices-page .invoice-gst-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+  margin-top: 1rem;
+}
+.invoices-page .invoice-gst-row .inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--text);
+  font-weight: 650;
+}
+.invoices-page .invoice-withholding {
+  margin-top: 1rem;
+}
+.invoices-page .invoice-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+.invoices-page .invoice-action-reason {
+  margin: 0;
+}
+.invoices-page .invoice-editor-preview h3 {
+  margin: 0 0 0.65rem;
+  font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
+  font-weight: 500;
+  font-size: 1.15rem;
+}
+.invoices-page .invoice-business-prompt {
+  margin: 0 0 0.75rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-3);
+}
+@media (max-width: 1000px) {
+  .invoices-page .invoice-editor-actions .btn {
+    flex: 1 1 auto;
+  }
 }
 
 /* Bills & subscriptions (KAN-27): same theme as the other pages. */

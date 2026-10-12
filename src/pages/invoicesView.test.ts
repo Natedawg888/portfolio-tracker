@@ -1,14 +1,22 @@
 /**
- * Invoices list view rules (phase 1).
- * Counts, profiles, and tax-year start in these fixtures are the inputs.
+ * Invoices list view rules (phase 1) and builder rules (phase 2).
+ * Counts, profiles, tax-year start, and line inputs in these fixtures are the inputs.
  * Run: npm run test:invoices
  */
+import { dueDateForPreset, invoiceTotals } from '../lib/invoiceCalc.ts';
 import type { BusinessDetails } from './invoicesView.ts';
 import {
   BUSINESS_SETTINGS_HREF,
+  DUE_TAP_PRESETS,
   INVOICE_TOTALS,
   businessComplete,
   businessPromptLead,
+  editorDueDate,
+  editorGstMode,
+  editorInvoiceTotals,
+  gstEditorControl,
+  gstModeFromCheckbox,
+  invoiceActionBlock,
   invoiceSetupSteps,
   invoicesChrome,
   invoicesSubtitle,
@@ -145,6 +153,82 @@ assert(
     visibleInvoiceCount({ filteredCount: null, catalogCount: null, filtersActive: false, responseCurrent: false }) === null,
     'before any list response the count is unknown',
   );
+}
+
+// Phase 2: save / mark-as-sent stay disabled until there is a client and a subtotal above zero.
+{
+  assert(
+    invoiceActionBlock({ clientName: '', subtotal: 180 }) === 'Add a client to save or mark as sent.',
+    'no client disables save and mark as sent',
+  );
+  assert(
+    invoiceActionBlock({ clientName: '   ', subtotal: 180 }) === 'Add a client to save or mark as sent.',
+    'a blank client name counts as no client',
+  );
+  assert(
+    invoiceActionBlock({ clientName: 'Mātai Orchards', subtotal: 0 }) === 'Add a line amount to save or mark as sent.',
+    'subtotal 0 disables save and mark as sent',
+  );
+  assert(
+    invoiceActionBlock({ clientName: '', subtotal: 0 }) === 'Add a client and a line amount to save or mark as sent.',
+    'no client and subtotal 0 names both gaps',
+  );
+  assert(invoiceActionBlock({ clientName: 'Mātai Orchards', subtotal: 180 }) === null, 'a client and a subtotal above zero enables both');
+}
+
+// Phase 2: one-tap due presets resolve through dueDateForPreset. On receipt and 30 days stay valid off the row.
+{
+  const issue = '2026-10-08';
+  const tapValues = DUE_TAP_PRESETS.map((p) => p.value).join('|');
+  assert(tapValues === 'days_7|days_14|next_month_20|custom', 'one-tap due options');
+  assert(!tapValues.includes('on_receipt') && !tapValues.includes('days_30'), 'on receipt and 30 days are off the one-tap row');
+  assert(editorDueDate(issue, 'days_7') === dueDateForPreset(issue, 'days_7') && editorDueDate(issue, 'days_7') === '2026-10-15', '7 days');
+  assert(editorDueDate(issue, 'days_14') === dueDateForPreset(issue, 'days_14') && editorDueDate(issue, 'days_14') === '2026-10-22', '14 days');
+  assert(
+    editorDueDate(issue, 'next_month_20') === dueDateForPreset(issue, 'next_month_20') && editorDueDate(issue, 'next_month_20') === '2026-11-20',
+    '20th of next month',
+  );
+  assert(
+    editorDueDate(issue, 'custom', '2026-11-01') === dueDateForPreset(issue, 'custom', '2026-11-01') && editorDueDate(issue, 'custom', '2026-11-01') === '2026-11-01',
+    'custom date',
+  );
+  assert(dueDateForPreset(issue, 'on_receipt') === '2026-10-08', 'on receipt stays a valid preset');
+  assert(dueDateForPreset(issue, 'days_30') === '2026-11-07', '30 days stays a valid preset');
+}
+
+// Phase 2: GST checkbox is hidden when registration is false or unknown. Inclusive drafts are not rewritten.
+{
+  assert(gstEditorControl({ gstRegistered: false, gstMode: 'exclusive', inclusiveDraft: false }).kind === 'hidden', 'GST checkbox hidden when not registered');
+  assert(gstEditorControl({ gstRegistered: null, gstMode: 'exclusive', inclusiveDraft: false }).kind === 'hidden', 'GST checkbox hidden when the profile is unknown');
+  assert(editorGstMode(null, 'exclusive') === 'none', 'an unknown profile does not default GST on');
+  assert(editorGstMode(false, 'exclusive') === 'none', 'a non-registered business does not default GST on');
+  const checked = gstEditorControl({ gstRegistered: true, gstMode: 'exclusive', inclusiveDraft: false });
+  assert(checked.kind === 'checkbox' && checked.checked === true, 'registered and exclusive shows the checkbox on');
+  const unchecked = gstEditorControl({ gstRegistered: true, gstMode: 'none', inclusiveDraft: false });
+  assert(unchecked.kind === 'checkbox' && unchecked.checked === false, 'registered and none shows the checkbox off');
+  assert(gstModeFromCheckbox(true) === 'exclusive' && gstModeFromCheckbox(false) === 'none', 'checkbox on is exclusive and off is none');
+  const preserved = gstEditorControl({ gstRegistered: true, gstMode: 'inclusive', inclusiveDraft: true });
+  assert(preserved.kind === 'preserved' && preserved.mode === 'inclusive', 'an inclusive draft keeps inclusive');
+  assert(
+    gstEditorControl({ gstRegistered: true, gstMode: 'inclusive', inclusiveDraft: false }).kind === 'preserved',
+    'inclusive is not shown as the checkbox',
+  );
+  assert(editorGstMode(true, 'inclusive') === 'inclusive', 'a registered inclusive draft is not rewritten');
+}
+
+// Phase 2: line amount, subtotal, GST, and amount due are invoiceTotals for the given lines.
+{
+  const lines = [
+    { quantity: 2, rate: 80 },
+    { quantity: 1.5, rate: 40 },
+  ];
+  const calc = invoiceTotals(lines, 'exclusive', 10);
+  const shown = editorInvoiceTotals(lines, 'exclusive', 10);
+  assert(shown.lineTotals[0] === calc.lineTotals[0] && shown.lineTotals[0] === 160, 'first line amount');
+  assert(shown.lineTotals[1] === calc.lineTotals[1] && shown.lineTotals[1] === 60, 'second line amount');
+  assert(shown.subtotal === calc.subtotal && shown.subtotal === 220, 'subtotal');
+  assert(shown.gst === calc.gst && shown.gst === 33, 'GST');
+  assert(shown.amountDue === calc.amountDue && shown.amountDue === 231, 'amount due subtracts withholding');
 }
 
 console.log('invoices view: ok');
