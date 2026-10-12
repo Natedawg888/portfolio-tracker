@@ -30,6 +30,7 @@ jobs:
       - run: npm run test:page-cache
       - run: npm run test:dashboard
       - run: npm run test:budget
+      - run: npm run test:paye-page
       - run: npm run test:debts
       - run: npm run test:portfolio
       - run: npm run test:kiwisaver

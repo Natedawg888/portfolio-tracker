@@ -1,6 +1,7 @@
 /**
  * Piece rate, contract (schedular) and share-of-catch sections of the PAYE page (KAN-70).
- * Inputs sit under the pay type selector; results replace the salary hero / breakdown.
+ * Inputs sit under the pay type selector. The summary is the PAYE page's result
+ * panel; the breakdown stays on the page below the columns.
  * Rates come from the tax-year config (payeRates.ts PAY_TAX_YEARS).
  */
 import { useEffect, useMemo, useState } from 'react';
@@ -349,11 +350,14 @@ export function OutputPayResults({
   prefs,
   payeOptions,
   rates,
+  part,
 }: {
   payType: OutputPayType;
   prefs: OutputPayPrefs;
   payeOptions: PieceRatePayeOptions;
   rates: PayTaxYearRates;
+  /** Summary fills the sticky result panel. Breakdown stays below the columns. */
+  part: 'summary' | 'breakdown';
 }) {
   const view = useMemo(() => {
     if (payType === 'piece') {
@@ -405,12 +409,11 @@ export function OutputPayResults({
   }, [payType, prefs, payeOptions, rates]);
 
   if (!view.hasInput) {
+    if (part === 'breakdown') return null;
     return (
-      <section className="panel">
-        <p className="muted" style={{ margin: 0 }}>
-          Enter a rate and how much you produce above to work out your pay.
-        </p>
-      </section>
+      <p className="muted paye-result-empty">
+        Enter a rate and how much you produce above to work out your pay.
+      </p>
     );
   }
 
@@ -419,6 +422,33 @@ export function OutputPayResults({
   if (view.kind === 'piece') {
     const { r } = view;
     const p = r.paye;
+    if (part === 'summary') {
+      return (
+        <>
+          <div className="panel-heading">
+            <h2>Take-home pay</h2>
+            <span className="muted small">Piece rate · tax code {p.taxCode}</span>
+          </div>
+          <p className="paye-result-figure">
+            <span className="hero-value">{money(r.weeklyTakeHome)}</span>
+            <span className="muted">/ week</span>
+          </p>
+          <p className="muted small paye-result-meta">{money(p.takeHome)}/yr</p>
+          <p className="muted small paye-result-meta">
+            Gross {money(r.weeklyGross)}/wk · {money(r.annualGross)}/yr · Effective hourly{' '}
+            {r.effectiveHourly == null ? '—' : `${money(r.effectiveHourly)}/h`} (piece earnings ÷ hours)
+          </p>
+          {r.belowMinimumWage ? (
+            <p className="banner paye-result-meta">
+              {money(r.effectiveHourly ?? 0)}/h is below the adult minimum wage of {money(r.minimumWageHourly)}/h ({rates.label}).
+              Employers must top piece-rate pay up to at least minimum wage for the hours worked. Topped up, this week is{' '}
+              {money(r.earnings)} before holiday pay ({money(r.topUp)} top-up). The figures below use the topped-up amount.
+            </p>
+          ) : null}
+          <Notes notes={p.notes} />
+        </>
+      );
+    }
     const perWeek = (annual: number) => annual / PAYE_WEEKS_PER_YEAR;
     const rows: Row[] = [{ label: `Piece earnings (${unit})`, week: r.pieceEarnings }];
     if (r.topUp > 0) rows.push({ label: 'Minimum wage top-up', week: r.topUp });
@@ -430,117 +460,96 @@ export function OutputPayResults({
     if (p.payrollGivingDonation > 0) rows.push({ label: 'Payroll giving', week: perWeek(p.payrollGivingDonation), deduct: true });
     rows.push({ label: 'Take-home pay', week: r.weeklyTakeHome, strong: true });
     return (
-      <>
-        <section className="panel hero-card">
-          <div className="panel-heading">
-            <h2>Take-home pay</h2>
-            <span className="muted small">Piece rate · tax code {p.taxCode}</span>
-          </div>
-          <div className="row gap" style={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
-            <strong style={{ fontSize: '1.75rem' }}>{money(r.weeklyTakeHome)}</strong>
-            <span className="muted">/ week</span>
-            <span className="muted small">· {money(p.takeHome)}/yr</span>
-          </div>
-          <p className="muted small" style={{ marginTop: '0.65rem' }}>
-            Gross {money(r.weeklyGross)}/wk · {money(r.annualGross)}/yr · Effective hourly{' '}
-            {r.effectiveHourly == null ? '—' : `${money(r.effectiveHourly)}/h`} (piece earnings ÷ hours)
-          </p>
-          {r.belowMinimumWage ? (
-            <p className="banner" style={{ marginTop: '0.75rem' }}>
-              {money(r.effectiveHourly ?? 0)}/h is below the adult minimum wage of {money(r.minimumWageHourly)}/h ({rates.label}).
-              Employers must top piece-rate pay up to at least minimum wage for the hours worked. Topped up, this week is{' '}
-              {money(r.earnings)} before holiday pay ({money(r.topUp)} top-up). The figures below use the topped-up amount.
-            </p>
-          ) : null}
-          <Notes notes={p.notes} />
-        </section>
-        <section className="panel">
-          <h3>Breakdown</h3>
-          <WeekYearTable rows={rows} />
-          <RangeTable points={view.range} quantityLabel={`${unit} / week`} netLabel="Take-home" />
-          <p className="muted small" style={{ marginTop: '0.75rem' }}>
-            Deductions use the same PAYE engine as the salary tool (KiwiSaver, student loan and credits from the sections above).
-          </p>
-        </section>
-      </>
+      <section className="panel">
+        <h3>Breakdown</h3>
+        <WeekYearTable rows={rows} />
+        <RangeTable points={view.range} quantityLabel={`${unit} / week`} netLabel="Take-home" />
+        <p className="muted small" style={{ marginTop: '0.75rem' }}>
+          Deductions use the same PAYE engine as the salary tool (KiwiSaver, student loan and credits from the sections above).
+        </p>
+      </section>
     );
   }
 
   if (view.kind === 'schedular') {
     const { r } = view;
+    if (part === 'summary') {
+      return (
+        <>
+          <div className="panel-heading">
+            <h2>Net received</h2>
+            <span className="muted small">Contract (schedular) · tax code WT</span>
+          </div>
+          <p className="paye-result-figure">
+            <span className="hero-value">{money(r.weeklyNet)}</span>
+            <span className="muted">/ week</span>
+          </p>
+          <p className="muted small paye-result-meta">{money(r.annualNet)}/yr</p>
+          <p className="muted small paye-result-meta">
+            Gross {money(r.weeklyGross)}/wk · tax withheld {money(r.weeklyTaxWithheld)}/wk
+          </p>
+          <Notes notes={r.notes} />
+        </>
+      );
+    }
     const rows: Row[] = [{ label: `Earned (${unit}, excl. GST)`, week: r.weeklyGross }];
     if (r.weeklyGst > 0) rows.push({ label: 'GST invoiced', week: r.weeklyGst });
     rows.push({ label: `Withholding tax (${Math.round(r.withholdingRate * 1000) / 10}%)`, week: r.weeklyTaxWithheld, deduct: true });
     if (r.weeklyGst > 0) rows.push({ label: 'Paid into your bank (incl. GST)', week: r.weeklyPaid });
     rows.push({ label: 'Net received (excl. GST)', week: r.weeklyNet, strong: true });
     return (
-      <>
-        <section className="panel hero-card">
-          <div className="panel-heading">
-            <h2>Net received</h2>
-            <span className="muted small">Contract (schedular) · tax code WT</span>
-          </div>
-          <div className="row gap" style={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
-            <strong style={{ fontSize: '1.75rem' }}>{money(r.weeklyNet)}</strong>
-            <span className="muted">/ week</span>
-            <span className="muted small">· {money(r.annualNet)}/yr</span>
-          </div>
-          <p className="muted small" style={{ marginTop: '0.65rem' }}>
-            Gross {money(r.weeklyGross)}/wk · tax withheld {money(r.weeklyTaxWithheld)}/wk
-          </p>
-          <Notes notes={r.notes} />
-        </section>
-        <section className="panel">
-          <h3>Breakdown</h3>
-          <WeekYearTable rows={rows} />
-          <RangeTable points={view.range} quantityLabel={`${unit} / week`} netLabel="Net received" />
-        </section>
-      </>
+      <section className="panel">
+        <h3>Breakdown</h3>
+        <WeekYearTable rows={rows} />
+        <RangeTable points={view.range} quantityLabel={`${unit} / week`} netLabel="Net received" />
+      </section>
     );
   }
 
   const { r } = view;
+  const perTrip = prefs.catchPer === 'trip';
+  if (part === 'summary') {
+    return (
+      <>
+        <div className="panel-heading">
+          <h2>Your share</h2>
+          <span className="muted small">Share of catch · self-employed</span>
+        </div>
+        <p className="paye-result-figure">
+          <span className="hero-value">{money(r.weeklyShare)}</span>
+          <span className="muted">/ week gross share</span>
+        </p>
+        <p className="muted small paye-result-meta">{money(r.annualShare)}/yr</p>
+        <p className="muted small paye-result-meta">
+          Net after expenses {money(r.weeklyNet)}/wk. If this were your only income, income tax on {money(r.annualNet)} would be
+          about {money(r.estimatedAnnualIncomeTax)} for the year, paid through your return — not deducted here.
+        </p>
+        <Notes notes={r.notes} />
+      </>
+    );
+  }
   const rows: Row[] = [
     { label: 'Catch value', week: r.weeklyCatchValue },
     { label: 'Your share', week: r.weeklyShare },
   ];
   if (r.weeklyExpenses > 0) rows.push({ label: 'Your expenses', week: r.weeklyExpenses, deduct: true });
   rows.push({ label: 'Net share (before tax)', week: r.weeklyNet, strong: true });
-  const perTrip = prefs.catchPer === 'trip';
   return (
-    <>
-      <section className="panel hero-card">
-        <div className="panel-heading">
-          <h2>Your share</h2>
-          <span className="muted small">Share of catch · self-employed</span>
-        </div>
-        <div className="row gap" style={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
-          <strong style={{ fontSize: '1.75rem' }}>{money(r.weeklyShare)}</strong>
-          <span className="muted">/ week gross share</span>
-          <span className="muted small">· {money(r.annualShare)}/yr</span>
-        </div>
-        <p className="muted small" style={{ marginTop: '0.65rem' }}>
-          Net after expenses {money(r.weeklyNet)}/wk. If this were your only income, income tax on {money(r.annualNet)} would be
-          about {money(r.estimatedAnnualIncomeTax)} for the year, paid through your return — not deducted here.
+    <section className="panel">
+      <h3>Breakdown</h3>
+      <WeekYearTable rows={rows} />
+      <RangeTable
+        points={view.range}
+        quantityLabel={perTrip ? 'Catch / trip ($)' : 'Catch / week ($)'}
+        netLabel="Net share"
+      />
+      {perTrip ? (
+        <p className="muted small" style={{ marginTop: '0.5rem' }}>
+          Weekly catch = catch per trip × {num(prefs.tripsPerWeek)} trip(s) ={' '}
+          {money(weeklyCatchValue({ catchValue: num(prefs.catchValue), per: 'trip', tripsPerWeek: num(prefs.tripsPerWeek) }))}.
         </p>
-        <Notes notes={r.notes} />
-      </section>
-      <section className="panel">
-        <h3>Breakdown</h3>
-        <WeekYearTable rows={rows} />
-        <RangeTable
-          points={view.range}
-          quantityLabel={perTrip ? 'Catch / trip ($)' : 'Catch / week ($)'}
-          netLabel="Net share"
-        />
-        {perTrip ? (
-          <p className="muted small" style={{ marginTop: '0.5rem' }}>
-            Weekly catch = catch per trip × {num(prefs.tripsPerWeek)} trip(s) ={' '}
-            {money(weeklyCatchValue({ catchValue: num(prefs.catchValue), per: 'trip', tripsPerWeek: num(prefs.tripsPerWeek) }))}.
-          </p>
-        ) : null}
-      </section>
-    </>
+      ) : null}
+    </section>
   );
 }
 

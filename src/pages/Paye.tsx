@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, formatNzd } from '../api/client';
+import { InfoTip } from '../components/InfoTip';
 import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import {
   calculatePaye,
@@ -38,7 +39,6 @@ import {
   KIWISAVER_EMPLOYEE_RATES,
   KIWISAVER_EMPLOYER_MIN_RATE,
   PAYE_DEFAULT_HOURS_PER_WEEK,
-  PAYE_TAX_YEAR_LABEL,
   INVESTING_CREDIT_KIND_OPTIONS,
   RATE_SOURCES,
   STUDENT_LOAN_ANNUAL_THRESHOLD,
@@ -46,7 +46,19 @@ import {
   STUDENT_LOAN_RATE,
   payTaxYearRates,
   type InvestingCreditKind,
+  type PayTaxYearRates,
 } from '../lib/payeRates';
+import {
+  PAYE_NET_NZ_CREDIT_LEAD,
+  PAYE_NET_NZ_NAME,
+  PAYE_NET_NZ_URL,
+  formatPayeTaxDay,
+  incomeBracketRows,
+  payeIncludedCopy,
+  payePageSubtitle,
+  payeSourceLinks,
+  ratesInUseNote,
+} from '../lib/payeView';
 
 const PAY_TYPES: { value: PayePayType; label: string }[] = [
   { value: 'salary', label: 'Salary / wages' },
@@ -192,6 +204,131 @@ function CharityLinksFromBudget() {
   );
 }
 
+function WhatsIncluded({ open, rates }: { open: boolean; rates: PayTaxYearRates }) {
+  const brackets = incomeBracketRows(INCOME_TAX_BRACKETS);
+  const sources = payeSourceLinks(RATE_SOURCES, SCHEDULAR_SOURCES);
+  return (
+    <div id="paye-included" className="paye-included" hidden={!open}>
+      <p>{payeIncludedCopy()}</p>
+      <p>
+        {PAYE_NET_NZ_CREDIT_LEAD}{' '}
+        <a href={PAYE_NET_NZ_URL} target="_blank" rel="noreferrer">
+          {PAYE_NET_NZ_NAME}
+        </a>
+        .
+      </p>
+      <div>
+        <h3>
+          Income tax
+          <InfoTip label="About these income tax rates">
+            Marginal rates on annual income for this tax year. ACC earners’ levy is charged separately, below.
+          </InfoTip>
+        </h3>
+        <div className="paye-bracket-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Income (annual)</th>
+                <th style={{ textAlign: 'right' }}>Tax rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {brackets.map((row) => (
+                <tr key={row.label}>
+                  <td>{row.label}</td>
+                  <td style={{ textAlign: 'right' }}>{row.rate}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p>
+        {ratesInUseNote(
+          {
+            accRate: ACC_RATE,
+            accMaxEarnings: ACC_MAX_EARNINGS,
+            accMaxLevy: ACC_MAX_LEVY,
+            accountDefaultEmployeeRate: KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE,
+            statutoryEmployeeRates: KIWISAVER_EMPLOYEE_RATES,
+            statutoryMinimumEmployeeRate: KIWISAVER_DEFAULT_EMPLOYEE_RATE,
+            statutoryFrom: formatPayeTaxDay(rates.start),
+            minimumWageAdultHourly: rates.minimumWageAdultHourly,
+            holidayPayPaygRate: rates.holidayPayPaygRate,
+          },
+          money,
+        )}{' '}
+        Full notes in <code>docs/PAYE_RATES.md</code>.
+      </p>
+      <div>
+        <h3>Sources</h3>
+        <ul className="paye-sources muted small">
+          {sources.map((source) => (
+            <li key={source.url}>
+              <a href={source.url} target="_blank" rel="noreferrer">
+                {source.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function SalaryResult({
+  result,
+  periods,
+}: {
+  result: NonNullable<ReturnType<typeof calculatePaye>>;
+  periods: ReturnType<typeof periodiseBreakdown>;
+}) {
+  return (
+    <>
+      <div className="panel-heading">
+        <h2>Take-home pay</h2>
+        <span className="muted small">Tax code · {result.taxCode}</span>
+      </div>
+      <p className="paye-result-figure">
+        <span className="hero-value">{money(result.takeHome)}</span>
+        <span className="muted">/ year</span>
+      </p>
+      <p className="muted small paye-result-meta">
+        {money(periods.takeHome.week)}/wk · {money(periods.takeHome.month)}/mo
+      </p>
+      <p className="muted small paye-result-meta">
+        Annual gross {money(result.annualGross)}
+        {result.annualPackage !== result.annualGross
+          ? ` (package ${money(result.annualPackage)})`
+          : ''}
+        {' · '}Effective PAYE rate {pct(result.effectiveTaxRate)}
+        {result.ietcApplied ? ` · IETC ${money(result.ietcCredit)}` : ''}
+        {result.charityCredit > 0 ? ` · Donation tax credit ${money(result.charityCredit)}` : ''}
+        {result.extraCreditsTotal > 0 ? ` · Investing credits ${money(result.extraCreditsTotal)}` : ''}
+      </p>
+      {result.extraCredits.length > 0 && result.extraCreditsTotal > 0 && (
+        <ul className="muted small paye-result-list">
+          {result.extraCredits
+            .filter((c) => c.credit > 0)
+            .map((c) => (
+              <li key={c.id}>
+                {c.label}: {money(c.credit)}/yr
+                {' · assessment / year-end'}
+              </li>
+            ))}
+        </ul>
+      )}
+      {result.notes.length > 0 && (
+        <ul className="muted small paye-result-list">
+          {result.notes.map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
 export function Paye() {
 
   const initial = useMemo(() => loadPayePrefs(), []);
@@ -242,7 +379,7 @@ export function Paye() {
     if (!rows) return initial.extraCredits;
     return mergePortfolioInvestingCredits(initial.extraCredits, investingCreditsFromPortfolioIncome(rows));
   });
-  const [showSources, setShowSources] = useState(false);
+  const [includedOpen, setIncludedOpen] = useState(false);
 
   // Persist last inputs (incl. investing + charity credits) and re-apply on next load.
   // Preserve charityLinks written from Budget so we do not wipe receipt links.
@@ -407,24 +544,24 @@ export function Paye() {
 
   return (
     <div className="stack paye-page">
-      <section className="panel">
-        <div className="panel-heading">
-          <h2 className="page-title">PAYE</h2>
-          <span className="muted small">{PAYE_TAX_YEAR_LABEL}</span>
-        </div>
-        <p className="page-lead">
-          Estimate NZ take-home pay from gross — income tax, ACC, KiwiSaver, student loan, IETC,
-          payroll giving, charity donation tax credits (IR526), and investing credits (imputation /
-          RWT / PIE / foreign). Applied credits are restored on load; only real savings-interest or
-          dividend income/transactions can auto-fill investing credits (no $0 placeholders). Rates from IRD
-          for the current tax year (never invented). Feature set inspired by{' '}
-          <a href="https://www.paye.net.nz/calculator/" target="_blank" rel="noreferrer">
-            paye.net.nz
-          </a>
-          ; UI matches this app. Annual progressive model — IRD weekly tables can differ slightly.
-          Paid by output? Choose piece rate, contract (schedular) or share of catch.
-        </p>
+      <header className="paye-intro">
+        <h2 className="page-title">Take-home pay</h2>
+        <p className="paye-subtitle">{payePageSubtitle(rates.start, rates.end)}</p>
+        <button
+          type="button"
+          className="paye-included-toggle"
+          aria-expanded={includedOpen}
+          aria-controls="paye-included"
+          onClick={() => setIncludedOpen((open) => !open)}
+        >
+          What&apos;s included <span aria-hidden="true">{includedOpen ? '▴' : '▾'}</span>
+        </button>
+        <WhatsIncluded open={includedOpen} rates={rates} />
+      </header>
 
+      <div className="paye-layout">
+      <div className="paye-inputs">
+      <section className="panel">
         <div className="form-grid">
           <label>
             Pay type
@@ -847,64 +984,33 @@ export function Paye() {
 
       </>
       )}
+      </div>
 
-      {outputType == null && !hasIncome && (
-        <section className="panel">
-          <p className="muted" style={{ margin: 0 }}>
+      <aside
+        className="paye-result panel hero-card"
+        aria-live="polite"
+        aria-atomic="true"
+        aria-label="Take-home result"
+      >
+        {outputType ? (
+          <OutputPayResults
+            part="summary"
+            payType={outputType}
+            prefs={outputPrefs}
+            payeOptions={payeOptions}
+            rates={rates}
+          />
+        ) : result && periods ? (
+          <SalaryResult result={result} periods={periods} />
+        ) : (
+          <p className="muted paye-result-empty">
             Enter a gross income above to calculate take-home pay.
           </p>
-        </section>
-      )}
+        )}
+      </aside>
+      </div>
 
       {result && periods && (
-        <>
-          <section className="panel hero-card">
-            <div className="panel-heading">
-              <h2>Take-home pay</h2>
-              <span className="muted small">Tax code · {result.taxCode}</span>
-            </div>
-            <div className="row gap" style={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
-              <strong style={{ fontSize: '1.75rem' }}>{money(result.takeHome)}</strong>
-              <span className="muted">/ year</span>
-              <span className="muted small">
-                · {money(periods.takeHome.week)}/wk · {money(periods.takeHome.month)}/mo
-              </span>
-            </div>
-            <p className="muted small" style={{ marginTop: '0.65rem' }}>
-              Annual gross {money(result.annualGross)}
-              {result.annualPackage !== result.annualGross
-                ? ` (package ${money(result.annualPackage)})`
-                : ''}
-              {' · '}Effective PAYE rate {pct(result.effectiveTaxRate)}
-              {result.ietcApplied ? ` · IETC ${money(result.ietcCredit)}` : ''}
-              {result.charityCredit > 0
-                ? ` · Donation tax credit ${money(result.charityCredit)}`
-                : ''}
-              {result.extraCreditsTotal > 0
-                ? ` · Investing credits ${money(result.extraCreditsTotal)}`
-                : ''}
-            </p>
-            {result.extraCredits.length > 0 && result.extraCreditsTotal > 0 && (
-              <ul className="muted small" style={{ margin: '0.5rem 0 0', paddingLeft: '1.1rem' }}>
-                {result.extraCredits
-                  .filter((c) => c.credit > 0)
-                  .map((c) => (
-                    <li key={c.id}>
-                      {c.label}: {money(c.credit)}/yr
-                      {' · assessment / year-end'}
-                    </li>
-                  ))}
-              </ul>
-            )}
-            {result.notes.length > 0 && (
-              <ul className="muted small" style={{ margin: '0.75rem 0 0', paddingLeft: '1.1rem' }}>
-                {result.notes.map((n) => (
-                  <li key={n}>{n}</li>
-                ))}
-              </ul>
-            )}
-          </section>
-
           <section className="panel">
             <h3>Breakdown</h3>
             <div style={{ overflowX: 'auto' }}>
@@ -951,12 +1057,17 @@ export function Paye() {
               fortnight because year ÷ 12 vs year ÷ 26.
             </p>
           </section>
-        </>
       )}
 
       {outputType && (
         <>
-          <OutputPayResults payType={outputType} prefs={outputPrefs} payeOptions={payeOptions} rates={rates} />
+          <OutputPayResults
+            part="breakdown"
+            payType={outputType}
+            prefs={outputPrefs}
+            payeOptions={payeOptions}
+            rates={rates}
+          />
           <SavedPaySources
             payType={outputType}
             prefs={outputPrefs}
@@ -967,65 +1078,6 @@ export function Paye() {
           />
         </>
       )}
-
-      <section className="panel">
-        <div className="panel-heading">
-          <h3>Rates in use</h3>
-          <button
-            type="button"
-            className="btn small"
-            onClick={() => setShowSources((s) => !s)}
-          >
-            {showSources ? 'Hide sources' : 'Show sources'}
-          </button>
-        </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table className="data-table" style={{ marginTop: '0.5rem' }}>
-            <thead>
-              <tr>
-                <th>Income (annual)</th>
-                <th style={{ textAlign: 'right' }}>Tax rate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {INCOME_TAX_BRACKETS.map((b, i) => {
-                const prev = i === 0 ? 0 : INCOME_TAX_BRACKETS[i - 1].upTo;
-                const label =
-                  b.upTo === Number.POSITIVE_INFINITY
-                    ? `Over $${prev.toLocaleString('en-NZ')}`
-                    : `$${prev === 0 ? '0' : (prev + 1).toLocaleString('en-NZ')} – $${b.upTo.toLocaleString('en-NZ')}`;
-                return (
-                  <tr key={b.upTo}>
-                    <td>{label}</td>
-                    <td style={{ textAlign: 'right' }}>{(b.rate * 100).toFixed(1)}%</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <p className="muted small" style={{ marginTop: '0.75rem' }}>
-          ACC {(ACC_RATE * 100).toFixed(2)}% on liable earnings up to {money(ACC_MAX_EARNINGS)}{' '}
-          (max levy {money(ACC_MAX_LEVY)}). KiwiSaver employee rate saved for this account{' '}
-          (starting choice {KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE}%). Statutory rates from 1 April
-          2026: {KIWISAVER_EMPLOYEE_RATES.map((r) => `${r}%`).join(', ')} (IRD minimum{' '}
-          {KIWISAVER_DEFAULT_EMPLOYEE_RATE}%). Adult minimum wage {money(rates.minimumWageAdultHourly)}/h;
-          holiday pay with wages {Math.round(rates.holidayPayPaygRate * 100)}%; schedular withholding from IRD&apos;s
-          IR330C. Full notes in{' '}
-          <code>docs/PAYE_RATES.md</code>.
-        </p>
-        {showSources && (
-          <ul className="muted small" style={{ marginTop: '0.75rem', paddingLeft: '1.1rem' }}>
-            {[...RATE_SOURCES, ...SCHEDULAR_SOURCES].map((s) => (
-              <li key={s.url}>
-                <a href={s.url} target="_blank" rel="noreferrer">
-                  {s.label}
-                </a>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
     </div>
   );
 }
