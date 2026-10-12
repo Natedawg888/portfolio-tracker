@@ -389,6 +389,7 @@ router.post('/', async (req, res) => {
   const connectionStatus =
     b.connectionStatus ?? (isManualBank ? 'manual' : 'off');
   const observedAt = typeof b.observedAt === 'string' && b.observedAt ? b.observedAt : now;
+  const pir = b.pir !== undefined ? finiteOrNull(b.pir) : null;
   const name =
     b.name ??
     (isManualBank
@@ -398,9 +399,9 @@ router.post('/', async (req, res) => {
   run(
     db,
     `INSERT INTO kiwisaver_accounts
-      (id, user_id, name, provider, scheme_name, balance_nzd, returns_nzd, fund_mix_json, observed_at,
+      (id, user_id, name, provider, scheme_name, balance_nzd, returns_nzd, pir, fund_mix_json, observed_at,
        connection_status, notes, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       id,
       uid(req),
@@ -409,6 +410,7 @@ router.post('/', async (req, res) => {
       b.schemeName ?? null,
       balance,
       returnsNzd,
+      pir,
       JSON.stringify(fundMix),
       observedAt,
       connectionStatus,
