@@ -1,19 +1,31 @@
 /**
- * KiwiSaver header: subline omits null parts, sync control and scheme picker rules.
+ * KiwiSaver header, balance card, and holdings view rules.
  * Run: npm run test:kiwisaver
  */
 import { formatAuckland } from '../api/client.ts';
 import {
   KIWISAVER_READONLY_NOTE,
   kiwiSaverActiveRange,
+  kiwiSaverAllocationLabel,
+  kiwiSaverAllocationView,
   kiwiSaverChangeLine,
   kiwiSaverHeaderParts,
   kiwiSaverHeaderSubline,
+  kiwiSaverHoldingCost,
+  kiwiSaverHoldingFacts,
+  kiwiSaverHoldingGaps,
+  kiwiSaverHoldingReturnLabel,
+  kiwiSaverHoldingReturnPct,
+  kiwiSaverHoldingRows,
+  kiwiSaverHoldingsEmpty,
+  kiwiSaverHoldingsShowReturns,
   kiwiSaverPointAriaLabel,
   kiwiSaverSchemeLabel,
+  kiwiSaverSignedMoney,
   kiwiSaverSplit,
   kiwiSaverSplitLabels,
   kiwiSaverSyncNote,
+  kiwiSaverUnitsLabel,
   kiwiSaverVisibleRanges,
   showKiwiSaverSchemePicker,
   showKiwiSaverSyncButton,
@@ -300,6 +312,182 @@ assert(kiwiSaverPointAriaLabel('not-a-date', 1, (n) => String(n)) === null, 'an 
 assert(
   kiwiSaverPointAriaLabel('2026-10-12', Number.NaN, (n) => String(n)) === null,
   'a non-finite value is not labelled',
+);
+
+assert(kiwiSaverAllocationLabel(60) === '60%', 'a whole allocation stays a whole percent');
+assert(kiwiSaverAllocationLabel(17.5) === '17.5%', 'a half percent keeps one decimal');
+assert(kiwiSaverAllocationLabel(17.256) === '17.26%', 'allocation labels round to the nearest 0.01');
+assert(kiwiSaverAllocationLabel(0) === '0%', 'a recorded zero allocation is 0%');
+assert(kiwiSaverAllocationLabel(-5) === '-5%', 'a recorded negative allocation is shown');
+assert(kiwiSaverAllocationLabel(null) === '—', 'a missing allocation is a dash');
+assert(kiwiSaverAllocationLabel(Number.NaN) === '—', 'a non-finite allocation is a dash');
+
+assert(kiwiSaverHoldingCost(7500, null) === null, 'cost is not estimated from a balance alone');
+assert(kiwiSaverHoldingCost(null, 500) === null, 'cost is not estimated from returns alone');
+assert(kiwiSaverHoldingCost(7500, 500) === 7000, 'cost is balance minus recorded returns');
+assert(kiwiSaverHoldingCost(100, -20) === 120, 'a recorded loss increases cost');
+assert(kiwiSaverHoldingCost(100, 0) === 100, 'a recorded zero return is used as a cost input');
+assert(kiwiSaverHoldingReturnPct(null, 10) === null, 'a missing cost has no return percent');
+assert(kiwiSaverHoldingReturnPct(0, 0) === null, 'a zero cost is not treated as a base');
+assert(kiwiSaverHoldingReturnPct(100, 0) === 0, 'a recorded zero return is 0%, not missing');
+assert(kiwiSaverHoldingReturnPct(120, -20) === (-20 / 120) * 100, 'the return percent keeps the recorded loss');
+
+assert(kiwiSaverUnitsLabel(null) === null, 'missing units stay missing');
+assert(kiwiSaverUnitsLabel(0) === '0', 'zero units are recorded');
+assert(kiwiSaverUnitsLabel(1234.5) === '1,234.5', 'units are grouped and not rounded away');
+assert(kiwiSaverUnitsLabel(Number.NaN) === null, 'a non-finite unit count is missing');
+
+const dollars = (n: number) => `$${n}`;
+let signedSeen: number | null = null;
+assert(
+  kiwiSaverSignedMoney(12, (n) => {
+    signedSeen = n;
+    return `$${n}`;
+  }) === '+$12',
+  'a gain is marked with a plus, not colour alone',
+);
+assert(signedSeen === 12, 'the money formatter receives the recorded gain');
+assert(kiwiSaverSignedMoney(-4, dollars) === '$-4', 'a loss is passed through with its sign');
+assert(kiwiSaverSignedMoney(0, dollars) === '$0', 'a zero return is not given a plus');
+
+const mix = kiwiSaverHoldingRows([
+  { fundName: 'Cash', allocationPct: 30, balanceNzd: 900, symbol: 'NZX.CASH', shares: 10 },
+  { fundName: '  ', allocationPct: 100, balanceNzd: 1 },
+  { fundName: 'Growth', allocationPct: 60, balanceNzd: 100, returnsNzd: 10, fundId: 'g1', logo: ' https://cdn.example/g.png ' },
+  { fundName: 'Odd', allocationPct: null, balanceNzd: 50, currency: 'usd' },
+]);
+assert(mix.length === 3, 'a blank fund name is dropped rather than labelled');
+assert(mix[0].name === 'Growth' && mix[1].name === 'Cash' && mix[2].name === 'Odd', 'rows follow recorded allocation, then leave missing allocations last');
+assert(mix[0].key === 'id:g1:2', 'the row key uses the recorded fund id and its place in the mix');
+assert(mix[0].ticker === 'GROW', 'a fund without a symbol uses the name for the icon letters');
+assert(mix[1].ticker === 'CASH', 'a dotted symbol uses the ticker after the last dot');
+assert(mix[0].costNzd === 90 && mix[0].returnPct === (10 / 90) * 100, 'cost and return percent come from the recorded balance and returns');
+assert(mix[0].logo === 'https://cdn.example/g.png', 'a recorded logo is trimmed and kept');
+assert(mix[2].allocationLabel === '—' && mix[2].costNzd === null, 'a holding with no allocation and no returns stays blank');
+assert(mix[2].currency === 'usd', 'a recorded currency is kept as sent');
+
+const fromBalances = kiwiSaverHoldingRows([
+  { fundName: 'Growth', allocationPct: null, balanceNzd: 7500 },
+  { fundName: 'Cash', allocationPct: null, balanceNzd: 2500 },
+]);
+assert(kiwiSaverAllocationView(fromBalances).kind === 'none', 'balances without allocations do not become a bar');
+assert(fromBalances.every((row) => row.allocationLabel === '—'), 'a missing allocation stays a dash even when a balance is recorded');
+
+const barRows = kiwiSaverHoldingRows([
+  { fundName: 'Cash', allocationPct: 30, balanceNzd: 900 },
+  { fundName: 'Growth', allocationPct: 60, balanceNzd: 100 },
+  { fundName: 'Zero', allocationPct: 0, balanceNzd: 0 },
+]);
+const bar = kiwiSaverAllocationView(barRows);
+assert(bar.kind === 'bar', 'recorded allocations draw a bar');
+if (bar.kind === 'bar') {
+  assert(bar.segments[0].name === 'Growth' && bar.segments[0].pct === 60, 'the bar uses the recorded percent, not the balance share');
+  assert(bar.segments[1].pct === 30, 'the second recorded percent is kept');
+  assert(bar.segments[2].label === '0%', 'a recorded zero stays on the legend');
+  assert(bar.gapLabel === 'Not recorded 10%', 'the unrecorded remainder is named, not given a fund');
+  assert(bar.gapPct === 10, 'the gap is the complement of the recorded allocations');
+}
+
+const full = kiwiSaverAllocationView(
+  kiwiSaverHoldingRows([
+    { fundName: 'A', allocationPct: 33.33, balanceNzd: 1 },
+    { fundName: 'B', allocationPct: 33.33, balanceNzd: 1 },
+    { fundName: 'C', allocationPct: 33.34, balanceNzd: 1 },
+  ]),
+);
+assert(full.kind === 'bar' && full.gapLabel === null, 'allocations that round to 100% have no gap');
+
+const over = kiwiSaverAllocationView(
+  kiwiSaverHoldingRows([
+    { fundName: 'A', allocationPct: 60, balanceNzd: 1 },
+    { fundName: 'B', allocationPct: 50, balanceNzd: 1 },
+  ]),
+);
+assert(over.kind === 'overflow' && over.sumLabel === '110%', 'allocations past 100% are reported, not rescaled');
+
+const negativeShare = kiwiSaverHoldingRows([{ fundName: 'Odd', allocationPct: -5, balanceNzd: 10 }]);
+assert(negativeShare[0].allocationLabel === '-5%', 'the row shows the recorded negative allocation');
+assert(kiwiSaverAllocationView(negativeShare).kind === 'none', 'a negative allocation is not drawn as a share of the mix');
+
+assert(
+  kiwiSaverHoldingsShowReturns([{ returnsNzd: null }, { returnsNzd: 0 }]) === true,
+  'a recorded zero return shows the return column',
+);
+assert(kiwiSaverHoldingsShowReturns([{ returnsNzd: null }]) === false, 'no recorded returns hides the return column');
+
+const gainLabel = kiwiSaverHoldingReturnLabel({ returnsNzd: 10, returnPct: (10 / 90) * 100 }, dollars);
+assert(gainLabel.text.startsWith('+') && gainLabel.tone === 'up', 'a gain on the row is signed and marked up');
+const dollarOnly = kiwiSaverHoldingReturnLabel({ returnsNzd: -4, returnPct: null }, dollars);
+assert(dollarOnly.text === '$-4' && dollarOnly.tone === 'down', 'without a cost, the row shows the recorded dollar return');
+assert(
+  kiwiSaverHoldingReturnLabel({ returnsNzd: null, returnPct: null }, dollars).text === '—',
+  'a holding with no return is a dash',
+);
+
+const facts = kiwiSaverHoldingFacts(
+  {
+    symbol: null,
+    unitsLabel: null,
+    costNzd: 90,
+    returnsNzd: 10,
+    returnPct: (10 / 90) * 100,
+    currency: 'usd',
+  },
+  dollars,
+);
+assert(facts.find((fact) => fact.label === 'Symbol')?.text === '—', 'a missing symbol is a dash');
+assert(facts.find((fact) => fact.label === 'Units')?.text === '—', 'missing units are a dash');
+assert(facts.find((fact) => fact.label === 'Cost')?.text === '$90', 'derived cost is shown once both inputs exist');
+assert(facts.find((fact) => fact.label === 'Returns')?.text === '+$10', 'recorded returns keep a plus');
+assert(facts.find((fact) => fact.label === 'Currency')?.text === 'USD', 'a non-NZD currency is shown as recorded');
+const nzdFacts = kiwiSaverHoldingFacts(
+  { symbol: 'VOO', unitsLabel: '2', costNzd: null, returnsNzd: null, returnPct: null, currency: 'NZD' },
+  dollars,
+);
+assert(!nzdFacts.some((fact) => fact.label === 'Currency'), 'NZD is not repeated next to an NZD value');
+assert(nzdFacts.find((fact) => fact.label === 'Return')?.text === '—', 'a return percent is not invented');
+
+assert(
+  kiwiSaverHoldingGaps({ allocationPct: null, balanceNzd: 1 }, true).join(',') === 'allocation',
+  'an editable row with no allocation can add one',
+);
+assert(
+  kiwiSaverHoldingGaps({ allocationPct: 10, balanceNzd: null }, true).join(',') === 'balance',
+  'an editable row with no value can add one',
+);
+assert(
+  kiwiSaverHoldingGaps({ allocationPct: null, balanceNzd: null }, false).length === 0,
+  'a read-only provider row does not offer Add',
+);
+assert(
+  kiwiSaverHoldingGaps({ allocationPct: 0, balanceNzd: 0 }, true).length === 0,
+  'recorded zeros are not treated as missing',
+);
+
+assert(
+  kiwiSaverHoldingsEmpty({ hasScheme: false, dataSource: null }).message === 'Select a scheme to see holdings.',
+  'no scheme asks for a selection',
+);
+assert(kiwiSaverHoldingsEmpty({ hasScheme: false, dataSource: null }).offerAdd === false, 'no scheme has nothing to add to');
+assert(
+  kiwiSaverHoldingsEmpty({ hasScheme: true, dataSource: 'akahu' }).message === 'No fund mix from Akahu yet.',
+  'an empty Akahu mix says the provider has not sent one',
+);
+assert(
+  kiwiSaverHoldingsEmpty({ hasScheme: true, dataSource: 'akahu' }).offerAdd === false,
+  'Akahu holdings are not filled in by hand',
+);
+assert(
+  kiwiSaverHoldingsEmpty({ hasScheme: true, dataSource: 'manual' }).offerAdd === true,
+  'a manual scheme can add a fund mix',
+);
+assert(
+  kiwiSaverHoldingsEmpty({ hasScheme: true, dataSource: 'csv' }).offerAdd === true,
+  'a CSV scheme can add a fund mix',
+);
+assert(
+  kiwiSaverHoldingsEmpty({ hasScheme: true, dataSource: 'other' }).offerAdd === false,
+  'an unknown source does not open the manual form',
 );
 
 console.log('kiwisaverView.test.ts ok');

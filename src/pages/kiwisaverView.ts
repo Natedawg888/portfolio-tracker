@@ -1,6 +1,8 @@
 /**
- * KiwiSaver header and balance-card view rules.
- * Missing fields are omitted — nothing here is estimated.
+ * KiwiSaver header, balance-card, and holdings view rules.
+ * Missing fields are omitted or shown as —. Nothing here is estimated.
+ * Holdings cost and return % are derived only when both recorded inputs exist
+ * (balance − returns, then returns / cost). They are display-only, not stored.
  * Run: npm run test:kiwisaver
  */
 import {
@@ -12,6 +14,7 @@ import {
   type HistoryPoint,
   type HistoryRange,
 } from '../lib/netWorthHistory';
+import { formatSignedPct } from '../lib/portfolioView';
 
 export type KiwiSaverHeaderSource = {
   name: string | null;
@@ -264,4 +267,298 @@ export function kiwiSaverPointAriaLabel(
   const date = kiwiSaverPointDate(at);
   if (!date || !Number.isFinite(balanceNzd)) return null;
   return `${shortDate(date)}, ${formatValue(balanceNzd)}`;
+}
+
+/** Recorded allocations within this of 100% are treated as a full bar (rounding). */
+const ALLOCATION_TOLERANCE = 0.05;
+
+export type KiwiSaverHoldingInput = {
+  fundName: string;
+  allocationPct?: number | null;
+  balanceNzd?: number | null;
+  returnsNzd?: number | null;
+  shares?: number | null;
+  symbol?: string | null;
+  currency?: string | null;
+  fundId?: string | null;
+  logo?: string | null;
+};
+
+export type KiwiSaverHoldingRow = {
+  key: string;
+  name: string;
+  ticker: string;
+  symbol: string | null;
+  allocationPct: number | null;
+  allocationLabel: string;
+  balanceNzd: number | null;
+  returnsNzd: number | null;
+  /** balance − returns, only when both were recorded. */
+  costNzd: number | null;
+  /** returns / cost × 100, only when cost > 0. */
+  returnPct: number | null;
+  shares: number | null;
+  unitsLabel: string | null;
+  currency: string | null;
+  logo: string | null;
+};
+
+export type KiwiSaverHoldingFact = {
+  label: string;
+  text: string;
+  tone: 'up' | 'down' | 'flat' | null;
+};
+
+export type KiwiSaverAllocationSegment = {
+  key: string;
+  name: string;
+  /** Recorded percent. Not renormalised to the mix. */
+  pct: number;
+  label: string;
+};
+
+export type KiwiSaverAllocationView =
+  | {
+      kind: 'bar';
+      segments: KiwiSaverAllocationSegment[];
+      gapPct: number | null;
+      gapLabel: string | null;
+    }
+  | { kind: 'overflow'; sum: number; sumLabel: string }
+  | { kind: 'none' };
+
+export type KiwiSaverHoldingGap = 'allocation' | 'balance';
+
+function finiteNumber(value: number | null | undefined): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  return value;
+}
+
+/** "60%", "17.5%", "—". The recorded figure, rounded to cents of a percent. */
+export function kiwiSaverAllocationLabel(pct: number | null): string {
+  if (pct == null || !Number.isFinite(pct)) return '—';
+  const rounded = Math.round(pct * 100) / 100;
+  if (Object.is(rounded, -0) || rounded === 0) return '0%';
+  if (Number.isInteger(rounded)) return `${rounded}%`;
+  return `${rounded.toFixed(2).replace(/0$/, '')}%`;
+}
+
+/** Icon letters: ticker after the last dot, else the first four letters of the name. */
+export function kiwiSaverHoldingTicker(fund: {
+  symbol?: string | null;
+  fundName?: string | null;
+}): string {
+  const symbol = present(fund.symbol);
+  if (symbol) {
+    const parts = symbol.split('.');
+    return parts[parts.length - 1] || symbol;
+  }
+  const name = present(fund.fundName);
+  return (name ?? '?').slice(0, 4).toUpperCase();
+}
+
+/** Units the provider recorded. Null when the figure was not sent. */
+export function kiwiSaverUnitsLabel(shares: number | null | undefined): string | null {
+  if (typeof shares !== 'number' || !Number.isFinite(shares)) return null;
+  const rounded = Math.round(shares * 10000) / 10000;
+  const negative = rounded < 0;
+  const [whole, frac] = Math.abs(rounded).toString().split('.');
+  const withCommas = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const body = frac ? `${withCommas}.${frac}` : withCommas;
+  return negative ? `-${body}` : body;
+}
+
+/**
+ * Cost basis from two recorded figures. Missing either one stays null —
+ * the balance alone is not a cost.
+ */
+export function kiwiSaverHoldingCost(
+  balanceNzd: number | null | undefined,
+  returnsNzd: number | null | undefined,
+): number | null {
+  const balance = finiteNumber(balanceNzd);
+  const returns = finiteNumber(returnsNzd);
+  if (balance == null || returns == null) return null;
+  return Math.round((balance - returns) * 100) / 100;
+}
+
+/** Percent only when a positive cost was derived. A missing cost is not zero. */
+export function kiwiSaverHoldingReturnPct(
+  costNzd: number | null,
+  returnsNzd: number | null,
+): number | null {
+  if (costNzd == null || returnsNzd == null) return null;
+  if (!Number.isFinite(costNzd) || !Number.isFinite(returnsNzd) || costNzd <= 0) return null;
+  return (returnsNzd / costNzd) * 100;
+}
+
+/** Positive amounts get a plus. Zero and negative are left to the money formatter. */
+export function kiwiSaverSignedMoney(n: number, formatMoney: (n: number) => string): string {
+  if (!Number.isFinite(n)) return '—';
+  if (n > 0) return `+${formatMoney(n)}`;
+  return formatMoney(n);
+}
+
+function toneOf(n: number | null): 'up' | 'down' | 'flat' | null {
+  if (n == null || !Number.isFinite(n)) return null;
+  if (n > 0) return 'up';
+  if (n < 0) return 'down';
+  return 'flat';
+}
+
+export function kiwiSaverHoldingRows(funds: KiwiSaverHoldingInput[]): KiwiSaverHoldingRow[] {
+  const rows: KiwiSaverHoldingRow[] = [];
+  funds.forEach((fund, index) => {
+    const name = present(fund.fundName);
+    if (!name) return;
+    const allocationPct = finiteNumber(fund.allocationPct);
+    const balanceNzd = finiteNumber(fund.balanceNzd);
+    const returnsNzd = finiteNumber(fund.returnsNzd);
+    const shares = finiteNumber(fund.shares);
+    const costNzd = kiwiSaverHoldingCost(balanceNzd, returnsNzd);
+    const symbol = present(fund.symbol);
+    const fundId = present(fund.fundId);
+    const currency = present(fund.currency);
+    const keyBase = fundId ? `id:${fundId}` : symbol ? `sym:${symbol}` : `name:${name}`;
+    rows.push({
+      key: `${keyBase}:${index}`,
+      name,
+      ticker: kiwiSaverHoldingTicker(fund),
+      symbol,
+      allocationPct,
+      allocationLabel: kiwiSaverAllocationLabel(allocationPct),
+      balanceNzd,
+      returnsNzd,
+      costNzd,
+      returnPct: kiwiSaverHoldingReturnPct(costNzd, returnsNzd),
+      shares,
+      unitsLabel: kiwiSaverUnitsLabel(shares),
+      currency,
+      logo: present(fund.logo),
+    });
+  });
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => {
+      const allocA = a.row.allocationPct ?? Number.NEGATIVE_INFINITY;
+      const allocB = b.row.allocationPct ?? Number.NEGATIVE_INFINITY;
+      if (allocA !== allocB) return allocB - allocA;
+      const balA = a.row.balanceNzd ?? Number.NEGATIVE_INFINITY;
+      const balB = b.row.balanceNzd ?? Number.NEGATIVE_INFINITY;
+      if (balA !== balB) return balB - balA;
+      const byName = a.row.name.localeCompare(b.row.name);
+      if (byName !== 0) return byName;
+      return a.index - b.index;
+    })
+    .map(({ row }) => row);
+}
+
+/**
+ * Bar from recorded allocation percents only.
+ * Balances are never turned into a percent. A remainder is "Not recorded",
+ * not a guessed fund. Percents that do not fit in 0–100 stay off the bar.
+ */
+export function kiwiSaverAllocationView(rows: KiwiSaverHoldingRow[]): KiwiSaverAllocationView {
+  const eligible = rows.filter((row) => row.allocationPct != null && row.allocationPct >= 0);
+  if (!eligible.some((row) => (row.allocationPct as number) > 0)) return { kind: 'none' };
+  const sum = eligible.reduce((total, row) => total + (row.allocationPct as number), 0);
+  const overflows =
+    sum > 100 + ALLOCATION_TOLERANCE ||
+    eligible.some((row) => (row.allocationPct as number) > 100 + ALLOCATION_TOLERANCE);
+  if (overflows) return { kind: 'overflow', sum, sumLabel: kiwiSaverAllocationLabel(sum) };
+  const segments = eligible.map((row) => ({
+    key: row.key,
+    name: row.name,
+    pct: row.allocationPct as number,
+    label: row.allocationLabel,
+  }));
+  const gap = 100 - sum;
+  const hasGap = gap > ALLOCATION_TOLERANCE;
+  return {
+    kind: 'bar',
+    segments,
+    gapPct: hasGap ? gap : null,
+    gapLabel: hasGap ? `Not recorded ${kiwiSaverAllocationLabel(gap)}` : null,
+  };
+}
+
+/** The Return column exists only when some holding has a recorded return. */
+export function kiwiSaverHoldingsShowReturns(rows: Array<{ returnsNzd: number | null }>): boolean {
+  return rows.some((row) => row.returnsNzd != null);
+}
+
+/**
+ * Compact-row return: the percent when cost was derived, otherwise the
+ * recorded dollar return. "—" when this holding has no recorded return.
+ */
+export function kiwiSaverHoldingReturnLabel(
+  row: { returnsNzd: number | null; returnPct: number | null },
+  formatMoney: (n: number) => string,
+): { text: string; tone: 'up' | 'down' | 'flat' | null } {
+  if (row.returnPct != null && Number.isFinite(row.returnPct)) {
+    return { text: formatSignedPct(row.returnPct), tone: toneOf(row.returnPct) };
+  }
+  if (row.returnsNzd != null && Number.isFinite(row.returnsNzd)) {
+    return { text: kiwiSaverSignedMoney(row.returnsNzd, formatMoney), tone: toneOf(row.returnsNzd) };
+  }
+  return { text: '—', tone: null };
+}
+
+/** Expanded facts. Missing recorded figures are —. Currency is only shown when it is not NZD. */
+export function kiwiSaverHoldingFacts(
+  row: {
+    symbol: string | null;
+    unitsLabel: string | null;
+    costNzd: number | null;
+    returnsNzd: number | null;
+    returnPct: number | null;
+    currency: string | null;
+  },
+  formatMoney: (n: number) => string,
+): KiwiSaverHoldingFact[] {
+  const facts: KiwiSaverHoldingFact[] = [
+    { label: 'Symbol', text: row.symbol ?? '—', tone: null },
+    { label: 'Units', text: row.unitsLabel ?? '—', tone: null },
+    { label: 'Cost', text: row.costNzd == null ? '—' : formatMoney(row.costNzd), tone: null },
+    {
+      label: 'Returns',
+      text: row.returnsNzd == null ? '—' : kiwiSaverSignedMoney(row.returnsNzd, formatMoney),
+      tone: toneOf(row.returnsNzd),
+    },
+    {
+      label: 'Return',
+      text: row.returnPct == null ? '—' : formatSignedPct(row.returnPct),
+      tone: toneOf(row.returnPct),
+    },
+  ];
+  const currency = row.currency?.trim().toUpperCase() ?? '';
+  if (currency && currency !== 'NZD') facts.push({ label: 'Currency', text: currency, tone: null });
+  return facts;
+}
+
+/**
+ * Add prompts only for a manual/CSV scheme, and only for allocation or value,
+ * which the existing fund-mix form can record. Read-only provider rows stay —.
+ */
+export function kiwiSaverHoldingGaps(
+  row: { allocationPct: number | null; balanceNzd: number | null },
+  editable: boolean,
+): KiwiSaverHoldingGap[] {
+  if (!editable) return [];
+  const gaps: KiwiSaverHoldingGap[] = [];
+  if (row.allocationPct == null) gaps.push('allocation');
+  if (row.balanceNzd == null) gaps.push('balance');
+  return gaps;
+}
+
+export function kiwiSaverHoldingsEmpty(input: {
+  hasScheme: boolean;
+  dataSource: 'akahu' | 'manual' | 'csv' | 'other' | null;
+}): { message: string; offerAdd: boolean } {
+  if (!input.hasScheme) return { message: 'Select a scheme to see holdings.', offerAdd: false };
+  if (input.dataSource === 'akahu') return { message: 'No fund mix from Akahu yet.', offerAdd: false };
+  if (input.dataSource === 'manual' || input.dataSource === 'csv') {
+    return { message: 'No fund mix recorded.', offerAdd: true };
+  }
+  return { message: 'No fund mix recorded.', offerAdd: false };
 }
