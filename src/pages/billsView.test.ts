@@ -1,7 +1,15 @@
 /**
- * Bills header counts (phase 1). Run: npm run test:bills
+ * Bills header counts (phase 1), calendar strip and "Coming up" (phase 2). Run: npm run test:bills
  */
-import { billsSubtitle, headerCounts } from './billsView.ts';
+import { occurrencesWithin } from '../lib/recurring.ts';
+import {
+  billsSubtitle,
+  calendarDays,
+  dayAriaLabel,
+  headerCounts,
+  relativeDay,
+  upcomingOccurrences,
+} from './billsView.ts';
 
 function eq(a: unknown, b: unknown, msg: string): void {
   if (a !== b) throw new Error(`FAIL: ${msg} (got ${String(a)}, expected ${String(b)})`);
@@ -20,4 +28,67 @@ eq(counts.cancelled, 1, 'cancelled is not folded into paused');
 eq(billsSubtitle(counts), '2 active · 1 paused · found in your transactions or added by you', 'subtitle');
 eq(billsSubtitle(headerCounts([])), '0 active · 0 paused · found in your transactions or added by you', 'empty list');
 
-console.log('bills header tests ok');
+
+type Bill = Parameters<typeof upcomingOccurrences>[0][number];
+const today = '2026-10-13';
+const money = (n: number) => `$${n.toFixed(2)}`;
+const sum = (xs: ReadonlyArray<{ amountNzd: number }>) => Math.round(xs.reduce((s, o) => s + o.amountNzd, 0) * 100) / 100;
+/** The server's dueNext30DaysNzd, computed the way listRecurring does it. */
+const serverTotal = (bills: Bill[]) =>
+  Math.round(bills.filter((b) => b.status === 'active').reduce((s, b) => s + b.amountNzd * occurrencesWithin(b.nextDue, b.cadence, today).length, 0) * 100) / 100;
+
+const rent: Bill = { id: 'r', name: 'Rent', amountNzd: 270, cadence: 'weekly', nextDue: '2026-10-15', status: 'active' };
+const spark: Bill = { id: 's', name: 'Spark', amountNzd: 40, cadence: 'monthly', nextDue: '2026-10-20', status: 'active' };
+const gym: Bill = { id: 'g', name: 'Gym', amountNzd: 25, cadence: 'weekly', nextDue: '2026-10-14', status: 'paused' };
+
+const occ = upcomingOccurrences([spark, gym, rent], today);
+eq(sum(occ), 1120, 'weekly $270 Rent (2 days away) + monthly $40 Spark = $1,120.00');
+eq(sum(occ), serverTotal([spark, gym, rent]), 'occurrences add up to the server-style total');
+eq(occ.filter((o) => o.itemId === 'r').length, 4, 'Rent falls four times');
+eq(occ.some((o) => o.itemId === 'g'), false, 'a paused bill contributes nothing');
+eq(occ.map((o) => o.date).join(','), '2026-10-15,2026-10-20,2026-10-22,2026-10-29,2026-11-05', 'sorted by date');
+eq(occ[0].daysAway, 2, 'days away');
+eq(occ[0].colourIndex !== occ[1].colourIndex, true, 'each bill has its own colour');
+eq(occ.filter((o) => o.itemId === 'r').every((o) => o.colourIndex === occ[0].colourIndex), true, 'a bill keeps one colour');
+
+const rentToday = { ...rent, nextDue: today };
+const occToday = upcomingOccurrences([rentToday, spark, gym], today);
+eq(occToday.filter((o) => o.itemId === 'r').length, 5, 'Rent due today falls five times');
+eq(sum(occToday), 1390, 'Rent due today + Spark = $1,390.00');
+eq(sum(occToday), serverTotal([rentToday, spark, gym]), 'matches the server-style total with Rent due today');
+
+const edge = upcomingOccurrences(
+  [
+    { id: 'a', name: 'Day 29', amountNzd: 10, cadence: 'yearly', nextDue: '2026-11-11', status: 'active' },
+    { id: 'b', name: 'Day 30', amountNzd: 10, cadence: 'yearly', nextDue: '2026-11-12', status: 'active' },
+    { id: 'c', name: 'Cancelled', amountNzd: 10, cadence: 'weekly', nextDue: today, status: 'cancelled' },
+  ],
+  today,
+);
+eq(edge.map((o) => o.name).join(','), 'Day 29', 'window is today through day 29; cancelled drops out');
+
+const sameDay = upcomingOccurrences(
+  [
+    { id: 'z', name: 'Zoo', amountNzd: 1, cadence: 'monthly', nextDue: '2026-10-15', status: 'active' },
+    { id: 'y', name: 'Apple', amountNzd: 2, cadence: 'monthly', nextDue: '2026-10-15', status: 'active' },
+  ],
+  today,
+);
+eq(sameDay.map((o) => o.name).join(','), 'Apple,Zoo', 'same date sorts by name');
+
+const days = calendarDays(today, occ);
+eq(days.length, 30, 'thirty days');
+eq(days[0].date, today, 'starts today');
+eq(days[0].isToday && !days[1].isToday, true, 'only the first day is today');
+eq(days[29].date, '2026-11-11', 'ends on day 29');
+eq(`${days[0].weekday} ${days[0].dayOfMonth} ${days[0].month}`, 'Tue 13 Oct', 'weekday, date and month');
+eq(sum(days.flatMap((d) => d.items)), 1120, 'every occurrence lands on a day in the strip');
+eq(dayAriaLabel(days[2], money), 'Thu 15 Oct: Rent $270.00', 'label lists what is due');
+eq(dayAriaLabel(days[3], money), 'Fri 16 Oct: nothing due', 'label for an empty day');
+eq(dayAriaLabel(calendarDays(today, sameDay)[2], money), 'Thu 15 Oct: Apple $2.00, Zoo $1.00', 'label lists several bills');
+
+eq(relativeDay(0), 'today', 'today');
+eq(relativeDay(1), 'tomorrow', 'tomorrow');
+eq(relativeDay(9), 'in 9 days', 'in N days');
+
+console.log('bills view tests ok');

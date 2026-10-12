@@ -3,10 +3,12 @@
  * Lists repeating payments found in the user's transactions to confirm or dismiss,
  * and the bills / subscriptions they have saved, with next due date and amount.
  * Phase 1: header and one summary card. Totals are the list response, not recomputed here.
+ * Phase 2: the summary card adds a 30-day calendar strip and a "Coming up" list.
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { api, formatNzd, type RecurringWriteBody } from '../api/client';
+import { BillsSummary } from '../components/bills/BillsSummary';
 import { CADENCES, CADENCE_LABELS, type Cadence } from '../lib/recurring';
 import type { RecurringItem, RecurringListResponse } from '../types';
 import { billsSubtitle, headerCounts } from './billsView';
@@ -217,7 +219,6 @@ export function Bills() {
   }
 
   const today = data?.today ?? '';
-  const totals = data?.totals;
   const active = data?.items.filter((i) => i.status === 'active') ?? [];
   const inactive = data?.items.filter((i) => i.status !== 'active') ?? [];
   const subtitle = data ? billsSubtitle(headerCounts(data.items)) : null;
@@ -252,24 +253,7 @@ export function Bills() {
 
       {data ? (
         <>
-          <section className="card bills-summary" aria-label="Totals">
-            <dl>
-              <div className="bills-summary-due">
-                <dt>Due in the next 30 days</dt>
-                <dd className="money">{formatNzd(totals?.dueNext30DaysNzd)}</dd>
-              </div>
-              <div className="bills-summary-period">
-                <div>
-                  <dt>Per month</dt>
-                  <dd className="money">{formatNzd(totals?.monthlyNzd)}</dd>
-                </div>
-                <div>
-                  <dt>Per year</dt>
-                  <dd className="money">{formatNzd(totals?.yearlyNzd)}</dd>
-                </div>
-              </div>
-            </dl>
-          </section>
+          <BillsSummary totals={data.totals} items={data.items} today={today} />
 
           <section className="panel">
             <div className="panel-heading">
