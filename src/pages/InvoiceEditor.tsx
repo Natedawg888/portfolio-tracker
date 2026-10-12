@@ -1,9 +1,12 @@
 /**
  * New / edit draft invoice (KAN-71). Phase 2 builder: bill-to chips, line items,
  * one-tap due dates, and a GST checkbox, with a live preview beside the form.
+ * Phase 4: "Client withholds tax" writes the existing withholdingRatePct.
+ * The percent is prefilled only from an IR330C activity in the browser prefs.
  * Totals use editorInvoiceTotals (invoiceTotals). The server recomputes them on save.
- * Mark as sent still goes through the existing mark-sent action, which rejects
- * with sendProblem when the invoice is not ready to send.
+ * You'll receive is amountDue from that result. Mark as sent still goes through
+ * the existing mark-sent action, which rejects with sendProblem when the invoice
+ * is not ready to send.
  */
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -15,14 +18,19 @@ import {
   type DuePreset,
   type GstMode,
 } from '../lib/invoiceCalc';
+import { payTaxYearRates } from '../lib/payeRates';
+import { loadOutputPayPrefs } from '../lib/outputPayPrefs';
 import type { BusinessProfile, InvoiceClient, PaySource, PublicInvoice } from '../types';
 import {
   BUSINESS_SETTINGS_HREF,
   DUE_TAP_PRESETS,
+  INVOICE_MISSING,
   businessPromptLead,
   editorDueDate,
   editorGstMode,
   editorInvoiceTotals,
+  editorReceiveAmount,
+  editorWithholdingPrefill,
   formatInvoiceDate,
   gstEditorControl,
   gstModeFromCheckbox,
@@ -71,6 +79,7 @@ export function InvoiceEditor() {
   const editingId = id ?? null;
   const navError = (location.state as { sendError?: string } | null)?.sendError ?? null;
   const actionReasonId = useId();
+  const withholdingHintId = useId();
 
   const [business, setBusiness] = useState<BusinessProfile | null>(null);
   const [clients, setClients] = useState<InvoiceClient[]>([]);
@@ -95,6 +104,7 @@ export function InvoiceEditor() {
   const [inclusiveDraft, setInclusiveDraft] = useState(false);
   const [withholdingOn, setWithholdingOn] = useState(false);
   const [withholdingPct, setWithholdingPct] = useState('');
+  const [prefillRate, setPrefillRate] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
   const [paymentInstructions, setPaymentInstructions] = useState('');
   const [notesOpen, setNotesOpen] = useState(false);
@@ -115,6 +125,8 @@ export function InvoiceEditor() {
         setClients(cl);
         setContractSources(sources.filter((s) => s.inputs?.payType === 'schedular'));
         if (list) setNumber(list.nextNumber);
+        const prefill = editorWithholdingPrefill(loadOutputPayPrefs(), payTaxYearRates());
+        setPrefillRate(prefill.ratePct);
         if (editingId) {
           const inv = await api.invoices.get(editingId);
           if (cancelled) return;
@@ -145,8 +157,12 @@ export function InvoiceEditor() {
               ? inv.lines.map((l) => ({ key: newKey(), description: l.description, quantity: String(l.quantity), unit: l.unit, rate: String(l.rate) }))
               : [blankLine()],
           );
-        } else if (biz.gstRegistered) {
-          setGstMode('exclusive');
+        } else {
+          if (biz.gstRegistered) setGstMode('exclusive');
+          if (prefill.on && prefill.ratePct != null) {
+            setWithholdingOn(true);
+            setWithholdingPct(String(prefill.ratePct));
+          }
         }
         setLoaded(true);
         if (navError) setError(navError);
@@ -177,7 +193,7 @@ export function InvoiceEditor() {
   const gstRegistered = business ? business.gstRegistered : null;
   const effectiveGst = editorGstMode(gstRegistered, gstMode);
   const gstControl = gstEditorControl({ gstRegistered, gstMode, inclusiveDraft });
-  const wt = withholdingOn ? num(withholdingPct) : null;
+  const wt = withholdingOn && withholdingPct.trim() !== '' ? num(withholdingPct) : null;
   const dueDate = editorDueDate(issueDate, duePreset, customDue);
   const keptDue = keptDueLabel(duePreset);
 
@@ -190,6 +206,14 @@ export function InvoiceEditor() {
     [lineInputs, effectiveGst, wt],
   );
   const actionBlock = invoiceActionBlock({ clientName, subtotal: totals.subtotal });
+  const receive = editorReceiveAmount(totals);
+
+  function onWithholdingChange(checked: boolean) {
+    setWithholdingOn(checked);
+    if (checked && withholdingPct.trim() === '' && prefillRate != null) {
+      setWithholdingPct(String(prefillRate));
+    }
+  }
 
   const preview: PublicInvoice | null = useMemo(() => {
     if (!business) return null;
@@ -555,18 +579,32 @@ export function InvoiceEditor() {
               </div>
             ) : null}
 
-            <div className="form-grid invoice-withholding">
-              <div className="field checkbox-field">
-                <label className="inline-check">
-                  <input type="checkbox" checked={withholdingOn} onChange={(e) => setWithholdingOn(e.target.checked)} />
-                  Show withholding tax (schedular payments)
-                </label>
-                <span className="muted small">For contractors whose client deducts tax (IR330C). Taken off the GST-exclusive amount.</span>
-              </div>
+            <div className="invoice-withholding">
+              <label className="inline-check">
+                <input
+                  type="checkbox"
+                  checked={withholdingOn}
+                  aria-describedby={withholdingHintId}
+                  onChange={(e) => onWithholdingChange(e.target.checked)}
+                />
+                Client withholds tax
+              </label>
+              <span className="muted small" id={withholdingHintId}>
+                For contractors whose client deducts tax (IR330C). Taken off the GST-exclusive amount.
+              </span>
               {withholdingOn ? (
-                <label>
+                <label className="invoice-withholding-rate">
                   Withholding rate (%)
-                  <input type="number" min={0} max={100} step={0.1} value={withholdingPct} onChange={(e) => setWithholdingPct(e.target.value)} />
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.1}
+                    inputMode="decimal"
+                    value={withholdingPct}
+                    aria-describedby={withholdingHintId}
+                    onChange={(e) => setWithholdingPct(e.target.value)}
+                  />
                 </label>
               ) : null}
             </div>
@@ -590,6 +628,15 @@ export function InvoiceEditor() {
           </section>
 
           <section className="panel">
+            <div className="invoice-receive" aria-live="polite" aria-atomic="true">
+              <span className="invoice-receive-label">You'll receive</span>
+              <span className="invoice-receive-amount">{receive == null ? INVOICE_MISSING : formatNzd(receive)}</span>
+              <span className="invoice-receive-note">
+                {totals.withholding > 0
+                  ? `After ${totals.withholdingRatePct}% withholding tax (${formatNzd(totals.withholding)})`
+                  : 'No withholding tax deducted'}
+              </span>
+            </div>
             {error ? <p className="auth-error" role="alert">{error}</p> : null}
             <div className="invoice-editor-actions">
               <button

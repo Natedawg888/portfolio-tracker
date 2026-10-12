@@ -1,8 +1,9 @@
 /**
  * Pure view rules for the Invoices list (phase 1), the invoice builder (phase 2),
- * and the list row menu and status badges (phase 3).
+ * the list row menu and status badges (phase 3), and withholding prefill (phase 4).
  * Totals, counts, and tax-year start come from the list response.
  * Line amounts, GST, and amount due come from invoiceTotals. Due dates come from dueDateForPreset.
+ * A withholding percent comes from withholdingPct only when the prefs name an IR330C activity.
  * Business completeness is derived from the profile; nothing is stored or invented.
  * A missing list value is an em dash. Status words come from the status the list returned.
  */
@@ -18,6 +19,8 @@ import {
   type InvoiceStoredStatus,
   type InvoiceTotals,
 } from '../lib/invoiceCalc';
+import { defaultOutputPayPrefs, withholdingPct, type OutputPayPrefs } from '../lib/outputPayPrefs';
+import type { PayTaxYearRates } from '../lib/payeRates';
 import type { BusinessProfile } from '../types';
 
 /** Settings → Business. Matches the tab read in Settings.tsx. */
@@ -265,6 +268,71 @@ export function editorInvoiceTotals(
   withholdingRatePct: number | null,
 ): InvoiceTotals {
   return invoiceTotals(lines, gstMode, withholdingRatePct);
+}
+
+export type WithholdingPrefill = {
+  /** Checkbox starts on only when a percent was taken from the prefs. */
+  on: boolean;
+  /** Percent for the existing withholdingRatePct. Null leaves the rate empty. */
+  ratePct: number | null;
+};
+
+const WITHHOLDING_OFF: WithholdingPrefill = { on: false, ratePct: null };
+
+/**
+ * The PAYE form stores activity 3 so the dropdown has a selection. With no contract
+ * rate, no volume, and no custom rate, that is still blank: it is not an activity
+ * the user chose for an invoice.
+ */
+function untouchedSchedularDefault(prefs: OutputPayPrefs): boolean {
+  const blank = defaultOutputPayPrefs();
+  return (
+    prefs.activity.trim() === blank.activity &&
+    prefs.contractRate.trim() === '' &&
+    prefs.contractVolume.trim() === '' &&
+    prefs.customWtRate.trim() === ''
+  );
+}
+
+/**
+ * Starting "Client withholds tax" state for a new invoice.
+ * The percent is withholdingPct only when the prefs name an IR330C schedular activity
+ * for this tax year (a listed activity the user actually chose, or a custom rate they entered).
+ * Blank prefs, a missing activity, the untouched form default, an activity that is not on
+ * the IR330C list, and a custom rate left empty leave the box off and the rate empty.
+ * Nothing here fills in another percent.
+ */
+export function editorWithholdingPrefill(
+  prefs: OutputPayPrefs | null | undefined,
+  rates: PayTaxYearRates,
+): WithholdingPrefill {
+  if (!prefs) return WITHHOLDING_OFF;
+  const activity = typeof prefs.activity === 'string' ? prefs.activity.trim() : '';
+  if (!activity) return WITHHOLDING_OFF;
+  const named =
+    activity === 'custom' || rates.schedularActivities.some((row) => String(row.number) === activity);
+  if (!named) return WITHHOLDING_OFF;
+  const normalized: OutputPayPrefs = {
+    ...prefs,
+    activity,
+    customWtRate: typeof prefs.customWtRate === 'string' ? prefs.customWtRate.trim() : '',
+  };
+  if (activity !== 'custom' && untouchedSchedularDefault(normalized)) return WITHHOLDING_OFF;
+  const ratePct = withholdingPct(normalized, rates);
+  if (!(typeof ratePct === 'number' && Number.isFinite(ratePct) && ratePct > 0)) return WITHHOLDING_OFF;
+  return { on: true, ratePct };
+}
+
+/**
+ * You'll receive. This is amountDue from invoiceTotals: total minus withholding,
+ * the figure the invoice stores. It is not worked out again here.
+ * A missing or non-finite figure is null, so the summary does not invent one.
+ */
+export function editorReceiveAmount(totals: Pick<InvoiceTotals, 'amountDue'> | null | undefined): number | null {
+  if (!totals) return null;
+  const amount = totals.amountDue;
+  if (typeof amount !== 'number' || !Number.isFinite(amount)) return null;
+  return amount;
 }
 
 /** Shown wherever a list value is missing. Never a guessed number, date, name, or status. */

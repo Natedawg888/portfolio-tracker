@@ -9606,7 +9606,57 @@ html .invoices-page .invoice-row-menu .more-menu-body .invoice-menu-item.danger:
   font-weight: 650;
 }
 .invoices-page .invoice-withholding {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
   margin-top: 1rem;
+}
+.invoices-page .invoice-withholding .inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--text);
+  font-weight: 650;
+}
+.invoices-page .invoice-withholding .muted {
+  margin: 0;
+}
+.invoices-page .invoice-withholding-rate {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+  max-width: 16rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.invoices-page .invoice-receive {
+  display: grid;
+  gap: 0.15rem;
+  margin-bottom: 0.9rem;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+  background: var(--surface-3);
+}
+.invoices-page .invoice-receive-label {
+  font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: var(--text);
+}
+.invoices-page .invoice-receive-amount {
+  font-variant-numeric: tabular-nums;
+  font-size: 1.5rem;
+  font-weight: 650;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+.invoices-page .invoice-receive-note {
+  font-size: 0.8rem;
+  color: var(--muted);
 }
 .invoices-page .invoice-editor-actions {
   display: flex;

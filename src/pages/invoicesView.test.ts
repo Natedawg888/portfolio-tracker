@@ -1,9 +1,12 @@
 /**
- * Invoices list view rules (phase 1), builder rules (phase 2), and row menu / badges (phase 3).
+ * Invoices list view rules (phase 1), builder rules (phase 2), row menu / badges (phase 3),
+ * and withholding prefill (phase 4).
  * Counts, profiles, tax-year start, and line inputs in these fixtures are the inputs.
  * Run: npm run test:invoices
  */
 import { dueDateForPreset, invoiceTotals } from '../lib/invoiceCalc.ts';
+import { defaultOutputPayPrefs, withholdingPct } from '../lib/outputPayPrefs.ts';
+import { payTaxYearRates } from '../lib/payeRates.ts';
 import type { BusinessDetails } from './invoicesView.ts';
 import {
   BUSINESS_SETTINGS_HREF,
@@ -14,6 +17,8 @@ import {
   editorDueDate,
   editorGstMode,
   editorInvoiceTotals,
+  editorReceiveAmount,
+  editorWithholdingPrefill,
   gstEditorControl,
   gstModeFromCheckbox,
   INVOICE_MISSING,
@@ -239,6 +244,62 @@ assert(
   assert(shown.subtotal === calc.subtotal && shown.subtotal === 220, 'subtotal');
   assert(shown.gst === calc.gst && shown.gst === 33, 'GST');
   assert(shown.amountDue === calc.amountDue && shown.amountDue === 231, 'amount due subtracts withholding');
+}
+
+// Phase 4: blank prefs do not invent a withholding rate. A named IR330C activity uses withholdingPct.
+{
+  const rates = payTaxYearRates();
+  const blank = defaultOutputPayPrefs();
+  const none = editorWithholdingPrefill(blank, rates);
+  assert(none.on === false && none.ratePct === null, 'blank prefs -> no rate');
+  assert(none.ratePct !== 20, 'blank prefs do not invent 20%');
+  assert(editorWithholdingPrefill(null, rates).ratePct === null, 'missing prefs -> no rate');
+  assert(editorWithholdingPrefill(undefined, rates).ratePct === null, 'undefined prefs -> no rate');
+  assert(editorWithholdingPrefill({ ...blank, activity: '' }, rates).ratePct === null, 'an empty activity -> no rate');
+  assert(editorWithholdingPrefill({ ...blank, activity: '   ' }, rates).ratePct === null, 'a blank activity -> no rate');
+  assert(
+    editorWithholdingPrefill({ ...blank, activity: '99' }, rates).ratePct === null,
+    'an activity off the IR330C list does not invent 20%',
+  );
+  assert(
+    editorWithholdingPrefill({ ...blank, activity: 'custom', customWtRate: '' }, rates).ratePct === null,
+    'a custom rate left empty is not invented',
+  );
+  assert(
+    editorWithholdingPrefill({ ...blank, activity: 'custom', customWtRate: '0' }, rates).ratePct === null,
+    'a zero custom rate is not applied',
+  );
+
+  const fishing = { ...blank, activity: '12' };
+  const fishingPrefill = editorWithholdingPrefill(fishing, rates);
+  assert(fishingPrefill.on === true, 'a chosen IR330C activity turns the box on');
+  assert(fishingPrefill.ratePct === withholdingPct(fishing, rates), 'the percent is withholdingPct for that activity');
+  assert(fishingPrefill.ratePct === 20, 'activity 12 keeps its own 20% from the IR330C table');
+
+  const orchards = { ...blank, contractRate: '45' };
+  const orchardPrefill = editorWithholdingPrefill(orchards, rates);
+  assert(orchardPrefill.on === true, 'activity 3 with a contract rate is a chosen schedular activity');
+  assert(orchardPrefill.ratePct === withholdingPct(orchards, rates) && orchardPrefill.ratePct === 15, 'activity 3 is 15% from withholdingPct');
+
+  const custom = { ...blank, activity: 'custom', customWtRate: '12.5' };
+  assert(editorWithholdingPrefill(custom, rates).on === true, 'an entered custom rate turns the box on');
+  assert(editorWithholdingPrefill(custom, rates).ratePct === withholdingPct(custom, rates), 'a custom rate is withholdingPct');
+  assert(editorWithholdingPrefill(custom, rates).ratePct === 12.5, 'custom 12.5 is kept');
+}
+
+// Phase 4: You'll receive is amountDue from invoiceTotals, the figure that is stored.
+{
+  const lines = [{ quantity: 10, rate: 45 }];
+  const totals = editorInvoiceTotals(lines, 'exclusive', 15);
+  const stored = invoiceTotals(lines, 'exclusive', 15);
+  assert(editorReceiveAmount(totals) === stored.amountDue, "You'll receive is invoiceTotals amountDue");
+  assert(editorReceiveAmount(totals) === 450, 'withholding is already taken off the stored amount due');
+  assert(editorReceiveAmount(totals) !== stored.total, 'the summary does not show the gross total');
+  const noWt = editorInvoiceTotals(lines, 'none', null);
+  assert(editorReceiveAmount(noWt) === noWt.amountDue && editorReceiveAmount(noWt) === noWt.total, 'with no withholding, you receive the total');
+  assert(editorReceiveAmount(null) === null && editorReceiveAmount(undefined) === null, 'a missing total is not turned into a receive amount');
+  assert(editorReceiveAmount({ amountDue: Number.NaN }) === null, 'a bad amount due is not shown as zero');
+  assert(editorReceiveAmount({ amountDue: 0 }) === 0, 'a real zero is kept');
 }
 
 // Phase 3: status badges name every status. Colour is not the only signal: each has its own word and mark.
