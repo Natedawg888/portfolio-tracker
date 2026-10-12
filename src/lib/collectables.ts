@@ -30,6 +30,22 @@ export const COLLECTABLE_PRESETS: CollectableTypeDef[] = [
   },
 ];
 
+export type ApiCardGame = 'mtg' | 'pokemon';
+
+/** Printings each price API can quote (server/quotes/cards.ts); the first is the add form's default. */
+export const CARD_FINISHES: Record<ApiCardGame, readonly { value: string; label: string }[]> = {
+  mtg: [
+    { value: 'nonfoil', label: 'Non-foil' },
+    { value: 'foil', label: 'Foil' },
+    { value: 'etched', label: 'Etched' },
+  ],
+  pokemon: [
+    { value: 'holofoil', label: 'Holofoil' },
+    { value: 'reverseHolofoil', label: 'Reverse holofoil' },
+    { value: 'normal', label: 'Normal' },
+  ],
+};
+
 export function isApiCardGame(game: string | null | undefined): boolean {
   const g = (game ?? '').toLowerCase();
   return g === 'mtg' || g === 'pokemon';

@@ -9,7 +9,7 @@ import { InfoTip } from '../InfoTip';
 import { MoreMenu } from '../MoreMenu';
 import { AddCostButton } from './AddCostButton';
 import { amountLabel, displayCostBasisNzd, displayName, marketValueNzd, type Holding } from '../../lib/holdingDisplay';
-import { formatSignedPct, holdingReturn, seriesChangePct } from '../../lib/portfolioView';
+import { formatSignedPct, holdingDomId, holdingReturn, seriesChangePct } from '../../lib/portfolioView';
 
 const changeCache = new Map<string, Promise<number | null>>();
 
@@ -115,7 +115,7 @@ export function MetalsTab({
             const cost = displayCostBasisNzd(h);
             const ret = holdingReturn(value, cost);
             return (
-              <li key={h.id} className="asset-row">
+              <li key={h.id} id={holdingDomId(h.id)} tabIndex={-1} className="asset-row">
                 <div className="asset-row-hit asset-row-static">
                   <span className="asset-row-name">
                     <span className="asset-row-title">{displayName(h)}</span>

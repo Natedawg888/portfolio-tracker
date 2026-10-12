@@ -14,18 +14,9 @@ import { QuietToast } from './QuietToast';
 import { PageAds } from './PageAds';
 import { api } from '../api/client';
 import { metalProviderFooter } from '../lib/metalSpotCopy';
+import { visibleSearchTypes } from '../lib/valueSearchDetect';
+import type { ValueSearchPrefs } from '../lib/valueSearchPrefs';
 import { prefetchNavTarget, schedulePrefetchAppRoutes } from '../lib/routePrefetch';
-
-/** Prefs that unlock at least one Value Search tool. */
-const VALUE_SEARCH_NAV_PREFS: AssetClassPrefKey[] = [
-  'stock',
-  'crypto',
-  'gomining',
-  'metal',
-  'forex',
-  'stone',
-  'collectable',
-];
 
 /** Pages that don't show the local-first / metals / sync footer. */
 const FOOTERLESS_PATHS = new Set(['/', '/debts', '/warranties']);
@@ -35,8 +26,8 @@ const links: Array<{
   label: string;
   end?: boolean;
   requirePref?: AssetClassPrefKey;
-  /** Show nav link when any of these prefs is enabled. */
-  requireAnyPref?: AssetClassPrefKey[];
+  /** Show the link only when the page would have something to show. */
+  visible?: (enabled: (key: AssetClassPrefKey) => boolean, valueSearch: ValueSearchPrefs) => boolean;
 }> = [
   { to: '/', label: 'Dashboard', end: true },
   { to: '/spending', label: 'Budget' },
@@ -49,7 +40,11 @@ const links: Array<{
   { to: '/invoices', label: 'Invoices' },
   { to: '/yearly', label: 'History' },
   { to: '/economic-cycle', label: 'Economic cycle' },
-  { to: '/value-search', label: 'Value search', requireAnyPref: VALUE_SEARCH_NAV_PREFS },
+  {
+    to: '/value-search',
+    label: 'Value search',
+    visible: (enabled, valueSearch) => visibleSearchTypes(enabled, valueSearch).length > 0,
+  },
 ];
 
 function SunIcon() {
@@ -98,7 +93,7 @@ function MenuIcon() {
 }
 
 export function Layout({ children }: { children?: ReactNode }) {
-  const { enabled } = useAssetClassPrefs();
+  const { enabled, valueSearch } = useAssetClassPrefs();
   const location = useLocation();
   const [theme, setThemeState] = useState<Theme>(() => resolveTheme());
   const [navOpen, setNavOpen] = useState(false);
@@ -110,7 +105,7 @@ export function Layout({ children }: { children?: ReactNode }) {
     ? cloneElement(routed, { moneyHidden } as { moneyHidden: boolean })
     : routed;
   const visibleLinks = links.filter((l) => {
-    if (l.requireAnyPref?.length) return l.requireAnyPref.some((k) => enabled(k));
+    if (l.visible) return l.visible(enabled, valueSearch);
     if (l.requirePref) return enabled(l.requirePref);
     return true;
   });

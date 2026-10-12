@@ -18,7 +18,7 @@ import {
   readDbMetalQuotes,
 } from '../quotes/metalQuotesDb.ts';
 import { resolveCryptoTicker } from '../quotes/crypto.ts';
-import { resolveStockTicker } from '../quotes/stocks.ts';
+import { resolveStockTicker, type NativePrice } from '../quotes/stocks.ts';
 import {
   fetchCryptoHistory,
   fetchMetalHistory,
@@ -135,6 +135,14 @@ router.post('/metals/refresh', async (_req, res) => {
 });
 
 
+function nativeFields(native: NativePrice | null) {
+  return {
+    nativePrice: native?.price ?? null,
+    nativeCurrency: native?.currency ?? null,
+    fxRate: native?.fxRate ?? null,
+  };
+}
+
 /**
  * Resolve a ticker for manual add (crypto or stock).
  * Crypto: CoinGecko name + NZD unit quote when available.
@@ -166,6 +174,8 @@ router.get('/resolve', async (req, res) => {
       iconUrl: resolved.iconUrl,
       quote: resolved.quote,
       quoteAvailable: resolved.quote.status === 'ok' && resolved.quote.price != null,
+      stale: resolved.stale,
+      ...nativeFields(resolved.native),
     });
   }
 
@@ -190,6 +200,7 @@ router.get('/resolve', async (req, res) => {
     quoteAvailable:
       (resolved.quote.status === 'ok' || resolved.quote.status === 'stale') &&
       resolved.quote.price != null,
+    ...nativeFields(resolved.native),
   });
 });
 

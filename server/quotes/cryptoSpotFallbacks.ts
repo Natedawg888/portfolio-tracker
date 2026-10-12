@@ -13,7 +13,7 @@ import { fetchFxToNzd } from './fx.ts';
 const UA = 'PortfolioTracker/1.0 (local NZD portfolio; +https://localhost)';
 const FETCH_MS = 12_000;
 
-/** Tickers whose Coinbase/Kraken USD product is a different asset than our WELL_KNOWN id. */
+/** Tickers whose Coinbase/Kraken USD product is a different asset than our KNOWN_CRYPTO id. */
 const SPOT_SYMBOL_BLOCKED = new Set([
   // Coinbase/Kraken "GMT" is STEPN / Green Metaverse Token — not GoMining (gmt-token).
   'GMT',
@@ -41,6 +41,8 @@ export type SpotNzdResult =
       ok: true;
       nzd: number;
       usd: number;
+      /** USD→NZD rate applied to `usd`. */
+      fxRate: number;
       source: QuoteSource;
       message: string;
     }
@@ -240,6 +242,7 @@ export async function fetchSpotUsdThenNzd(
     ok: true,
     nzd,
     usd,
+    fxRate: fx.rate,
     source,
     message: `Live NZD via ${venueNote} × ${fxNote}`,
   };

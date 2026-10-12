@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { FormEvent, ReactNode } from 'react';
 import { api, formatNzd, formatAuckland } from '../api/client';
 import { maybeAutoSyncBankTransactions, maybeAutoSyncPortfolio } from '../lib/akahuTxnAutoSync';
@@ -66,6 +66,7 @@ import {
 import {
   findIssues,
   formatSignedPct,
+  holdingDomId,
   holdingReturn,
   panelId,
   priceSources,
@@ -76,6 +77,15 @@ import {
 } from '../lib/portfolioView';
 import { MoreMenu } from '../components/MoreMenu';
 import { InfoTip } from '../components/InfoTip';
+import {
+  ADD_TAB,
+  FOREX_CURRENCIES,
+  parsePortfolioAddParams,
+  PORTFOLIO_LINK_PARAMS,
+  type PortfolioAddKind,
+  type PortfolioAddRequest,
+} from '../lib/portfolioAddParams';
+import { revealAddForm, revealHolding, whenElementAppears } from '../lib/revealElement';
 import { AddCostButton } from '../components/portfolio/AddCostButton';
 
 const emptyMiner = {
@@ -460,7 +470,7 @@ function HoldingCard({
 
 
   return (
-    <article className="holding-card">
+    <article className="holding-card" id={holdingDomId(holding.id)} tabIndex={-1}>
       <header className="holding-card-head">
         <HoldingIcon
           ticker={ticker}
@@ -846,6 +856,15 @@ function HoldingCard({
 
 
 const MANUAL_CRYPTO_ID = 'add-crypto-manual';
+
+/** The inline add form each Value Search "Add" link opens (cards use the collectables modal). */
+const ADD_DETAILS_ID: Record<Exclude<PortfolioAddKind, 'card'>, string> = {
+  stock: 'add-stock',
+  crypto: MANUAL_CRYPTO_ID,
+  metal: 'add-metal',
+  forex: 'add-forex',
+  miner: 'add-miner',
+};
 
 /** Exchange / app balances (Nexo, GoMining…) go in the manual crypto form (KAN-69). */
 function openManualCrypto() {
@@ -1362,7 +1381,7 @@ function MinerRow({
   const earnings = estimate && (hasNet || hasPool) ? formatEarningsAmount(estimate.periods[period], currency, hasNet) : '—';
 
   return (
-    <li className="asset-row">
+    <li id={holdingDomId(h.id)} tabIndex={-1} className="asset-row">
       <div className="asset-row-hit asset-row-static">
         <span className="asset-row-name">
           <span className="asset-row-title">{displayName(h)}</span>
@@ -1604,6 +1623,13 @@ export function Portfolio() {
     (next: PortfolioTab) => navigate({ hash: next === 'overview' ? '' : next }),
     [navigate],
   );
+  // Value Search links: ?add=… seeds an add form, ?holding=<id> scrolls to a holding.
+  const [searchParams] = useSearchParams();
+  const linkParams = searchParams.toString();
+  const [reveal, setReveal] = useState<{ kind: 'add'; id: string } | { kind: 'holding'; holdingId: string } | null>(
+    null,
+  );
+  const [cardPrefill, setCardPrefill] = useState<Extract<PortfolioAddRequest, { kind: 'card' }> | null>(null);
   const [gmSettings, setGmSettings] = useState<GominingUiSettings>(
     initialGm ? { ...initialGm, fxLoading: false } : emptyGmSettings,
   );
@@ -1648,6 +1674,61 @@ export function Portfolio() {
     invalidateFinancial('portfolio', 'dashboard', 'yearly', 'dividends', 'projections');
     return load();
   }, [load]);
+
+  // Seed the form while rendering (not in an effect) so it is filled on the first paint.
+  const [handledLink, setHandledLink] = useState('');
+  if (linkParams !== handledLink) {
+    setHandledLink(linkParams);
+    const params = new URLSearchParams(linkParams);
+    const add = parsePortfolioAddParams(params);
+    const holdingId = params.get('holding');
+    const num = (n: number | null) => (n == null ? '' : String(n));
+    switch (add?.kind) {
+      case 'stock':
+        setStockForm({ ...emptyStock, ticker: add.ticker });
+        setStockResolveHint(null);
+        setResolvedStockName(null);
+        break;
+      case 'crypto':
+        setCryptoForm({ ...emptyCrypto, ticker: add.ticker });
+        setCryptoResolveHint(null);
+        setResolvedCryptoName(null);
+        break;
+      case 'metal':
+        setMetalForm({ ...emptyMetal, metal: add.metal, amount: num(add.amount), unit: add.unit ?? emptyMetal.unit });
+        break;
+      case 'forex':
+        setForexForm({ ...emptyForex, currency: add.currency, amount: num(add.amount) });
+        break;
+      case 'miner':
+        setForm({ ...emptyMiner, hashrateThs: num(add.ths), energyEfficiencyWth: num(add.wPerTh) });
+        break;
+      case 'card':
+        setCardPrefill(add);
+        break;
+    }
+    if (add && add.kind !== 'card') setReveal({ kind: 'add', id: ADD_DETAILS_ID[add.kind] });
+    else if (!add && holdingId) setReveal({ kind: 'holding', holdingId });
+  }
+
+  // Then drop the link params so a refresh doesn't seed the form again; the hash keeps the tab.
+  useEffect(() => {
+    const params = new URLSearchParams(linkParams);
+    if (!PORTFOLIO_LINK_PARAMS.some((k) => params.has(k))) return;
+    const add = parsePortfolioAddParams(params);
+    for (const k of PORTFOLIO_LINK_PARAMS) params.delete(k);
+    navigate({ search: params.toString(), hash: add ? ADD_TAB[add.kind] : location.hash }, { replace: true });
+  }, [linkParams, navigate, location.hash]);
+
+  useEffect(() => {
+    if (!reveal) return;
+    const id = reveal.kind === 'add' ? reveal.id : holdingDomId(reveal.holdingId);
+    return whenElementAppears(id, (el) => {
+      if (el instanceof HTMLDetailsElement) revealAddForm(el);
+      else revealHolding(el);
+      setReveal(null);
+    });
+  }, [reveal]);
 
   // Net worth includes wallets (KAN-42): refresh the totals when wallet values change
   // (add / remove / sync), but not for the first wallet load — `load` already covers that.
@@ -2611,7 +2692,7 @@ export function Portfolio() {
           onSetCost={setHoldingCost}
         />
       <section className="panel">
-        <InlineAddDetails label="Add stock">
+        <InlineAddDetails label="Add stock" id={ADD_DETAILS_ID.stock}>
           <form className="form-grid" onSubmit={onAddStock}>
             <h4>Add stock (manual)</h4>
             <label>
@@ -2782,7 +2863,7 @@ export function Portfolio() {
         onSaveDiscount={saveGmSettings}
         savingDiscount={savingGm}
       >
-        <InlineAddDetails label="Add miner">
+        <InlineAddDetails label="Add miner" id={ADD_DETAILS_ID.miner}>
           <form className="form-grid" onSubmit={onAddMiner}>
             <h4>Add GoMining miner</h4>
             <label>
@@ -2883,7 +2964,7 @@ export function Portfolio() {
         onDelete={deleteHolding}
         onSetCost={setHoldingCost}
       >
-        <InlineAddDetails label="Add metal">
+        <InlineAddDetails label="Add metal" id={ADD_DETAILS_ID.metal}>
           <form className="form-grid" onSubmit={onAddMetal}>
             <h4>Add metal</h4>
             <label>
@@ -2993,7 +3074,7 @@ export function Portfolio() {
             ))}
           </div>
         )}
-        <InlineAddDetails label="Add forex">
+        <InlineAddDetails label="Add forex" id={ADD_DETAILS_ID.forex}>
           <form className="form-grid" onSubmit={onAddForex}>
             <h4>Add forex (outside bank)</h4>
             <label>
@@ -3003,14 +3084,11 @@ export function Portfolio() {
                 onChange={(e) => setForexForm({ ...forexForm, currency: e.target.value })}
                 required
               >
-                <option value="USD">USD</option>
-                <option value="EUR">EUR</option>
-                <option value="GBP">GBP</option>
-                <option value="AUD">AUD</option>
-                <option value="CAD">CAD</option>
-                <option value="CHF">CHF</option>
-                <option value="JPY">JPY</option>
-                <option value="SGD">SGD</option>
+                {FOREX_CURRENCIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
               </select>
             </label>
             <label>
@@ -3156,6 +3234,9 @@ export function Portfolio() {
         holdings={grouped.collectables}
         onChanged={reloadAfterEdit}
         onBanner={setMsg}
+        initialAdd={cardPrefill}
+        onInitialAddHandled={() => setCardPrefill(null)}
+        revealHoldingId={reveal?.kind === 'holding' ? reveal.holdingId : null}
         renderCard={(h) => (
           <HoldingCard
             key={h.id}

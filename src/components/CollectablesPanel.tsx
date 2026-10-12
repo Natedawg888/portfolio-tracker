@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { InfoTip } from './InfoTip';
 import type { FormEvent, ReactNode } from 'react';
 import { api, formatNzd } from '../api/client';
 import { commitPageRead, beginPageRead, readPageCache } from '../lib/pageDataCache';
 import type { MtgColour } from '../types';
+import type { PortfolioAddRequest } from '../lib/portfolioAddParams';
+import { focusFirstEmptyField } from '../lib/revealElement';
 import {
+  CARD_FINISHES,
   COLLECTABLE_PRESETS,
   emptyMessageFor,
   inferTypesFromHoldings,
@@ -84,13 +87,27 @@ type Props = {
   onChanged: () => Promise<void> | void;
   renderCard: (holding: CollectableItem) => ReactNode;
   onBanner?: (msg: string | null) => void;
+  /** From a Value Search link: open that game's card form pre-filled, if the user has that type. */
+  initialAdd?: Extract<PortfolioAddRequest, { kind: 'card' }> | null;
+  onInitialAddHandled?: () => void;
+  /** Open the list holding this item so Portfolio can scroll to its card. */
+  revealHoldingId?: string | null;
 };
+
 
 const COLLECTABLE_TYPES_KEY = 'collectable-types';
 
 type CollectableTypeCache = { types: CollectableTypeDef[]; presets: CollectableTypeDef[] };
 
-export function CollectablesPanel({ holdings, onChanged, renderCard, onBanner }: Props) {
+export function CollectablesPanel({
+  holdings,
+  onChanged,
+  renderCard,
+  onBanner,
+  initialAdd,
+  onInitialAddHandled,
+  revealHoldingId,
+}: Props) {
   const initialTypes = readPageCache<CollectableTypeCache>(COLLECTABLE_TYPES_KEY);
   const [types, setTypes] = useState<CollectableTypeDef[]>(initialTypes?.types ?? []);
   const [presets, setPresets] = useState<CollectableTypeDef[]>(initialTypes?.presets ?? COLLECTABLE_PRESETS);
@@ -107,6 +124,8 @@ export function CollectablesPanel({ holdings, onChanged, renderCard, onBanner }:
   const [addingType, setAddingType] = useState(false);
   const [customTitle, setCustomTitle] = useState('');
   const [customKind, setCustomKind] = useState<CollectableTypeKind>('manual');
+  const [prefilled, setPrefilled] = useState(false);
+  const cardFormRef = useRef<HTMLFormElement>(null);
 
   const byType = useMemo(() => {
     const map = new Map<string, CollectableItem[]>();
@@ -198,6 +217,37 @@ export function CollectablesPanel({ holdings, onChanged, renderCard, onBanner }:
     return () => window.removeEventListener('keydown', onKey);
   }, [openTypeId]);
 
+  useEffect(() => {
+    if (!initialAdd || !typesLoaded) return;
+    const def = types.find((t) => t.id === initialAdd.game);
+    // Without that collectable type there is no card form; the tab alone is the fallback.
+    if (def) {
+      openModal(def);
+      setCardForm({
+        ...emptyCardForm,
+        name: initialAdd.name ?? '',
+        cardSet: initialAdd.set ?? '',
+        cardNumber: initialAdd.number ?? '',
+        cardFinish: initialAdd.finish ?? CARD_FINISHES[initialAdd.game][0].value,
+        apiId: initialAdd.apiId ?? '',
+      });
+      setPrefilled(true);
+    }
+    onInitialAddHandled?.();
+    // openModal is recreated each render; the prefill must run once per link.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialAdd, typesLoaded, types]);
+
+  useEffect(() => {
+    if (prefilled && cardFormRef.current) focusFirstEmptyField(cardFormRef.current);
+  }, [prefilled, openTypeId]);
+
+  useEffect(() => {
+    if (!revealHoldingId || !typesLoaded) return;
+    const game = holdings.find((h) => h.id === revealHoldingId)?.cardGame?.toLowerCase();
+    if (game && types.some((t) => t.id === game)) setOpenTypeId(game);
+  }, [revealHoldingId, typesLoaded, types, holdings]);
+
   function banner(next: string | null) {
     setMsg(next);
     onBanner?.(next);
@@ -251,7 +301,7 @@ export function CollectablesPanel({ holdings, onChanged, renderCard, onBanner }:
       });
       setCardForm({
         ...emptyCardForm,
-        cardFinish: game === 'mtg' ? 'nonfoil' : 'holofoil',
+        cardFinish: CARD_FINISHES[game][0].value,
       });
       banner(`${game === 'mtg' ? 'MTG' : 'Pokémon'} card added (lookup → NZD)`);
       await onChanged();
@@ -328,11 +378,12 @@ export function CollectablesPanel({ holdings, onChanged, renderCard, onBanner }:
   function openModal(def: CollectableTypeDef) {
     setCardForm({
       ...emptyCardForm,
-      cardFinish: def.kind === 'pokemon' ? 'holofoil' : 'nonfoil',
+      cardFinish: CARD_FINISHES[def.kind === 'pokemon' ? 'pokemon' : 'mtg'][0].value,
     });
     setMtgColourFilters(new Set());
     setMtgRarityFilters(new Set());
     setMsg(null);
+    setPrefilled(false);
     setOpenTypeId(def.id);
   }
 
@@ -571,7 +622,7 @@ export function CollectablesPanel({ holdings, onChanged, renderCard, onBanner }:
               )}
             </div>
 
-            <details className="collectable-modal-add" open={openItems.length === 0}>
+            <details className="collectable-modal-add" open={openItems.length === 0 || prefilled}>
               <summary>
                 {openDef.kind === 'manual'
                   ? `Add ${openDef.title} item`
@@ -583,6 +634,7 @@ export function CollectablesPanel({ holdings, onChanged, renderCard, onBanner }:
               {(openDef.kind === 'mtg' || openDef.kind === 'pokemon') && (
                 <>
                   <form
+                    ref={cardFormRef}
                     className="form-grid"
                     onSubmit={(e) => void onAddCard(e, openDef.kind === 'mtg' ? 'mtg' : 'pokemon')}
                   >

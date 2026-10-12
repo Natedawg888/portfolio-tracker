@@ -18,7 +18,12 @@ export type StockResolveResult = {
   exchange: string | null;
   iconUrl: string | null;
   quote: QuoteResult;
+  /** Yahoo's own price/currency and the FX rate applied; null when no price was converted. */
+  native: NativePrice | null;
 };
+
+/** The pre-conversion price behind an NZD quote (fxRate 1 when Yahoo already quotes NZD). */
+export type NativePrice = { price: number; currency: string; fxRate: number };
 
 const UA =
   'Mozilla/5.0 (compatible; PortfolioTracker/1.0; +http://127.0.0.1; local NZD portfolio)';
@@ -46,13 +51,11 @@ type CacheEntry = {
   name: string;
   yahooSymbol: string;
   exchangeName: string | null;
+  native: NativePrice | null;
 };
 
 const cache = new Map<string, CacheEntry>();
-const lastGood = new Map<
-  string,
-  { at: number; quote: QuoteResult; name: string; yahooSymbol: string; exchangeName: string | null }
->();
+const lastGood = new Map<string, CacheEntry>();
 const inflight = new Map<string, Promise<CacheEntry>>();
 
 function positiveNum(v: unknown): number | null {
@@ -184,9 +187,10 @@ function quoteSourceForFx(
 async function buildNzdQuote(
   assetKey: string,
   live: YahooLiveOk,
-): Promise<{ quote: QuoteResult; name: string; yahooSymbol: string; exchangeName: string | null }> {
+): Promise<Omit<CacheEntry, 'at'>> {
   if (live.currency === 'NZD') {
     return {
+      native: { price: live.price, currency: 'NZD', fxRate: 1 },
       name: live.name,
       yahooSymbol: live.yahooSymbol,
       exchangeName: live.exchangeName,
@@ -205,6 +209,7 @@ async function buildNzdQuote(
   const converted = await convertToNzd(live.price, live.currency, false);
   if (!converted) {
     return {
+      native: null,
       name: live.name,
       yahooSymbol: live.yahooSymbol,
       exchangeName: live.exchangeName,
@@ -222,6 +227,7 @@ async function buildNzdQuote(
 
   const source = quoteSourceForFx(live.currency, converted.source);
   return {
+    native: { price: live.price, currency: live.currency, fxRate: converted.rate },
     name: live.name,
     yahooSymbol: live.yahooSymbol,
     exchangeName: live.exchangeName,
@@ -261,6 +267,7 @@ async function fetchStockQuoteInner(
       name: '',
       yahooSymbol: '',
       exchangeName: null,
+      native: null,
       quote: {
         assetKey,
         currency: 'NZD',
@@ -284,6 +291,7 @@ async function fetchStockQuoteInner(
         name: stale.name,
         yahooSymbol: stale.yahooSymbol,
         exchangeName: stale.exchangeName,
+        native: stale.native,
         quote: {
           ...stale.quote,
           status: 'stale',
@@ -298,6 +306,7 @@ async function fetchStockQuoteInner(
       name: t,
       yahooSymbol: live.yahooSymbol,
       exchangeName: null,
+      native: null,
       quote: {
         assetKey,
         currency: 'NZD',
@@ -312,24 +321,9 @@ async function fetchStockQuoteInner(
     return entry;
   }
 
-  const built = await buildNzdQuote(assetKey, live);
-  const entry: CacheEntry = {
-    at: Date.now(),
-    name: built.name,
-    yahooSymbol: built.yahooSymbol,
-    exchangeName: built.exchangeName,
-    quote: built.quote,
-  };
+  const entry: CacheEntry = { at: Date.now(), ...(await buildNzdQuote(assetKey, live)) };
   cache.set(key, entry);
-  if (built.quote.status === 'ok' && built.quote.price != null) {
-    lastGood.set(key, {
-      at: Date.now(),
-      quote: built.quote,
-      name: built.name,
-      yahooSymbol: built.yahooSymbol,
-      exchangeName: built.exchangeName,
-    });
-  }
+  if (entry.quote.status === 'ok' && entry.quote.price != null) lastGood.set(key, entry);
   return entry;
 }
 
@@ -385,6 +379,7 @@ export async function resolveStockTicker(
     exchange: exchange,
     iconUrl: resolveStockIconUrl(t),
     quote: entry.quote,
+    native: entry.native,
   };
 }
 
