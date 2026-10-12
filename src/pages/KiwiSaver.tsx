@@ -1,10 +1,14 @@
 /**
  * KiwiSaver — Sharesies via Akahu + bank-held manual/CSV.
  * Honest labels (Akahu vs Manual). Never scrape. Never invent balances.
+ *
+ * Phase 1 is presentation only: a short header, Sync now for Akahu, and one
+ * balance block. The full balance card is Phase 2. The history chart and
+ * holdings stay as they are until later phases.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api, formatNzd, formatAuckland } from '../api/client';
-import { akahuStatus } from '../api/akahuClient';
+import { akahuStatus, akahuSync } from '../api/akahuClient';
 import {
   formatPortfolioSyncMsg,
   maybeAutoSyncPortfolio,
@@ -19,12 +23,21 @@ import {
   readPageCache,
 } from '../lib/pageDataCache';
 import { AssetLineChart, type LineSeries } from '../components/AssetLineChart';
+import { InfoTip } from '../components/InfoTip';
 import type {
   KiwiSaverAccount,
   KiwiSaverFundAllocation,
   KiwiSaverHistoryResponse,
 } from '../types';
 import { HoldingIcon } from '../components/HoldingIcon';
+import {
+  KIWISAVER_READONLY_NOTE,
+  kiwiSaverHeaderParts,
+  kiwiSaverSchemeLabel,
+  kiwiSaverSyncNote,
+  showKiwiSaverSchemePicker,
+  showKiwiSaverSyncButton,
+} from './kiwisaverView';
 
 function formatPct(n: number): string {
   const sign = n > 0 ? '+' : '';
@@ -159,84 +172,12 @@ const emptyForm = (): ManualForm => ({
   fundMixText: '',
 });
 
-function AccountSummaryCard({
-  account,
-  selected,
-  onSelect,
-  onEdit,
-  onDelete,
-}: {
-  account: KiwiSaverAccount;
-  selected: boolean;
-  onSelect: () => void;
-  onEdit?: () => void;
-  onDelete?: () => void;
-}) {
-  const akahu = isAkahuAccount(account);
-  return (
-    <article className={'holding-card' + (selected ? ' holding-card-selected' : '')}>
-      <header className="holding-card-head">
-        <div className="holding-card-titles" style={{ flex: 1 }}>
-          <h4 className="holding-card-name">{account.name}</h4>
-          <span className="holding-card-ticker muted small">
-            {account.provider}
-            {account.schemeName ? ` · ${account.schemeName}` : ''} ·{' '}
-            <strong>{account.dataSourceLabel ?? account.connectionStatus}</strong>
-          </span>
-        </div>
-      </header>
-      <div className="holding-card-amount">{formatNzd(account.balanceNzd)}</div>
-      <dl className="holding-card-stats">
-        <div>
-          <dt>Invested</dt>
-          <dd>
-            {account.amountInvestedNzd != null ? formatNzd(account.amountInvestedNzd) : '—'}
-          </dd>
-        </div>
-        <div>
-          <dt>Returns</dt>
-          <dd
-            className={
-              account.returnsNzd == null
-                ? undefined
-                : account.returnsNzd >= 0
-                  ? 'return-pos'
-                  : 'return-neg'
-            }
-          >
-            {account.returnsNzd != null ? formatNzd(account.returnsNzd) : '—'}
-            {account.returnPct != null ? ` (${formatPct(account.returnPct)})` : ''}
-          </dd>
-        </div>
-      </dl>
-      <p className="muted small holding-card-meta">
-        {account.observedAt ? <>Observed {formatAuckland(account.observedAt)}</> : 'No observe date'}
-        {account.pir != null ? ` · PIR ${account.pir}%` : ''}
-      </p>
-      <div className="row gap" style={{ marginTop: '0.5rem', flexWrap: 'wrap' }}>
-        <button type="button" className="btn ghost" onClick={onSelect}>
-          {selected ? 'Selected' : 'View history / funds'}
-        </button>
-        {!akahu && onEdit && (
-          <button type="button" className="btn ghost" onClick={onEdit}>
-            Edit
-          </button>
-        )}
-        {!akahu && onDelete && (
-          <button type="button" className="btn ghost" onClick={onDelete}>
-            Delete
-          </button>
-        )}
-      </div>
-    </article>
-  );
-}
-
 type KiwiSaverBundle = {
   accounts: KiwiSaverAccount[];
   selectedId: string | null;
   history: KiwiSaverHistoryResponse | null;
   akahuConfigured: boolean | null;
+  akahuConnected: boolean | null;
 };
 
 const KIWISAVER_KEY = 'kiwisaver';
@@ -249,12 +190,18 @@ export function KiwiSaver() {
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [akahuConfigured, setAkahuConfigured] = useState<boolean | null>(initialKs?.akahuConfigured ?? null);
+  const [akahuConnected, setAkahuConnected] = useState<boolean | null>(initialKs?.akahuConnected ?? null);
   const [loading, setLoading] = useState(initialKs == null);
+  const [syncing, setSyncing] = useState(false);
   const akahuRef = useRef(initialKs?.akahuConfigured ?? null);
+  const akahuConnectedRef = useRef(initialKs?.akahuConnected ?? null);
   const accountsRef = useRef(accounts);
   useEffect(() => {
     akahuRef.current = akahuConfigured;
   }, [akahuConfigured]);
+  useEffect(() => {
+    akahuConnectedRef.current = akahuConnected;
+  }, [akahuConnected]);
   useEffect(() => {
     accountsRef.current = accounts;
   }, [accounts]);
@@ -278,6 +225,7 @@ export function KiwiSaver() {
       selectedId: pick,
       history: hist,
       akahuConfigured: akahuRef.current,
+      akahuConnected: akahuConnectedRef.current,
     };
     if (!commitPageRead(stamp, bundle)) return;
     setAccounts(list);
@@ -296,9 +244,15 @@ export function KiwiSaver() {
       if (readPageCache<KiwiSaverBundle>(KIWISAVER_KEY) == null) setLoading(true);
       setError(null);
       try {
-        const st = await akahuStatus().catch(() => ({ configured: false }));
-        akahuRef.current = st.configured;
-        if (!cancelled) setAkahuConfigured(st.configured);
+        const st = await akahuStatus().catch(() => null);
+        const configured = st?.configured ?? false;
+        const connected = st?.connected === true;
+        akahuRef.current = configured;
+        akahuConnectedRef.current = connected;
+        if (!cancelled) {
+          setAkahuConfigured(configured);
+          setAkahuConnected(connected);
+        }
 
         try {
           const outcome = await maybeAutoSyncPortfolio();
@@ -350,6 +304,7 @@ export function KiwiSaver() {
         selectedId: id,
         history: hist,
         akahuConfigured: akahuRef.current,
+        akahuConnected: akahuConnectedRef.current,
       };
       if (!commitPageRead(stamp, bundle)) return;
       setHistory(hist);
@@ -359,7 +314,30 @@ export function KiwiSaver() {
   }
 
   const hasAkahuAccount = accounts.some(isAkahuAccount);
+  const showSync = showKiwiSaverSyncButton({
+    hasAkahuScheme: hasAkahuAccount,
+    akahuConnected: akahuConnected === true,
+  });
   const showManualEntry = !loading && !hasAkahuAccount;
+
+  async function onSyncNow() {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const result = await akahuSync();
+      if (result.ok && portfolioSyncChanged(result)) invalidateAfterExternalSync();
+      if (result.ok) {
+        setMsg(formatPortfolioSyncMsg(result));
+        await load(selectedId);
+      } else {
+        showQuietToast(result.error ?? 'Akahu sync paused — showing last data.', { kind: 'warn' });
+      }
+    } catch {
+      showQuietToast('Akahu sync paused — showing last KiwiSaver data.', { kind: 'warn' });
+    } finally {
+      setSyncing(false);
+    }
+  }
   const bankAccounts = accounts.filter((a) => !isAkahuAccount(a) && a.provider !== 'sharesies');
   const selected = accounts.find((a) => a.id === selectedId) ?? accounts[0];
 
@@ -500,7 +478,24 @@ export function KiwiSaver() {
     ];
   }, [history, selected]);
 
-  const totalBalance = accounts.reduce((s, a) => s + (Number(a.balanceNzd) || 0), 0);
+  const headerParts = kiwiSaverHeaderParts(
+    selected
+      ? {
+          name: selected.name,
+          schemeName: selected.schemeName,
+          provider: selected.provider,
+          observedAt: selected.observedAt,
+          pir: selected.pir,
+        }
+      : null,
+    formatAuckland,
+  );
+  const hasSyncedPart = headerParts.some((part) => part.kind === 'synced');
+  const syncTip = (
+    <InfoTip label="About KiwiSaver sync">
+      {KIWISAVER_READONLY_NOTE} {kiwiSaverSyncNote({ hasAkahuAccount, akahuConfigured })}
+    </InfoTip>
+  );
 
   if (error) {
     return (
@@ -513,72 +508,110 @@ export function KiwiSaver() {
 
   return (
     <div className="stack kiwisaver-page">
-      <section className="panel">
-        <div className="row gap" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
-          <div>
-            <h2 className="page-title">KiwiSaver</h2>
-            <p className="page-lead" style={{ margin: 0 }}>
-              {hasAkahuAccount ? (
-                <>
-                  KiwiSaver via <strong>Akahu</strong>; synced provider data is read-only.
-                </>
-              ) : (
-                <>
-                  Sharesies via <strong>Akahu</strong>; bank-held schemes via{' '}
-                  <strong>manual entry / CSV</strong> (IRD/Akahu bank KS not available).
-                </>
-              )}{' '}
-              Never scrape. Never store passwords.
-            </p>
-          </div>
+      <header className="ks-header" aria-labelledby="kiwisaver-title" aria-busy={loading || syncing}>
+        <div className="ks-header-main">
+          <h2 id="kiwisaver-title" className="page-title">KiwiSaver</h2>
+          <p className="muted small ks-header-line" aria-live="polite">
+            {headerParts.length === 0 && loading ? 'Loading…' : null}
+            {headerParts.map((part, index) => (
+              <span key={part.kind}>
+                {index > 0 ? ' · ' : null}
+                {part.text}
+                {part.kind === 'synced' ? syncTip : null}
+              </span>
+            ))}
+            {!hasSyncedPart ? syncTip : null}
+          </p>
         </div>
-        <p className="muted small" style={{ marginTop: '0.5rem' }}>
-          {hasAkahuAccount
-            ? 'Akahu KiwiSaver connected — auto-resync on open updates the connected provider account.'
-            : akahuConfigured
-              ? 'Akahu configured — auto-resync on open updates Sharesies KS only. Bank-held schemes stay manual.'
-              : akahuConfigured === false
-                ? 'Akahu not configured on the API server — Sharesies sync unavailable; bank-held manual/CSV still works.'
-                : 'Checking Akahu…'}
-          {loading ? ' · Loading…' : ''}
-          {accounts.length > 0 ? ` · Total ${formatNzd(totalBalance)} across ${accounts.length} scheme(s)` : ''}
-        </p>
-      </section>
+        {showSync ? (
+          <div className="ks-header-actions">
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => void onSyncNow()}
+              disabled={syncing}
+              aria-busy={syncing}
+            >
+              {syncing ? 'Syncing…' : 'Sync now'}
+            </button>
+          </div>
+        ) : null}
+      </header>
 
-      <section className="panel">
-        <h3>Schemes</h3>
-        {accounts.length === 0 ? (
+      {!loading && accounts.length === 0 ? (
+        <section className="panel">
           <p className="muted">
             No KiwiSaver yet — refresh Sharesies via Akahu, or add a bank-held scheme below.
           </p>
-        ) : (
-          <div className="holding-cards" style={{ marginTop: '0.75rem' }}>
-            {accounts.map((a) => (
-              <AccountSummaryCard
-                key={a.id}
-                account={a}
-                selected={selected?.id === a.id}
-                onSelect={() => void selectAccount(a.id)}
-                onEdit={!isAkahuAccount(a) ? () => startEdit(a) : undefined}
-                onDelete={
-                  !isAkahuAccount(a) ? () => void onDelete(a.id, a.name) : undefined
-                }
-              />
-            ))}
-          </div>
-        )}
-      </section>
+        </section>
+      ) : null}
 
-      {selected && (
-        <section className="panel">
-          <h3>
-            Detail · {selected.name}{' '}
-            <span className="muted small">({selected.dataSourceLabel})</span>
-          </h3>
+      {showKiwiSaverSchemePicker(accounts.length) ? (
+        <section className="panel" aria-labelledby="ks-schemes-heading">
+          <h3 id="ks-schemes-heading">Schemes</h3>
+          <div className="ks-schemes" role="group" aria-label="KiwiSaver schemes">
+            {accounts.map((a) => {
+              const isSelected = selected?.id === a.id;
+              const label = kiwiSaverSchemeLabel({ name: a.name, schemeName: a.schemeName }) ?? a.name;
+              return (
+                <div key={a.id} className="ks-scheme">
+                  <button
+                    type="button"
+                    className="ks-scheme-pick"
+                    aria-pressed={isSelected}
+                    aria-label={`${label}${a.provider ? `, ${a.provider}` : ''}${isSelected ? ', selected' : ''}`}
+                    onClick={() => void selectAccount(a.id)}
+                  >
+                    <span className="ks-scheme-name">{label}</span>
+                    <span className="muted small">
+                      {a.provider}
+                      {a.dataSourceLabel ? ` · ${a.dataSourceLabel}` : ''}
+                    </span>
+                    {isSelected ? <span className="ks-scheme-selected">Selected</span> : null}
+                  </button>
+                  {!isAkahuAccount(a) ? (
+                    <>
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        aria-label={`Edit ${a.name}`}
+                        onClick={() => startEdit(a)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        aria-label={`Delete ${a.name}`}
+                        onClick={() => void onDelete(a.id, a.name)}
+                      >
+                        Delete
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
+      {/*
+        Phase 2 balance card placeholder.
+        The full balance card lands in Phase 2. Until then this is the only
+        place balance, "You've put in", and returns ($ and %) appear — the
+        old Detail section repeated the scheme cards, so it is gone. Residual
+        and notes stay here so that information is not dropped.
+      */}
+      {selected ? (
+        <section className="panel ks-balance" aria-label="Balance">
           <p className="hero-value sm">{formatNzd(selected.balanceNzd)}</p>
+          {selected.dataSourceLabel ? (
+            <p className="muted small ks-balance-source">{selected.dataSourceLabel}</p>
+          ) : null}
           <div className="ks-metrics">
             <div className="ks-metric">
-              <span className="ks-metric-label">Amount invested</span>
+              <span className="ks-metric-label">You've put in</span>
               <span className="ks-metric-value">
                 {selected.amountInvestedNzd != null
                   ? formatNzd(selected.amountInvestedNzd)
@@ -593,7 +626,7 @@ export function KiwiSaver() {
               </span>
             </div>
             <div className="ks-metric">
-              <span className="ks-metric-label">Return</span>
+              <span className="ks-metric-label">Returns</span>
               <span
                 className={
                   'ks-metric-value' +
@@ -604,7 +637,9 @@ export function KiwiSaver() {
                       : ' return-neg')
                 }
               >
-                {selected.returnsNzd != null ? formatNzd(selected.returnsNzd) : '—'}
+                {selected.returnsNzd == null
+                  ? '—'
+                  : `${selected.returnsNzd > 0 ? '+' : ''}${formatNzd(selected.returnsNzd)}`}
                 {selected.returnPct != null ? ` (${formatPct(selected.returnPct)})` : ''}
               </span>
               <span className="muted small">
@@ -623,8 +658,28 @@ export function KiwiSaver() {
             </p>
           )}
           {selected.notes && <p className="muted small">{selected.notes}</p>}
+          {accounts.length === 1 && !isAkahuAccount(selected) ? (
+            <div className="row gap ks-balance-actions">
+              <button
+                type="button"
+                className="btn ghost"
+                aria-label={`Edit ${selected.name}`}
+                onClick={() => startEdit(selected)}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                className="btn ghost"
+                aria-label={`Delete ${selected.name}`}
+                onClick={() => void onDelete(selected.id, selected.name)}
+              >
+                Delete
+              </button>
+            </div>
+          ) : null}
         </section>
-      )}
+      ) : null}
 
       <section className="panel">
         <h3>Balance history</h3>
