@@ -8,7 +8,8 @@
  */
 
 export type NetWorthView = 'total' | 'accessible';
-export type HistoryRange = '1M' | '6M' | '1Y' | 'All';
+/** 3M is used by KiwiSaver. The dashboard keeps HISTORY_RANGES (1M, 6M, 1Y, All). */
+export type HistoryRange = '1M' | '3M' | '6M' | '1Y' | 'All';
 
 export const HISTORY_RANGES: HistoryRange[] = ['1M', '6M', '1Y', 'All'];
 
@@ -68,7 +69,7 @@ export function dailySeries(snapshots: SnapshotLike[], view: NetWorthView): Hist
     .map(([date, { value }]) => ({ date, value }));
 }
 
-const RANGE_MONTHS: Record<Exclude<HistoryRange, 'All'>, number> = { '1M': 1, '6M': 6, '1Y': 12 };
+const RANGE_MONTHS: Record<Exclude<HistoryRange, 'All'>, number> = { '1M': 1, '3M': 3, '6M': 6, '1Y': 12 };
 
 /** First day of the range, YYYY-MM-DD, or null for All. Month ends clamp (31 Mar − 1M = 28/29 Feb). */
 export function rangeStart(range: HistoryRange, today: string): string | null {
@@ -92,6 +93,7 @@ function dayDiff(a: string, b: string): number {
 
 const RANGE_PHRASE: Record<Exclude<HistoryRange, 'All'>, string> = {
   '1M': 'since last month',
+  '3M': 'over 3 months',
   '6M': 'over 6 months',
   '1Y': 'over the past year',
 };

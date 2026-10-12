@@ -3,6 +3,7 @@
  * Only plots points that exist — never invents interpolated balances.
  * Resolution: by day | by month (bucket last real snapshot; skip empty buckets).
  */
+import { useState } from 'react';
 import { formatNzd } from '../api/client';
 import { isMoneyHidden, MONEY_MASK } from '../lib/privacy';
 
@@ -114,7 +115,26 @@ type Props = {
   moneyAxis?: boolean;
   /** Keep the title for the chart name, but only for assistive tech. */
   hideTitle?: boolean;
+  /**
+   * When set, each dot is focusable and named with this label (date and value).
+   * Other charts leave it unset, so their dots stay presentational.
+   */
+  pointAriaLabel?: (point: LinePoint, series: LineSeries) => string;
+  /** Legend under the plot. On by default; a single-series card can turn it off. */
+  showLegend?: boolean;
 };
+
+/** Non-empty label means the dot is an accessible, focusable point. Blank keeps it presentational. */
+export function focusablePointName(label: string | null | undefined): string | null {
+  if (label == null) return null;
+  const trimmed = label.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+/** Focusable points sit in the tab order. Presentational dots do not. */
+export function chartPointTabIndex(label: string | null): 0 | undefined {
+  return label ? 0 : undefined;
+}
 
 function parseAt(at: string): number {
   const t = Date.parse(at.length === 7 ? `${at}-01T00:00:00` : at.length === 10 ? `${at}T00:00:00` : at);
@@ -256,7 +276,10 @@ export function AssetLineChart({
   zeroBaseline = false,
   moneyAxis = false,
   hideTitle = false,
+  pointAriaLabel,
+  showLegend = true,
 }: Props) {
+  const [tip, setTip] = useState<{ key: string; label: string; x: number; y: number; pinned: boolean } | null>(null);
   const resampled = resampleSeries(series, resolution);
   const active = resampled.filter((s) => s.points.length > 0);
   const allPoints = active.flatMap((s) => s.points);
@@ -306,20 +329,47 @@ export function AssetLineChart({
   const yTicks = computeYTicks(vMin, vMax);
   const painted = seriesPaintOrder(active, foregroundKey);
 
-  return (
-    <div className={'line-chart' + (fewPoints ? ' line-chart-compact' : '') + (fullWidth ? ' line-chart-full' : '')}>
-      {title && <h4 className={'line-chart-title' + (hideTitle ? ' sr-only' : '')}>{title}</h4>}
-      {showResolutionNote && (
-        <p className="muted small line-chart-meta">
-          {resolution === 'day' ? 'Daily' : 'Monthly'} snapshots only
-        </p>
-      )}
-      <svg
-        className="line-chart-svg"
-        viewBox={`0 0 ${width} ${chartH}`}
+  function dot(s: LineSeries, p: LinePoint, radius: number) {
+    const x = xOf(p.at);
+    const y = yOf(p.value);
+    const name = pointAriaLabel ? focusablePointName(pointAriaLabel(p, s)) : null;
+    const id = `${s.key}-${p.at}`;
+    if (!name) {
+      return (
+        <circle key={id} cx={x} cy={y} r={radius} fill={s.colour}>
+          <title>{`${s.label}: ${formatNzd(p.value)} @ ${axisLabel(p.at, resolution)}`}</title>
+        </circle>
+      );
+    }
+    const open = tip?.key === id;
+    return (
+      <g
+        key={id}
+        className={'line-chart-point' + (open ? ' line-chart-point--open' : '')}
+        tabIndex={chartPointTabIndex(name)}
         role="img"
-        aria-label={title}
+        aria-label={name}
+        onMouseEnter={() =>
+          setTip((cur) => (cur?.key === id && cur.pinned ? cur : { key: id, label: name, x, y, pinned: false }))
+        }
+        onMouseLeave={() => setTip((cur) => (cur && cur.key === id && !cur.pinned ? null : cur))}
+        onFocus={() => setTip({ key: id, label: name, x, y, pinned: true })}
+        onBlur={() => setTip((cur) => (cur && cur.key === id ? null : cur))}
+        onClick={() => setTip({ key: id, label: name, x, y, pinned: true })}
       >
+        <circle className="line-chart-point-hit" cx={x} cy={y} r={14} fill="transparent" />
+        <circle className="line-chart-point-dot" cx={x} cy={y} r={open ? radius + 1.5 : radius} fill={s.colour} />
+      </g>
+    );
+  }
+
+  const plot = (
+    <svg
+      className="line-chart-svg"
+      viewBox={`0 0 ${width} ${chartH}`}
+      role={pointAriaLabel ? 'group' : 'img'}
+      aria-label={title}
+    >
         {yTicks.map((v, i) => (
           <g key={`y-${i}`}>
             <line
@@ -356,14 +406,7 @@ export function AssetLineChart({
         {painted.map((s) => {
           const sorted = [...s.points].sort((a, b) => parseAt(a.at) - parseAt(b.at));
           if (sorted.length === 1) {
-            const p = sorted[0];
-            return (
-              <g key={s.key}>
-                <circle cx={xOf(p.at)} cy={yOf(p.value)} r={4} fill={s.colour}>
-                  <title>{`${s.label}: ${formatNzd(p.value)} @ ${axisLabel(p.at, resolution)}`}</title>
-                </circle>
-              </g>
-            );
+            return <g key={s.key}>{dot(s, sorted[0], 4)}</g>;
           }
           const d = sorted
             .map((p, i) => `${i === 0 ? 'M' : 'L'} ${xOf(p.at)} ${yOf(p.value)}`)
@@ -378,39 +421,61 @@ export function AssetLineChart({
                 strokeLinejoin="round"
                 strokeDasharray={s.dashed ? '7 5' : undefined}
               />
-              {markers
-                ? sorted.map((p) => (
-                    <circle
-                      key={`${s.key}-${p.at}`}
-                      cx={xOf(p.at)}
-                      cy={yOf(p.value)}
-                      r={3.5}
-                      fill={s.colour}
-                    >
-                      <title>{`${s.label}: ${formatNzd(p.value)} @ ${axisLabel(p.at, resolution)}`}</title>
-                    </circle>
-                  ))
-                : null}
+              {markers ? sorted.map((p) => dot(s, p, 3.5)) : null}
             </g>
           );
         })}
       </svg>
-      <ul className="line-chart-legend" aria-label="Series">
-        {active.map((s) => (
-          <li key={s.key}>
-            {active.some((item) => item.dashed) ? (
-              <span
-                className={'line-chart-key' + (s.dashed ? ' line-chart-key--dashed' : '')}
-                style={{ color: s.colour }}
-                aria-hidden
-              />
-            ) : (
-              <span className="spend-swatch" style={{ background: s.colour }} aria-hidden />
-            )}
-            <span>{s.label}</span>
-          </li>
-        ))}
-      </ul>
+  );
+
+  const tipShift = tip == null ? '-50%' : tip.x / width < 0.18 ? '0%' : tip.x / width > 0.82 ? '-100%' : '-50%';
+
+  return (
+    <div className={'line-chart' + (fewPoints ? ' line-chart-compact' : '') + (fullWidth ? ' line-chart-full' : '')}>
+      {title && <h4 className={'line-chart-title' + (hideTitle ? ' sr-only' : '')}>{title}</h4>}
+      {showResolutionNote && (
+        <p className="muted small line-chart-meta">
+          {resolution === 'day' ? 'Daily' : 'Monthly'} snapshots only
+        </p>
+      )}
+      {pointAriaLabel ? (
+        <div className="line-chart-plot">
+          {plot}
+          {tip ? (
+            <div
+              className="line-chart-tip"
+              style={{
+                left: `${(tip.x / width) * 100}%`,
+                top: `${(tip.y / chartH) * 100}%`,
+                transform: `translate(${tipShift}, calc(-100% - 6px))`,
+              }}
+              aria-hidden="true"
+            >
+              {tip.label}
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        plot
+      )}
+      {showLegend ? (
+        <ul className="line-chart-legend" aria-label="Series">
+          {active.map((s) => (
+            <li key={s.key}>
+              {active.some((item) => item.dashed) ? (
+                <span
+                  className={'line-chart-key' + (s.dashed ? ' line-chart-key--dashed' : '')}
+                  style={{ color: s.colour }}
+                  aria-hidden
+                />
+              ) : (
+                <span className="spend-swatch" style={{ background: s.colour }} aria-hidden />
+              )}
+              <span>{s.label}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }

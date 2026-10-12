@@ -1538,6 +1538,28 @@ code { background: var(--surface-2); padding: 0.1rem 0.35rem; border-radius: 4px
   flex: none;
 }
 .line-chart-key--dashed { border-top-style: dashed; }
+.line-chart-plot { position: relative; }
+.line-chart-point { cursor: pointer; }
+.line-chart-point-hit { pointer-events: all; }
+.line-chart-point--open .line-chart-point-dot,
+.line-chart-point:focus-visible .line-chart-point-dot {
+  stroke: var(--text);
+  stroke-width: 1.5px;
+}
+.line-chart-tip {
+  position: absolute;
+  z-index: 3;
+  padding: 0.28rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-3);
+  color: var(--text);
+  font-size: 0.75rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
 
 
 /* Card price history sparkline */
@@ -6616,6 +6638,8 @@ html:not([data-theme]) .kiwisaver-page {
   --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.28);
   --return-neg: #e89284;
   --ks-chart: #8fcb9a;
+  --ks-split-invested: #2f6b4f;
+  --ks-split-returns: #8fcb9a;
   accent-color: #2f6b4f;
   color: #f3eee4;
 }
@@ -6648,8 +6672,74 @@ html:not([data-theme]) .kiwisaver-page {
   line-height: 1.5;
 }
 .ks-header-actions { flex: 0 0 auto; }
-.ks-balance-source { margin: 0.15rem 0 0; }
+.ks-balance-source { margin: 0.35rem 0 0; }
 .ks-balance-actions { margin-top: 0.85rem; flex-wrap: wrap; }
+.ks-balance-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.85rem 1.75rem;
+}
+.ks-balance-figure { min-width: min(100%, 12rem); }
+.kiwisaver-page .ks-balance-value {
+  margin: 0;
+  font-size: clamp(2.1rem, 6vw, 3rem);
+  line-height: 1.05;
+}
+.ks-balance-side {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem 1.5rem;
+}
+.kiwisaver-page .ks-balance .ks-metric {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  min-width: 7.5rem;
+}
+.ks-change {
+  margin: 0.35rem 0 0;
+  font-size: 0.95rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.ks-split { margin-top: 1rem; }
+.ks-split-bar {
+  display: flex;
+  height: 0.45rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface-3);
+}
+.ks-split-invested { background: var(--ks-split-invested, var(--accent)); }
+.ks-split-returns { background: var(--ks-split-returns, var(--ks-chart, #3d9a6a)); }
+.ks-split-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0.4rem 0 0;
+  font-size: 0.8rem;
+}
+.ks-history {
+  margin-top: 1.1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+.ks-history-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+}
+.ks-history-title {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 650;
+}
+.ks-history .line-chart { margin-top: 0.35rem; }
 .ks-schemes {
   display: flex;
   flex-wrap: wrap;
@@ -6699,6 +6789,10 @@ html:not([data-theme]) .kiwisaver-page {
   .ks-header-actions .btn { width: 100%; }
   .ks-scheme,
   .ks-scheme-pick { width: 100%; }
+  .ks-balance-head { align-items: stretch; }
+  .ks-balance-side,
+  .ks-history-head .segmented { width: 100%; }
+  .ks-history-head .segmented-btn { flex: 1 1 auto; text-align: center; }
 }
 
 html[data-theme="light"] .kiwisaver-page h2,
@@ -6828,6 +6922,17 @@ html:not([data-theme]) .kiwisaver-page.panel {
   color: #f3eee4;
   border-color: #6f8276;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+html[data-theme="light"] .kiwisaver-page .ks-balance .ks-metric,
+html[data-theme="dark"] .kiwisaver-page .ks-balance .ks-metric,
+html:not([data-theme]) .kiwisaver-page .ks-balance .ks-metric {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+html[data-theme="light"] .kiwisaver-page {
+  --ks-split-invested: #1b4332;
+  --ks-split-returns: #3d9a6a;
 }
 html[data-theme="dark"] .kiwisaver-page .holding-card-selected,
 html:not([data-theme]) .kiwisaver-page .holding-card-selected {

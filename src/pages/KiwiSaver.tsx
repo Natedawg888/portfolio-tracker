@@ -2,9 +2,8 @@
  * KiwiSaver — Sharesies via Akahu + bank-held manual/CSV.
  * Honest labels (Akahu vs Manual). Never scrape. Never invent balances.
  *
- * Phase 1 is presentation only: a short header, Sync now for Akahu, and one
- * balance block. The full balance card is Phase 2. The history chart and
- * holdings stay as they are until later phases.
+ * The balance card shows the recorded balance, invested, returns, and the
+ * balance history. Holdings and the bank-held form stay as they are.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api, formatNzd, formatAuckland } from '../api/client';
@@ -24,6 +23,7 @@ import {
 } from '../lib/pageDataCache';
 import { AssetLineChart, type LineSeries } from '../components/AssetLineChart';
 import { InfoTip } from '../components/InfoTip';
+import { aucklandDate, pointsInRange } from '../lib/netWorthHistory';
 import type {
   KiwiSaverAccount,
   KiwiSaverFundAllocation,
@@ -32,11 +32,19 @@ import type {
 import { HoldingIcon } from '../components/HoldingIcon';
 import {
   KIWISAVER_READONLY_NOTE,
+  kiwiSaverActiveRange,
+  kiwiSaverChangeLine,
   kiwiSaverHeaderParts,
+  kiwiSaverHistoryPoints,
+  kiwiSaverPointAriaLabel,
   kiwiSaverSchemeLabel,
+  kiwiSaverSplit,
+  kiwiSaverSplitLabels,
   kiwiSaverSyncNote,
+  kiwiSaverVisibleRanges,
   showKiwiSaverSchemePicker,
   showKiwiSaverSyncButton,
+  type KiwiSaverHistoryRange,
 } from './kiwisaverView';
 
 function formatPct(n: number): string {
@@ -209,6 +217,8 @@ export function KiwiSaver() {
   const [form, setForm] = useState<ManualForm>(emptyForm);
   const [csvText, setCsvText] = useState('');
   const [csvFileName, setCsvFileName] = useState<string | null>(null);
+  const [today] = useState(() => aucklandDate(new Date().toISOString()) ?? '');
+  const [rangeChoice, setRangeChoice] = useState<KiwiSaverHistoryRange | null>(null);
 
   const load = useCallback(async (preferAccountId?: string | null) => {
     const stamp = beginPageRead(KIWISAVER_KEY);
@@ -462,21 +472,35 @@ export function KiwiSaver() {
     }
   }
 
+  const historySeries = useMemo(
+    () => kiwiSaverHistoryPoints(history?.points ?? []),
+    [history],
+  );
+  const visibleRanges = useMemo(
+    () => kiwiSaverVisibleRanges(historySeries, today),
+    [historySeries, today],
+  );
+  const activeRange = kiwiSaverActiveRange(historySeries, visibleRanges, rangeChoice, today);
+  const rangedPoints = useMemo(
+    () => pointsInRange(historySeries, activeRange, today),
+    [historySeries, activeRange, today],
+  );
+  const changeLine = kiwiSaverChangeLine(historySeries, activeRange, today, (n) => formatNzd(n));
+  const split = selected
+    ? kiwiSaverSplit(selected.balanceNzd, selected.amountInvestedNzd, selected.returnsNzd)
+    : null;
+  const splitLabels = split ? kiwiSaverSplitLabels(split) : null;
   const chartSeries: LineSeries[] = useMemo(() => {
-    const points = (history?.points ?? []).map((p) => ({
-      at: p.at,
-      value: p.balanceNzd,
-    }));
-    if (!points.length) return [];
+    if (!rangedPoints.length) return [];
     return [
       {
         key: 'kiwisaver',
         label: selected ? selected.name : 'KiwiSaver',
         colour: 'var(--ks-chart, #1b4332)',
-        points,
+        points: rangedPoints.map((p) => ({ at: p.date, value: p.value })),
       },
     ];
-  }, [history, selected]);
+  }, [rangedPoints, selected]);
 
   const headerParts = kiwiSaverHeaderParts(
     selected
@@ -596,61 +620,80 @@ export function KiwiSaver() {
         </section>
       ) : null}
 
-      {/*
-        Phase 2 balance card placeholder.
-        The full balance card lands in Phase 2. Until then this is the only
-        place balance, "You've put in", and returns ($ and %) appear — the
-        old Detail section repeated the scheme cards, so it is gone. Residual
-        and notes stay here so that information is not dropped.
-      */}
       {selected ? (
         <section className="panel ks-balance" aria-label="Balance">
-          <p className="hero-value sm">{formatNzd(selected.balanceNzd)}</p>
-          {selected.dataSourceLabel ? (
-            <p className="muted small ks-balance-source">{selected.dataSourceLabel}</p>
-          ) : null}
-          <div className="ks-metrics">
-            <div className="ks-metric">
-              <span className="ks-metric-label">You've put in</span>
-              <span className="ks-metric-value">
-                {selected.amountInvestedNzd != null
-                  ? formatNzd(selected.amountInvestedNzd)
-                  : '—'}
-              </span>
-              <span className="muted small">
-                {selected.amountInvestedNzd != null
-                  ? selected.dataSource === 'akahu'
-                    ? 'balance − Akahu returns'
-                    : 'balance − returns (or entered invested)'
-                  : 'Unavailable (need balance + returns/invested)'}
-              </span>
-            </div>
-            <div className="ks-metric">
-              <span className="ks-metric-label">Returns</span>
-              <span
-                className={
-                  'ks-metric-value' +
-                  (selected.returnsNzd == null
-                    ? ''
-                    : selected.returnsNzd >= 0
+          <div className="ks-balance-head">
+            <div className="ks-balance-figure">
+              <p className="hero-value ks-balance-value">{formatNzd(selected.balanceNzd)}</p>
+              {changeLine ? (
+                <p
+                  className={
+                    'ks-change' +
+                    (changeLine.direction === 'up'
                       ? ' return-pos'
-                      : ' return-neg')
-                }
-              >
-                {selected.returnsNzd == null
-                  ? '—'
-                  : `${selected.returnsNzd > 0 ? '+' : ''}${formatNzd(selected.returnsNzd)}`}
-                {selected.returnPct != null ? ` (${formatPct(selected.returnPct)})` : ''}
-              </span>
-              <span className="muted small">
-                {selected.returnsNzd != null
-                  ? selected.dataSource === 'akahu'
-                    ? 'Akahu meta.breakdown.returns'
-                    : 'Manual / CSV'
-                  : 'Unavailable'}
-              </span>
+                      : changeLine.direction === 'down'
+                        ? ' return-neg'
+                        : '')
+                  }
+                >
+                  <span className="sr-only">
+                    {changeLine.direction === 'up'
+                      ? 'Up '
+                      : changeLine.direction === 'down'
+                        ? 'Down '
+                        : 'No change, '}
+                  </span>
+                  <span aria-hidden="true">{changeLine.arrow} </span>
+                  {changeLine.amountLabel} since {changeLine.sinceLabel}
+                </p>
+              ) : null}
+              {selected.dataSourceLabel ? (
+                <p className="muted small ks-balance-source">{selected.dataSourceLabel}</p>
+              ) : null}
+            </div>
+            <div className="ks-balance-side">
+              <div className="ks-metric">
+                <span className="ks-metric-label">You've put in</span>
+                <span className="ks-metric-value">
+                  {selected.amountInvestedNzd != null ? formatNzd(selected.amountInvestedNzd) : '—'}
+                </span>
+              </div>
+              <div className="ks-metric">
+                <span className="ks-metric-label">Returns</span>
+                <span
+                  className={
+                    'ks-metric-value' +
+                    (selected.returnsNzd == null
+                      ? ''
+                      : selected.returnsNzd >= 0
+                        ? ' return-pos'
+                        : ' return-neg')
+                  }
+                >
+                  {selected.returnsNzd == null
+                    ? '—'
+                    : `${selected.returnsNzd > 0 ? '+' : ''}${formatNzd(selected.returnsNzd)}`}
+                  {selected.returnPct != null ? ` (${formatPct(selected.returnPct)})` : ''}
+                </span>
+              </div>
             </div>
           </div>
+          {splitLabels ? (
+            <div className="ks-split">
+              <div
+                className="ks-split-bar"
+                role="img"
+                aria-label={`You've put in ${splitLabels.invested}%, Returns ${splitLabels.returns}%`}
+              >
+                <span className="ks-split-invested" style={{ width: `${splitLabels.invested}%` }} />
+                <span className="ks-split-returns" style={{ width: `${splitLabels.returns}%` }} />
+              </div>
+              <p className="ks-split-key">
+                <span>You've put in {splitLabels.invested}%</span>
+                <span>Returns {splitLabels.returns}%</span>
+              </p>
+            </div>
+          ) : null}
           {selected.residualNzd != null && (
             <p className="banner" style={{ marginTop: '0.75rem' }}>
               Residual vs fund mix: {formatNzd(selected.residualNzd)}
@@ -658,6 +701,51 @@ export function KiwiSaver() {
             </p>
           )}
           {selected.notes && <p className="muted small">{selected.notes}</p>}
+          <div className="ks-history">
+            <div className="ks-history-head">
+              <h3 className="ks-history-title">
+                Balance history
+                <InfoTip label="About balance history">
+                  {`Recorded balances for ${selected.name}. One point per sync or save.`}
+                </InfoTip>
+              </h3>
+              {visibleRanges.length > 0 ? (
+                <div className="segmented segmented--small" role="group" aria-label="Balance history range">
+                  {visibleRanges.map((range) => (
+                    <button
+                      key={range}
+                      type="button"
+                      className={'segmented-btn' + (activeRange === range ? ' active' : '')}
+                      aria-pressed={activeRange === range}
+                      onClick={() => setRangeChoice(range)}
+                    >
+                      {range}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            {chartSeries.length > 0 ? (
+              <AssetLineChart
+                key={activeRange}
+                series={chartSeries}
+                title={`${selected.name} balance history`}
+                hideTitle
+                showLegend={false}
+                emptyHint="No history points yet"
+                height={rangedPoints.length <= 3 ? 180 : 220}
+                resolution="day"
+                fullWidth
+                pointAriaLabel={(point) => kiwiSaverPointAriaLabel(point.at, point.value, formatNzd) ?? ''}
+              />
+            ) : (
+              <p className="muted">
+                {historySeries.length > 0
+                  ? 'No points in this range.'
+                  : (history?.message ?? 'History unavailable')}
+              </p>
+            )}
+          </div>
           {accounts.length === 1 && !isAkahuAccount(selected) ? (
             <div className="row gap ks-balance-actions">
               <button
@@ -680,35 +768,6 @@ export function KiwiSaver() {
           ) : null}
         </section>
       ) : null}
-
-      <section className="panel">
-        <h3>Balance history</h3>
-        <p className="muted small">
-          {selected
-            ? `Recorded balances for ${selected.name}.`
-            : 'Recorded balances for the selected scheme.'}{' '}
-          One point per sync or save.
-        </p>
-        {chartSeries.length > 0 ? (
-          <>
-            <AssetLineChart
-              series={chartSeries}
-              title={selected ? `${selected.name} (NZD)` : 'KiwiSaver balance (NZD)'}
-              emptyHint="No history points yet"
-              height={(history?.points?.length ?? 0) <= 3 ? 180 : 220}
-              resolution="day"
-              fullWidth
-            />
-            {(history?.points?.length ?? 0) < 2 && (
-              <p className="muted small" style={{ marginTop: '0.5rem' }}>
-                Only one point so far — more appear after the next sync or save.
-              </p>
-            )}
-          </>
-        ) : (
-          <p className="muted">{history?.message ?? 'History unavailable'}</p>
-        )}
-      </section>
 
       <section className="panel">
         <h3>Holdings / funds</h3>
