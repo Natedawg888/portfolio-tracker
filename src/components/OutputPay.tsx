@@ -4,8 +4,9 @@
  * panel; the breakdown stays on the page below the columns.
  * Rates come from the tax-year config (payeRates.ts PAY_TAX_YEARS).
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { api, formatNzd } from '../api/client';
+import { InfoTip } from './InfoTip';
 import {
   calculatePieceRate,
   calculateSchedular,
@@ -28,6 +29,7 @@ import {
   type OutputPayPrefs,
 } from '../lib/outputPayPrefs';
 import { PAYE_WEEKS_PER_YEAR, type PayTaxYearRates } from '../lib/payeRates';
+import { schedularActivityOptionLabel } from '../lib/payeView';
 import type { PaySource } from '../types';
 
 const PRESET_UNITS = new Set(UNIT_PRESETS.flatMap((g) => g.units));
@@ -127,6 +129,7 @@ export function OutputPayInputs({
   set: Setter;
   rates: PayTaxYearRates;
 }) {
+  const activityId = useId();
   if (payType === 'piece') {
     return (
       <div className="form-grid" style={{ marginTop: '0.75rem' }}>
@@ -149,7 +152,7 @@ export function OutputPayInputs({
           </label>
           <span className="muted small">For seasonal or casual work paid holiday pay each pay instead of taking leave.</span>
         </label>
-        <RangeFields
+        <OutputVaries
           label={`${prefs.unit || 'units'} per week`}
           low={prefs.pieceLow}
           high={prefs.pieceHigh}
@@ -162,27 +165,36 @@ export function OutputPayInputs({
 
   if (payType === 'schedular') {
     const wt = withholdingPct(prefs, rates);
+    const selected = rates.schedularActivities.find((a) => String(a.number) === prefs.activity);
     return (
       <div className="form-grid" style={{ marginTop: '0.75rem' }}>
         <NumberField label="Rate per unit or job ($, excl. GST)" value={prefs.contractRate} onChange={(v) => set('contractRate', v)} />
         <UnitField unit={prefs.unit} onChange={(u) => set('unit', u)} />
         <NumberField label={`Volume per week (${prefs.unit || 'units'})`} value={prefs.contractVolume} onChange={(v) => set('contractVolume', v)} />
-        <label className="span-2">
-          Withholding tax rate (IR330C)
-          <select value={prefs.activity} onChange={(e) => set('activity', e.target.value)}>
+        <div className="paye-field">
+          <span className="paye-field-label">
+            <label htmlFor={activityId}>Activity</label>
+            <InfoTip label="Full IR330C description">
+              {selected
+                ? selected.label
+                : 'Your own rate, or a tailored rate certificate (IR23BS).'}
+            </InfoTip>
+          </span>
+          <select id={activityId} value={prefs.activity} onChange={(e) => set('activity', e.target.value)}>
             {rates.schedularActivities.map((a) => (
-              <option key={a.number} value={String(a.number)}>
-                {a.number}. {a.label} — {Math.round(a.rate * 1000) / 10}%
+              <option key={a.number} value={String(a.number)} title={a.label}>
+                {schedularActivityOptionLabel(a)}
               </option>
             ))}
-            <option value="custom">Your own rate or a tailored rate certificate</option>
+            <option value="custom" title="Elect your own rate, or a tailored rate certificate (IR23BS).">
+              Your own rate
+            </option>
           </select>
           <span className="muted small">
-            Standard rate for the activity, from IRD&apos;s IR330C. You can elect a rate of at least{' '}
-            {Math.round(rates.schedularElectedMinRate * 100)}%, or use a tailored rate. With no IR330C the payer
-            must take {Math.round(rates.schedularNoNotificationRate * 100)}%.
+            IR330C standard rate. Elect at least {Math.round(rates.schedularElectedMinRate * 100)}%, or a tailored
+            rate. No IR330C: {Math.round(rates.schedularNoNotificationRate * 100)}%.
           </span>
-        </label>
+        </div>
         {prefs.activity === 'custom' ? (
           <NumberField
             label="Your rate (%)"
@@ -193,7 +205,10 @@ export function OutputPayInputs({
             hint="One decimal place, as on the IR330C."
           />
         ) : (
-          <p className="muted small" style={{ alignSelf: 'end' }}>Rate used: {wt}%</p>
+          <p className="paye-rate-used">
+            <span className="paye-field-label">Rate used</span>
+            <span>{wt}%</span>
+          </p>
         )}
         <label className="field checkbox-field">
           <label className="inline-check">
@@ -202,7 +217,7 @@ export function OutputPayInputs({
           </label>
           <span className="muted small">Adds {Math.round(rates.gstRate * 100)}% GST to the invoice. Withholding is on the GST-exclusive amount.</span>
         </label>
-        <RangeFields
+        <OutputVaries
           label={`${prefs.unit || 'units'} per week`}
           low={prefs.contractLow}
           high={prefs.contractHigh}
@@ -233,7 +248,7 @@ export function OutputPayInputs({
         onChange={(v) => set('expensesPerWeek', v)}
         hint="Costs you pay yourself, such as gear or travel."
       />
-      <RangeFields
+      <OutputVaries
         label={`catch value per ${prefs.catchPer}`}
         low={prefs.catchLow}
         high={prefs.catchHigh}
@@ -244,7 +259,13 @@ export function OutputPayInputs({
   );
 }
 
-function RangeFields({
+/**
+ * "My output changes week to week" reveals slow/busy fields.
+ * Open follows non-empty low/high strings, plus a session flag so the
+ * checkbox can stay open while both are still blank. Unchecking clears them.
+ * Nothing new is written to localStorage.
+ */
+function OutputVaries({
   label,
   low,
   high,
@@ -257,16 +278,55 @@ function RangeFields({
   onLow: (v: string) => void;
   onHigh: (v: string) => void;
 }) {
+  const derivedOpen = low.trim() !== '' || high.trim() !== '';
+  const [heldOpen, setHeldOpen] = useState(false);
+  const open = derivedOpen || heldOpen;
   return (
     <>
-      <NumberField label={`Low week — ${label} (optional)`} value={low} onChange={onLow} />
-      <NumberField
-        label={`High week — ${label} (optional)`}
-        value={high}
-        onChange={onHigh}
-        hint="Output changes week to week. Fill these to see a pay range."
-      />
+      <label className="paye-vary span-2">
+        <input
+          type="checkbox"
+          checked={open}
+          onChange={(e) => {
+            if (e.target.checked) {
+              setHeldOpen(true);
+              return;
+            }
+            setHeldOpen(false);
+            onLow('');
+            onHigh('');
+          }}
+        />
+        My output changes week to week
+      </label>
+      {open ? (
+        <>
+          <NumberField label={`Slow week — ${label}`} value={low} onChange={onLow} />
+          <NumberField label={`Busy week — ${label}`} value={high} onChange={onHigh} />
+        </>
+      ) : null}
     </>
+  );
+}
+
+const RANGE_WEEK_LABEL: Record<PayRangePoint['label'], string> = {
+  Low: 'Slow',
+  Typical: 'Typical',
+  High: 'Busy',
+};
+
+function ResultRange({ points, label }: { points: PayRangePoint[]; label: string }) {
+  const low = points.find((p) => p.label === 'Low');
+  const high = points.find((p) => p.label === 'High');
+  if (!low || !high) return null;
+  return (
+    <p className="paye-result-range">
+      <span className="muted small">{label}</span>
+      <span className="paye-result-range-values">
+        {money(low.weeklyNet)} – {money(high.weeklyNet)}
+        <span className="muted"> / week</span>
+      </span>
+    </p>
   );
 }
 
@@ -287,7 +347,7 @@ function RangeTable({ points, quantityLabel, netLabel }: { points: PayRangePoint
         <tbody>
           {points.map((p) => (
             <tr key={p.label}>
-              <td>{p.label}</td>
+              <td>{RANGE_WEEK_LABEL[p.label]}</td>
               <td style={{ textAlign: 'right' }}>{p.quantity.toLocaleString('en-NZ')}</td>
               <td className="money" style={{ textAlign: 'right' }}>{money(p.weeklyGross)}</td>
               <td className="money amt-in" style={{ textAlign: 'right' }}>{money(p.weeklyNet)}</td>
@@ -445,6 +505,7 @@ export function OutputPayResults({
               {money(r.earnings)} before holiday pay ({money(r.topUp)} top-up). The figures below use the topped-up amount.
             </p>
           ) : null}
+          <ResultRange points={view.range} label="Take-home range" />
           <Notes notes={p.notes} />
         </>
       );
@@ -488,6 +549,7 @@ export function OutputPayResults({
           <p className="muted small paye-result-meta">
             Gross {money(r.weeklyGross)}/wk · tax withheld {money(r.weeklyTaxWithheld)}/wk
           </p>
+          <ResultRange points={view.range} label="Take-home range" />
           <Notes notes={r.notes} />
         </>
       );
@@ -524,6 +586,7 @@ export function OutputPayResults({
           Net after expenses {money(r.weeklyNet)}/wk. If this were your only income, income tax on {money(r.annualNet)} would be
           about {money(r.estimatedAnnualIncomeTax)} for the year, paid through your return — not deducted here.
         </p>
+        <ResultRange points={view.range} label="Net range" />
         <Notes notes={r.notes} />
       </>
     );

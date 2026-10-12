@@ -28,6 +28,7 @@
     "test:home-snapshot": "node --import tsx server/budget/homeSnapshot.test.ts",
     "test:savings-goals": "node --import tsx server/savings/model.test.ts && node --import tsx server/savings/store.test.ts && node --import tsx server/savings/accountLink.test.ts",
     "test:output-pay": "node --import tsx src/lib/outputPayCalc.test.ts",
+    "test:paye": "node --import tsx src/lib/payeCalc.test.ts",
     "test:paye-page": "node --import tsx src/lib/payeView.test.ts",
     "test:pay-sources": "node --import tsx server/paySources/store.test.ts",
     "test:invoices": "node --import tsx src/lib/invoiceCalc.test.ts && node --import tsx server/invoices/store.test.ts",

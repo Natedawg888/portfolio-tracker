@@ -1,7 +1,12 @@
 /**
  * PAYE page view copy. Formats tax-year dates and rate tables the page already
  * loads from payeRates.ts. Nothing here invents a rate or a dollar figure.
+ *
+ * Salary ↔ Hourly conversion uses annualise / toPeriods from the PAYE engine
+ * and keeps full precision (no cent rounding).
  */
+import { annualise, toPeriods, type PayFrequency } from './payeCalc';
+import type { PayePayType } from './payePrefs';
 
 const MONTHS = [
   'January',
@@ -109,4 +114,67 @@ export function ratesInUseNote(figures: RatesInUseFigures, money: (n: number) =>
     `${money(figures.minimumWageAdultHourly)}/h; holiday pay with wages ${holidayPct}%; ` +
     `schedular withholding from IRD's IR330C.`
   );
+}
+
+export type SalaryHourlyInput = {
+  amount: string;
+  frequency: PayFrequency;
+  hoursPerWeek: string;
+};
+
+export type SalaryHourlyState = {
+  amount: string;
+  frequency: PayFrequency;
+};
+
+/**
+ * Salary → hourly is annual ÷ weeks ÷ hours. Hourly → salary is the annual
+ * figure, shown per year. The amount string is the full JS number, not cents,
+ * so 55000 at 40 hours converts to hourly and back to "55000".
+ * Blank or non-numeric amounts stay blank. Hours fall through to annualise.
+ */
+export function convertSalaryHourly(
+  from: 'salary' | 'hourly',
+  fields: SalaryHourlyInput,
+): SalaryHourlyState {
+  const frequency: PayFrequency = from === 'salary' ? 'hour' : 'year';
+  const raw = fields.amount.trim();
+  const amount = Number(raw);
+  if (!raw || !Number.isFinite(amount)) return { amount: '', frequency };
+  const hours = Number(fields.hoursPerWeek);
+  if (from === 'salary') {
+    const period: PayFrequency = fields.frequency === 'hour' ? 'year' : fields.frequency;
+    const annual = annualise(amount, period, hours);
+    return { amount: String(toPeriods(annual, hours).hour), frequency };
+  }
+  return { amount: String(annualise(amount, 'hour', hours)), frequency };
+}
+
+/**
+ * Convert the shared amount only when moving between Salary and Hourly.
+ * Piece, contract, and share of catch do not read `amount` — those fields
+ * stay on their own saved prefs.
+ */
+export function salaryHourlySwitch(
+  from: PayePayType,
+  to: PayePayType,
+  fields: SalaryHourlyInput,
+): SalaryHourlyState | null {
+  if (from === 'salary' && to === 'hourly') return convertSalaryHourly('salary', fields);
+  if (from === 'hourly' && to === 'salary') return convertSalaryHourly('hourly', fields);
+  return null;
+}
+
+/** Activity name for the contract dropdown: the SCHEDULAR_ACTIVITIES label without the parenthetical detail. */
+export function schedularActivityShortName(label: string): string {
+  const withoutDetail = label.replace(/\s*\([^)]*\)/g, '').replace(/\s+/g, ' ').trim();
+  const comma = withoutDetail.indexOf(',');
+  if (comma >= 8) return withoutDetail.slice(0, comma).trim();
+  return withoutDetail;
+}
+
+/** "Activity · rate %" using that activity's own rate. */
+export function schedularActivityOptionLabel(activity: { label: string; rate: number }): string {
+  const pct = Math.round(activity.rate * 1000) / 10;
+  return `${schedularActivityShortName(activity.label)} · ${pct}%`;
 }

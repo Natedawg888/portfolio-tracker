@@ -1,7 +1,8 @@
 /**
  * PAYE page view copy. Run: npm run test:paye-page
  */
-import { INCOME_TAX_BRACKETS, PAY_TAX_YEARS, RATE_SOURCES, SCHEDULAR_SOURCES, payTaxYearRates } from './payeRates.ts';
+import { annualise, toPeriods } from './payeCalc.ts';
+import { INCOME_TAX_BRACKETS, PAY_TAX_YEARS, RATE_SOURCES, SCHEDULAR_ACTIVITIES, SCHEDULAR_SOURCES, payTaxYearRates } from './payeRates.ts';
 import {
   PAYE_INCLUDED_SENTENCES,
   PAYE_NET_NZ_CREDIT,
@@ -14,6 +15,10 @@ import {
   payePageSubtitle,
   payeSourceLinks,
   ratesInUseNote,
+  salaryHourlySwitch,
+  schedularActivityOptionLabel,
+  schedularActivityShortName,
+  type SalaryHourlyInput,
 } from './payeView.ts';
 
 function eq(actual: unknown, expected: unknown, msg: string): void {
@@ -102,6 +107,65 @@ if (!note.includes('holiday pay with wages 8%')) throw new Error('FAIL: holiday 
 if (!note.includes("IRD's IR330C")) throw new Error('FAIL: schedular note should stay');
 if (note.includes('1.75') || note.includes('156,641')) {
   throw new Error('FAIL: the note must not bake in the live ACC figures');
+}
+
+// $55,000 yearly at 40 hours → hourly (full precision, not cents) → back to 55000.
+{
+  const hours = 40;
+  const hourly = salaryHourlySwitch('salary', 'hourly', {
+    amount: '55000',
+    frequency: 'year',
+    hoursPerWeek: '40',
+  });
+  if (!hourly) throw new Error('FAIL: salary → hourly should convert');
+  eq(hourly.frequency, 'hour', 'hourly pay is per hour');
+  const expectedHourly = String(toPeriods(annualise(55000, 'year', hours), hours).hour);
+  eq(hourly.amount, expectedHourly, 'hourly amount is annualise/toPeriods, not a rounded cent value');
+  if (hourly.amount === (55000 / 52 / hours).toFixed(2)) {
+    throw new Error('FAIL: hourly rate must not be rounded to cents');
+  }
+  const back = salaryHourlySwitch('hourly', 'salary', {
+    amount: hourly.amount,
+    frequency: 'hour',
+    hoursPerWeek: '40',
+  });
+  if (!back) throw new Error('FAIL: hourly → salary should convert');
+  eq(back.amount, '55000', 'round trip of 55000 at 40 hours returns 55000');
+  eq(back.frequency, 'year', 'hourly converts back to a yearly salary');
+}
+
+// Switching to piece or contract does not read the salary amount.
+{
+  for (const to of ['piece', 'schedular'] as const) {
+    let read = false;
+    const fields: SalaryHourlyInput = {
+      frequency: 'year',
+      hoursPerWeek: '40',
+      get amount() {
+        read = true;
+        return '55000';
+      },
+    };
+    const switched = salaryHourlySwitch('salary', to, fields);
+    eq(switched, null, `switching to ${to} does not convert the salary amount`);
+    eq(read, false, `switching to ${to} does not read amount`);
+  }
+}
+
+// Contract dropdown labels are the activity name plus that activity's own rate.
+{
+  for (const activity of SCHEDULAR_ACTIVITIES) {
+    const pct = Math.round(activity.rate * 1000) / 10;
+    const label = schedularActivityOptionLabel(activity);
+    eq(label, `${schedularActivityShortName(activity.label)} · ${pct}%`, `option label is activity · ${pct}%`);
+    eq(activity.label.startsWith(schedularActivityShortName(activity.label)), true, 'short name is taken from the activity label');
+    if (activity.label.includes('(')) {
+      eq(label.includes('('), false, 'the parenthetical detail stays off the short label');
+    }
+  }
+  const shearing = SCHEDULAR_ACTIVITIES.find((a) => a.number === 23);
+  if (!shearing) throw new Error('FAIL: activity 23 should be in SCHEDULAR_ACTIVITIES');
+  eq(schedularActivityOptionLabel(shearing), 'Shearing or droving · 15%', 'a short activity keeps its name and rate');
 }
 
 console.log('payeView.test.ts ok');
