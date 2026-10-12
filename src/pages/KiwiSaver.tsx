@@ -3,7 +3,8 @@
  * Honest labels (Akahu vs Manual). Never scrape. Never invent balances.
  *
  * The balance card shows the recorded balance, invested, returns, and the
- * balance history. Holdings and the bank-held form stay as they are.
+ * balance history. Holdings are a recorded allocation bar and compact rows;
+ * detail stays behind an expander. The bank-held form stays as it is.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api, formatNzd, formatAuckland } from '../api/client';
@@ -33,9 +34,16 @@ import { HoldingIcon } from '../components/HoldingIcon';
 import {
   KIWISAVER_READONLY_NOTE,
   kiwiSaverActiveRange,
+  kiwiSaverAllocationView,
   kiwiSaverChangeLine,
   kiwiSaverHeaderParts,
   kiwiSaverHistoryPoints,
+  kiwiSaverHoldingFacts,
+  kiwiSaverHoldingGaps,
+  kiwiSaverHoldingReturnLabel,
+  kiwiSaverHoldingRows,
+  kiwiSaverHoldingsEmpty,
+  kiwiSaverHoldingsShowReturns,
   kiwiSaverPointAriaLabel,
   kiwiSaverSchemeLabel,
   kiwiSaverSplit,
@@ -50,14 +58,6 @@ import {
 function formatPct(n: number): string {
   const sign = n > 0 ? '+' : '';
   return `${sign}${n.toFixed(2)}%`;
-}
-
-function fundTicker(f: KiwiSaverFundAllocation): string {
-  if (f.symbol) {
-    const parts = f.symbol.split('.');
-    return parts[parts.length - 1] || f.symbol;
-  }
-  return (f.fundName || '?').slice(0, 4).toUpperCase();
 }
 
 function isAkahuAccount(a: KiwiSaverAccount): boolean {
@@ -86,71 +86,186 @@ function parseFundMixLines(raw: string): KiwiSaverFundAllocation[] {
   return out;
 }
 
-function FundCard({ fund }: { fund: KiwiSaverFundAllocation }) {
-  const value = fund.balanceNzd;
-  const ret = fund.returnsNzd;
-  const cost =
-    value != null && ret != null && Number.isFinite(value) && Number.isFinite(ret)
-      ? value - ret
-      : null;
-  const pct =
-    cost != null && cost > 0 && ret != null ? (ret / cost) * 100 : null;
+function toneClass(tone: 'up' | 'down' | 'flat' | null): string | undefined {
+  if (tone === 'up') return 'return-pos';
+  if (tone === 'down') return 'return-neg';
+  return undefined;
+}
+
+function holdingDetailId(key: string): string {
+  return `ks-holding-${key.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+}
+
+function HoldingsSection({
+  selected,
+  editable,
+  onAdd,
+}: {
+  selected: KiwiSaverAccount | null;
+  editable: boolean;
+  onAdd: () => void;
+}) {
+  const fundMix = selected?.fundMix;
+  const rows = useMemo(() => kiwiSaverHoldingRows(fundMix ?? []), [fundMix]);
+  const allocation = useMemo(() => kiwiSaverAllocationView(rows), [rows]);
+  const showReturns = kiwiSaverHoldingsShowReturns(rows);
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const empty = kiwiSaverHoldingsEmpty({
+    hasScheme: selected != null,
+    dataSource: selected?.dataSource ?? null,
+  });
+
+  function toggle(key: string) {
+    setOpenKey((current) => (current === key ? null : key));
+    window.setTimeout(() => {
+      document.getElementById(holdingDetailId(key))?.scrollIntoView({ block: 'nearest' });
+    }, 0);
+  }
 
   return (
-    <article className="holding-card">
-      <header className="holding-card-head">
-        <HoldingIcon
-          ticker={fundTicker(fund)}
-          assetClass="stock"
-          iconUrl={fund.logo}
-        />
-        <div className="holding-card-titles">
-          <h4 className="holding-card-name">{fund.fundName}</h4>
-          <span className="holding-card-ticker muted small">
-            {fund.symbol ?? '—'}
-            {fund.allocationPct != null ? ` · ${fund.allocationPct}%` : ''}
-          </span>
+    <section className="panel" aria-labelledby="ks-holdings-heading">
+      <h3 id="ks-holdings-heading" className="ks-holdings-title">
+        Holdings
+        <InfoTip label="About holdings">
+          Recorded fund mix only. A missing figure is shown as —. Nothing here is estimated.
+        </InfoTip>
+      </h3>
+      {rows.length === 0 ? (
+        <div className="ks-holdings-empty">
+          <p className="muted">{empty.message}</p>
+          {empty.offerAdd && editable ? (
+            <button type="button" className="btn small" onClick={onAdd}>
+              Add fund mix
+            </button>
+          ) : null}
         </div>
-      </header>
-      <div className="holding-card-amount">
-        {value != null ? formatNzd(value) : '—'}
-      </div>
-      <dl className="holding-card-stats">
-        <div>
-          <dt>Cost</dt>
-          <dd>{cost != null ? formatNzd(cost) : '—'}</dd>
-        </div>
-        <div>
-          <dt>Value</dt>
-          <dd>{value != null ? formatNzd(value) : '—'}</dd>
-        </div>
-        <div>
-          <dt>Return</dt>
-          <dd
-            className={
-              pct == null ? undefined : pct >= 0 ? 'return-pos' : 'return-neg'
-            }
-          >
-            {pct == null ? '—' : formatPct(pct)}
-          </dd>
-        </div>
-        <div>
-          <dt>Earnings</dt>
-          <dd
-            className={
-              ret == null ? undefined : ret >= 0 ? 'return-pos' : 'return-neg'
-            }
-          >
-            {ret == null ? '—' : formatNzd(ret)}
-          </dd>
-        </div>
-      </dl>
-      {fund.shares != null && (
-        <p className="muted small holding-card-meta">
-          {fund.shares.toLocaleString('en-NZ', { maximumFractionDigits: 4 })} units
-        </p>
+      ) : (
+        <>
+          {allocation.kind === 'bar' ? (
+            <div className="ks-alloc">
+              <div className="ks-alloc-bar" aria-hidden="true">
+                {allocation.segments.map((segment, index) =>
+                  segment.pct > 0 ? (
+                    <span
+                      key={segment.key}
+                      className="ks-alloc-fill"
+                      data-i={index % 6}
+                      style={{ flexGrow: segment.pct }}
+                    />
+                  ) : null,
+                )}
+                {allocation.gapPct != null ? (
+                  <span className="ks-alloc-gap" style={{ flexGrow: allocation.gapPct }} />
+                ) : null}
+              </div>
+              <ul className="ks-alloc-key" aria-label="Fund allocation">
+                {allocation.segments.map((segment, index) => {
+                  const open = openKey === segment.key;
+                  return (
+                    <li key={segment.key}>
+                      <button
+                        type="button"
+                        aria-expanded={open}
+                        aria-controls={open ? holdingDetailId(segment.key) : undefined}
+                        onClick={() => toggle(segment.key)}
+                      >
+                        <span className="ks-alloc-fill ks-alloc-swatch" data-i={index % 6} aria-hidden="true" />
+                        <span>{segment.name}</span>
+                        <span>{segment.label}</span>
+                        <span aria-hidden="true">{open ? '▴' : '▾'}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+                {allocation.gapLabel ? (
+                  <li>
+                    <span className="ks-alloc-gap-key">
+                      <span className="ks-alloc-gap ks-alloc-swatch" aria-hidden="true" />
+                      {allocation.gapLabel}
+                    </span>
+                  </li>
+                ) : null}
+              </ul>
+            </div>
+          ) : null}
+          {allocation.kind === 'overflow' ? (
+            <p className="muted small ks-alloc-note">Recorded allocations add up to {allocation.sumLabel}.</p>
+          ) : null}
+          <ul className={'asset-list ks-holdings' + (showReturns ? ' ks-holdings--returns' : '')}>
+            <li className="asset-list-head" aria-hidden="true">
+              <span />
+              <span>Fund</span>
+              <span>Allocation</span>
+              {showReturns ? <span>Return</span> : null}
+              <span>Value</span>
+              <span>Details</span>
+            </li>
+            {rows.map((row) => {
+              const open = openKey === row.key;
+              const id = holdingDetailId(row.key);
+              const ret = kiwiSaverHoldingReturnLabel(row, formatNzd);
+              const facts = kiwiSaverHoldingFacts(row, formatNzd);
+              const gaps = kiwiSaverHoldingGaps(row, editable);
+              return (
+                <li key={row.key} className={'asset-row' + (open ? ' asset-row--open' : '')}>
+                  <button
+                    type="button"
+                    className="asset-row-hit"
+                    aria-expanded={open}
+                    aria-controls={open ? id : undefined}
+                    onClick={() => toggle(row.key)}
+                  >
+                    <HoldingIcon ticker={row.ticker} assetClass="stock" iconUrl={row.logo} />
+                    <span className="asset-row-name">
+                      <span className="asset-row-title">{row.name}</span>
+                    </span>
+                    <span className="asset-row-num small">
+                      <span className="sr-only">Allocation </span>
+                      {row.allocationLabel}
+                    </span>
+                    {showReturns ? (
+                      <span className={'asset-row-num small ' + (toneClass(ret.tone) ?? '')}>
+                        <span className="sr-only">Return </span>
+                        {ret.text}
+                      </span>
+                    ) : null}
+                    <span className="asset-row-value money">
+                      <span className="sr-only">Value </span>
+                      {row.balanceNzd != null ? formatNzd(row.balanceNzd) : '—'}
+                    </span>
+                    <span className="ks-holding-toggle">
+                      {open ? 'Hide' : 'Details'} <span aria-hidden="true">{open ? '▴' : '▾'}</span>
+                    </span>
+                  </button>
+                  {open ? (
+                    <div id={id} className="asset-row-detail">
+                      <dl className="asset-row-facts">
+                        {facts.map((fact) => (
+                          <div key={fact.label}>
+                            <dt>{fact.label}</dt>
+                            <dd className={toneClass(fact.tone)}>{fact.text}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                      {gaps.length > 0 ? (
+                        <div className="ks-holding-adds">
+                          {gaps.map((gap) => (
+                            <button key={gap} type="button" className="add-cost-btn" onClick={onAdd}>
+                              {gap === 'allocation' ? 'Add allocation' : 'Add value'}
+                              <span className="sr-only"> for {row.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </>
       )}
-    </article>
+    </section>
   );
 }
 
@@ -219,6 +334,7 @@ export function KiwiSaver() {
   const [csvFileName, setCsvFileName] = useState<string | null>(null);
   const [today] = useState(() => aucklandDate(new Date().toISOString()) ?? '');
   const [rangeChoice, setRangeChoice] = useState<KiwiSaverHistoryRange | null>(null);
+  const fundMixRef = useRef<HTMLTextAreaElement>(null);
 
   const load = useCallback(async (preferAccountId?: string | null) => {
     const stamp = beginPageRead(KIWISAVER_KEY);
@@ -350,6 +466,15 @@ export function KiwiSaver() {
   }
   const bankAccounts = accounts.filter((a) => !isAkahuAccount(a) && a.provider !== 'sharesies');
   const selected = accounts.find((a) => a.id === selectedId) ?? accounts[0];
+  const holdingsEditable = showManualEntry && selected != null && !isAkahuAccount(selected);
+
+  function focusFundMix() {
+    if (selected && !isAkahuAccount(selected) && form.id !== selected.id) startEdit(selected);
+    window.setTimeout(() => {
+      fundMixRef.current?.focus();
+      fundMixRef.current?.scrollIntoView({ block: 'center' });
+    }, 0);
+  }
 
   function startEdit(a: KiwiSaverAccount) {
     setForm({
@@ -769,24 +894,12 @@ export function KiwiSaver() {
         </section>
       ) : null}
 
-      <section className="panel">
-        <h3>Holdings / funds</h3>
-        {selected?.fundMix?.length ? (
-          <div className="holding-cards">
-            {selected.fundMix.map((f, i) => (
-              <FundCard key={f.fundId ?? f.symbol ?? `${f.fundName}-${i}`} fund={f} />
-            ))}
-          </div>
-        ) : (
-          <p className="muted">
-            {selected
-              ? selected.dataSource === 'akahu'
-                ? 'No fund mix from Akahu yet — refresh to pull portfolio[].'
-                : 'No fund mix on this manual scheme — add via form or CSV fund columns.'
-              : 'Select a scheme to see fund mix.'}
-          </p>
-        )}
-      </section>
+      <HoldingsSection
+        key={selected?.id ?? 'none'}
+        selected={selected ?? null}
+        editable={holdingsEditable}
+        onAdd={focusFundMix}
+      />
 
       {showManualEntry ? (
         <section className="panel">
@@ -880,6 +993,8 @@ export function KiwiSaver() {
           <label className="span-2">
             Fund mix (optional — one per line: fundName, allocationPct, balanceNzd)
             <textarea
+              id="ks-fund-mix"
+              ref={fundMixRef}
               rows={3}
               value={form.fundMixText}
               onChange={(e) => setForm({ ...form, fundMixText: e.target.value })}
