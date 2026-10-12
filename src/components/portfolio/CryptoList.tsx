@@ -16,7 +16,7 @@ import {
   tickerFor,
   type Holding,
 } from '../../lib/holdingDisplay';
-import { formatSignedPct, holdingReturn } from '../../lib/portfolioView';
+import { formatSignedPct, holdingDomId, holdingReturn } from '../../lib/portfolioView';
 
 const isSynced = (h: Holding) => h.source === 'Sharesies' || h.source === 'Hatch';
 
@@ -61,7 +61,7 @@ export function CryptoList({
             const qty = Number(h.amount);
             const rate = h.unitPriceNzd ?? (value != null && qty > 0 ? value / qty : null);
             return (
-              <li key={h.id} className="asset-row">
+              <li key={h.id} id={holdingDomId(h.id)} tabIndex={-1} className="asset-row">
                 <div className="asset-row-hit asset-row-static">
                   <HoldingIcon ticker={tickerFor(h)} assetClass="crypto" iconUrl={h.logoUrl} />
                   <span className="asset-row-name">

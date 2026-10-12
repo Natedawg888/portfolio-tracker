@@ -18,6 +18,8 @@ import { getDb, queryOne, run, newId, persist } from '../db/index.ts';
 import { fetchSpotUsdThenNzd } from './cryptoSpotFallbacks.ts';
 import { fetchFxToNzd } from './fx.ts';
 import { logger } from '../lib/logger.ts';
+import { KNOWN_CRYPTO } from '../../src/lib/knownCrypto.ts';
+import type { NativePrice } from './stocks.ts';
 
 export type CryptoResolveResult = {
   ticker: string;
@@ -26,6 +28,10 @@ export type CryptoResolveResult = {
   coingeckoId: string | null;
   iconUrl: string | null;
   quote: QuoteResult;
+  /** The live price before NZD conversion; null for cached / stale / unavailable quotes. */
+  native: NativePrice | null;
+  /** The price is a last-good value served because live sources failed (quote.status stays 'ok'). */
+  stale: boolean;
 };
 
 const UA = 'PortfolioTracker/1.0 (local NZD portfolio; +https://localhost)';
@@ -39,58 +45,6 @@ const ID_TTL_MS = 24 * 60 * 60 * 1000;
 /** Global backoff after HTTP 429. */
 const RATE_LIMIT_BACKOFF_MS = 60_000;
 
-/** Well-known symbol → CoinGecko id (avoids search latency / rate limits). */
-const WELL_KNOWN: Record<string, { id: string; name: string }> = {
-  BTC: { id: 'bitcoin', name: 'Bitcoin' },
-  ETH: { id: 'ethereum', name: 'Ethereum' },
-  XRP: { id: 'ripple', name: 'XRP' },
-  SOL: { id: 'solana', name: 'Solana' },
-  ADA: { id: 'cardano', name: 'Cardano' },
-  DOGE: { id: 'dogecoin', name: 'Dogecoin' },
-  DOT: { id: 'polkadot', name: 'Polkadot' },
-  AVAX: { id: 'avalanche-2', name: 'Avalanche' },
-  MATIC: { id: 'matic-network', name: 'Polygon' },
-  // Polygon's native gas token since the 2024 MATIC → POL migration
-  POL: { id: 'polygon-ecosystem-token', name: 'POL (ex-MATIC)' },
-  LINK: { id: 'chainlink', name: 'Chainlink' },
-  LTC: { id: 'litecoin', name: 'Litecoin' },
-  BCH: { id: 'bitcoin-cash', name: 'Bitcoin Cash' },
-  ATOM: { id: 'cosmos', name: 'Cosmos' },
-  UNI: { id: 'uniswap', name: 'Uniswap' },
-  XLM: { id: 'stellar', name: 'Stellar' },
-  NEAR: { id: 'near', name: 'NEAR Protocol' },
-  APT: { id: 'aptos', name: 'Aptos' },
-  ARB: { id: 'arbitrum', name: 'Arbitrum' },
-  OP: { id: 'optimism', name: 'Optimism' },
-  SUI: { id: 'sui', name: 'Sui' },
-  TRX: { id: 'tron', name: 'TRON' },
-  TON: { id: 'the-open-network', name: 'Toncoin' },
-  SHIB: { id: 'shiba-inu', name: 'Shiba Inu' },
-  USDT: { id: 'tether', name: 'Tether' },
-  USDC: { id: 'usd-coin', name: 'USD Coin' },
-  DAI: { id: 'dai', name: 'Dai' },
-  AAVE: { id: 'aave', name: 'Aave' },
-  MKR: { id: 'maker', name: 'Maker' },
-  CRV: { id: 'curve-dao-token', name: 'Curve DAO' },
-  // GoMining Token (CoinGecko id gmt-token; symbol often GOMINING — STEPN uses GMT on CoinGecko search)
-  GMT: { id: 'gmt-token', name: 'GoMining Token' },
-  GOMINING: { id: 'gmt-token', name: 'GoMining Token' },
-  BNB: { id: 'binancecoin', name: 'BNB' },
-  ETC: { id: 'ethereum-classic', name: 'Ethereum Classic' },
-  FIL: { id: 'filecoin', name: 'Filecoin' },
-  ICP: { id: 'internet-computer', name: 'Internet Computer' },
-  ALGO: { id: 'algorand', name: 'Algorand' },
-  VET: { id: 'vechain', name: 'VeChain' },
-  HBAR: { id: 'hedera-hashgraph', name: 'Hedera' },
-  EGLD: { id: 'elrond-erd-2', name: 'MultiversX' },
-  FTM: { id: 'fantom', name: 'Fantom' },
-  NEXO: { id: 'nexo', name: 'Nexo' },
-  PEPE: { id: 'pepe', name: 'Pepe' },
-  // Cronos (Crypto.com Chain) — CRO ticker resolves to crypto-com-chain
-  CRO: { id: 'crypto-com-chain', name: 'Cronos' },
-  CRONOS: { id: 'crypto-com-chain', name: 'Cronos' },
-};
-
 type PriceCacheEntry = {
   at: number;
   nzd: number | null;
@@ -101,6 +55,7 @@ type PriceCacheEntry = {
   stale?: boolean;
   /** Live venue that produced this quote (for QuoteResult.source). */
   source?: QuoteSource;
+  native?: NativePrice;
 };
 
 type IdCacheEntry = {
@@ -368,6 +323,7 @@ async function trySpotFallbacks(
     usd: spot.usd,
     status: 'ok',
     source: spot.source,
+    native: { price: spot.usd, currency: 'USD', fxRate: spot.fxRate },
     message: `${spot.message} · after ${reason}`,
   };
   rememberGood(cacheKey, spot.nzd, spot.usd);
@@ -416,6 +372,7 @@ async function fetchSimplePriceNzd(
             usd,
             status: 'ok',
             source: 'coingecko',
+            native: { price: nzd, currency: 'NZD', fxRate: 1 },
             message: 'Live NZD from CoinGecko',
           };
           rememberGood(cacheKey, nzd, usd);
@@ -434,6 +391,7 @@ async function fetchSimplePriceNzd(
                 usd,
                 status: 'ok',
                 source: 'coingecko',
+                native: { price: usd, currency: 'USD', fxRate: fx.rate },
                 message: `CoinGecko USD × ${fx.source === 'frankfurter' ? 'Frankfurter' : 'FX'} USD→NZD ${fx.rate}`,
               };
               rememberGood(cacheKey, nzdFromFx, usd);
@@ -566,6 +524,8 @@ async function resolveCryptoTickerInner(
       name: '',
       coingeckoId: null,
       iconUrl: null,
+      native: null,
+      stale: false,
       quote: {
         assetKey,
         currency: 'NZD',
@@ -578,7 +538,7 @@ async function resolveCryptoTickerInner(
     };
   }
 
-  const known = WELL_KNOWN[ticker];
+  const known = KNOWN_CRYPTO[ticker];
   let coingeckoId = known?.id ?? null;
   let name = known?.name ?? ticker;
   let iconUrl: string | null = null;
@@ -628,6 +588,8 @@ async function resolveCryptoTickerInner(
         name,
         coingeckoId,
         iconUrl: finalizeIcon(iconUrl),
+        native: null,
+        stale: true,
         quote: {
           assetKey,
           currency: 'NZD',
@@ -648,6 +610,8 @@ async function resolveCryptoTickerInner(
       name: ticker,
       coingeckoId: null,
       iconUrl: finalizeIcon(iconUrl),
+      native: null,
+      stale: false,
       quote: {
         assetKey,
         currency: 'NZD',
@@ -679,6 +643,8 @@ async function resolveCryptoTickerInner(
     name,
     coingeckoId,
     iconUrl,
+    native: px.status === 'ok' && !px.stale ? px.native ?? null : null,
+    stale: px.status === 'ok' && Boolean(px.stale),
     quote: {
       assetKey,
       currency: 'NZD',
@@ -710,7 +676,7 @@ export async function resolveCoingeckoId(
 ): Promise<{ ticker: string; coingeckoId: string | null; name: string }> {
   const ticker = rawTicker.trim().toUpperCase();
   if (!ticker) return { ticker: '', coingeckoId: null, name: '' };
-  const known = WELL_KNOWN[ticker];
+  const known = KNOWN_CRYPTO[ticker];
   if (known) return { ticker, coingeckoId: known.id, name: known.name };
   const cached = idCache.get(ticker);
   if (cached && Date.now() - cached.at < ID_TTL_MS) {

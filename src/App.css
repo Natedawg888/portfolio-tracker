@@ -2808,11 +2808,6 @@ html[data-theme="light"] .modal-overlay {
   color: var(--muted);
   font-size: 0.85rem;
 }
-.fx-swap-btn {
-  align-self: end;
-  margin-bottom: 0.15rem;
-}
-
 
 /* Budget category cell + Charity receipt → PAYE */
 .category-cell {
@@ -3248,11 +3243,6 @@ body.nav-drawer-open {
 
   .gomining-miners-summary {
     flex-direction: column;
-  }
-
-  .fx-swap-btn {
-    align-self: stretch;
-    margin-bottom: 0;
   }
 
   .app-footer {
@@ -7724,7 +7714,8 @@ html:not([data-theme]) .paye-page :focus-visible {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
-.paye-page .paye-choice {
+.paye-page .paye-choice,
+.value-search-page .paye-choice {
   margin: 0;
   padding: 0;
   border: 0;
@@ -7733,7 +7724,8 @@ html:not([data-theme]) .paye-page :focus-visible {
 .paye-page .paye-choice + .form-grid,
 .paye-page .paye-choice + .paye-choice { margin-top: 0.85rem; }
 .paye-page .form-grid + .paye-choice { margin-top: 0.85rem; }
-.paye-page .paye-choice-legend {
+.paye-page .paye-choice-legend,
+.value-search-page .paye-choice-legend {
   padding: 0;
   font-size: 0.85rem;
   font-weight: 600;
@@ -7743,13 +7735,15 @@ html:not([data-theme]) .paye-page :focus-visible {
   font-weight: 500;
   color: var(--muted);
 }
-.paye-page .paye-choice-row {
+.paye-page .paye-choice-row,
+.value-search-page .paye-choice-row {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
   margin-top: 0.45rem;
 }
-.paye-page .paye-choice-btn {
+.paye-page .paye-choice-btn,
+.value-search-page .paye-choice-btn {
   flex: 1 1 auto;
   min-width: 5.5rem;
   padding: 0.5rem 0.7rem;
@@ -7762,9 +7756,11 @@ html:not([data-theme]) .paye-page :focus-visible {
   font-weight: 500;
   cursor: pointer;
 }
-.paye-page .paye-choice-btn:hover { border-color: var(--accent); }
+.paye-page .paye-choice-btn:hover,
+.value-search-page .paye-choice-btn:hover { border-color: var(--accent); }
 .paye-page .paye-choice-btn.active,
-.paye-page .paye-choice-btn[aria-checked="true"] {
+.paye-page .paye-choice-btn[aria-checked="true"],
+.value-search-page .paye-choice-btn[aria-checked="true"] {
   background: color-mix(in srgb, var(--accent) 24%, var(--surface));
   border-color: var(--accent);
   color: var(--text);
@@ -8581,6 +8577,107 @@ html[data-theme="dark"] .value-search-page :focus-visible,
 html:not([data-theme]) .value-search-page :focus-visible {
   outline: 2px solid #c5d5c8;
   outline-offset: 2px;
+}
+
+.value-search-page .vs-header { display: flex; flex-direction: column; gap: 0.75rem; }
+.value-search-page .vs-header .page-lead { margin: 0; }
+.value-search-page .vs-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.85rem 1rem;
+  font-size: 1.15rem;
+  border-radius: var(--radius-sm);
+}
+.value-search-page .vs-types .paye-choice-btn { flex: 0 1 auto; min-width: 0; }
+.value-search-page .vs-result-region:empty { display: none; }
+.value-search-page .vs-hint { margin: 0; }
+.value-search-page .vs-result { display: flex; flex-direction: column; gap: 0.35rem; }
+.value-search-page .vs-result-type {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.value-search-page .vs-result-title { margin: 0; }
+.value-search-page .vs-result-value {
+  margin: 0.25rem 0;
+  font-size: 2rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.value-search-page .vs-result-value-unavailable { font-size: 1.4rem; color: var(--muted); }
+.value-search-page .vs-result-live { display: flex; flex-direction: column; gap: 0.35rem; }
+.value-search-page .vs-result-detail,
+.value-search-page .vs-result-note { margin: 0; }
+.value-search-page .vs-owned {
+  margin: 0.35rem 0 0;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  font-weight: 600;
+}
+.value-search-page .vs-add { margin: 0.35rem 0 0; }
+.value-search-page .vs-miner-label { margin: 0.25rem 0 0; display: flex; align-items: center; gap: 0.35rem; }
+.value-search-page .vs-refine {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-soft);
+}
+.value-search-page .vs-refine-currency { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; }
+.value-search-page .vs-result-rows {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: 0.5rem;
+  margin: 0.25rem 0;
+}
+.value-search-page .vs-result-rows div { display: flex; flex-direction: column; }
+.value-search-page .vs-result-rows dt { font-size: 0.8rem; color: var(--muted); }
+.value-search-page .vs-result-rows dd { margin: 0; }
+.value-search-page .vs-status-stale,
+.value-search-page .vs-status-unavailable { color: var(--warn); }
+.value-search-page .vs-result-source { margin: 0; }
+.value-search-page .vs-metal-strip-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.value-search-page .vs-metal-strip-head h3 { margin: 0; }
+.value-search-page .vs-metal-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+.value-search-page .vs-metal-list li {
+  display: grid;
+  grid-template-columns: 6rem auto 1fr;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+.value-search-page .vs-metal-name { text-transform: capitalize; font-weight: 600; }
+.value-search-page .vs-saved { display: flex; flex-direction: column; gap: 0.4rem; }
+.value-search-page .vs-saved-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.value-search-page .vs-saved-head h3 { margin: 0; font-size: 0.95rem; }
+.value-search-page .vs-saved .txn-pills { margin: 0; }
+.value-search-page .vs-sources { margin: 0.5rem 0 0; }
+
+/* Row or card a Value Search "You own …" link scrolled to. */
+.holding-flash {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  transition: background 0.4s ease;
 }
 
 /* Settings page only. Header, account menu, and other screens stay as they are. */

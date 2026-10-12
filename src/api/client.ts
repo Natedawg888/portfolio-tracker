@@ -1274,6 +1274,13 @@ export const api = {
           message?: string | null;
         };
         quoteAvailable: boolean;
+        /** Source price before NZD conversion; absent from older servers, null for cached or unavailable quotes. */
+        nativePrice?: number | null;
+        nativeCurrency?: string | null;
+        /** Crypto only: a last-good price served while live sources failed. */
+        stale?: boolean;
+        /** nativeCurrency → NZD rate applied (1 when the source quotes NZD). */
+        fxRate?: number | null;
       }>(`/quotes/resolve?${q}`);
     },
     metalsStatus: () =>

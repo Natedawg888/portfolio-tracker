@@ -18,7 +18,7 @@ import {
   tickerFor,
   type Holding,
 } from '../../lib/holdingDisplay';
-import { formatSignedPct, holdingReturn, seriesChangePct } from '../../lib/portfolioView';
+import { formatSignedPct, holdingDomId, holdingReturn, seriesChangePct } from '../../lib/portfolioView';
 
 type SortKey = 'value' | 'return';
 
@@ -207,7 +207,7 @@ function StockRow({
   const fx = fxLine(h.notes);
 
   return (
-    <li className={'asset-row' + (open ? ' asset-row--open' : '')}>
+    <li id={holdingDomId(h.id)} tabIndex={-1} className={'asset-row' + (open ? ' asset-row--open' : '')}>
       <button
         type="button"
         className="asset-row-hit"

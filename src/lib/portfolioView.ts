@@ -81,6 +81,11 @@ export function panelId(tab: PortfolioTab): string {
   return `portfolio-panel-${tab}`;
 }
 
+/** DOM id of a holding's row or card; Value Search links scroll to it. */
+export function holdingDomId(holdingId: string): string {
+  return `holding-${holdingId}`;
+}
+
 /** Arrow-key target in a tablist (wraps; Home / End jump). */
 export function nextTab(tabs: PortfolioTab[], current: PortfolioTab, key: string): PortfolioTab | null {
   const i = tabs.indexOf(current);

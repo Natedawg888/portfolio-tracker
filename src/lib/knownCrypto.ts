@@ -1,0 +1,55 @@
+/**
+ * Well-known symbol → CoinGecko id. The server resolves these without a search call
+ * (latency / rate limits); Value Search auto-detection uses the same list so both
+ * agree on which symbols are crypto.
+ */
+export const KNOWN_CRYPTO: Readonly<Record<string, { id: string; name: string }>> = {
+  BTC: { id: 'bitcoin', name: 'Bitcoin' },
+  ETH: { id: 'ethereum', name: 'Ethereum' },
+  XRP: { id: 'ripple', name: 'XRP' },
+  SOL: { id: 'solana', name: 'Solana' },
+  ADA: { id: 'cardano', name: 'Cardano' },
+  DOGE: { id: 'dogecoin', name: 'Dogecoin' },
+  DOT: { id: 'polkadot', name: 'Polkadot' },
+  AVAX: { id: 'avalanche-2', name: 'Avalanche' },
+  MATIC: { id: 'matic-network', name: 'Polygon' },
+  // Polygon's native gas token since the 2024 MATIC → POL migration
+  POL: { id: 'polygon-ecosystem-token', name: 'POL (ex-MATIC)' },
+  LINK: { id: 'chainlink', name: 'Chainlink' },
+  LTC: { id: 'litecoin', name: 'Litecoin' },
+  BCH: { id: 'bitcoin-cash', name: 'Bitcoin Cash' },
+  ATOM: { id: 'cosmos', name: 'Cosmos' },
+  UNI: { id: 'uniswap', name: 'Uniswap' },
+  XLM: { id: 'stellar', name: 'Stellar' },
+  NEAR: { id: 'near', name: 'NEAR Protocol' },
+  APT: { id: 'aptos', name: 'Aptos' },
+  ARB: { id: 'arbitrum', name: 'Arbitrum' },
+  OP: { id: 'optimism', name: 'Optimism' },
+  SUI: { id: 'sui', name: 'Sui' },
+  TRX: { id: 'tron', name: 'TRON' },
+  TON: { id: 'the-open-network', name: 'Toncoin' },
+  SHIB: { id: 'shiba-inu', name: 'Shiba Inu' },
+  USDT: { id: 'tether', name: 'Tether' },
+  USDC: { id: 'usd-coin', name: 'USD Coin' },
+  DAI: { id: 'dai', name: 'Dai' },
+  AAVE: { id: 'aave', name: 'Aave' },
+  MKR: { id: 'maker', name: 'Maker' },
+  CRV: { id: 'curve-dao-token', name: 'Curve DAO' },
+  // GoMining Token (CoinGecko id gmt-token; symbol often GOMINING — STEPN uses GMT on CoinGecko search)
+  GMT: { id: 'gmt-token', name: 'GoMining Token' },
+  GOMINING: { id: 'gmt-token', name: 'GoMining Token' },
+  BNB: { id: 'binancecoin', name: 'BNB' },
+  ETC: { id: 'ethereum-classic', name: 'Ethereum Classic' },
+  FIL: { id: 'filecoin', name: 'Filecoin' },
+  ICP: { id: 'internet-computer', name: 'Internet Computer' },
+  ALGO: { id: 'algorand', name: 'Algorand' },
+  VET: { id: 'vechain', name: 'VeChain' },
+  HBAR: { id: 'hedera-hashgraph', name: 'Hedera' },
+  EGLD: { id: 'elrond-erd-2', name: 'MultiversX' },
+  FTM: { id: 'fantom', name: 'Fantom' },
+  NEXO: { id: 'nexo', name: 'Nexo' },
+  PEPE: { id: 'pepe', name: 'Pepe' },
+  // Cronos (Crypto.com Chain) — CRO ticker resolves to crypto-com-chain
+  CRO: { id: 'crypto-com-chain', name: 'Cronos' },
+  CRONOS: { id: 'crypto-com-chain', name: 'Cronos' },
+};
