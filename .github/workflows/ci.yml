@@ -35,6 +35,7 @@ jobs:
       - run: npm run test:output-pay
       - run: npm run test:debts
       - run: npm run test:portfolio
+      - run: npm run test:kiwisaver
       - run: npm run test:donations
       - run: npm run test:projections
       - run: npm run test:projections-page
