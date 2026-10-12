@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, formatNzd } from '../api/client';
 import { InfoTip } from '../components/InfoTip';
+import { isMoneyHidden } from '../lib/privacy';
 import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import {
   buildTaxCode,
@@ -34,6 +35,11 @@ import {
   ACC_MAX_LEVY,
   ACC_RATE,
   DONATION_TAX_CREDIT_RATE,
+  IETC_ABATE_END,
+  IETC_ABATE_RATE,
+  IETC_FULL_ANNUAL,
+  IETC_FULL_MAX_INCOME,
+  IETC_MIN_INCOME,
   INCOME_TAX_BRACKETS,
   KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE,
   KIWISAVER_DEFAULT_EMPLOYEE_RATE,
@@ -41,6 +47,7 @@ import {
   KIWISAVER_EMPLOYEE_RATES,
   KIWISAVER_EMPLOYER_MIN_RATE,
   PAYE_DEFAULT_HOURS_PER_WEEK,
+  PAYROLL_GIVING_CREDIT_RATE,
   INVESTING_CREDIT_KIND_OPTIONS,
   RATE_SOURCES,
   STUDENT_LOAN_ANNUAL_THRESHOLD,
@@ -51,17 +58,28 @@ import {
   type PayTaxYearRates,
 } from '../lib/payeRates';
 import {
+  INVESTING_CREDITS_TIP,
+  KIWISAVER_CUSTOM_RATE_VALUE,
   PAYE_NET_NZ_CREDIT_LEAD,
   PAYE_NET_NZ_NAME,
   PAYE_NET_NZ_URL,
-  formatPayeTaxDay,
-  incomeBracketRows,
+  SALARY_SACRIFICE_TIP,
+  charityDonationTip,
   convertSalaryHourly,
+  formatPayeTaxDay,
+  ietcCreditTip,
+  incomeBracketRows,
+  kiwiSaverEmployeeRateOptions,
+  kiwiSaverEmployerTip,
+  kiwiSaverOptInTip,
+  kiwiSaverRateSelection,
   payeIncludedCopy,
   payePageSubtitle,
   payeSourceLinks,
+  payrollGivingTip,
   ratesInUseNote,
   salaryHourlySwitch,
+  studentLoanTip,
 } from '../lib/payeView';
 
 const PAY_TYPES: { value: PayePayType; label: string }[] = [
@@ -128,6 +146,47 @@ function PayeChoiceRow<T extends string>({
         })}
       </div>
     </fieldset>
+  );
+}
+
+function PayeToggle({
+  label,
+  pressed,
+  onChange,
+  disabled,
+  controls,
+  note,
+  tipLabel,
+  tip,
+}: {
+  label: string;
+  pressed: boolean;
+  onChange: (next: boolean) => void;
+  disabled?: boolean;
+  controls?: string;
+  note?: string;
+  tipLabel: string;
+  tip: ReactNode;
+}) {
+  return (
+    <div className="paye-toggle">
+      <button
+        type="button"
+        className={'paye-toggle-btn' + (pressed ? ' active' : '')}
+        aria-pressed={pressed}
+        aria-expanded={controls ? pressed : undefined}
+        aria-controls={controls}
+        disabled={disabled}
+        onClick={() => onChange(!pressed)}
+      >
+        <span className="paye-toggle-label">{label}</span>
+        <span className="paye-toggle-state" aria-hidden="true">
+          {pressed ? 'On' : 'Off'}
+        </span>
+      </button>
+      <InfoTip label={tipLabel}>{tip}</InfoTip>
+      {note ? <span className="paye-toggle-note">{note}</span> : null}
+    </div>
   );
 }
 
@@ -199,6 +258,18 @@ function draftsToExtraCredits(drafts: CreditDraft[]): ExtraTaxCreditInput[] {
 
 function money(n: number): string {
   return formatNzd(n);
+}
+
+/** Whole dollars stay whole. Hidden amounts use the same mask as the rest of the page. */
+function bandMoney(n: number): string {
+  if (isMoneyHidden()) return formatNzd(n);
+  const digits = Number.isInteger(n) ? 0 : 2;
+  return new Intl.NumberFormat('en-NZ', {
+    style: 'currency',
+    currency: 'NZD',
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(n);
 }
 
 function pct(n: number): string {
@@ -430,6 +501,9 @@ export function Paye() {
     if (!rows) return initial.extraCredits;
     return mergePortfolioInvestingCredits(initial.extraCredits, investingCreditsFromPortfolioIncome(rows));
   });
+  // null until the user opens or closes the list. Credits that arrive before that show the list.
+  const [investingPref, setInvestingPref] = useState<boolean | null>(null);
+  const investingOpen = investingPref ?? extraCreditDrafts.length > 0;
   const [includedOpen, setIncludedOpen] = useState(false);
 
   // Persist last inputs (incl. investing + charity credits) and re-apply on next load.
@@ -618,6 +692,22 @@ export function Paye() {
     });
   }, [payType, outputPrefs, payeOptions, rates, result, employment, studentLoan, secondaryTotal]);
 
+  const ksRateOptions = [
+    ...kiwiSaverEmployeeRateOptions(KIWISAVER_EMPLOYEE_RATE_CHOICES),
+    { value: KIWISAVER_CUSTOM_RATE_VALUE, label: 'Custom' },
+  ];
+  const ksListed = kiwiSaverRateSelection(ksRate, KIWISAVER_EMPLOYEE_RATE_CHOICES);
+  const ksRateValue = ksCustom ? KIWISAVER_CUSTOM_RATE_VALUE : ksListed.value;
+
+  function selectEmployeeRate(next: string) {
+    if (next === KIWISAVER_CUSTOM_RATE_VALUE) {
+      setKsCustom(true);
+      return;
+    }
+    setKsCustom(false);
+    setKsRate(next);
+  }
+
   function selectPayType(next: PayePayType) {
     if (next === payType) return;
     const fields = {
@@ -796,49 +886,30 @@ export function Paye() {
       <>
       <section className="panel">
         <h3>KiwiSaver</h3>
-        <label className="field checkbox-field" style={{ marginTop: '0.5rem' }}>
-          <label className="inline-check">
-            <input
-              type="checkbox"
-              checked={kiwiSaverOptIn}
-              onChange={(e) => setKiwiSaverOptIn(e.target.checked)}
-            />
-            Opt in to KiwiSaver
-          </label>
-        </label>
-        {kiwiSaverOptIn && (
-          <div className="form-grid">
-            <label className="span-2">
-              Employee contribution
-              <div className="row gap" style={{ marginTop: 0 }}>
-                {KIWISAVER_EMPLOYEE_RATE_CHOICES.map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    className={
-                      'btn small' + (!ksCustom && Number(ksRate) === r ? ' primary' : '')
-                    }
-                    onClick={() => {
-                      setKsCustom(false);
-                      setKsRate(String(r));
-                    }}
-                  >
-                    {r}%
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  className={'btn small' + (ksCustom ? ' primary' : '')}
-                  onClick={() => setKsCustom(true)}
-                >
-                  Custom
-                </button>
-              </div>
-            </label>
-            {ksCustom && (
-              <label>
-                Custom employee %
+        <div className="paye-toggle-list">
+          <PayeToggle
+            label="KiwiSaver"
+            pressed={kiwiSaverOptIn}
+            onChange={setKiwiSaverOptIn}
+            controls="paye-kiwisaver"
+            tipLabel="About KiwiSaver"
+            tip={kiwiSaverOptInTip(KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE)}
+          />
+        </div>
+        <div id="paye-kiwisaver" className="paye-reveal" hidden={!kiwiSaverOptIn}>
+          <PayeChoiceRow
+            label="Your rate"
+            ariaLabel="KiwiSaver employee rate"
+            value={ksRateValue}
+            options={ksRateOptions}
+            onChange={selectEmployeeRate}
+          />
+          {ksRateValue === KIWISAVER_CUSTOM_RATE_VALUE && (
+            <div className="form-grid">
+              <label htmlFor="paye-ks-custom">
+                Custom rate %
                 <input
+                  id="paye-ks-custom"
                   type="number"
                   min={0}
                   max={100}
@@ -847,10 +918,21 @@ export function Paye() {
                   onChange={(e) => setKsRate(e.target.value)}
                 />
               </label>
-            )}
-            <label>
-              Employer rate %
+            </div>
+          )}
+          <div className="form-grid">
+            <div className="paye-field">
+              <span className="paye-field-label">
+                <label htmlFor="paye-ks-employer">Employer %</label>
+                <InfoTip label="About the employer KiwiSaver rate">
+                  {kiwiSaverEmployerTip({
+                    minimumRate: KIWISAVER_EMPLOYER_MIN_RATE,
+                    statutoryFrom: formatPayeTaxDay(rates.start),
+                  })}
+                </InfoTip>
+              </span>
               <input
+                id="paye-ks-employer"
                 type="number"
                 min={0}
                 max={100}
@@ -858,127 +940,126 @@ export function Paye() {
                 value={ksEmployerRate}
                 onChange={(e) => setKsEmployerRate(e.target.value)}
               />
-              <span className="muted small">
-                Statutory minimum {KIWISAVER_EMPLOYER_MIN_RATE}% from 1 Apr 2026 (not deducted from
-                take-home unless salary sacrifice). Your employee rate is saved for this account.{' '}
-                {KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE}% is the starting choice. The contribution
-                is the gross pay you enter times that rate. Not advice.
-              </span>
-            </label>
-            <label className="field checkbox-field span-2">
-              <label className="inline-check">
-                <input
-                  type="checkbox"
-                  checked={salarySacrifice}
-                  onChange={(e) => setSalarySacrifice(e.target.checked)}
-                />
-                Salary sacrifice (package includes employer KiwiSaver)
-              </label>
-            </label>
+            </div>
           </div>
-        )}
+          <div className="paye-toggle-list">
+            <PayeToggle
+              label="Salary sacrifice"
+              pressed={salarySacrifice}
+              onChange={setSalarySacrifice}
+              tipLabel="About salary sacrifice"
+              tip={SALARY_SACRIFICE_TIP}
+            />
+          </div>
+        </div>
       </section>
 
       <section className="panel">
-        <h3>Other deductions & credits</h3>
-        <div className="form-grid">
-          <label className="field checkbox-field">
-            <label className="inline-check">
+        <h3>Deductions</h3>
+        <div className="paye-toggle-list">
+          <PayeToggle
+            label="Student loan"
+            pressed={studentLoan}
+            onChange={setStudentLoan}
+            tipLabel="About the student loan deduction"
+            tip={studentLoanTip(
+              { rate: STUDENT_LOAN_RATE, annualThreshold: STUDENT_LOAN_ANNUAL_THRESHOLD },
+              bandMoney,
+            )}
+          />
+          <PayeToggle
+            label="Payroll giving"
+            pressed={payrollGivingOn}
+            onChange={setPayrollGivingOn}
+            controls="paye-payroll"
+            tipLabel="About payroll giving"
+            tip={payrollGivingTip(PAYROLL_GIVING_CREDIT_RATE)}
+          />
+        </div>
+        <div id="paye-payroll" className="paye-reveal" hidden={!payrollGivingOn}>
+          <div className="form-grid">
+            <label htmlFor="paye-payroll-amount">
+              Annual donations
               <input
-                type="checkbox"
-                checked={studentLoan}
-                onChange={(e) => setStudentLoan(e.target.checked)}
-              />
-              Student loan (SL)
-            </label>
-            <span className="muted small">
-              {pct(STUDENT_LOAN_RATE)} over {money(STUDENT_LOAN_ANNUAL_THRESHOLD)}/yr (primary);
-              flat {pct(STUDENT_LOAN_RATE)} on secondary.
-            </span>
-          </label>
-          <label className="field checkbox-field">
-            <label className="inline-check">
-              <input
-                type="checkbox"
-                checked={ietc}
-                onChange={(e) => setIetc(e.target.checked)}
-                disabled={employment === 'secondary'}
-              />
-              Independent Earner Tax Credit (IETC)
-            </label>
-            <span className="muted small">
-              Up to $520/yr when primary income is $24,000–$69,999 and you qualify. Uses ME / ME SL.
-            </span>
-          </label>
-          <label className="field checkbox-field">
-            <label className="inline-check">
-              <input
-                type="checkbox"
-                checked={payrollGivingOn}
-                onChange={(e) => setPayrollGivingOn(e.target.checked)}
-              />
-              Payroll giving
-            </label>
-          </label>
-          {payrollGivingOn && (
-            <label>
-              Annual payroll donations
-              <input
+                id="paye-payroll-amount"
                 type="number"
                 min={0}
                 step="any"
                 value={payrollGivingAnnual}
                 onChange={(e) => setPayrollGivingAnnual(e.target.value)}
               />
-              <span className="muted small">
-                Tax credit = {(DONATION_TAX_CREDIT_RATE * 100).toFixed(2)}¢ per $1 donated (capped at
-                tax portion of PAYE). Deducted from take-home each pay.
-              </span>
             </label>
-          )}
-          <label className="field checkbox-field">
-            <label className="inline-check">
-              <input
-                type="checkbox"
-                checked={charityDonationsOn}
-                onChange={(e) => setCharityDonationsOn(e.target.checked)}
-              />
-              Charity donation tax credit (IR526)
-            </label>
-            <span className="muted small">
-              Donations to approved donees <strong>outside</strong> payroll giving. Claim after
-              year-end with receipts — do not double-count payroll giving.
-            </span>
-          </label>
-          {charityDonationsOn && (
-            <>
-              <label>
-                Annual charity donations (outside payroll)
-                <input
-                  type="number"
-                  min={0}
-                  step="any"
-                  value={charityDonationsAnnual}
-                  onChange={(e) => setCharityDonationsAnnual(e.target.value)}
-                />
-                <span className="muted small">
-                  Credit = min(1/3 of donations, 1/3 of taxable income). Does not re-deduct the gift
-                  from salary take-home (already given).
-                </span>
-              </label>
-              <CharityLinksFromBudget />
-            </>
-          )}
+          </div>
         </div>
       </section>
 
       <section className="panel">
-        <div className="panel-heading">
-          <h3>Investing credits</h3>
+        <h3>Tax credits</h3>
+        <div className="paye-toggle-list">
+          <PayeToggle
+            label="IETC"
+            pressed={ietc}
+            onChange={setIetc}
+            disabled={employment === 'secondary'}
+            note={employment === 'secondary' ? 'Main job only' : undefined}
+            tipLabel="About the independent earner tax credit"
+            tip={ietcCreditTip(
+              {
+                minIncome: IETC_MIN_INCOME,
+                fullMaxIncome: IETC_FULL_MAX_INCOME,
+                abateEnd: IETC_ABATE_END,
+                fullAnnual: IETC_FULL_ANNUAL,
+                abateRate: IETC_ABATE_RATE,
+              },
+              bandMoney,
+            )}
+          />
+          <PayeToggle
+            label="Charity donations"
+            pressed={charityDonationsOn}
+            onChange={setCharityDonationsOn}
+            controls="paye-charity"
+            tipLabel="About the charity donation tax credit"
+            tip={charityDonationTip(DONATION_TAX_CREDIT_RATE)}
+          />
+        </div>
+        <div id="paye-charity" className="paye-reveal" hidden={!charityDonationsOn}>
+          <div className="form-grid">
+            <label className="span-2" htmlFor="paye-charity-amount">
+              Annual donations
+              <input
+                id="paye-charity-amount"
+                type="number"
+                min={0}
+                step="any"
+                value={charityDonationsAnnual}
+                onChange={(e) => setCharityDonationsAnnual(e.target.value)}
+              />
+            </label>
+            <CharityLinksFromBudget />
+          </div>
+        </div>
+
+        <div className="paye-disclosure">
+          <button
+            type="button"
+            className="paye-disclosure-btn"
+            aria-expanded={investingOpen}
+            aria-controls="paye-investing"
+            onClick={() => setInvestingPref((open) => !(open ?? extraCreditDrafts.length > 0))}
+          >
+            Investing credits
+            <span className="paye-toggle-state">
+              {extraCreditDrafts.length === 0 ? 'None' : extraCreditDrafts.length}
+            </span>
+            <span aria-hidden="true">{investingOpen ? '▴' : '▾'}</span>
+          </button>
+          <InfoTip label="About investing credits">{INVESTING_CREDITS_TIP}</InfoTip>
           <button
             type="button"
             className="btn small primary"
-            onClick={() =>
+            onClick={() => {
+              setInvestingPref(true);
               setExtraCreditDrafts((prev) => [
                 ...prev,
                 {
@@ -987,121 +1068,108 @@ export function Paye() {
                   label: '',
                   annualAmount: '0',
                 },
-              ])
-            }
+              ]);
+            }}
           >
             Add credit
           </button>
         </div>
-        <p className="muted small" style={{ marginTop: '0.35rem' }}>
-          IRD has <strong>no payday PAYE “investing credit”</strong> field. Imputation, RWT, PIE,
-          and foreign tax credits from investments offset tax on your <em>annual assessment</em>{' '}
-          (refund / less tax to pay). Enter annual NZD from statements or myIR — we do not invent
-          amounts. Credits you apply are <strong>persisted</strong>; portfolio/income only
-          auto-fills from savings interest or dividends only when a real income/transaction record
-          explicitly names a credit kind with positive NZD (no $0 rows).
-        </p>
-        {extraCreditDrafts.length === 0 && (
-          <p className="muted small" style={{ marginTop: '0.65rem' }}>
-            No investing credits yet. Use <strong>Add credit</strong> for imputation, RWT, PIE,
-            foreign tax, or other investing-related NZD — or record savings-interest/dividend credit
-            NZD under Income with that wording so it can auto-fill.
-          </p>
-        )}
-        {extraCreditDrafts.map((draft) => {
-          const meta = INVESTING_CREDIT_KIND_OPTIONS.find((o) => o.kind === draft.kind);
-          const resolved = result?.extraCredits.find((c) => c.id === draft.id);
-          return (
-            <div
-              key={draft.id}
-              className="form-grid"
-              style={{
-                marginTop: '0.85rem',
-                paddingTop: '0.75rem',
-                borderTop: '1px solid var(--border)',
-              }}
-            >
-              <label>
-                Credit type
-                <select
-                  value={draft.kind}
-                  onChange={(e) => {
-                    const kind = e.target.value as InvestingCreditKind;
-                    setExtraCreditDrafts((prev) =>
-                      prev.map((row) =>
-                        row.id === draft.id
-                          ? {
-                              ...row,
-                              kind,
-                              label: kind === 'other_investing' ? row.label : '',
-                            }
-                          : row,
-                      ),
-                    );
-                  }}
-                >
-                  {INVESTING_CREDIT_KIND_OPTIONS.map((o) => (
-                    <option key={o.kind} value={o.kind}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Annual credit (NZD)
-                <input
-                  type="number"
-                  min={0}
-                  step="any"
-                  value={draft.annualAmount}
-                  onChange={(e) =>
-                    setExtraCreditDrafts((prev) =>
-                      prev.map((row) =>
-                        row.id === draft.id
-                          ? { ...row, annualAmount: e.target.value }
-                          : row,
-                      ),
-                    )
-                  }
-                />
-              </label>
-              {draft.kind === 'other_investing' && (
-                <label className="span-2">
-                  Label
+        <div id="paye-investing" className="paye-reveal" hidden={!investingOpen}>
+          {extraCreditDrafts.length === 0 && (
+            <p className="muted small paye-reveal-empty">None yet.</p>
+          )}
+          {extraCreditDrafts.map((draft) => {
+            const meta = INVESTING_CREDIT_KIND_OPTIONS.find((o) => o.kind === draft.kind);
+            const resolved = result?.extraCredits.find((c) => c.id === draft.id);
+            const kindId = `paye-credit-kind-${draft.id}`;
+            const amountId = `paye-credit-amount-${draft.id}`;
+            return (
+              <div key={draft.id} className="form-grid paye-credit-row">
+                <div className="paye-field">
+                  <span className="paye-field-label">
+                    <label htmlFor={kindId}>Credit type</label>
+                    {meta ? <InfoTip label={`About ${meta.label}`}>{meta.hint}</InfoTip> : null}
+                  </span>
+                  <select
+                    id={kindId}
+                    value={draft.kind}
+                    onChange={(e) => {
+                      const kind = e.target.value as InvestingCreditKind;
+                      setExtraCreditDrafts((prev) =>
+                        prev.map((row) =>
+                          row.id === draft.id
+                            ? {
+                                ...row,
+                                kind,
+                                label: kind === 'other_investing' ? row.label : '',
+                              }
+                            : row,
+                        ),
+                      );
+                    }}
+                  >
+                    {INVESTING_CREDIT_KIND_OPTIONS.map((o) => (
+                      <option key={o.kind} value={o.kind}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <label htmlFor={amountId}>
+                  Annual credit (NZD)
                   <input
-                    type="text"
-                    value={draft.label}
-                    placeholder="e.g. Māori authority credit / other"
+                    id={amountId}
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={draft.annualAmount}
                     onChange={(e) =>
                       setExtraCreditDrafts((prev) =>
                         prev.map((row) =>
-                          row.id === draft.id ? { ...row, label: e.target.value } : row,
+                          row.id === draft.id ? { ...row, annualAmount: e.target.value } : row,
                         ),
                       )
                     }
                   />
                 </label>
-              )}
-              <div className="span-2 row gap" style={{ marginTop: 0, justifyContent: 'space-between' }}>
-                <span className="muted small">
-                  {meta?.hint}
-                  {resolved && resolved.credit > 0
-                    ? ` · Applied ${money(resolved.credit)}/yr (assessment / year-end)`
-                    : ''}
-                </span>
-                <button
-                  type="button"
-                  className="btn small danger"
-                  onClick={() =>
-                    setExtraCreditDrafts((prev) => prev.filter((row) => row.id !== draft.id))
-                  }
-                >
-                  Remove
-                </button>
+                {draft.kind === 'other_investing' && (
+                  <label className="span-2" htmlFor={`paye-credit-label-${draft.id}`}>
+                    Label
+                    <input
+                      id={`paye-credit-label-${draft.id}`}
+                      type="text"
+                      value={draft.label}
+                      placeholder="e.g. Māori authority credit"
+                      onChange={(e) =>
+                        setExtraCreditDrafts((prev) =>
+                          prev.map((row) =>
+                            row.id === draft.id ? { ...row, label: e.target.value } : row,
+                          ),
+                        )
+                      }
+                    />
+                  </label>
+                )}
+                <div className="span-2 paye-credit-actions">
+                  <span className="muted small">
+                    {resolved && resolved.credit > 0
+                      ? `Applied ${money(resolved.credit)}/yr`
+                      : 'Year-end'}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn small danger"
+                    onClick={() =>
+                      setExtraCreditDrafts((prev) => prev.filter((row) => row.id !== draft.id))
+                    }
+                  >
+                    Remove
+                  </button>
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </section>
 
       </>
