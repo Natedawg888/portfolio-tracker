@@ -39,4 +39,5 @@ jobs:
       - run: npm run test:2fa
       - run: npm run test:wallets
       - run: npm run test:chain
+      - run: npm run test:invoices
       - run: npm run build
