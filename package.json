@@ -32,7 +32,7 @@
     "test:paye-page": "node --import tsx src/lib/payeView.test.ts",
     "test:pay-sources": "node --import tsx server/paySources/store.test.ts",
     "test:invoices": "node --import tsx src/lib/invoiceCalc.test.ts && node --import tsx server/invoices/store.test.ts && node --import tsx src/pages/invoicesView.test.ts",
-    "test:bills": "node --import tsx src/lib/recurring.test.ts && node --import tsx server/recurring/store.test.ts",
+    "test:bills": "node --import tsx src/lib/recurring.test.ts && node --import tsx server/recurring/store.test.ts && node --import tsx src/pages/billsView.test.ts",
     "test:ads": "node --import tsx src/lib/ads.test.ts && node --import tsx server/routes/ads.test.ts",
     "test:warranties": "node --import tsx src/lib/warranty.test.ts && node --import tsx src/pages/warrantiesView.test.ts && node --import tsx server/warranties/store.test.ts",
     "test:portfolio": "node --import tsx src/lib/portfolioView.test.ts",

@@ -10091,6 +10091,59 @@ html:not([data-theme]) .bills-page :focus-visible {
 .bills-page .page-lead { margin-left: auto; margin-right: auto; }.bills-page .bills-inactive td { opacity: 0.6; }
 .bills-page .bills-back { padding-left: 0.4rem; }
 
+.bills-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  flex-wrap: wrap;
+}
+.bills-header-copy { min-width: 0; }
+.bills-header .bills-back {
+  display: inline-block;
+  margin: 0 0 0.35rem;
+  padding: 0;
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+.bills-header .bills-back:hover { text-decoration: underline; }
+.bills-header .page-title { margin: 0; }
+.bills-subtitle {
+  margin: 0.3rem 0 0;
+  max-width: 62ch;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+.bills-summary dl { margin: 0; }
+.bills-summary dt {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.bills-summary dd {
+  margin: 0.2rem 0 0;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+.bills-summary-due dd {
+  font-size: clamp(1.75rem, 4vw, 2.35rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.bills-summary-period {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1.25rem;
+  margin-top: 0.9rem;
+}
+.bills-summary-period dd { font-size: 1.2rem; }
+@media (max-width: 420px) {
+  .bills-header { align-items: flex-start; }
+  .bills-summary-period { grid-template-columns: 1fr; }
+}
+
 /* Financial health score card (KAN-55), styled like the "This month" card. */
 .dashboard-page .health-score {
   display: flex;

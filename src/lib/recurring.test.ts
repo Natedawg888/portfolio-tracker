@@ -7,6 +7,7 @@ import {
   merchantKey,
   monthlyEquivalent,
   nextDueOnOrAfter,
+  occurrencesWithin,
   type DetectionTxn,
 } from './recurring.ts';
 
@@ -38,6 +39,29 @@ eq(nextDueOnOrAfter('2026-07-15', 'monthly', '2026-10-09'), '2026-10-15', 'rolls
 eq(nextDueOnOrAfter('2026-10-15', 'monthly', '2026-10-09'), '2026-10-15', 'future due date unchanged');
 eq(monthlyEquivalent(10, 'weekly'), 43.33, 'weekly × 52 / 12');
 eq(monthlyEquivalent(120, 'yearly'), 10, 'yearly / 12');
+
+// Totals the Bills summary shows for a weekly 270 and a monthly 40. Fixed dates,
+// not "today". Per year is the monthly sum × 12. Due in 30 days counts every
+// occurrence (day 30 itself is outside the window).
+{
+  const rentMonth = monthlyEquivalent(270, 'weekly');
+  const sparkMonth = monthlyEquivalent(40, 'monthly');
+  eq(rentMonth, 1170, 'weekly 270 × 52 / 12');
+  eq(sparkMonth, 40, 'monthly 40 is unchanged');
+  const perMonth = rentMonth + sparkMonth;
+  eq(perMonth, 1210, 'per month');
+  eq(perMonth * 12, 14520, 'per year is per month × 12');
+
+  const today = '2026-10-12';
+  const rentDue = occurrencesWithin('2026-10-14', 'weekly', today);
+  const sparkDue = occurrencesWithin('2026-10-20', 'monthly', today);
+  eq(rentDue.join(','), '2026-10-14,2026-10-21,2026-10-28,2026-11-04', 'weekly rent four times');
+  eq(sparkDue.join(','), '2026-10-20', 'monthly spark once');
+  eq(rentDue.length * 270 + sparkDue.length * 40, 1120, 'due in the next 30 days');
+  eq(occurrencesWithin('2026-10-12', 'weekly', today).length, 5, 'weekly from today counts five');
+  eq(occurrencesWithin('2026-11-11', 'weekly', today).length, 0, 'a date 30 days out is not due');
+  eq(occurrencesWithin('2026-01-01', 'weekly', '2026-01-01', 365).length, 10, 'the walk stops after 10 dates');
+}
 
 // Payee matching ignores card numbers, references and punctuation.
 eq(merchantKey('NETFLIX.COM 4029357733 AU'), merchantKey('Netflix.com'), 'same payee key');
