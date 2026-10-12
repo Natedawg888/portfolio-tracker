@@ -1,19 +1,31 @@
 /**
  * Invoices list (KAN-71): header, totals, filters, the invoice table, CSV export and saved clients.
  * With no invoices, a three-step checklist replaces the totals, filters, and empty clients card.
- * Visibility comes from invoicesView. Amounts, statuses, and dates come from the list response.
+ * Each row has a status badge and a ⋯ menu. Mark paid opens the invoice page's payment dialog.
+ * Visibility, badges, and which actions apply come from invoicesView.
+ * Amounts, statuses, and dates come from the list response. Missing values show —.
  */
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api, formatNzd } from '../api/client';
 import { INVOICE_STATUS_LABELS, type InvoiceStatus } from '../lib/invoiceCalc';
-import type { BusinessProfile, InvoiceClient, InvoiceListResponse } from '../types';
+import type { BusinessProfile, Invoice, InvoiceClient, InvoiceListResponse, InvoiceSummary } from '../types';
+import { InvoicePaymentDialog } from '../components/InvoicePaymentDialog';
+import { MoreMenu } from '../components/MoreMenu';
 import { InvoiceStatusBadge } from '../components/InvoicePreview';
 import {
   BUSINESS_SETTINGS_HREF,
+  INVOICE_MISSING,
   INVOICE_TOTALS,
   formatInvoiceDate,
+  invoiceBalanceAmount,
+  invoiceDateCell,
+  invoiceRowActions,
+  invoiceRowConfirm,
+  invoiceRowMenuLabel,
   invoiceSetupSteps,
+  invoiceTextCell,
+  invoiceTotalAmount,
   invoicesChrome,
   visibleInvoiceCount,
   type BusinessDetails,
@@ -263,7 +275,103 @@ function FirstInvoicePanel({
   );
 }
 
+function DashOr({ value }: { value: string }) {
+  return value === INVOICE_MISSING ? <span className="muted">{INVOICE_MISSING}</span> : <>{value}</>;
+}
+
+function MoneyOrDash({ amount }: { amount: number | null }) {
+  return amount == null ? <span className="muted">{INVOICE_MISSING}</span> : <>{formatNzd(amount)}</>;
+}
+
+function InvoiceRowMenu({
+  inv,
+  busy,
+  onMarkPaid,
+  onCommand,
+}: {
+  inv: InvoiceSummary;
+  busy: boolean;
+  onMarkPaid: (inv: InvoiceSummary) => void;
+  onCommand: (inv: InvoiceSummary, action: 'mark-sent' | 'void' | 'duplicate' | 'delete') => void;
+}) {
+  const id = typeof inv.id === 'string' ? inv.id.trim() : '';
+  if (!id) return <span className="muted">{INVOICE_MISSING}</span>;
+  const actions = invoiceRowActions({
+    storedStatus: inv.storedStatus,
+    balanceNzd: inv.balanceNzd,
+    paidNzd: inv.paidNzd,
+  });
+  return (
+    <div className="invoice-row-menu">
+      <MoreMenu menu label={invoiceRowMenuLabel(inv.number)}>
+        {(close) =>
+          actions.map((action) => {
+            const className = 'btn small invoice-menu-item' + (action.danger ? ' danger' : '');
+            if (action.id === 'open') {
+              return (
+                <Link key={action.id} role="menuitem" tabIndex={-1} className={className} to={`/invoices/${id}`} onClick={close}>
+                  {action.label}
+                </Link>
+              );
+            }
+            if (action.id === 'edit') {
+              return (
+                <Link key={action.id} role="menuitem" tabIndex={-1} className={className} to={`/invoices/${id}/edit`} onClick={close}>
+                  {action.label}
+                </Link>
+              );
+            }
+            if (action.id === 'pdf') {
+              return (
+                <a key={action.id} role="menuitem" tabIndex={-1} className={className} href={api.invoices.pdfUrl(id)} download onClick={close}>
+                  {action.label}
+                </a>
+              );
+            }
+            if (action.id === 'markPaid') {
+              return (
+                <button
+                  key={action.id}
+                  type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  className={className}
+                  disabled={busy}
+                  onClick={() => {
+                    close();
+                    onMarkPaid(inv);
+                  }}
+                >
+                  {action.label}
+                </button>
+              );
+            }
+            const command = action.id === 'markSent' ? 'mark-sent' : action.id;
+            return (
+              <button
+                key={action.id}
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                className={className}
+                disabled={busy}
+                onClick={() => {
+                  close();
+                  onCommand(inv, command);
+                }}
+              >
+                {action.label}
+              </button>
+            );
+          })
+        }
+      </MoreMenu>
+    </div>
+  );
+}
+
 export function Invoices() {
+  const navigate = useNavigate();
   const [status, setStatus] = useState<'' | InvoiceStatus>('');
   const [clientId, setClientId] = useState('');
   const [from, setFrom] = useState('');
@@ -276,6 +384,9 @@ export function Invoices() {
   const [business, setBusiness] = useState<BusinessProfile | null>(null);
   const [businessSettled, setBusinessSettled] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [rowBusy, setRowBusy] = useState(false);
+  const [paymentInvoice, setPaymentInvoice] = useState<Invoice | null>(null);
   const [reload, setReload] = useState(0);
 
   const filtersActive = Boolean(status || clientId || from || to);
@@ -356,6 +467,61 @@ export function Invoices() {
       : null;
   const checklistReady = Boolean(chrome?.showChecklist && clientsSettled && businessSettled);
   const t = data?.totals;
+
+  async function openMarkPaid(inv: InvoiceSummary) {
+    const id = inv.id.trim();
+    if (!id) return;
+    setError(null);
+    setNotice(null);
+    setRowBusy(true);
+    try {
+      const full = await api.invoices.get(id);
+      const owing = full.storedStatus === 'sent' && typeof full.balanceNzd === 'number' && Number.isFinite(full.balanceNzd) && full.balanceNzd > 0;
+      if (!owing) {
+        setNotice('This invoice is no longer awaiting payment.');
+        setReload((n) => n + 1);
+        return;
+      }
+      setPaymentInvoice(full);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not open the payment.');
+    } finally {
+      setRowBusy(false);
+    }
+  }
+
+  async function runRowCommand(inv: InvoiceSummary, action: 'mark-sent' | 'void' | 'duplicate' | 'delete') {
+    const id = inv.id.trim();
+    if (!id) return;
+    if (action !== 'duplicate') {
+      const message = invoiceRowConfirm(action === 'mark-sent' ? 'markSent' : action, {
+        number: inv.number,
+        storedStatus: inv.storedStatus,
+      });
+      if (!message || !window.confirm(message)) return;
+    }
+    setRowBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      if (action === 'delete') {
+        await api.invoices.remove(id);
+        setReload((n) => n + 1);
+        return;
+      }
+      const next = await api.invoices.action(id, action);
+      if (action === 'duplicate') {
+        if (next.id) navigate(`/invoices/${next.id}/edit`);
+        return;
+      }
+      setNotice(action === 'void' ? 'Invoice voided. It stays in your records.' : 'Marked as sent.');
+      setReload((n) => n + 1);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Something went wrong.');
+    } finally {
+      setRowBusy(false);
+    }
+  }
 
   function onClientCreated(client: InvoiceClient) {
     setClients((prev) => (prev.some((c) => c.id === client.id) ? prev : [...prev, client]));
@@ -441,6 +607,11 @@ export function Invoices() {
             </label>
           </div>
           {error ? <p className="auth-error" role="alert">{error}</p> : null}
+          {notice ? (
+            <p className="banner" role="status">
+              {notice}
+            </p>
+          ) : null}
           {data.invoices.length === 0 ? (
             <p className="muted" style={{ marginTop: '0.75rem' }}>
               No invoices match these filters.
@@ -457,25 +628,46 @@ export function Invoices() {
                     <th>Status</th>
                     <th style={{ textAlign: 'right' }}>Total</th>
                     <th style={{ textAlign: 'right' }}>Balance</th>
+                    <th style={{ textAlign: 'right' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.invoices.map((inv) => (
                     <tr key={inv.id}>
                       <td>
-                        <Link to={`/invoices/${inv.id}`}>{inv.number}</Link>
+                        {inv.id ? (
+                          <Link to={`/invoices/${inv.id}`}>
+                            <DashOr value={invoiceTextCell(inv.number)} />
+                          </Link>
+                        ) : (
+                          <DashOr value={invoiceTextCell(inv.number)} />
+                        )}
                       </td>
-                      <td>{inv.clientName || <span className="muted">—</span>}</td>
-                      <td>{formatInvoiceDate(inv.issueDate)}</td>
-                      <td>{formatInvoiceDate(inv.dueDate)}</td>
+                      <td>
+                        <DashOr value={invoiceTextCell(inv.clientName)} />
+                      </td>
+                      <td>
+                        <DashOr value={invoiceDateCell(inv.issueDate)} />
+                      </td>
+                      <td>
+                        <DashOr value={invoiceDateCell(inv.dueDate)} />
+                      </td>
                       <td>
                         <InvoiceStatusBadge status={inv.status} />
                       </td>
                       <td className="money" style={{ textAlign: 'right' }}>
-                        {formatNzd(inv.totalNzd)}
+                        <MoneyOrDash amount={invoiceTotalAmount(inv.totalNzd)} />
                       </td>
                       <td className="money" style={{ textAlign: 'right' }}>
-                        {inv.status === 'draft' || inv.status === 'void' ? <span className="muted">—</span> : formatNzd(inv.balanceNzd)}
+                        <MoneyOrDash amount={invoiceBalanceAmount(inv.status, inv.balanceNzd)} />
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <InvoiceRowMenu
+                          inv={inv}
+                          busy={rowBusy}
+                          onMarkPaid={(row) => void openMarkPaid(row)}
+                          onCommand={(row, action) => void runRowCommand(row, action)}
+                        />
                       </td>
                     </tr>
                   ))}
@@ -488,6 +680,18 @@ export function Invoices() {
 
       {chrome?.showClients && clientsSettled ? (
         <ClientsPanel clients={clients} onChange={() => setReload((n) => n + 1)} />
+      ) : null}
+
+      {paymentInvoice ? (
+        <InvoicePaymentDialog
+          invoice={paymentInvoice}
+          onClose={() => setPaymentInvoice(null)}
+          onDone={(next) => {
+            setPaymentInvoice(null);
+            setNotice(next.status === 'paid' ? 'Payment recorded. The invoice is paid.' : 'Payment recorded.');
+            setReload((n) => n + 1);
+          }}
+        />
       ) : null}
     </div>
   );

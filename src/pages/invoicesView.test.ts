@@ -1,5 +1,5 @@
 /**
- * Invoices list view rules (phase 1) and builder rules (phase 2).
+ * Invoices list view rules (phase 1), builder rules (phase 2), and row menu / badges (phase 3).
  * Counts, profiles, tax-year start, and line inputs in these fixtures are the inputs.
  * Run: npm run test:invoices
  */
@@ -16,8 +16,18 @@ import {
   editorInvoiceTotals,
   gstEditorControl,
   gstModeFromCheckbox,
+  INVOICE_MISSING,
   invoiceActionBlock,
+  invoiceBalanceAmount,
+  invoiceDateCell,
+  invoiceOverdue,
+  invoiceRowActions,
+  invoiceRowConfirm,
+  invoiceRowMenuLabel,
   invoiceSetupSteps,
+  invoiceStatusBadge,
+  invoiceTextCell,
+  invoiceTotalAmount,
   invoicesChrome,
   invoicesSubtitle,
   visibleInvoiceCount,
@@ -229,6 +239,105 @@ assert(
   assert(shown.subtotal === calc.subtotal && shown.subtotal === 220, 'subtotal');
   assert(shown.gst === calc.gst && shown.gst === 33, 'GST');
   assert(shown.amountDue === calc.amountDue && shown.amountDue === 231, 'amount due subtracts withholding');
+}
+
+// Phase 3: status badges name every status. Colour is not the only signal: each has its own word and mark.
+{
+  const statuses = ['draft', 'sent', 'partly_paid', 'paid', 'overdue', 'void'] as const;
+  const labels = statuses.map((status) => invoiceStatusBadge(status)?.label);
+  assert(labels.join('|') === 'Draft|Sent|Partly paid|Paid|Overdue|Void', 'badge labels');
+  const marks = statuses.map((status) => invoiceStatusBadge(status)?.mark);
+  assert(new Set(marks).size === statuses.length && marks.every((mark) => typeof mark === 'string' && mark.length > 0), 'each status has its own mark');
+  const cues = statuses.map((status) => invoiceStatusBadge(status)?.cue);
+  assert(new Set(cues).size === statuses.length, 'each status has its own shape cue');
+  assert(invoiceStatusBadge(null) === null, 'a missing status is not given a label');
+  assert(invoiceStatusBadge(undefined) === null, 'an undefined status is not given a label');
+  assert(invoiceStatusBadge('') === null, 'a blank status is not given a label');
+  assert(invoiceStatusBadge('budget') === null, 'an unknown status is not invented');
+  assert(statuses.every((status) => !/budget/i.test(invoiceStatusBadge(status)?.label ?? '')), 'badges do not say In Budget');
+}
+
+// Phase 3: Overdue means past the due date and not fully paid. Missing facts stay unknown.
+{
+  const base = { stored: 'sent' as const, amountDue: 500, paid: 0, dueDate: '2026-10-20', today: '2026-10-21' };
+  assert(invoiceOverdue(base) === true, 'unpaid the day after the due date is overdue');
+  assert(invoiceOverdue({ ...base, paid: 200 }) === true, 'partly paid and past the due date is overdue');
+  assert(invoiceOverdue({ ...base, paid: 500 }) === false, 'fully paid is not overdue');
+  assert(invoiceOverdue({ ...base, paid: 500, today: '2026-12-01' }) === false, 'paid late is not overdue');
+  assert(invoiceOverdue({ ...base, today: '2026-10-20' }) === false, 'due today is not overdue');
+  assert(invoiceOverdue({ ...base, today: '2026-10-19' }) === false, 'before the due date is not overdue');
+  assert(invoiceOverdue({ ...base, stored: 'draft' }) === false, 'a draft is not overdue');
+  assert(invoiceOverdue({ ...base, stored: 'void' }) === false, 'a void invoice is not overdue');
+  assert(invoiceOverdue({ ...base, amountDue: 0, paid: 0 }) === false, 'nothing owed is not overdue');
+  assert(invoiceOverdue({ ...base, dueDate: '' }) === null, 'a blank due date is not called overdue');
+  assert(invoiceOverdue({ ...base, dueDate: null }) === null, 'a missing due date is not called overdue');
+  assert(invoiceOverdue({ ...base, dueDate: '2026-02-31' }) === null, 'an impossible due date is not called overdue');
+  assert(invoiceOverdue({ ...base, today: null }) === null, 'a missing today is not called overdue');
+  assert(invoiceOverdue({ ...base, amountDue: null }) === null, 'a missing amount due is not called overdue');
+  assert(invoiceOverdue({ ...base, paid: undefined }) === null, 'a missing paid amount is not called overdue');
+  assert(invoiceOverdue({ ...base, stored: null }) === null, 'a missing stored status is not called overdue');
+}
+
+// Phase 3: empty cells are an em dash. A returned non-date is left as returned.
+{
+  assert(INVOICE_MISSING === '—', 'the missing mark is an em dash');
+  assert(invoiceTextCell(null) === '—' && invoiceTextCell('   ') === '—' && invoiceTextCell('Mātai') === 'Mātai', 'blank text is an em dash');
+  assert(invoiceDateCell(null) === '—' && invoiceDateCell('') === '—', 'a missing date is an em dash');
+  assert(invoiceDateCell('2026-04-01') === '1 Apr 2026', 'a real date is formatted');
+  assert(invoiceDateCell('not-a-date') === 'not-a-date', 'an unparseable date is left as returned');
+  assert(invoiceTotalAmount(180) === 180 && invoiceTotalAmount(0) === 0, 'a returned total is kept, including zero');
+  assert(invoiceTotalAmount(null) === null && invoiceTotalAmount(Number.NaN) === null, 'a missing total is not turned into zero');
+  assert(invoiceBalanceAmount('draft', 10) === null && invoiceBalanceAmount('void', 0) === null, 'draft and void balances are not shown as money');
+  assert(invoiceBalanceAmount('sent', 12.5) === 12.5 && invoiceBalanceAmount('paid', 0) === 0, 'a sent balance is the returned number');
+  assert(invoiceBalanceAmount('overdue', 40) === 40 && invoiceBalanceAmount('partly_paid', 15) === 15, 'overdue and partly paid keep the balance');
+  assert(invoiceBalanceAmount('nope', 5) === null && invoiceBalanceAmount('sent', Number.NaN) === null, 'an unknown status or a bad balance is not shown as money');
+}
+
+// Phase 3: row actions follow the invoice page. Mark paid is only while something is owed. No Budget action.
+{
+  const labels = (storedStatus: 'draft' | 'sent' | 'void' | null, balance: number | null, paid: number | null) =>
+    invoiceRowActions({ storedStatus, balanceNzd: balance, paidNzd: paid }).map((action) => action.label).join('|');
+  assert(labels('draft', 180, 0) === 'Open|Edit|Mark as sent|Download PDF|Duplicate|Delete draft', 'draft row actions');
+  assert(labels('sent', 180, 0) === 'Open|Mark paid|Download PDF|Duplicate|Void', 'unpaid sent row can be marked paid or voided');
+  assert(labels('sent', 40, 20) === 'Open|Mark paid|Download PDF|Duplicate', 'a partly paid row can be marked paid and cannot be voided');
+  assert(labels('sent', 0, 180) === 'Open|Download PDF|Duplicate', 'a paid row has no mark paid and no void');
+  assert(labels('void', 0, 0) === 'Open|Download PDF|Duplicate|Delete invoice', 'a void row can be deleted');
+  assert(labels(null, 10, 0) === 'Open|Download PDF|Duplicate', 'an unknown stored status only offers open, PDF, and duplicate');
+  assert(labels('sent', null, 0) === 'Open|Download PDF|Duplicate|Void', 'a missing balance does not offer Mark paid');
+  assert(labels('sent', 10, null) === 'Open|Mark paid|Download PDF|Duplicate', 'a missing paid amount does not offer Void');
+  const danger = invoiceRowActions({ storedStatus: 'draft', balanceNzd: 1, paidNzd: 0 }).filter((action) => action.danger).map((action) => action.label);
+  assert(danger.join('|') === 'Delete draft', 'delete is the danger action on a draft');
+  assert(
+    invoiceRowActions({ storedStatus: 'sent', balanceNzd: 10, paidNzd: 0 }).every((action) => !/budget/i.test(action.label)),
+    'row actions do not include an In Budget indicator',
+  );
+  assert(invoiceRowMenuLabel('INV-0004') === 'Actions for INV-0004', 'the menu button names the invoice');
+  assert(invoiceRowMenuLabel('  ') === 'Actions for this invoice' && invoiceRowMenuLabel(null) === 'Actions for this invoice', 'a blank number is not invented');
+  assert(
+    invoiceRowConfirm('markSent', { number: 'INV-0004', storedStatus: 'draft' }) ===
+      'Mark as sent without sending from here? You won’t be able to edit it after this.',
+    'mark as sent uses the invoice page confirm',
+  );
+  assert(
+    invoiceRowConfirm('void', { number: 'INV-0004', storedStatus: 'sent' }) ===
+      'Void INV-0004? It stays in your records but no longer counts as owed.',
+    'void uses the invoice page confirm',
+  );
+  assert(
+    invoiceRowConfirm('delete', { number: 'INV-0004', storedStatus: 'draft' }) === 'Delete draft INV-0004? This can’t be undone.',
+    'delete draft uses the invoice page confirm',
+  );
+  assert(
+    invoiceRowConfirm('delete', { number: 'INV-0004', storedStatus: 'void' }) === 'Delete void invoice INV-0004? This can’t be undone.',
+    'delete void uses the invoice page confirm',
+  );
+  assert(invoiceRowConfirm('void', { number: 'INV-0004', storedStatus: 'draft' }) === null, 'a draft is not voided from the row');
+  assert(invoiceRowConfirm('delete', { number: 'INV-0004', storedStatus: 'sent' }) === null, 'a sent invoice is not deleted from the row');
+  assert(invoiceRowConfirm('markSent', { number: 'INV-0004', storedStatus: 'sent' }) === null, 'a sent invoice is not marked sent again from the row');
+  assert(
+    invoiceRowConfirm('void', { number: '  ', storedStatus: 'sent' }) === 'Void this invoice? It stays in your records but no longer counts as owed.',
+    'a blank number is not invented in the void confirm',
+  );
 }
 
 console.log('invoices view: ok');

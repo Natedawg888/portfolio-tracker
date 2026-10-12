@@ -1,15 +1,21 @@
 /**
- * Pure view rules for the Invoices list (phase 1) and the invoice builder (phase 2).
+ * Pure view rules for the Invoices list (phase 1), the invoice builder (phase 2),
+ * and the list row menu and status badges (phase 3).
  * Totals, counts, and tax-year start come from the list response.
  * Line amounts, GST, and amount due come from invoiceTotals. Due dates come from dueDateForPreset.
  * Business completeness is derived from the profile; nothing is stored or invented.
+ * A missing list value is an em dash. Status words come from the status the list returned.
  */
 import {
   dueDateForPreset,
+  invoiceStatus,
   invoiceTotals,
+  isYmd,
   type DuePreset,
   type GstMode,
   type InvoiceLineInput,
+  type InvoiceStatus,
+  type InvoiceStoredStatus,
   type InvoiceTotals,
 } from '../lib/invoiceCalc';
 import type { BusinessProfile } from '../types';
@@ -259,4 +265,181 @@ export function editorInvoiceTotals(
   withholdingRatePct: number | null,
 ): InvoiceTotals {
   return invoiceTotals(lines, gstMode, withholdingRatePct);
+}
+
+/** Shown wherever a list value is missing. Never a guessed number, date, name, or status. */
+export const INVOICE_MISSING = '—';
+
+function knownStored(status: InvoiceStoredStatus | null | undefined): status is InvoiceStoredStatus {
+  return status === 'draft' || status === 'sent' || status === 'void';
+}
+
+function finiteNumber(n: number | null | undefined): number | null {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return null;
+  return n;
+}
+
+export type InvoiceStatusCue = 'dashed' | 'solid' | 'double' | 'check' | 'late' | 'strike';
+
+export type InvoiceStatusBadgeModel = {
+  status: InvoiceStatus;
+  label: string;
+  /**
+   * Visible mark that is not a colour. The badge hides it from the accessible name;
+   * the label is what a screen reader reads.
+   */
+  mark: string;
+  cue: InvoiceStatusCue;
+};
+
+const STATUS_BADGES: Record<InvoiceStatus, Omit<InvoiceStatusBadgeModel, 'status'>> = {
+  draft: { label: 'Draft', mark: '○', cue: 'dashed' },
+  sent: { label: 'Sent', mark: '→', cue: 'solid' },
+  partly_paid: { label: 'Partly paid', mark: '½', cue: 'double' },
+  paid: { label: 'Paid', mark: '✓', cue: 'check' },
+  overdue: { label: 'Overdue', mark: '!', cue: 'late' },
+  void: { label: 'Void', mark: '×', cue: 'strike' },
+};
+
+function isListedStatus(status: string): status is InvoiceStatus {
+  return (
+    status === 'draft' ||
+    status === 'sent' ||
+    status === 'partly_paid' ||
+    status === 'paid' ||
+    status === 'overdue' ||
+    status === 'void'
+  );
+}
+
+/**
+ * Badge for a status the list (or the invoice page) already returned.
+ * Overdue on that status means the due date is before today and the invoice is not fully paid
+ * (see invoiceOverdue). Unknown or missing is null, so the row shows — and does not guess.
+ */
+export function invoiceStatusBadge(status: string | null | undefined): InvoiceStatusBadgeModel | null {
+  if (typeof status !== 'string' || !isListedStatus(status)) return null;
+  return { status, ...STATUS_BADGES[status] };
+}
+
+/**
+ * Overdue when the due date is before today and the invoice is not fully paid.
+ * Due today is not overdue. A zero balance is paid, including when it was paid late.
+ * Draft and void are never overdue. A missing date or amount is null, not a guess.
+ */
+export function invoiceOverdue(input: {
+  stored: InvoiceStoredStatus | null | undefined;
+  amountDue: number | null | undefined;
+  paid: number | null | undefined;
+  dueDate: string | null | undefined;
+  today: string | null | undefined;
+}): boolean | null {
+  if (!knownStored(input.stored)) return null;
+  const amountDue = finiteNumber(input.amountDue);
+  const paid = finiteNumber(input.paid);
+  if (amountDue == null || paid == null) return null;
+  if (!isYmd(input.dueDate) || !isYmd(input.today)) return null;
+  return invoiceStatus({ stored: input.stored, amountDue, paid, dueDate: input.dueDate, today: input.today }) === 'overdue';
+}
+
+/** Text cell. Blank or missing is an em dash, not a placeholder name. */
+export function invoiceTextCell(value: string | null | undefined): string {
+  if (typeof value !== 'string') return INVOICE_MISSING;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : INVOICE_MISSING;
+}
+
+/** Date cell. A real YYYY-MM-DD is formatted. Anything else already returned is shown as returned. Blank is —. */
+export function invoiceDateCell(ymd: string | null | undefined): string {
+  if (typeof ymd !== 'string' || ymd.trim() === '') return INVOICE_MISSING;
+  return formatInvoiceDate(ymd);
+}
+
+/** Total to format. Null when the list did not return a finite amount, so the cell shows —. */
+export function invoiceTotalAmount(total: number | null | undefined): number | null {
+  return finiteNumber(total);
+}
+
+/**
+ * Balance to format. Draft and void show — (they are not an amount owed).
+ * An unknown status or a missing balance is also —. A real zero on a sent invoice is zero.
+ */
+export function invoiceBalanceAmount(status: string | null | undefined, balance: number | null | undefined): number | null {
+  const badge = invoiceStatusBadge(status);
+  if (!badge || badge.status === 'draft' || badge.status === 'void') return null;
+  return finiteNumber(balance);
+}
+
+export type InvoiceRowActionId = 'open' | 'edit' | 'markSent' | 'markPaid' | 'pdf' | 'duplicate' | 'void' | 'delete';
+
+export type InvoiceRowAction = {
+  id: InvoiceRowActionId;
+  label: string;
+  danger: boolean;
+};
+
+/**
+ * Actions for one list row. Same gates as the invoice page:
+ * edit and mark-as-sent are drafts, mark paid needs a sent invoice with a balance,
+ * void needs a sent invoice with no payments, delete is drafts and void invoices.
+ * No Budget action: nothing on the invoice links it to a budget line.
+ */
+export function invoiceRowActions(input: {
+  storedStatus: InvoiceStoredStatus | null | undefined;
+  balanceNzd: number | null | undefined;
+  paidNzd: number | null | undefined;
+}): InvoiceRowAction[] {
+  const stored = knownStored(input.storedStatus) ? input.storedStatus : null;
+  const balance = finiteNumber(input.balanceNzd);
+  const paid = finiteNumber(input.paidNzd);
+  const actions: InvoiceRowAction[] = [{ id: 'open', label: 'Open', danger: false }];
+  if (stored === 'draft') {
+    actions.push({ id: 'edit', label: 'Edit', danger: false });
+    actions.push({ id: 'markSent', label: 'Mark as sent', danger: false });
+  }
+  if (stored === 'sent' && balance != null && balance > 0) {
+    actions.push({ id: 'markPaid', label: 'Mark paid', danger: false });
+  }
+  actions.push({ id: 'pdf', label: 'Download PDF', danger: false });
+  actions.push({ id: 'duplicate', label: 'Duplicate', danger: false });
+  if (stored === 'sent' && paid != null && paid <= 0) {
+    actions.push({ id: 'void', label: 'Void', danger: true });
+  }
+  if (stored === 'draft') actions.push({ id: 'delete', label: 'Delete draft', danger: true });
+  if (stored === 'void') actions.push({ id: 'delete', label: 'Delete invoice', danger: true });
+  return actions;
+}
+
+/** Accessible name for the ⋯ button. A blank number is not replaced with a made-up one. */
+export function invoiceRowMenuLabel(number: string | null | undefined): string {
+  const n = typeof number === 'string' ? number.trim() : '';
+  return n ? `Actions for ${n}` : 'Actions for this invoice';
+}
+
+/**
+ * Confirm copy for row actions that change the invoice. Wording matches the invoice page
+ * when a number is present. Null when that action does not apply, so it is not run.
+ */
+export function invoiceRowConfirm(
+  action: 'markSent' | 'void' | 'delete',
+  input: { number: string | null | undefined; storedStatus: InvoiceStoredStatus | null | undefined },
+): string | null {
+  const number = typeof input.number === 'string' ? input.number.trim() : '';
+  if (action === 'markSent') {
+    if (input.storedStatus !== 'draft') return null;
+    return 'Mark as sent without sending from here? You won’t be able to edit it after this.';
+  }
+  if (action === 'void') {
+    if (input.storedStatus !== 'sent') return null;
+    return number
+      ? `Void ${number}? It stays in your records but no longer counts as owed.`
+      : 'Void this invoice? It stays in your records but no longer counts as owed.';
+  }
+  if (input.storedStatus === 'draft') {
+    return number ? `Delete draft ${number}? This can’t be undone.` : 'Delete this draft? This can’t be undone.';
+  }
+  if (input.storedStatus === 'void') {
+    return number ? `Delete void invoice ${number}? This can’t be undone.` : 'Delete this void invoice? This can’t be undone.';
+  }
+  return null;
 }

@@ -7,9 +7,10 @@
  *  - when the server has email set up, sends it from the app with the PDF attached.
  * After the first two the app asks whether it went, and only then records it.
  */
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, formatNzd } from '../api/client';
+import { InvoiceDialog, InvoicePaymentDialog } from '../components/InvoicePaymentDialog';
 import { InvoicePreview, InvoiceStatusBadge } from '../components/InvoicePreview';
 import { mailtoHref } from '../lib/invoiceShare';
 import type { Invoice } from '../types';
@@ -28,10 +29,6 @@ function formatWhen(iso: string): string {
     : new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Pacific/Auckland' }).format(d);
 }
 
-function todayNz(): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Auckland', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-}
-
 function errText(e: unknown, fallback: string): string {
   return e instanceof Error ? e.message : fallback;
 }
@@ -47,22 +44,6 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 const CHANNEL_LABEL = { resend: 'Sent from the app', email_app: 'Sent from your email app', share: 'Shared from your device' } as const;
-
-function Dialog({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
-  return (
-    <div className="modal-overlay" role="presentation" onClick={(e) => (e.target === e.currentTarget ? onClose() : undefined)}>
-      <div className={`modal-dialog${wide ? ' modal-dialog-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
-        <div className="modal-header">
-          <h3>{title}</h3>
-          <button type="button" className="btn small modal-close" aria-label="Close" onClick={onClose}>
-            ×
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
 
 function SendDialog({
   invoice,
@@ -199,7 +180,7 @@ function SendDialog({
 
   if (askedChannel) {
     return (
-      <Dialog title={title} onClose={onClose}>
+      <InvoiceDialog title={title} onClose={onClose}>
         <p>Did you send it?</p>
         <p className="muted small">
           {kind === 'invoice'
@@ -215,12 +196,12 @@ function SendDialog({
             Not yet
           </button>
         </div>
-      </Dialog>
+      </InvoiceDialog>
     );
   }
 
   return (
-    <Dialog title={title} onClose={onClose} wide>
+    <InvoiceDialog title={title} onClose={onClose} wide>
       {!ready && !error ? <p className="muted">Preparing…</p> : null}
       {problem ? <p className="banner">{problem}</p> : null}
       {ready ? (
@@ -280,74 +261,7 @@ function SendDialog({
           </p>
         </>
       ) : null}
-    </Dialog>
-  );
-}
-
-function PaymentDialog({ invoice, onClose, onDone }: { invoice: Invoice; onClose: () => void; onDone: (inv: Invoice) => void }) {
-  const [date, setDate] = useState(todayNz());
-  const [amount, setAmount] = useState(String(invoice.balanceNzd));
-  const [method, setMethod] = useState('Bank transfer');
-  const [notes, setNotes] = useState('');
-  const [addToIncome, setAddToIncome] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function save() {
-    setBusy(true);
-    setError(null);
-    try {
-      onDone(await api.invoices.addPayment(invoice.id, { date, amountNzd: Number(amount), method, notes, addToIncome }));
-    } catch (e) {
-      setError(errText(e, 'Could not record the payment.'));
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Dialog title={`Record a payment on ${invoice.number}`} onClose={onClose}>
-      <p className="muted small">Still owed: {formatNzd(invoice.balanceNzd)}</p>
-      <div className="form-grid">
-        <label>
-          Date received
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        </label>
-        <label>
-          Amount ($)
-          <input type="number" min={0} step="0.01" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
-        </label>
-        <label>
-          Method
-          <select value={method} onChange={(e) => setMethod(e.target.value)}>
-            {['Bank transfer', 'Cash', 'Card', 'Cheque', 'Other'].map((m) => (
-              <option key={m}>{m}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Note (optional)
-          <input value={notes} maxLength={200} onChange={(e) => setNotes(e.target.value)} />
-        </label>
-        <label className="field checkbox-field span-2">
-          <label className="inline-check">
-            <input type="checkbox" checked={addToIncome} onChange={(e) => setAddToIncome(e.target.checked)} />
-            Add to my income on Budget and Home
-          </label>
-          <span className="muted small">
-            Tagged to this invoice. When the same deposit comes in from your bank, it’s matched so it isn’t counted twice.
-          </span>
-        </label>
-      </div>
-      {error ? <p className="auth-error" role="alert">{error}</p> : null}
-      <div className="row gap modal-actions">
-        <button type="button" className="btn primary" disabled={busy || !(Number(amount) > 0)} onClick={() => void save()}>
-          Record payment
-        </button>
-        <button type="button" className="btn" onClick={onClose}>
-          Cancel
-        </button>
-      </div>
-    </Dialog>
+    </InvoiceDialog>
   );
 }
 
@@ -610,7 +524,7 @@ export function InvoiceDetail() {
         />
       ) : null}
       {dialog === 'payment' ? (
-        <PaymentDialog
+        <InvoicePaymentDialog
           invoice={inv}
           onClose={() => setDialog(null)}
           onDone={(next) => {
