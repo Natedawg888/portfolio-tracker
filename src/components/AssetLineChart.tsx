@@ -11,6 +11,15 @@ export type LinePoint = {
   /** ISO timestamp or YYYY-MM-DD */
   at: string;
   value: number;
+  /**
+   * The snapshot behind this point valued a closed holding at its cost.
+   * The value stays the stored number. Other charts leave this unset.
+   */
+  flagged?: boolean;
+  /** Short clause for the flag. Empty when the point is not flagged. */
+  flagNote?: string;
+  /** Original snapshot time when this point was flagged. Bucket `at` stays the chart key. */
+  takenAt?: string;
 };
 
 export type LineSeries = {
@@ -78,11 +87,16 @@ export function resampleSeries(
     for (const p of sorted) {
       if (!Number.isFinite(p.value)) continue;
       const key = bucketKey(p.at, resolution);
-      // Last write wins = last real snapshot in that day/month
-      buckets.set(key, {
+      // Last write wins = last real snapshot in that day/month. A flag stays
+      // with that winning point and is not copied onto a later clean reading.
+      const next: LinePoint = {
         at: resolution === 'month' ? `${key}-01` : key,
         value: p.value,
-      });
+      };
+      if (p.flagged) next.flagged = true;
+      if (p.flagNote) next.flagNote = p.flagNote;
+      if (p.takenAt) next.takenAt = p.takenAt;
+      buckets.set(key, next);
     }
     const points = [...buckets.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
@@ -332,13 +346,20 @@ export function AssetLineChart({
   function dot(s: LineSeries, p: LinePoint, radius: number) {
     const x = xOf(p.at);
     const y = yOf(p.value);
+    const title = `${s.label}: ${formatNzd(p.value)} @ ${axisLabel(p.at, resolution)}${p.flagNote ? `. ${p.flagNote}` : ''}`;
     const name = pointAriaLabel ? focusablePointName(pointAriaLabel(p, s)) : null;
     const id = `${s.key}-${p.at}`;
+    const ring = p.flagged ? (
+      <circle className="line-chart-flag" cx={x} cy={y} r={radius + 3.5} fill="none" />
+    ) : null;
     if (!name) {
       return (
-        <circle key={id} cx={x} cy={y} r={radius} fill={s.colour}>
-          <title>{`${s.label}: ${formatNzd(p.value)} @ ${axisLabel(p.at, resolution)}`}</title>
-        </circle>
+        <g key={id}>
+          {ring}
+          <circle cx={x} cy={y} r={radius} fill={s.colour}>
+            <title>{title}</title>
+          </circle>
+        </g>
       );
     }
     const open = tip?.key === id;
@@ -358,6 +379,7 @@ export function AssetLineChart({
         onClick={() => setTip({ key: id, label: name, x, y, pinned: true })}
       >
         <circle className="line-chart-point-hit" cx={x} cy={y} r={14} fill="transparent" />
+        {ring}
         <circle className="line-chart-point-dot" cx={x} cy={y} r={open ? radius + 1.5 : radius} fill={s.colour} />
       </g>
     );

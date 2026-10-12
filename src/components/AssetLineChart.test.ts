@@ -3,7 +3,14 @@
  * tick for an all-zero line. Large balances (KiwiSaver, History) stay zoomed.
  * Run: npm run test:projections-page
  */
-import { chartPointTabIndex, computeYDomain, computeYTicks, focusablePointName, seriesPaintOrder } from './AssetLineChart.tsx';
+import {
+  chartPointTabIndex,
+  computeYDomain,
+  computeYTicks,
+  focusablePointName,
+  resampleSeries,
+  seriesPaintOrder,
+} from './AssetLineChart.tsx';
 
 function assert(condition: boolean, message: string): void {
   if (!condition) throw new Error(message);
@@ -56,5 +63,56 @@ assert(
 );
 assert(chartPointTabIndex(null) === undefined, 'presentational dots stay out of the tab order');
 assert(chartPointTabIndex('12 Oct 2026, $29,628.83') === 0, 'a labelled point is focusable');
+
+// 11 Oct NZDT: 10 Oct 20:00 UTC and 11 Oct 10:00 UTC. A later clean point wins the day.
+const day = resampleSeries(
+  [
+    {
+      key: 'total',
+      label: 'Total net worth',
+      colour: '#3d9a6a',
+      points: [
+        { at: '2026-10-10T20:00:00.000Z', value: 914.45, flagged: true, flagNote: 'TSLA valued at cost. Stored value unchanged.' },
+        { at: '2026-10-11T10:00:00.000Z', value: 1.37 },
+      ],
+    },
+  ],
+  'day',
+);
+assert(day[0].points.length === 1, 'two readings on one Auckland day stay one point');
+assert(day[0].points[0].value === 1.37, 'the later reading is the one drawn');
+assert(day[0].points[0].flagged === undefined, 'a later clean reading is not marked with the earlier flag');
+
+const marked = resampleSeries(
+  [
+    {
+      key: 'total',
+      label: 'Total net worth',
+      colour: '#3d9a6a',
+      points: [
+        { at: '2026-10-10T20:00:00.000Z', value: 100 },
+        {
+          at: '2026-10-11T10:00:00.000Z',
+          value: 914.45,
+          flagged: true,
+          flagNote: 'TSLA valued at cost. Stored value unchanged.',
+          takenAt: '2026-10-11T10:00:00.000Z',
+        },
+      ],
+    },
+  ],
+  'day',
+);
+assert(marked[0].points[0].value === 914.45, 'a flagged winner keeps its stored value');
+assert(marked[0].points[0].flagged === true, 'the flag stays on the winning snapshot');
+assert(
+  marked[0].points[0].flagNote === 'TSLA valued at cost. Stored value unchanged.',
+  'the flag note stays with that snapshot',
+);
+assert(marked[0].points[0].at === '2026-10-11', 'the drawn point uses the Auckland day');
+assert(
+  marked[0].points[0].takenAt === '2026-10-11T10:00:00.000Z',
+  'the drawn point still names the snapshot that won the day',
+);
 
 console.log('line chart tests passed');

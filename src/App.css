@@ -7996,6 +7996,10 @@ html:not([data-theme]) .history-page {
 }
 
 .history-page .page-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
   font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
   font-weight: 500;
   letter-spacing: -0.015em;
@@ -8004,12 +8008,29 @@ html:not([data-theme]) .history-page {
   font-variant-caps: normal;
   margin: 0 0 0.35rem;
 }
+.history-page .history-headline {
+  margin-top: 0.85rem;
+}
+.history-page .history-flag-note {
+  margin: 0.35rem 0 0;
+}
+.history-page .period-pager .btn {
+  font-size: 1.25rem;
+  line-height: 1;
+  min-width: 2.5rem;
+}
+.line-chart-flag {
+  fill: none;
+  stroke: #d4b84a;
+  stroke-width: 1.5;
+}
 
 html[data-theme="light"] .history-page h2,
 html[data-theme="light"] .history-page h3,
 html[data-theme="light"] .history-page h4,
 html[data-theme="light"] .history-page .page-title,
-html[data-theme="light"] .history-page .stat-value {
+html[data-theme="light"] .history-page .stat-value,
+html[data-theme="light"] .history-page .hero-value {
   color: #1a1a1a;
 }
 html[data-theme="light"] .history-page .panel,
@@ -8094,11 +8115,13 @@ html[data-theme="dark"] .history-page h3,
 html[data-theme="dark"] .history-page h4,
 html[data-theme="dark"] .history-page .page-title,
 html[data-theme="dark"] .history-page .stat-value,
+html[data-theme="dark"] .history-page .hero-value,
 html:not([data-theme]) .history-page h2,
 html:not([data-theme]) .history-page h3,
 html:not([data-theme]) .history-page h4,
 html:not([data-theme]) .history-page .page-title,
-html:not([data-theme]) .history-page .stat-value {
+html:not([data-theme]) .history-page .stat-value,
+html:not([data-theme]) .history-page .hero-value {
   color: #f3eee4;
 }
 html[data-theme="dark"] .history-page .panel,
