@@ -71,6 +71,31 @@ export function daysBetween(a: string, b: string): number {
   return Math.round((parse(b).getTime() - parse(a).getTime()) / 86_400_000);
 }
 
+/**
+ * Due dates in the window that starts on `today` and stops before `withinDays`
+ * (a date 30 days out is not included). Steps from `nextDue` itself, the same
+ * walk listRecurring uses for "Due in the next 30 days". At most `maxSteps`
+ * dates, so a weekly bill is counted each time it falls and then stops.
+ * Callers pass active bills only; paused items stay out of the total.
+ */
+export function occurrencesWithin(
+  nextDue: string,
+  cadence: Cadence,
+  today: string,
+  withinDays = 30,
+  maxSteps = 10,
+): string[] {
+  const dates: string[] = [];
+  let due = nextDue;
+  let step = 0;
+  while (daysBetween(today, due) < withinDays && step < maxSteps) {
+    dates.push(due);
+    step += 1;
+    due = addCadence(nextDue, cadence, step);
+  }
+  return dates;
+}
+
 const NOISE = [
   /\b(pos|eftpos|visa|debit|credit|card|purchase|payment|direct|dd|ap|ft|bp|tfr|transfer|online|recurring|autopay|nz|nzd|au|aus|us|usa|gb|uk|ie|sg|nl|ltd|limited|inc|co)\b/g,
   /\b\d{2}[/.-]\d{2}([/.-]\d{2,4})?\b/g, // dates

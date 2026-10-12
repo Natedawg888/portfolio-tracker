@@ -11,11 +11,11 @@ import type { RecurringItem, RecurringListResponse } from '../../src/types/index
 import {
   CADENCES,
   addCadence,
-  daysBetween,
   detectRecurring,
   merchantKey,
   monthlyEquivalent,
   nextDueOnOrAfter,
+  occurrencesWithin,
   type Cadence,
   type DetectionTxn,
   type RecurringKind,
@@ -186,14 +186,9 @@ export function listRecurring(db: Database, userId: string, today: string): Recu
   const monthly = roundMoney(active.reduce((s, i) => s + i.monthlyNzd, 0));
   let due30 = 0;
   for (const i of active) {
-    // Every payment in the 30 days starting today (weekly bills can fall several times).
-    let d = i.nextDue;
-    let step = 0;
-    while (daysBetween(today, d) < 30 && step < 10) {
-      due30 += i.amountNzd;
-      step += 1;
-      d = addCadence(i.nextDue, i.cadence, step);
-    }
+    // occurrencesWithin is the same 30-day walk (weekly bills can fall several times).
+    const hits = occurrencesWithin(i.nextDue, i.cadence, today).length;
+    for (let hit = 0; hit < hits; hit += 1) due30 += i.amountNzd;
   }
   return {
     today,

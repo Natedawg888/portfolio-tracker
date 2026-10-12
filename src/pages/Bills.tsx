@@ -2,12 +2,14 @@
  * Bills & subscriptions (KAN-27). Reached from the Budget page (not the nav bar).
  * Lists repeating payments found in the user's transactions to confirm or dismiss,
  * and the bills / subscriptions they have saved, with next due date and amount.
+ * Phase 1: header and one summary card. Totals are the list response, not recomputed here.
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { api, formatNzd, type RecurringWriteBody } from '../api/client';
 import { CADENCES, CADENCE_LABELS, type Cadence } from '../lib/recurring';
 import type { RecurringItem, RecurringListResponse } from '../types';
+import { billsSubtitle, headerCounts } from './billsView';
 
 type Suggestion = RecurringListResponse['suggestions'][number];
 type Category = { id: string; name: string; type: string };
@@ -157,8 +159,6 @@ type DialogState =
   | null;
 
 export function Bills() {
-  const navigate = useNavigate();
-  const location = useLocation();
   const [data, setData] = useState<RecurringListResponse | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -201,12 +201,6 @@ export function Bills() {
     };
   }, []);
 
-  // Back to wherever the user came from (normally Budget); Budget when opened directly.
-  const goBack = () => {
-    if (location.key !== 'default') navigate(-1);
-    else navigate('/spending');
-  };
-
   async function act(key: string, fn: () => Promise<unknown>, note: string, confirmText?: string) {
     if (confirmText && !window.confirm(confirmText)) return;
     setBusyKey(key);
@@ -223,31 +217,27 @@ export function Bills() {
   }
 
   const today = data?.today ?? '';
-  const t = data?.totals;
+  const totals = data?.totals;
   const active = data?.items.filter((i) => i.status === 'active') ?? [];
   const inactive = data?.items.filter((i) => i.status !== 'active') ?? [];
+  const subtitle = data ? billsSubtitle(headerCounts(data.items)) : null;
 
   const blank: Draft = { name: '', kind: 'bill', amount: '', cadence: 'monthly', nextDue: today, categoryId: '', notes: '' };
 
   return (
     <div className="stack bills-page">
-      <div>
-        <button type="button" className="btn small ghost bills-back" onClick={goBack}>
-          ← Back to Budget
-        </button>
-      </div>
-      <section className="hero-card hero-card--centered">
-        <h2 className="page-title">Bills &amp; subscriptions</h2>
-        <p className="page-lead">
-          Repeating payments found in your transactions, and the ones you&apos;ve saved. Confirm what&apos;s right,
-          dismiss what isn&apos;t, and see what&apos;s due next.
-        </p>
-        <div className="row gap" style={{ justifyContent: 'center' }}>
-          <button type="button" className="btn primary" onClick={() => setDialog({ mode: 'add' })} disabled={!data}>
-            Add a bill or subscription
-          </button>
+      <header className="bills-header">
+        <div className="bills-header-copy">
+          <Link to="/spending" className="bills-back">
+            <span aria-hidden="true">‹ </span>Budget
+          </Link>
+          <h2 className="page-title">Bills &amp; subscriptions</h2>
+          {subtitle ? <p className="bills-subtitle">{subtitle}</p> : null}
         </div>
-      </section>
+        <button type="button" className="btn primary" onClick={() => setDialog({ mode: 'add' })} disabled={!data}>
+          + Add bill
+        </button>
+      </header>
 
       {error ? (
         <section className="panel">
@@ -262,20 +252,23 @@ export function Bills() {
 
       {data ? (
         <>
-          <section className="grid cards" aria-label="Totals">
-            <div className="card">
-              <p className="eyebrow">Each month</p>
-              <p className="stat-value">{t ? formatNzd(t.monthlyNzd) : '—'}</p>
-              <p className="muted small">{t?.activeCount ?? 0} active</p>
-            </div>
-            <div className="card">
-              <p className="eyebrow">Each year</p>
-              <p className="stat-value">{t ? formatNzd(t.yearlyNzd) : '—'}</p>
-            </div>
-            <div className="card">
-              <p className="eyebrow">Due in the next 30 days</p>
-              <p className="stat-value">{t ? formatNzd(t.dueNext30DaysNzd) : '—'}</p>
-            </div>
+          <section className="card bills-summary" aria-label="Totals">
+            <dl>
+              <div className="bills-summary-due">
+                <dt>Due in the next 30 days</dt>
+                <dd className="money">{formatNzd(totals?.dueNext30DaysNzd)}</dd>
+              </div>
+              <div className="bills-summary-period">
+                <div>
+                  <dt>Per month</dt>
+                  <dd className="money">{formatNzd(totals?.monthlyNzd)}</dd>
+                </div>
+                <div>
+                  <dt>Per year</dt>
+                  <dd className="money">{formatNzd(totals?.yearlyNzd)}</dd>
+                </div>
+              </div>
+            </dl>
           </section>
 
           <section className="panel">
