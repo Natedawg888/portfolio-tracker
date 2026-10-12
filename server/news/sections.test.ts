@@ -104,6 +104,23 @@ await check('metals only omit crypto', () => {
   );
 });
 
+await check('closed positions stay out unless included', () => {
+  const closedStock = row({ asset_class: 'stock', symbol: 'TSLA', name: 'Tesla', shares: 0 });
+  const openStock = row({ asset_class: 'stock', symbol: 'AAPL', name: 'Apple', shares: 2 });
+  const closedCrypto = row({ asset_class: 'crypto', asset: 'DOGE', name: 'Dogecoin', amount: 0 });
+  const uncounted = row({ asset_class: 'stock', symbol: 'NVDA', name: 'NVIDIA' });
+  const openPlans = planNewsSections([closedStock, openStock, closedCrypto]);
+  assert.deepEqual(openPlans.map((section) => section.id), ['stock', 'world']);
+  const query = feedQuery(openPlans[0]?.feeds[0]?.url);
+  assert.match(query, /AAPL/);
+  assert.doesNotMatch(query, /TSLA/);
+  assert.doesNotMatch(query, /DOGE/);
+  const withClosed = planNewsSections([closedStock, openStock], { includeClosed: true });
+  assert.match(feedQuery(withClosed[0]?.feeds[0]?.url), /TSLA/);
+  assert.deepEqual(ids([uncounted]), ['stock', 'world']);
+  assert.deepEqual(ids([closedCrypto]), ['world']);
+});
+
 await check('empty holdings are world news only', () => {
   const plans = planNewsSections([]);
   assert.deepEqual(plans.map((s) => s.id), ['world']);

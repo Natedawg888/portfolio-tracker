@@ -8,7 +8,7 @@ import { yahooEquitySymbol } from '../quotes/history.ts';
 
 export const HOLDINGS_FOR_NEWS_SQL = `
 SELECT asset_class, name, symbol, asset, exchange, metal, miner_name,
-       artist, artwork_title, stone_type, card_game
+       artist, artwork_title, stone_type, card_game, shares, amount, metal_amount
 FROM holdings
 WHERE user_id = ?
 ORDER BY updated_at DESC
@@ -26,6 +26,10 @@ export type NewsHoldingRow = {
   artwork_title: string | null;
   stone_type: string | null;
   card_game: string | null;
+  /** Null when the position has no stored quantity (not the same as sold). */
+  shares?: number | null;
+  amount?: number | null;
+  metal_amount?: number | null;
 };
 
 export type NewsFeedSpec = {
@@ -147,6 +151,30 @@ function pick(raw: Record<string, unknown>, key: string): string | null {
   return s || null;
 }
 
+function num(raw: Record<string, unknown>, key: string): number | null {
+  const v = raw[key];
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Closed only when a quantity was stored and is not positive.
+ * A missing quantity is "not recorded", same rule as net worth.
+ */
+export function isClosedNewsHolding(row: NewsHoldingRow): boolean {
+  const qty =
+    row.asset_class === 'stock'
+      ? row.shares
+      : row.asset_class === 'metal'
+        ? row.metal_amount
+        : row.asset_class === 'crypto' || row.asset_class === 'forex' || row.asset_class === 'collectable'
+          ? row.amount
+          : null;
+  if (qty == null) return false;
+  return Number.isFinite(qty) && qty <= 0;
+}
+
 export function normalizeHoldingRow(raw: Record<string, unknown>): NewsHoldingRow {
   return {
     asset_class: (pick(raw, 'asset_class') ?? '').toLowerCase(),
@@ -160,6 +188,9 @@ export function normalizeHoldingRow(raw: Record<string, unknown>): NewsHoldingRo
     artwork_title: pick(raw, 'artwork_title'),
     stone_type: pick(raw, 'stone_type'),
     card_game: pick(raw, 'card_game'),
+    shares: num(raw, 'shares'),
+    amount: num(raw, 'amount'),
+    metal_amount: num(raw, 'metal_amount'),
   };
 }
 
@@ -454,10 +485,16 @@ function worldPlan(): NewsSectionPlan {
 /**
  * Sections for the supplied holdings only, plus world/politics.
  * An asset class with no rows is omitted (no crypto block without crypto).
+ * Closed positions are left out unless includeClosed is set.
  */
-export function planNewsSections(rows: NewsHoldingRow[]): NewsSectionPlan[] {
+export function planNewsSections(
+  rows: NewsHoldingRow[],
+  opts?: { includeClosed?: boolean },
+): NewsSectionPlan[] {
+  const includeClosed = opts?.includeClosed === true;
+  const source = includeClosed ? rows : rows.filter((row) => !isClosedNewsHolding(row));
   const groups = new Map<string, NewsHoldingRow[]>();
-  for (const row of rows) {
+  for (const row of source) {
     const key = row.asset_class.trim().toLowerCase();
     if (!key) continue;
     const list = groups.get(key) ?? [];

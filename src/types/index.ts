@@ -1162,6 +1162,14 @@ export interface NewsFeedResponse {
   sections: NewsSection[];
 }
 
+/** Saved on the user (preferences_json.news), not in the browser. */
+export interface NewsUserState {
+  readUrls: string[];
+  savedUrls: string[];
+  groupDailyPriceUpdates: boolean;
+  includeClosedPositions: boolean;
+}
+
 /** Read-only crypto wallet (public address only — never keys or recovery phrases). */
 export type WalletNetwork = 'ethereum' | 'polygon' | 'base' | 'arbitrum' | 'bitcoin' | 'solana';
 
