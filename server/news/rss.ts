@@ -21,11 +21,16 @@ const UA = 'PortfolioTracker/0.1 (personal headlines reader)';
 const FETCH_MS = 12_000;
 const MAX_CHARS = 1_500_000;
 const CACHE_MS = 10 * 60 * 1000;
+/** An older good copy is still shown (and refreshed in the background) up to this age. */
+const STALE_MAX_MS = 24 * 60 * 60 * 1000;
+/** A failed feed is not retried for this long. */
+const FAILURE_MS = 2 * 60 * 1000;
 const MAX_ITEMS = 30;
 
 type CacheEntry = { at: number; result: RssFetchResult };
 
 const cache = new Map<string, CacheEntry>();
+const failures = new Map<string, CacheEntry>();
 const inflight = new Map<string, Promise<RssFetchResult>>();
 
 export type FetchRssOptions = {
@@ -160,35 +165,72 @@ async function fetchRssUncached(url: string, fetchImpl: typeof fetch): Promise<R
   return parseRssFeed(text);
 }
 
-export async function fetchRss(url: string, opts?: FetchRssOptions): Promise<RssFetchResult> {
-  const fetchImpl = opts?.fetchImpl ?? fetch;
-  // Custom fetch (tests) and explicit refresh must not reuse another user's in-flight call.
-  const bypass = Boolean(opts?.refresh || opts?.fetchImpl);
-  if (!bypass) {
-    const hit = cache.get(url);
-    if (hit && Date.now() - hit.at < CACHE_MS) return hit.result;
-    const pending = inflight.get(url);
-    if (pending) return pending;
-  }
-
+/** Start one shared fetch for a URL and record its outcome. */
+function sharedFetch(url: string, fetchImpl: typeof fetch): Promise<RssFetchResult> {
+  const pending = inflight.get(url);
+  if (pending) return pending;
   const promise = fetchRssUncached(url, fetchImpl).then((result) => {
-    if (!opts?.fetchImpl && result.ok) {
+    if (result.ok) {
       cache.set(url, { at: Date.now(), result });
+      failures.delete(url);
+    } else {
+      failures.set(url, { at: Date.now(), result });
     }
     return result;
   });
-
-  if (!bypass) {
-    inflight.set(url, promise);
-    promise.finally(() => {
-      if (inflight.get(url) === promise) inflight.delete(url);
-    });
-  }
+  inflight.set(url, promise);
+  promise.finally(() => {
+    if (inflight.get(url) === promise) inflight.delete(url);
+  });
   return promise;
+}
+
+/**
+ * Page loads never wait on a feed they have seen before: a fresh copy is returned
+ * as is; an older good copy (up to STALE_MAX_MS) is returned at once while one
+ * shared fetch refreshes it. A failure is remembered for FAILURE_MS, so a feed
+ * that is down is not retried, and waited on, on every load. Only a feed with no
+ * good copy and no recent failure is fetched while the caller waits.
+ */
+export async function fetchRss(url: string, opts?: FetchRssOptions): Promise<RssFetchResult> {
+  const fetchImpl = opts?.fetchImpl ?? fetch;
+  // Custom fetch (tests) and explicit refresh must not reuse another user's in-flight call.
+  if (opts?.refresh || opts?.fetchImpl) {
+    const result = await fetchRssUncached(url, fetchImpl);
+    if (!opts?.fetchImpl && result.ok) {
+      cache.set(url, { at: Date.now(), result });
+      failures.delete(url);
+    }
+    return result;
+  }
+
+  const now = Date.now();
+  const hit = cache.get(url);
+  const failed = failures.get(url);
+  const recentlyFailed = failed != null && now - failed.at < FAILURE_MS;
+  if (hit && now - hit.at < CACHE_MS) return hit.result;
+  if (hit && now - hit.at < STALE_MAX_MS) {
+    if (!recentlyFailed) void sharedFetch(url, fetchImpl);
+    return hit.result;
+  }
+  if (recentlyFailed) return failed.result;
+  return sharedFetch(url, fetchImpl);
 }
 
 /** Test hook. */
 export function clearRssCache(): void {
   cache.clear();
+  failures.clear();
   inflight.clear();
+}
+
+/** Test hook: make every cached entry and failure `ms` older. */
+export function ageRssCacheForTest(ms: number): void {
+  for (const entry of cache.values()) entry.at -= ms;
+  for (const entry of failures.values()) entry.at -= ms;
+}
+
+/** Test hook: wait for background refreshes. */
+export async function settleRssRefreshes(): Promise<void> {
+  await Promise.all([...inflight.values()]);
 }
