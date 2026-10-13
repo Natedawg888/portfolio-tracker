@@ -1,310 +1,41 @@
 /**
  * Warranties (KAN-61). Reached from the Budget page (not the nav bar).
- * Phase 1: header counts from the list totals, and an empty state when there
- * are none. The add/edit dialog, tables, purchase link, and receipts are unchanged.
+ * Phase 1: header counts from the list totals (a short line before the first
+ * warranty), an empty state when there are none, and "+ Add warranty" once some
+ * exist.
+ * Phase 2: the add / edit form (components/warranties/WarrantyForm) with one-tap cover
+ * lengths, purchase linking, receipt, and a live "Covered until" line.
+ * Phase 3: one card per warranty (status chip, cover-used bar, ⋯ menu), soonest
+ * ending first, with an All / Covered / Ending soon / Expired filter.
+ * Phase 4: a one-line Consumer Guarantees Act note under the list.
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, formatNzd, type WarrantyWriteBody } from '../api/client';
-import { WARRANTY_LENGTHS, daysLeftText, warrantyEndDate } from '../lib/warranty';
-import type { Warranty, WarrantyListResponse, WarrantyPurchase } from '../types';
-import { warrantiesSubtitle } from './warrantiesView';
+import { api, type WarrantyWriteBody } from '../api/client';
+import { WarrantyForm, type WarrantyDraftForm } from '../components/warranties/WarrantyForm';
+import { RadioChips } from '../components/warranties/RadioChips';
+import { WarrantyCard } from '../components/warranties/WarrantyCard';
+import { errText } from '../components/warranties/receiptFile';
+import type { Warranty, WarrantyListResponse } from '../types';
+import {
+  coverChoiceFor,
+  emptyFilterText,
+  filterOptions,
+  filterWarranties,
+  sortWarranties,
+  warrantiesHeaderLine,
+  type WarrantyFilter,
+} from './warrantiesView';
 
-function formatDate(ymd: string | null): string {
-  if (!ymd) return '—';
-  const d = new Date(`${ymd}T00:00:00Z`);
-  return Number.isNaN(d.getTime())
-    ? ymd
-    : new Intl.DateTimeFormat('en-NZ', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(d);
-}
-
-function errText(e: unknown, fallback: string): string {
-  return e instanceof Error ? e.message : fallback;
-}
-
-const MAX_RECEIPT_BYTES = 8 * 1024 * 1024;
-
-function readFile(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    if (file.size > MAX_RECEIPT_BYTES) {
-      reject(new Error('Receipt must be 8 MB or smaller.'));
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
-    reader.onerror = () => reject(new Error('Could not read that file.'));
-    reader.readAsDataURL(file);
-  });
-}
-
-const STATUS_LABEL: Record<Warranty['status'], string> = { active: 'Covered', expiring: 'Expiring soon', expired: 'Expired' };
-
-function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
-  return (
-    <div className="modal-overlay" role="presentation" onClick={(e) => (e.target === e.currentTarget ? onClose() : undefined)}>
-      <div className="modal-dialog" role="dialog" aria-modal="true" aria-label={title}>
-        <div className="modal-header">
-          <h3>{title}</h3>
-          <button type="button" className="btn small modal-close" aria-label="Close" onClick={onClose}>
-            ×
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-type Draft = {
-  itemName: string;
-  retailer: string;
-  price: string;
-  startsOn: string;
-  /** Months from WARRANTY_LENGTHS, or 'custom' to pick the end date. */
-  length: string;
-  endsOn: string;
-  purchase: WarrantyPurchase | null;
-  notes: string;
-};
-
-function PurchasePicker({ value, onPick }: { value: WarrantyPurchase | null; onPick: (p: WarrantyPurchase | null) => void }) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState('');
-  const [rows, setRows] = useState<WarrantyPurchase[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    const id = window.setTimeout(() => {
-      api.warranties
-        .purchases(q)
-        .then((r) => {
-          if (!cancelled) {
-            setRows(r);
-            setError(null);
-          }
-        })
-        .catch((e: unknown) => {
-          if (!cancelled) setError(errText(e, 'Could not load purchases.'));
-        });
-    }, 250);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(id);
-    };
-  }, [open, q]);
-
-  if (value) {
-    return (
-      <div className="warranty-linked">
-        <span>
-          {value.description || 'Purchase'} · {formatDate(value.date)} · {formatNzd(value.amountNzd)}
-          {value.receiptUrl ? ' · has receipt' : ''}
-        </span>{' '}
-        <button type="button" className="btn small ghost" onClick={() => onPick(null)}>
-          Unlink
-        </button>
-      </div>
-    );
-  }
-  if (!open) {
-    return (
-      <button type="button" className="btn small" onClick={() => setOpen(true)}>
-        Find the purchase in your transactions
-      </button>
-    );
-  }
-  return (
-    <div className="warranty-picker">
-      <input type="search" placeholder="Search payee or description" value={q} autoFocus onChange={(e) => setQ(e.target.value)} />
-      {error ? <p className="auth-error small">{error}</p> : null}
-      {rows == null && !error ? <p className="muted small">Loading…</p> : null}
-      {rows && rows.length === 0 ? <p className="muted small">No purchases match.</p> : null}
-      {rows && rows.length > 0 ? (
-        <ul className="warranty-picker-list">
-          {rows.map((p) => (
-            <li key={p.id}>
-              <button type="button" className="warranty-pick" onClick={() => onPick(p)}>
-                <span>{p.description || 'Purchase'}</span>
-                <span className="muted small">
-                  {formatDate(p.date)} · {formatNzd(p.amountNzd)}
-                  {p.receiptUrl ? ' · receipt' : ''}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      <button type="button" className="btn small ghost" onClick={() => setOpen(false)}>
-        Cancel
-      </button>
-    </div>
-  );
-}
-
-function WarrantyDialog({
-  title,
-  initial,
-  isNew,
-  saveLabel,
-  onSave,
-  onClose,
-}: {
-  title: string;
-  initial: Draft;
-  /** Adding: picking a purchase also sets the start date unless it was changed. */
-  isNew: boolean;
-  saveLabel: string;
-  onSave: (body: WarrantyWriteBody, receipt: string | null) => Promise<void>;
-  onClose: () => void;
-}) {
-  const [d, setD] = useState<Draft>(initial);
-  const [receipt, setReceipt] = useState<{ name: string; dataUrl: string } | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((prev) => ({ ...prev, [k]: v }));
-
-  const endsOn = d.length === 'custom' ? d.endsOn : d.startsOn ? warrantyEndDate(d.startsOn, Number(d.length)) : '';
-  const price = d.price.trim() === '' ? null : Number(d.price);
-  const valid = d.itemName.trim() && d.startsOn && endsOn && endsOn >= d.startsOn && (price == null || price >= 0);
-
-  function pick(p: WarrantyPurchase | null) {
-    setD((prev) =>
-      p
-        ? {
-            ...prev,
-            purchase: p,
-            // Fill what's still empty from the purchase.
-            retailer: prev.retailer || p.description,
-            price: prev.price || String(p.amountNzd),
-            startsOn: isNew && prev.startsOn === initial.startsOn ? p.date : prev.startsOn,
-          }
-        : { ...prev, purchase: null },
-    );
-  }
-
-  async function chooseFile(file: File | undefined) {
-    setError(null);
-    if (!file) {
-      setReceipt(null);
-      return;
-    }
-    try {
-      setReceipt({ name: file.name, dataUrl: await readFile(file) });
-    } catch (e) {
-      setError(errText(e, 'Could not read that file.'));
-    }
-  }
-
-  async function save() {
-    setBusy(true);
-    setError(null);
-    try {
-      await onSave(
-        {
-          itemName: d.itemName,
-          retailer: d.retailer,
-          priceNzd: price,
-          startsOn: d.startsOn,
-          endsOn,
-          transactionId: d.purchase?.id ?? null,
-          notes: d.notes,
-        },
-        receipt?.dataUrl ?? null,
-      );
-    } catch (e) {
-      setError(errText(e, 'Could not save.'));
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Dialog title={title} onClose={onClose}>
-      <div className="form-grid">
-        <label className="span-2">
-          Item
-          <input value={d.itemName} maxLength={80} placeholder="e.g. Samsung TV" onChange={(e) => set('itemName', e.target.value)} />
-        </label>
-        <div className="span-2">
-          <p className="muted small" style={{ margin: '0 0 0.35rem' }}>
-            Purchase (optional) — links the transaction and its receipt
-          </p>
-          <PurchasePicker value={d.purchase} onPick={pick} />
-        </div>
-        <label>
-          Store (optional)
-          <input value={d.retailer} maxLength={80} onChange={(e) => set('retailer', e.target.value)} />
-        </label>
-        <label>
-          Price (NZD, optional)
-          <input type="number" min={0} step="0.01" inputMode="decimal" value={d.price} onChange={(e) => set('price', e.target.value)} />
-        </label>
-        <label>
-          Cover starts
-          <input type="date" value={d.startsOn} onChange={(e) => set('startsOn', e.target.value)} />
-        </label>
-        <label>
-          Length
-          <select
-            value={d.length}
-            onChange={(e) => setD((prev) => ({ ...prev, length: e.target.value, endsOn: prev.endsOn || endsOn }))}
-          >
-            {WARRANTY_LENGTHS.map((l) => (
-              <option key={l.months} value={String(l.months)}>
-                {l.label}
-              </option>
-            ))}
-            <option value="custom">Pick an end date</option>
-          </select>
-        </label>
-        {d.length === 'custom' ? (
-          <label>
-            Cover ends (last day)
-            <input type="date" value={d.endsOn} min={d.startsOn || undefined} onChange={(e) => set('endsOn', e.target.value)} />
-          </label>
-        ) : (
-          <p className="muted small span-2" style={{ margin: 0 }}>
-            Covered until {endsOn ? formatDate(endsOn) : '—'}
-          </p>
-        )}
-        <label className="span-2">
-          Receipt or warranty card (optional, image or PDF)
-          <input type="file" accept="image/*,application/pdf" onChange={(e) => void chooseFile(e.target.files?.[0])} />
-        </label>
-        <label className="span-2">
-          Notes (optional)
-          <input value={d.notes} maxLength={500} placeholder="e.g. serial number, claim phone number" onChange={(e) => set('notes', e.target.value)} />
-        </label>
-      </div>
-      {d.length === 'custom' && d.endsOn && d.startsOn && d.endsOn < d.startsOn ? (
-        <p className="auth-error" role="alert">Cover can’t end before it starts.</p>
-      ) : null}
-      {error ? <p className="auth-error" role="alert">{error}</p> : null}
-      <div className="row gap modal-actions">
-        <button type="button" className="btn primary" disabled={busy || !valid} onClick={() => void save()}>
-          {saveLabel}
-        </button>
-        <button type="button" className="btn" onClick={onClose}>
-          Cancel
-        </button>
-      </div>
-    </Dialog>
-  );
-}
-
-function draftFor(w: Warranty): Draft {
-  // Show a preset length when the saved dates match one; otherwise the exact end date.
-  const preset = WARRANTY_LENGTHS.find((l) => warrantyEndDate(w.startsOn, l.months) === w.endsOn);
+function draftFor(w: Warranty): WarrantyDraftForm {
   return {
     itemName: w.itemName,
     retailer: w.retailer,
     price: w.priceNzd == null ? '' : String(w.priceNzd),
     startsOn: w.startsOn,
-    length: preset ? String(preset.months) : 'custom',
-    endsOn: w.endsOn,
     purchase: w.purchase,
     notes: w.notes,
+    ...coverChoiceFor(w.startsOn, w.endsOn),
   };
 }
 
@@ -351,7 +82,7 @@ export function Warranties() {
   const [msg, setMsg] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [showExpired, setShowExpired] = useState(false);
+  const [filter, setFilter] = useState<WarrantyFilter>('all');
 
   const [reload, setReload] = useState(0);
   const load = () => setReload((n) => n + 1);
@@ -388,20 +119,21 @@ export function Warranties() {
     }
   }
 
-  async function uploadFor(w: Warranty, file: File | undefined) {
-    if (!file) return;
-    try {
-      const dataUrl = await readFile(file);
-      await act(w.id, () => api.warranties.uploadReceipt(w.id, dataUrl), `Receipt saved for ${w.itemName}.`);
-    } catch (e) {
-      setError(errText(e, 'Could not read that file.'));
-    }
-  }
-
   const today = data?.today ?? '';
-  const covered = data?.items.filter((i) => i.status !== 'expired') ?? [];
-  const expired = data?.items.filter((i) => i.status === 'expired') ?? [];
-  const blank: Draft = { itemName: '', retailer: '', price: '', startsOn: today, length: '12', endsOn: '', purchase: null, notes: '' };
+  const sorted = sortWarranties(data?.items ?? []);
+  const shown = filterWarranties(sorted, filter);
+  const blank: WarrantyDraftForm = {
+    itemName: '',
+    retailer: '',
+    price: '',
+    startsOn: today,
+    cover: '12',
+    customBy: 'months',
+    customMonths: '',
+    endsOn: '',
+    purchase: null,
+    notes: '',
+  };
 
   async function saveNew(body: WarrantyWriteBody, receipt: string | null) {
     const saved = await api.warranties.create(body);
@@ -419,116 +151,13 @@ export function Warranties() {
     load();
   }
 
-  async function saveEdit(item: Warranty, body: WarrantyWriteBody, receipt: string | null) {
+  async function saveEdit(item: Warranty, body: WarrantyWriteBody, receipt: string | null, removeReceipt: boolean) {
     await api.warranties.update(item.id, body);
     if (receipt) await api.warranties.uploadReceipt(item.id, receipt);
+    else if (removeReceipt) await api.warranties.removeReceipt(item.id);
     setDialog(null);
     setMsg(`${body.itemName} updated.`);
     load();
-  }
-
-  function row(w: Warranty) {
-    return (
-      <tr key={w.id} className={w.status === 'expired' ? 'bills-inactive' : undefined}>
-        <td>
-          {w.itemName}
-          <div className="muted small">
-            {[w.retailer, w.priceNzd != null ? formatNzd(w.priceNzd) : '', w.notes].filter(Boolean).join(' · ') || ' '}
-          </div>
-        </td>
-        <td>
-          {formatDate(w.endsOn)}
-          <div className="muted small">from {formatDate(w.startsOn)}</div>
-        </td>
-        <td>
-          <span className={`warranty-status warranty-status--${w.status}`}>{STATUS_LABEL[w.status]}</span>
-          <div className="muted small">{daysLeftText(w.endsOn, today)}</div>
-        </td>
-        <td>
-          {w.purchase ? (
-            <>
-              {w.purchase.description || 'Purchase'}
-              <div className="muted small">
-                {formatDate(w.purchase.date)} · {formatNzd(w.purchase.amountNzd)}
-                {w.purchase.receiptUrl ? (
-                  <>
-                    {' · '}
-                    <a href={w.purchase.receiptUrl} target="_blank" rel="noreferrer">
-                      Receipt
-                    </a>
-                  </>
-                ) : null}
-              </div>
-            </>
-          ) : (
-            <span className="muted">Not linked</span>
-          )}
-        </td>
-        <td style={{ whiteSpace: 'nowrap' }}>
-          {w.receiptUrl ? (
-            <>
-              <a href={w.receiptUrl} target="_blank" rel="noreferrer">
-                View
-              </a>{' '}
-              <button
-                type="button"
-                className="btn small ghost"
-                disabled={busyKey != null}
-                onClick={() => void act(w.id, () => api.warranties.removeReceipt(w.id), `Receipt removed from ${w.itemName}.`, `Remove the receipt from ${w.itemName}?`)}
-              >
-                Remove
-              </button>
-            </>
-          ) : (
-            <label className="btn small warranty-upload">
-              Upload
-              <input
-                type="file"
-                accept="image/*,application/pdf"
-                disabled={busyKey != null}
-                onChange={(e) => {
-                  void uploadFor(w, e.target.files?.[0]);
-                  e.target.value = '';
-                }}
-              />
-            </label>
-          )}
-        </td>
-        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-          <button type="button" className="btn small" disabled={busyKey != null} onClick={() => setDialog({ mode: 'edit', item: w })}>
-            Edit
-          </button>{' '}
-          <button
-            type="button"
-            className="btn small danger"
-            disabled={busyKey != null}
-            onClick={() => void act(w.id, () => api.warranties.remove(w.id), `${w.itemName} removed.`, `Remove the warranty for ${w.itemName}?`)}
-          >
-            Remove
-          </button>
-        </td>
-      </tr>
-    );
-  }
-
-  function table(items: Warranty[]) {
-    return (
-      <div className="table-wrap" style={{ overflowX: 'auto' }}>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th>Cover ends</th>
-              <th>Status</th>
-              <th>Purchase</th>
-              <th>Receipt</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>{items.map(row)}</tbody>
-        </table>
-      </div>
-    );
   }
 
   const openAdd = () => setDialog({ mode: 'add' });
@@ -541,13 +170,17 @@ export function Warranties() {
             ‹ Budget
           </Link>
           <h2 className="page-title">Warranties</h2>
-          {data ? <p className="muted small warranties-header-line">{warrantiesSubtitle(data.totals, data.expiringSoonDays)}</p> : null}
+          {data ? (
+            <p className="muted small warranties-header-line">{warrantiesHeaderLine(data.items.length, data.totals, data.expiringSoonDays)}</p>
+          ) : null}
         </div>
-        <div className="warranties-header-actions">
-          <button type="button" className="btn small primary" onClick={openAdd} disabled={!data}>
-            + Add warranty
-          </button>
-        </div>
+        {data && data.items.length > 0 ? (
+          <div className="warranties-header-actions">
+            <button type="button" className="btn small primary" onClick={openAdd}>
+              + Add warranty
+            </button>
+          </div>
+        ) : null}
       </header>
 
       {error ? (
@@ -571,41 +204,59 @@ export function Warranties() {
       {data && data.items.length === 0 ? <EmptyWarranties onAdd={openAdd} /> : null}
 
       {data && data.items.length > 0 ? (
-        <>
-          <section className="panel">
-            <h3>Under warranty</h3>
-            {covered.length === 0 ? (
-              <p className="muted small">Nothing is under warranty right now.</p>
-            ) : (
-              table(covered)
-            )}
-          </section>
-
-          {expired.length > 0 ? (
-            <section className="panel">
-              <div className="panel-heading">
-                <h3>Expired ({expired.length})</h3>
-                <button type="button" className="btn small ghost" onClick={() => setShowExpired((v) => !v)} aria-expanded={showExpired}>
-                  {showExpired ? 'Hide' : 'Show'}
-                </button>
-              </div>
-              {showExpired ? table(expired) : null}
-            </section>
-          ) : null}
-        </>
+        <section className="warranties-list" aria-labelledby="warranties-list-title">
+          <div className="warranties-list-head">
+            <h3 id="warranties-list-title">Your warranties</h3>
+            <div className="warranties-filter">
+              <span id="warranties-filter-label" className="warranties-filter-label">
+                Show
+              </span>
+              <RadioChips small labelId="warranties-filter-label" options={filterOptions(sorted)} value={filter} onChange={(v) => setFilter(v as WarrantyFilter)} />
+            </div>
+          </div>
+          {shown.length === 0 && filter !== 'all' ? (
+            <p className="muted small">{emptyFilterText(filter)}</p>
+          ) : (
+            <div className="warranty-card-list">
+              {shown.map((w) => (
+                <WarrantyCard
+                  key={w.id}
+                  warranty={w}
+                  today={today}
+                  busy={busyKey != null}
+                  onEdit={() => setDialog({ mode: 'edit', item: w })}
+                  onDelete={() => void act(w.id, () => api.warranties.remove(w.id), `${w.itemName} deleted.`, `Delete the warranty for ${w.itemName}? Its receipt is deleted too.`)}
+                />
+              ))}
+            </div>
+          )}
+          <p className="warranties-cga">
+            After a warranty ends, the Consumer Guarantees Act can still cover faults for a reasonable time, depending on the
+            product and what it cost, so keep the receipt. General information, not legal advice.
+          </p>
+        </section>
       ) : null}
 
       {dialog?.mode === 'add' ? (
-        <WarrantyDialog title="Add a warranty" initial={blank} isNew saveLabel="Add" onClose={() => setDialog(null)} onSave={saveNew} />
+        <WarrantyForm
+          title="Add warranty"
+          initial={blank}
+          today={today}
+          saveLabel="Save warranty"
+          existingReceiptUrl={null}
+          onClose={() => setDialog(null)}
+          onSave={(body, receipt) => saveNew(body, receipt)}
+        />
       ) : null}
       {dialog?.mode === 'edit' ? (
-        <WarrantyDialog
+        <WarrantyForm
           title={`Edit ${dialog.item.itemName}`}
           initial={draftFor(dialog.item)}
-          isNew={false}
+          today={today}
           saveLabel="Save"
+          existingReceiptUrl={dialog.item.receiptUrl}
           onClose={() => setDialog(null)}
-          onSave={(body, receipt) => saveEdit(dialog.item, body, receipt)}
+          onSave={(body, receipt, removeReceipt) => saveEdit(dialog.item, body, receipt, removeReceipt)}
         />
       ) : null}
     </div>

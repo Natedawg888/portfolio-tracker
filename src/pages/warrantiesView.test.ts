@@ -1,7 +1,27 @@
 /**
  * Warranties header counts (phase 1). Run: npm run test:warranties
  */
-import { warrantiesSubtitle } from './warrantiesView.ts';
+import {
+  COVER_OPTIONS,
+  WARRANTY_STATUS_LABELS,
+  coverChoiceFor,
+  coverEndDate,
+  coverLine,
+  coverProgress,
+  datesLine,
+  emptyFilterText,
+  filterOptions,
+  filterWarranties,
+  receiptFor,
+  sortWarranties,
+  storePriceLine,
+  longDate,
+  saveBlocker,
+  timeLeftText,
+  warrantiesHeaderLine,
+  warrantiesSubtitle,
+  type CoverChoice,
+} from './warrantiesView.ts';
 
 function eq(a: unknown, b: unknown, msg: string): void {
   if (a !== b) throw new Error(`FAIL: ${msg} (got ${String(a)}, expected ${String(b)})`);
@@ -44,5 +64,72 @@ eq(
   '0 covered · 0 ending in 0 days · 1 expired',
   'non-counts become zero; a fractional expired count floors',
 );
+
+eq(warrantiesHeaderLine(0, { active: 0, expiring: 0, expired: 0 }, days), 'What you bought, and when the cover ends', 'no counts before the first warranty');
+eq(warrantiesHeaderLine(6, { active: 3, expiring: 1, expired: 2 }, days), '3 covered · 1 ending in 60 days · 2 expired', 'counts once there are warranties');
+eq(WARRANTY_STATUS_LABELS.expiring, 'Ending soon', 'ending soon wording');
+
+// Add form (phase 2).
+const today = '2026-10-13';
+eq(longDate('2027-10-08'), '8 Oct 2027', 'long date');
+eq(timeLeftText(today, today), 'Ends today', 'ends today');
+eq(timeLeftText('2026-10-14', today), '1 day left', 'one day');
+eq(timeLeftText('2026-12-11', today), '59 days left', 'days under 60');
+eq(timeLeftText('2026-12-12', today), '1 month left', '60 days is a month');
+eq(timeLeftText('2027-10-12', today), '11 months left', 'months under 2 years');
+eq(timeLeftText('2028-10-11', today), '23 months left', '729 days still months');
+eq(timeLeftText('2028-10-12', today), '2.0 years left', '730 days is years');
+eq(timeLeftText('2031-10-12', today), '5.0 years left', 'five years');
+eq(timeLeftText('2026-10-12', today), 'Ended 1 day ago', 'ended one day ago');
+eq(timeLeftText('2026-09-13', today), 'Ended 30 days ago', 'ended days ago');
+eq(COVER_OPTIONS.map((o) => o.label).join(','), '6 months,1 year,2 years,3 years,5 years,Custom', 'cover options');
+
+const preset = (cover: string): CoverChoice => ({ cover, customBy: 'months', customMonths: '', endsOn: '' });
+eq(coverEndDate(today, preset('12')), '2027-10-12', '1 year from today');
+eq(coverEndDate('', preset('12')), '', 'no date yet');
+eq(coverEndDate(today, { cover: 'custom', customBy: 'months', customMonths: '18', endsOn: '' }), '2028-04-12', 'custom 18 months');
+eq(coverEndDate(today, { cover: 'custom', customBy: 'months', customMonths: '1.5', endsOn: '' }), '', 'whole months only');
+eq(coverEndDate(today, { cover: 'custom', customBy: 'date', customMonths: '', endsOn: '2027-01-31' }), '2027-01-31', 'custom end date');
+eq(coverLine('2027-10-12', today), 'Covered until 12 Oct 2027 · 11 months left', 'live cover line');
+eq(coverLine('2025-03-01', today), 'Cover ended 1 Mar 2025 · Ended 591 days ago', 'already ended');
+
+const form = { itemName: 'TV', startsOn: today, price: '', ...preset('12') };
+eq(saveBlocker(form), null, 'ready to save');
+eq(saveBlocker({ ...form, itemName: '  ' }), 'Add what it is to save', 'item needed');
+eq(saveBlocker({ ...form, startsOn: '' }), 'Add the date you bought it', 'date needed');
+eq(saveBlocker({ ...form, cover: 'custom', customBy: 'months', customMonths: '' }), 'Enter cover length in whole months (1–600)', 'months needed');
+eq(saveBlocker({ ...form, cover: 'custom', customBy: 'date', endsOn: '' }), 'Pick the day cover ends', 'end date needed');
+eq(saveBlocker({ ...form, cover: 'custom', customBy: 'date', endsOn: '2026-10-01' }), 'Cover can’t end before you bought it', 'end before start');
+eq(saveBlocker({ ...form, price: '-5' }), 'Price must be 0 or more', 'negative price');
+eq(saveBlocker({ ...form, price: '1299' }), null, 'price ok');
+eq(coverChoiceFor('2026-10-09', '2027-10-08').cover, '12', 'saved 1 year shows the preset');
+eq(coverChoiceFor('2026-10-09', '2027-11-30').cover, 'custom', 'other end date is custom');
+eq(coverChoiceFor('2026-10-09', '2027-11-30').customBy, 'date', 'custom by date');
+
+// Cards (phase 3).
+const money = (n: number) => `$${n.toFixed(2)}`;
+eq(storePriceLine({ retailer: 'Noel Leeming', priceNzd: 1299 }, money), 'Noel Leeming · $1299.00', 'store and price');
+eq(storePriceLine({ retailer: '', priceNzd: 0 }, money), '$0.00', 'a $0 price is still a price');
+eq(storePriceLine({ retailer: ' ', priceNzd: null }, money), 'No store or price added', 'neither');
+eq(datesLine({ startsOn: '2026-10-13', endsOn: '2027-10-12' }, today), 'Bought 13 Oct 2026 · 11 months left · Ends 12 Oct 2027', 'dates line');
+eq(datesLine({ startsOn: '2025-10-13', endsOn: today }, today), 'Bought 13 Oct 2025 · Ends today, 13 Oct 2026', 'last day');
+eq(datesLine({ startsOn: '2024-03-02', endsOn: '2025-03-01' }, today), 'Bought 2 Mar 2024 · Ended 1 Mar 2025 · 591 days ago', 'ended line');
+const year = coverProgress({ startsOn: '2026-10-13', endsOn: '2027-10-12' }, today);
+eq(year.total, 365, 'a year of cover is 365 days');
+eq(year.used, 1, 'the first day counts as used');
+eq(year.label, '1 of 365 days used', 'progress label');
+eq(coverProgress({ startsOn: '2026-01-01', endsOn: '2026-12-31' }, today).used, 286, 'part way');
+eq(coverProgress({ startsOn: '2024-03-02', endsOn: '2025-03-01' }, today).percent, 100, 'expired is all used');
+eq(coverProgress({ startsOn: '2026-11-01', endsOn: '2027-10-31' }, today).used, 0, 'not started yet');
+const w = (itemName: string, endsOn: string, status: 'active' | 'expiring' | 'expired') => ({ itemName, endsOn, status });
+const list = [w('Old phone', '2025-01-01', 'expired'), w('TV', '2027-10-12', 'active'), w('Kettle', '2026-11-01', 'expiring'), w('Headphones', '2026-03-01', 'expired')];
+eq(sortWarranties(list).map((x) => x.itemName).join(','), 'Kettle,TV,Headphones,Old phone', 'soonest first, expired last');
+eq(filterOptions(list).map((o) => o.label).join(','), 'All 4,Covered 1,Ending soon 1,Expired 2', 'filter labels with counts');
+eq(filterWarranties(list, 'expired').length, 2, 'filter expired');
+eq(filterWarranties(list, 'all').length, 4, 'all');
+eq(emptyFilterText('expiring'), 'No warranties ending soon.', 'empty filter text');
+eq(receiptFor({ receiptUrl: null, purchase: { receiptUrl: '/r/t.png' } }), '/r/t.png', 'purchase receipt when there is no own one');
+eq(receiptFor({ receiptUrl: '/r/w.png', purchase: { receiptUrl: '/r/t.png' } }), '/r/w.png', 'own receipt first');
+eq(receiptFor({ receiptUrl: null, purchase: null }), null, 'no receipt');
 
 console.log('warranties view tests ok');
