@@ -44,6 +44,7 @@
     "test:dashboard": "node --import tsx src/lib/accountMask.test.ts && node --import tsx src/lib/netWorthHistory.test.ts && node --import tsx server/lib/dailySnapshot.test.ts",
     "test:health-score": "node --import tsx src/lib/healthScore.test.ts && node --import tsx server/health/api.test.ts",
     "test:compound": "node --import tsx src/lib/compoundInterest.test.ts",
+    "test:mortgage": "node --import tsx src/lib/mortgageCalc.test.ts",
     "test:economy-page": "node --import tsx src/lib/economyView.test.ts && node --import tsx src/lib/cycleMix.test.ts",
     "test:page-cache": "node --import tsx src/lib/pageDataCache.test.ts",
     "test:donations": "node --import tsx server/donations/model.test.ts && node --import tsx server/donations/store.test.ts",

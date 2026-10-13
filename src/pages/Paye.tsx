@@ -3,6 +3,7 @@ import { api, formatNzd } from '../api/client';
 import { InfoTip } from '../components/InfoTip';
 import { PayeChoiceRow } from '../components/PayeChoiceRow';
 import { PayeResultPanel } from '../components/PayeResultPanel';
+import { MortgageCalculator } from '../components/MortgageCalculator';
 import { isMoneyHidden } from '../lib/privacy';
 import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import {
@@ -357,6 +358,7 @@ export function Paye() {
   const [investingPref, setInvestingPref] = useState<boolean | null>(null);
   const investingOpen = investingPref ?? extraCreditDrafts.length > 0;
   const [includedOpen, setIncludedOpen] = useState(false);
+  const [mortgageOpen, setMortgageOpen] = useState(false);
 
   // Persist last inputs (incl. investing + charity credits) and re-apply on next load.
   // Preserve charityLinks written from Budget so we do not wipe receipt links.
@@ -603,8 +605,19 @@ export function Paye() {
         >
           What&apos;s included <span aria-hidden="true">{includedOpen ? '▴' : '▾'}</span>
         </button>
+        <button
+          type="button"
+          className="btn small paye-mortgage-toggle"
+          aria-expanded={mortgageOpen}
+          aria-controls="paye-mortgage"
+          onClick={() => setMortgageOpen((open) => !open)}
+        >
+          Mortgage calculator <span aria-hidden="true">{mortgageOpen ? '▴' : '▾'}</span>
+        </button>
         <WhatsIncluded open={includedOpen} rates={rates} />
       </header>
+
+      {mortgageOpen ? <MortgageCalculator id="paye-mortgage" takeHomeYear={result?.takeHome ?? null} /> : null}
 
       <div className="paye-layout">
       <div className="paye-inputs">
