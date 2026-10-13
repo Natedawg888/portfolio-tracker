@@ -10626,6 +10626,35 @@ html .bills-page.warranties-page a.warranties-back:focus-visible {
 .warranty-picker-list .warranty-pick:hover,
 .warranty-picker-list .warranty-pick:focus-visible { background: var(--hover-row); }
 .warranty-picker-list .warranty-pick .muted { white-space: nowrap; }
+.warranty-field { display: grid; gap: 0.35rem; justify-items: start; }
+.warranty-field-label { font-size: 0.85rem; color: var(--muted); }
+.warranty-field .warranty-picker { justify-self: stretch; }
+.warranty-chips { flex-wrap: wrap; border-radius: var(--radius-sm); }
+.warranty-chips .segmented-btn { font-size: 0.85rem; padding: 0.35rem 0.8rem; }
+.warranty-chips.segmented--small .segmented-btn { font-size: 0.78rem; padding: 0.2rem 0.65rem; }
+.warranty-custom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1.25rem;
+}
+.warranty-custom label input { width: 11rem; }
+.warranty-receipt-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.75rem; }
+.warranty-form label.warranty-upload {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  color: var(--text);
+  font-size: 0.82rem;
+}
+.warranty-cover-line {
+  margin: 1rem 0 0;
+  min-height: 1.4em;
+  font-weight: 600;
+  color: var(--text);
+}
+.warranty-form-actions { align-items: center; flex-wrap: wrap; }
+.warranty-save-hint { flex: 1 1 12rem; }
 .warranty-linked { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
 
 /* Ad banners (KAN-72). Wide screens: fixed beside the 1120px column, so they never push or
