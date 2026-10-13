@@ -11731,6 +11731,9 @@ html.has-bottom-ad body { padding-bottom: calc(var(--ad-bottom-space, 0px) + env
   flex-wrap: wrap;
 }
 .portfolio-header-main { min-width: 0; }
+/* The header lays out left-aligned; undo the older centred hero card on this page. */
+.portfolio-page > .portfolio-header { text-align: left; }
+.portfolio-page > .portfolio-header .hero-value { margin-left: 0; margin-right: 0; }
 .portfolio-header .eyebrow { display: flex; align-items: center; }
 .portfolio-header-line { margin: 0; }
 .portfolio-header-refresh { display: grid; justify-items: end; gap: 0.3rem; min-width: 12rem; }
