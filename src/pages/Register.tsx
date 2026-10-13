@@ -3,7 +3,8 @@ import type { FormEvent } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
-import { ApiError, api } from '../api/client';
+import { ApiError, api, type SsoProvider } from '../api/client';
+import { ssoStartUrl } from '../lib/sso';
 import { AssetClassToggles } from '../components/AssetClassToggles';
 import { AddWalletPanel } from '../components/AddWalletPanel';
 import {
@@ -71,6 +72,7 @@ export function Register() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [providers, setProviders] = useState<SsoProvider[]>([]);
   const midSignupRef = useRef(false);
   const [resumed, setResumed] = useState(false);
 
@@ -102,6 +104,19 @@ export function Register() {
     midSignupRef.current = true;
     setResumed(true);
   }, [loading, user, resumed]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.auth
+      .ssoProviders()
+      .then((r) => {
+        if (!cancelled) setProviders(r.providers);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const loadCategories = useCallback(async () => {
     try {
@@ -506,6 +521,17 @@ export function Register() {
                 {busy ? 'Creating…' : 'Continue'}
               </button>
             </form>
+            {/* New Google / Apple / Microsoft users come back to /register at the asset-classes step. */}
+            {!firstUser && providers.length > 0 ? (
+              <div className="sso-buttons">
+                <p className="sso-divider muted small">or</p>
+                {providers.map((p) => (
+                  <a key={p.id} className={`btn ghost sso-btn sso-btn--${p.id}`} href={ssoStartUrl(p.id)}>
+                    Sign up with {p.label}
+                  </a>
+                ))}
+              </div>
+            ) : null}
             {!firstUser ? (
               <p className="auth-switch">
                 Already have an account? <Link to="/login">Sign in</Link>
