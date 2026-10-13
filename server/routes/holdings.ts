@@ -19,7 +19,7 @@ import {
   quoteDiamondOpenFacet,
   stoneAssetKey,
 } from '../quotes/stones.ts';
-import { ensureMetalQuotesPersisted } from '../quotes/metalQuotesDb.ts';
+import { quotesForRead } from '../quotes/readQuotes.ts';
 import {
   estimateMinerValueNzd,
   estimateToQuoteResult,
@@ -28,7 +28,6 @@ import { resolveCryptoTicker } from '../quotes/crypto.ts';
 import { getStockQuoteNzd, resolveStockTicker } from '../quotes/stocks.ts';
 import {
   forexAssetKey,
-  ensureForexQuotesPersisted,
   refreshForexCurrency,
 } from '../quotes/forexQuotesDb.ts';
 import type { MetalKind, MetalUnit } from '../../src/types/index.ts';
@@ -468,10 +467,8 @@ function mapHolding(
 
 router.get('/', async (req, res) => {
   const db = await getDb();
-  // Auto-hydrate NZD spots (gold-api.com, or Metals.Dev when METALS_API_KEY is set).
-  await ensureMetalQuotesPersisted(db);
-  // Auto-hydrate Frankfurter FX→NZD for forex holdings (never invent).
-  await ensureForexQuotesPersisted(db);
+  // Stored NZD spots and FX rates now; stale ones refresh in the background (readQuotes.ts).
+  await quotesForRead(db, uid(req));
   const rows = queryAll(db, 'SELECT * FROM holdings WHERE user_id = ? ORDER BY asset_class, name', [uid(req)]);
   res.json(
     rows.map((row) => {
@@ -513,7 +510,7 @@ router.get('/:id', async (req, res) => {
     return res.json(mapHolding(row, m));
   }
   if (row.asset_class === 'forex') {
-    await ensureForexQuotesPersisted(db);
+    await quotesForRead(db, uid(req));
     const m = lookupFxMarketNzd(db, row.asset as string, row.amount as number);
     return res.json(mapHolding(row, m));
   }

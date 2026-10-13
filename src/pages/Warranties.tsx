@@ -12,6 +12,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type WarrantyWriteBody } from '../api/client';
+import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
+import { showQuietToast } from '../lib/quietToast';
 import { WarrantyForm, type WarrantyDraftForm } from '../components/warranties/WarrantyForm';
 import { RadioChips } from '../components/warranties/RadioChips';
 import { WarrantyCard } from '../components/warranties/WarrantyCard';
@@ -26,6 +28,8 @@ import {
   warrantiesHeaderLine,
   type WarrantyFilter,
 } from './warrantiesView';
+
+const WARRANTIES_KEY = 'warranties';
 
 function draftFor(w: Warranty): WarrantyDraftForm {
   return {
@@ -77,7 +81,8 @@ function EmptyWarranties({ onAdd }: { onAdd: () => void }) {
 }
 
 export function Warranties() {
-  const [data, setData] = useState<WarrantyListResponse | null>(null);
+  // Last list from this session shows at once; a fresh one replaces it.
+  const [data, setData] = useState<WarrantyListResponse | null>(() => readPageCache<WarrantyListResponse>(WARRANTIES_KEY) ?? null);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogState>(null);
@@ -89,15 +94,21 @@ export function Warranties() {
 
   useEffect(() => {
     let cancelled = false;
+    const stamp = beginPageRead(WARRANTIES_KEY);
     api.warranties
       .list()
       .then((d) => {
-        if (cancelled) return;
+        if (!commitPageRead(stamp, d) || cancelled) return;
         setData(d);
         setError(null);
       })
       .catch((e: unknown) => {
-        if (!cancelled) setError(errText(e, 'Could not load warranties.'));
+        if (cancelled) return;
+        if (readPageCache<WarrantyListResponse>(WARRANTIES_KEY) != null) {
+          showQuietToast('Could not refresh warranties — showing last data.', { kind: 'warn' });
+          return;
+        }
+        setError(errText(e, 'Could not load warranties.'));
       });
     return () => {
       cancelled = true;

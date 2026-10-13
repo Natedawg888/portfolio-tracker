@@ -10,6 +10,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type RecurringWriteBody } from '../api/client';
+import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
+import { showQuietToast } from '../lib/quietToast';
 import { BillCard } from '../components/bills/BillCard';
 import { BillsSummary } from '../components/bills/BillsSummary';
 import { SuggestionCard } from '../components/bills/SuggestionCard';
@@ -18,6 +20,8 @@ import type { DebtPerson, RecurringItem, RecurringListResponse } from '../types'
 import { billColours, billsSubtitle, creditorFor, headerCounts, orderBills } from './billsView';
 
 type Suggestion = RecurringListResponse['suggestions'][number];
+
+const BILLS_KEY = 'bills';
 type Category = { id: string; name: string; type: string };
 
 function errText(e: unknown, fallback: string): string {
@@ -149,7 +153,8 @@ type DialogState =
   | null;
 
 export function Bills() {
-  const [data, setData] = useState<RecurringListResponse | null>(null);
+  // Last list from this session shows at once; a fresh one replaces it.
+  const [data, setData] = useState<RecurringListResponse | null>(() => readPageCache<RecurringListResponse>(BILLS_KEY) ?? null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [debts, setDebts] = useState<DebtPerson[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -162,15 +167,21 @@ export function Bills() {
 
   useEffect(() => {
     let cancelled = false;
+    const stamp = beginPageRead(BILLS_KEY);
     api.recurring
       .list()
       .then((d) => {
-        if (cancelled) return;
+        if (!commitPageRead(stamp, d) || cancelled) return;
         setData(d);
         setError(null);
       })
       .catch((e: unknown) => {
-        if (!cancelled) setError(errText(e, 'Could not load bills and subscriptions.'));
+        if (cancelled) return;
+        if (readPageCache<RecurringListResponse>(BILLS_KEY) != null) {
+          showQuietToast('Could not refresh bills — showing last data.', { kind: 'warn' });
+          return;
+        }
+        setError(errText(e, 'Could not load bills and subscriptions.'));
       });
     return () => {
       cancelled = true;

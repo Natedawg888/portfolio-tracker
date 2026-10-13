@@ -16,12 +16,10 @@ import {
   metalMarketValueNzd,
   metalsConfigured,
 } from '../quotes/metals.ts';
-import { ensureMetalQuotesPersisted, readDbMetalQuotes } from '../quotes/metalQuotesDb.ts';
+import { readDbMetalQuotes } from '../quotes/metalQuotesDb.ts';
+import { quotesForRead } from '../quotes/readQuotes.ts';
 import { metalSpotQuoteNote, summarizeStoredMetalSpots } from '../quotes/metalSpotCopy.ts';
-import {
-  ensureForexQuotesPersisted,
-  forexAssetKey,
-} from '../quotes/forexQuotesDb.ts';
+import { forexAssetKey } from '../quotes/forexQuotesDb.ts';
 import type { MetalKind, MetalUnit } from '../../src/types/index.ts';
 import { aucklandToday } from '../debts/model.ts';
 import { isClosedQuantity, isTotalNotUnitQuote, parseNzdValueFromNotes } from '../../src/lib/holdingValue.ts';
@@ -152,8 +150,8 @@ export async function computeNetWorth(
   if (!userId) {
     throw new Error('computeNetWorth requires userId for per-user isolation');
   }
-  await ensureMetalQuotesPersisted(db);
-  await ensureForexQuotesPersisted(db);
+  // Stored quotes now; stale ones refresh in the background (see readQuotes.ts).
+  await quotesForRead(db, userId);
   const metalSpots = summarizeStoredMetalSpots(readDbMetalQuotes(db));
 
   const accounts = queryAll<{

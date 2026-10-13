@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, formatNzd } from '../api/client';
+import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import { INVOICE_STATUS_LABELS, type InvoiceStatus } from '../lib/invoiceCalc';
 import type { BusinessProfile, Invoice, InvoiceClient, InvoiceListResponse, InvoiceSummary } from '../types';
 import { InvoicePaymentDialog } from '../components/InvoicePaymentDialog';
@@ -370,19 +371,35 @@ function InvoiceRowMenu({
   );
 }
 
+const INVOICES_LIST_KEY = 'invoices:list';
+const INVOICES_CLIENTS_KEY = 'invoices:clients';
+const INVOICES_BUSINESS_KEY = 'invoices:business';
+
+/** Which filters (and reload) a list response belongs to. */
+function invoicesRequestKey(status: string, clientId: string, from: string, to: string, reload: number): string {
+  return `${status}\0${clientId}\0${from}\0${to}\0${reload}`;
+}
+
 export function Invoices() {
   const navigate = useNavigate();
   const [status, setStatus] = useState<'' | InvoiceStatus>('');
   const [clientId, setClientId] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [data, setData] = useState<InvoiceListResponse | null>(null);
-  const [appliedKey, setAppliedKey] = useState<string | null>(null);
-  const [catalogCount, setCatalogCount] = useState<number | null>(null);
-  const [clients, setClients] = useState<InvoiceClient[]>([]);
-  const [clientsSettled, setClientsSettled] = useState(false);
-  const [business, setBusiness] = useState<BusinessProfile | null>(null);
-  const [businessSettled, setBusinessSettled] = useState(false);
+  // The unfiltered list, clients and business details from this session show at
+  // once (filters start empty); fresh responses replace them.
+  const [cached] = useState(() => ({
+    list: readPageCache<InvoiceListResponse>(INVOICES_LIST_KEY),
+    clients: readPageCache<InvoiceClient[]>(INVOICES_CLIENTS_KEY),
+    business: readPageCache<{ profile: BusinessProfile | null }>(INVOICES_BUSINESS_KEY),
+  }));
+  const [data, setData] = useState<InvoiceListResponse | null>(cached.list ?? null);
+  const [appliedKey, setAppliedKey] = useState<string | null>(cached.list ? invoicesRequestKey('', '', '', '', 0) : null);
+  const [catalogCount, setCatalogCount] = useState<number | null>(cached.list?.invoices.length ?? null);
+  const [clients, setClients] = useState<InvoiceClient[]>(cached.clients ?? []);
+  const [clientsSettled, setClientsSettled] = useState(cached.clients != null);
+  const [business, setBusiness] = useState<BusinessProfile | null>(cached.business?.profile ?? null);
+  const [businessSettled, setBusinessSettled] = useState(cached.business != null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [rowBusy, setRowBusy] = useState(false);
@@ -390,13 +407,16 @@ export function Invoices() {
   const [reload, setReload] = useState(0);
 
   const filtersActive = Boolean(status || clientId || from || to);
-  const requestKey = `${status}\0${clientId}\0${from}\0${to}\0${reload}`;
+  const requestKey = invoicesRequestKey(status, clientId, from, to, reload);
 
   useEffect(() => {
     let cancelled = false;
+    const unfiltered = !status && !clientId && !from && !to;
+    const stamp = unfiltered ? beginPageRead(INVOICES_LIST_KEY) : null;
     api.invoices
       .list({ status, clientId, from, to })
       .then((d) => {
+        if (stamp && !commitPageRead(stamp, d)) return;
         if (!cancelled) {
           setData(d);
           setAppliedKey(requestKey);
@@ -414,9 +434,11 @@ export function Invoices() {
 
   useEffect(() => {
     let cancelled = false;
+    const stamp = beginPageRead(INVOICES_CLIENTS_KEY);
     api.invoices
       .clients()
       .then((c) => {
+        if (!commitPageRead(stamp, c)) return;
         if (!cancelled) {
           setClients(c);
           setClientsSettled(true);
@@ -432,9 +454,11 @@ export function Invoices() {
 
   useEffect(() => {
     let cancelled = false;
+    const stamp = beginPageRead(INVOICES_BUSINESS_KEY);
     api.invoices
       .business()
       .then((profile) => {
+        if (!commitPageRead(stamp, { profile })) return;
         if (!cancelled) {
           setBusiness(profile);
           setBusinessSettled(true);

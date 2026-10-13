@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 import { countFinanceRows, existingDataClaimAllowed, startupOwnerId } from '../lib/dataClaim.ts';
+import { logger } from '../lib/logger.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
@@ -25,10 +26,23 @@ function ensureDataDir() {
   }
 }
 
+/** A save slower than this logs slow_db_persist (every write rewrites the whole file). */
+const SLOW_PERSIST_MS = 50;
+
 export function persist() {
   if (!db) return;
+  const started = performance.now();
+  try {
+    persistNow(db);
+  } finally {
+    const ms = Math.round(performance.now() - started);
+    if (ms >= SLOW_PERSIST_MS) logger.warn('slow_db_persist', { ms });
+  }
+}
+
+function persistNow(database: Database) {
   ensureDataDir();
-  const data = db.export();
+  const data = database.export();
   const tmp = `${DB_PATH}.tmp`;
   fs.writeFileSync(tmp, Buffer.from(data));
   try {
