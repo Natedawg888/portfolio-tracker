@@ -9,6 +9,7 @@ import {
   priceSources,
   seriesChangePct,
   shareOfTotal,
+  propertyFigures,
   tabFromHash,
   visibleTabs,
 } from './portfolioView.ts';
@@ -31,12 +32,19 @@ eq(formatSignedPct(Infinity), '—', 'never ∞');
 // Tabs.
 const enabled = (p: string) => ['stock', 'gomining', 'forex'].includes(p);
 const tabs = visibleTabs(enabled);
-eq(tabs.join(), 'overview,stocks,dividends,mining,other', 'only tabs for enabled classes');
+eq(tabs.join(), 'overview,stocks,dividends,mining,forex', 'only tabs for enabled classes');
 eq(tabFromHash('#mining', tabs), 'mining', 'hash selects tab');
 eq(tabFromHash('#crypto', tabs), 'overview', 'hidden tab falls back to overview');
 eq(tabFromHash('', tabs), 'overview', 'no hash');
-eq(nextTab(tabs, 'other', 'ArrowRight'), 'overview', 'right wraps');
-eq(nextTab(tabs, 'overview', 'ArrowLeft'), 'other', 'left wraps');
+eq(nextTab(tabs, 'forex', 'ArrowRight'), 'overview', 'right wraps');
+eq(nextTab(tabs, 'overview', 'ArrowLeft'), 'forex', 'left wraps');
+const all = visibleTabs(() => true);
+eq(all.join(), 'overview,stocks,dividends,crypto,mining,metals,forex,property,art,stones,collectables', 'one tab per class, in Settings order');
+eq(visibleTabs((p) => p === 'art').join(), 'overview,art', 'each of the four has its own toggle');
+eq(tabFromHash('#other', tabs), 'forex', 'old #other link opens the first of the four that is on');
+eq(tabFromHash('#other', visibleTabs((p) => p === 'stone')), 'stones', 'old #other link with only stones on');
+eq(tabFromHash('#other', visibleTabs((p) => p === 'stock')), 'overview', 'old #other link with none of the four on');
+eq(tabFromHash('#property', all), 'property', 'property hash');
 eq(nextTab(tabs, 'mining', 'Home'), 'overview', 'home');
 eq(nextTab(tabs, 'mining', 'Enter'), null, 'other keys ignored');
 
@@ -75,5 +83,10 @@ eq(
   'sources in use only',
 );
 eq(priceSources([], null).length, 0, 'no holdings, no sources');
+
+// Property figures.
+eq(propertyFigures({ propertyValueNzd: 850000, mortgageOutstandingNzd: 520000 }).equityNzd, 330000, 'equity is value minus mortgage');
+eq(propertyFigures({ propertyValueNzd: 850000, mortgageOutstandingNzd: null }).mortgageNzd, 0, 'no mortgage is 0');
+eq(propertyFigures({ propertyValueNzd: null, mortgageOutstandingNzd: 1 }).equityNzd, null, 'no value, no equity');
 
 console.log('portfolio view tests ok');

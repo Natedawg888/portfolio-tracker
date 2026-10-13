@@ -9144,6 +9144,44 @@ html:not([data-theme]) .settings-page :focus-visible {
 .section-head-row > h3 {
   margin: 0;
 }
+.class-heading { align-items: flex-end; }
+.class-heading-title { min-width: 0; }
+.class-heading-title h3 { margin: 0; }
+.property-list { display: grid; gap: 0.75rem; margin-top: 0.75rem; }
+.property-card { display: grid; gap: 0.6rem; }
+.property-card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.75rem;
+}
+.property-card-head:has(.property-photo) { grid-template-columns: 3.5rem minmax(0, 1fr) auto; }
+.property-photo { width: 3.5rem; height: 3.5rem; border-radius: var(--radius-sm); object-fit: cover; }
+.property-card-title { min-width: 0; }
+.property-card-title h4 { margin: 0; font-size: 1rem; overflow-wrap: anywhere; text-transform: none; }
+.property-card-title p { margin: 0.15rem 0 0; }
+.property-figures {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem 1rem;
+  margin: 0;
+}
+.property-figures dt { font-size: 0.75rem; font-weight: 600; color: var(--muted); }
+.property-figures dd { margin: 0.15rem 0 0; font-size: 1rem; font-weight: 650; overflow-wrap: anywhere; }
+.property-figures .property-equity { font-weight: 700; }
+.property-cost { margin: 0; }
+.property-card .add-cost-btn { justify-self: start; }
+.property-form { margin-top: 0; }
+.form-grid label.property-form-check { flex-direction: row; align-items: center; gap: 0.4rem; }
+@media (max-width: 420px) {
+  .property-figures { grid-template-columns: 1fr 1fr; }
+}
+.class-heading-total {
+  margin: 0.15rem 0 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
 .wallets-total {
   display: flex;
   flex-wrap: wrap;

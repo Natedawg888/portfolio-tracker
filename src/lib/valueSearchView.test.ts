@@ -109,7 +109,7 @@ eq(findOwned(metal('gold'), holdings)?.text, 'You own 10 g of gold', 'single uni
 
 // Currency: the foreign side of the pair.
 eq(findOwned(currency('USD', 'NZD'), holdings)?.text, 'You own 500 USD', 'USD → NZD');
-eq(findOwned(currency('NZD', 'USD'), holdings)?.href, '/portfolio?holding=f1#other', 'NZD → USD');
+eq(findOwned(currency('NZD', 'USD'), holdings)?.href, '/portfolio?holding=f1#forex', 'NZD → USD');
 eq(findOwned(currency('EUR', 'NZD'), holdings), null, 'EUR not held');
 
 // Cards.
@@ -125,8 +125,8 @@ eq(findOwned(miner, holdings), { text: 'You own 2 miners, 150 TH/s total', worth
 // Add links.
 eq(addAction(stock('SPCX'), { forexEnabled: true }), { label: 'Add to Portfolio', href: '/portfolio?add=stock&ticker=SPCX#stocks' }, 'stock add');
 eq(addAction(metal('gold', 2, 'kg'), { forexEnabled: true })?.href, '/portfolio?add=metal&metal=gold&amount=2000&unit=g#metals', 'kg converted for the gram/oz form');
-eq(addAction(currency('USD', 'NZD'), { forexEnabled: true })?.href, '/portfolio?add=forex&currency=USD&amount=100#other', 'forex add with amount');
-eq(addAction(currency('NZD', 'USD'), { forexEnabled: true })?.href, '/portfolio?add=forex&currency=USD#other', 'NZD amount is not a USD amount');
+eq(addAction(currency('USD', 'NZD'), { forexEnabled: true })?.href, '/portfolio?add=forex&currency=USD&amount=100#forex', 'forex add with amount');
+eq(addAction(currency('NZD', 'USD'), { forexEnabled: true })?.href, '/portfolio?add=forex&currency=USD#forex', 'NZD amount is not a USD amount');
 eq(addAction(currency('USD', 'NZD'), { forexEnabled: false }), null, 'forex disabled → no add button');
 eq(addAction(currency('THB', 'NZD'), { forexEnabled: true }), null, 'currency the forex form lacks');
 eq(addAction(card({ set: 'lea', number: '161' }), { forexEnabled: true })?.label, 'Add to collection', 'card label');

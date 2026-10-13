@@ -35,8 +35,11 @@ export const PORTFOLIO_TABS = [
   'crypto',
   'mining',
   'metals',
+  'forex',
+  'property',
+  'art',
+  'stones',
   'collectables',
-  'other',
 ] as const;
 export type PortfolioTab = (typeof PORTFOLIO_TABS)[number];
 
@@ -47,8 +50,11 @@ export const TAB_LABELS: Record<PortfolioTab, string> = {
   crypto: 'Crypto',
   mining: 'Mining',
   metals: 'Metals',
+  forex: 'Forex',
+  property: 'Property',
+  art: 'Art',
+  stones: 'Precious stones',
   collectables: 'Collectables',
-  other: 'Other assets',
 };
 
 /** Asset-class preference keys each tab needs (any one enables it). Overview always shows. */
@@ -59,17 +65,24 @@ export const TAB_PREFS: Record<PortfolioTab, string[]> = {
   crypto: ['crypto'],
   mining: ['gomining'],
   metals: ['metal'],
+  forex: ['forex'],
+  property: ['real_estate'],
+  art: ['art'],
+  stones: ['stone'],
   collectables: ['collectable'],
-  other: ['forex', 'real_estate', 'art', 'stone'],
 };
 
 export function visibleTabs(enabled: (pref: string) => boolean): PortfolioTab[] {
   return PORTFOLIO_TABS.filter((t) => t === 'overview' || TAB_PREFS[t].some((p) => enabled(p)));
 }
 
+/** The four tabs that used to share "#other" (old links open the first one that is visible). */
+const FORMER_OTHER: PortfolioTab[] = ['forex', 'property', 'art', 'stones'];
+
 /** "#stocks" → 'stocks' when that tab is visible; anything else → overview. */
 export function tabFromHash(hash: string, visible: PortfolioTab[]): PortfolioTab {
   const key = hash.replace(/^#/, '').toLowerCase();
+  if (key === 'other') return FORMER_OTHER.find((t) => visible.includes(t)) ?? 'overview';
   return (visible as string[]).includes(key) ? (key as PortfolioTab) : 'overview';
 }
 
@@ -258,4 +271,18 @@ export function priceSources(holdings: SourceHolding[], metalsProvider: 'gold-ap
     'OpenFacet',
   ];
   return order.filter((s) => found.has(s));
+}
+
+/**
+ * A property's figures as entered: market value, mortgage (0 when blank) and
+ * equity = value − mortgage. Value is null when it was never entered.
+ */
+export function propertyFigures(h: { propertyValueNzd?: number | null; mortgageOutstandingNzd?: number | null }): {
+  valueNzd: number | null;
+  mortgageNzd: number;
+  equityNzd: number | null;
+} {
+  const value = h.propertyValueNzd != null && Number.isFinite(Number(h.propertyValueNzd)) ? Number(h.propertyValueNzd) : null;
+  const mortgage = h.mortgageOutstandingNzd != null && Number.isFinite(Number(h.mortgageOutstandingNzd)) ? Math.max(0, Number(h.mortgageOutstandingNzd)) : 0;
+  return { valueNzd: value, mortgageNzd: mortgage, equityNzd: value == null ? null : value - mortgage };
 }

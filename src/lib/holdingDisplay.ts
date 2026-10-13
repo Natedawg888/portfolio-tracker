@@ -11,6 +11,8 @@ export type Holding = {
   assetClass: string;
   name: string;
   costBasisNzd: number | null;
+  /** Last change to the holding (ISO). */
+  updatedAt?: string;
   minerName?: string;
   hashrateThs?: number;
   energyEfficiencyWth?: number | null;

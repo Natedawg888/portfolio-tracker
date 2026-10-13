@@ -121,7 +121,7 @@ export function findOwned(result: LookupResult, holdings: readonly Holding[]): O
     case 'currency': {
       const code = foreignCurrency(result.from, result.to);
       const m = open(holdings, 'forex').filter((h) => same(h.currency, code));
-      return owned(m, 'other', `You own ${qty(sum(m.map((h) => Number(h.amount))))} ${code}`);
+      return owned(m, 'forex', `You own ${qty(sum(m.map((h) => Number(h.amount))))} ${code}`);
     }
     case 'mtg':
     case 'pokemon': {

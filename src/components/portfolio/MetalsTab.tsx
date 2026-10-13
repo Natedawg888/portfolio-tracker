@@ -8,6 +8,7 @@ import { HoldingPriceChart } from '../HoldingPriceChart';
 import { InfoTip } from '../InfoTip';
 import { MoreMenu } from '../MoreMenu';
 import { AddCostButton } from './AddCostButton';
+import { ClassHeading } from './ClassHeading';
 import { amountLabel, displayCostBasisNzd, displayName, marketValueNzd, type Holding } from '../../lib/holdingDisplay';
 import { formatSignedPct, holdingDomId, holdingReturn, seriesChangePct } from '../../lib/portfolioView';
 
@@ -67,6 +68,7 @@ function SpotBlock({ metal, holding }: { metal: string; holding: Holding }) {
 export function MetalsTab({
   holdings,
   sourceInfo,
+  total,
   onRefresh,
   onDelete,
   onSetCost,
@@ -74,6 +76,8 @@ export function MetalsTab({
 }: {
   holdings: Holding[];
   sourceInfo: ReactNode;
+  /** Class total from the portfolio summary; null while loading. */
+  total: number | null;
   onRefresh: (id: string) => void;
   onDelete: (id: string) => void;
   onSetCost: (id: string, costNzd: number) => Promise<boolean>;
@@ -86,12 +90,12 @@ export function MetalsTab({
 
   return (
     <section className="panel" aria-labelledby="metals-title">
-      <div className="panel-heading">
-        <h3 id="metals-title">
-          Metals
-          <InfoTip label="Where metal prices come from">{sourceInfo}</InfoTip>
-        </h3>
-      </div>
+      <ClassHeading
+        id="metals-title"
+        title="Metals"
+        info={<InfoTip label="Where metal prices come from">{sourceInfo}</InfoTip>}
+        total={total}
+      />
       {byMetal.size > 0 ? (
         <div className="metal-spots">
           {[...byMetal].map(([metal, h]) => (

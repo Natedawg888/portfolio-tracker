@@ -87,6 +87,8 @@ import {
 } from '../lib/portfolioAddParams';
 import { revealAddForm, revealHolding, whenElementAppears } from '../lib/revealElement';
 import { AddCostButton } from '../components/portfolio/AddCostButton';
+import { ClassHeading } from '../components/portfolio/ClassHeading';
+import { PropertyList, type PropertyDetailsPatch, type PropertyValuePatch } from '../components/portfolio/PropertyList';
 
 const emptyMiner = {
   minerName: '',
@@ -898,11 +900,17 @@ function Section({
   headerExtra,
   extraCards,
   before,
+  info,
+  total,
   children,
 }: {
   title: string;
   items: Holding[];
   empty: string;
+  /** ⓘ beside the title: where values come from. */
+  info?: ReactNode;
+  /** Class total from the portfolio summary; null while loading. */
+  total: number | null;
   onRefresh?: (id: string) => void;
   onDelete?: (id: string) => void;
   onUpdateQuantity?: (id: string, quantity: number) => Promise<void>;
@@ -928,14 +936,9 @@ function Section({
   const hasExtra = Boolean(extraCards?.length);
   return (
     <section className="panel">
-      {headerExtra ? (
-        <div className="section-head-row">
-          <h3>{title}</h3>
-          {headerExtra}
-        </div>
-      ) : (
-        <h3>{title}</h3>
-      )}
+      <ClassHeading title={title} info={info} total={total}>
+        {headerExtra}
+      </ClassHeading>
       {before}
       {items.length === 0 && !hasExtra ? (
         empty ? <p className="muted">{empty}</p> : null
@@ -972,10 +975,13 @@ function GoMiningMinersSection({
   onSettingsChange,
   onSaveDiscount,
   savingDiscount,
+  classTotal: total,
   children,
 }: {
   items: Holding[];
   empty: string;
+  /** Class total from the portfolio summary; null while loading. */
+  classTotal: number | null;
   onRefresh?: (id: string) => void;
   /** Mining income recorded on Budget this month; null if it couldn't be loaded. */
   received: { total: number; count: number; avgPerDay: number | null } | null;
@@ -1135,9 +1141,7 @@ function GoMiningMinersSection({
 
   return (
     <section className="panel mining-panel" aria-labelledby="mining-title">
-      <div className="panel-heading">
-        <h3 id="mining-title">GoMining miners</h3>
-      </div>
+      <ClassHeading id="mining-title" title="GoMining miners" total={total} />
 
       {items.length > 0 ? (
         <dl className="budget-summary-figures mining-summary">
@@ -1556,10 +1560,10 @@ const OVERVIEW_ROW_META: Record<string, { description: string; tab?: PortfolioTa
   gomining: { description: 'GoMining miners at marketplace or your own value', tab: 'mining' },
   metals: { description: 'Bullion valued at the live spot price', tab: 'metals' },
   collectables: { description: 'Trading cards and other collectables', tab: 'collectables' },
-  forex: { description: 'Foreign cash held outside your bank', tab: 'other' },
-  realEstate: { description: 'Property equity: your value minus the mortgage', tab: 'other' },
-  art: { description: 'Art at your recorded valuation', tab: 'other' },
-  stones: { description: 'Precious stones at a quote or your valuation', tab: 'other' },
+  forex: { description: 'Foreign cash held outside your bank', tab: 'forex' },
+  realEstate: { description: 'Property equity: your value minus the mortgage', tab: 'property' },
+  art: { description: 'Art at your recorded valuation', tab: 'art' },
+  stones: { description: 'Precious stones at a quote or your valuation', tab: 'stones' },
   kiwiSaver: { description: 'Sharesies KiwiSaver and bank-held KiwiSaver', href: '/kiwisaver' },
 };
 
@@ -2250,7 +2254,7 @@ export function Portfolio() {
         notes: forexForm.notes || null,
       });
       setForexForm(emptyForex);
-      setMsg(`Added ${currency} (${source}) · Frankfurter → NZD on create.`);
+      showQuietToast(`${currency} added.`, { kind: 'info' });
       await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
@@ -2303,11 +2307,7 @@ export function Portfolio() {
       }
       await api.holdings.create(body);
       setStoneForm(emptyStone);
-      setMsg(
-        diamond
-          ? `Added ${name} — OpenFacet diamond quote (or manual fallback if live failed).`
-          : `Added ${name} — manual estimated NZD (no live gem API).`,
-      );
+      showQuietToast(`${name} added.`, { kind: 'info' });
       await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
@@ -2345,9 +2345,10 @@ export function Portfolio() {
         return;
       }
       const mortgageOutstandingNzd = parseOptionalNumber(realEstateForm.mortgageOutstandingNzd) ?? 0;
+      const propertyName = realEstateForm.name.trim() || 'Property';
       await api.holdings.create({
         assetClass: 'real_estate',
-        name: realEstateForm.name.trim() || 'Property',
+        name: propertyName,
         propertyValueNzd,
         mortgageOutstandingNzd,
         costBasisNzd: parseOptionalNumber(realEstateForm.costBasisNzd),
@@ -2356,7 +2357,7 @@ export function Portfolio() {
         photoBase64: realEstateForm.photoBase64 || undefined,
       });
       setRealEstateForm(emptyRealEstate);
-      setMsg('Real estate added (manual value − mortgage = equity on Dashboard)');
+      showQuietToast(`${propertyName} added.`, { kind: 'info' });
       await reloadAfterEdit();
     } catch (err) {
       setMsg((err as Error).message);
@@ -2427,7 +2428,7 @@ export function Portfolio() {
           notes: notesParts.length ? notesParts.join('\n') : null,
           externalId: artForm.externalId.trim() || null,
         });
-        setMsg('Fractional art added (manual valuation only — no Masterworks API)');
+        showQuietToast(`${title} added.`, { kind: 'info' });
       } else {
         const appraisalNzd = Number(artForm.appraisalNzd);
         if (!Number.isFinite(appraisalNzd) || appraisalNzd < 0) {
@@ -2448,7 +2449,7 @@ export function Portfolio() {
           notes: notesParts.length ? notesParts.join('\n') : null,
           photoBase64: artForm.photoBase64 || undefined,
         });
-        setMsg('Physical art added (appraisal + optional photo — never invent values)');
+        showQuietToast(`${title} added.`, { kind: 'info' });
       }
       setArtForm(emptyArt);
       await reloadAfterEdit();
@@ -2479,6 +2480,32 @@ export function Portfolio() {
       await api.holdings.update(id, { costBasisNzd: costNzd });
       const h = holdings.find((x) => x.id === id);
       setMsg(`Saved a cost of ${formatNzd(costNzd)}${h ? ` for ${displayName(h)}` : ''}.`);
+      await reloadAfterEdit();
+      return true;
+    } catch (err) {
+      setMsg((err as Error).message);
+      return false;
+    }
+  }
+
+  async function savePropertyValue(id: string, patch: PropertyValuePatch): Promise<boolean> {
+    setMsg(null);
+    try {
+      await api.holdings.update(id, patch);
+      showQuietToast('Value updated.', { kind: 'info' });
+      await reloadAfterEdit();
+      return true;
+    } catch (err) {
+      setMsg((err as Error).message);
+      return false;
+    }
+  }
+
+  async function savePropertyDetails(id: string, patch: PropertyDetailsPatch): Promise<boolean> {
+    setMsg(null);
+    try {
+      await api.holdings.update(id, patch);
+      showQuietToast(`${patch.name} saved.`, { kind: 'info' });
       await reloadAfterEdit();
       return true;
     } catch (err) {
@@ -2578,7 +2605,7 @@ export function Portfolio() {
         { key: 'forex', name: 'Forex', value: summary.forexNzd ?? 0, colour: '#5ab8a0' },
         {
           key: 'realEstate',
-          name: 'Real estate',
+          name: 'Property',
           value: summary.realEstateEquityNzd ?? summary.realEstateNzd ?? 0,
           colour: '#7a9e5a',
         },
@@ -2594,6 +2621,10 @@ export function Portfolio() {
           value: Number.isFinite(row.value) ? row.value : 0,
         }))
     : [];
+
+  /** A class tab's header total: the same figure as its Overview row (null while loading). */
+  const classTotal = (key: string): number | null =>
+    summary ? (assetBreakdown.find((r) => r.key === key)?.value ?? 0) : null;
 
   const totalAssetValueNzd = assetBreakdown.reduce(
     (sum, row) => sum + (Number.isFinite(row.value) ? Math.max(0, row.value) : 0),
@@ -2686,6 +2717,7 @@ export function Portfolio() {
       <>
         <StocksTab
           holdings={grouped.stocks}
+          total={classTotal('stocks')}
           onRefresh={refresh}
           onDelete={deleteHolding}
           onUpdateQuantity={updateHoldingQuantity}
@@ -2768,6 +2800,7 @@ export function Portfolio() {
 {tab === 'crypto' && assetEnabled('crypto') ? (
       <Section
         title="Crypto"
+        total={classTotal('crypto')}
         items={[]}
         empty=""
         headerExtra={<WalletsTotal state={cryptoWallets} />}
@@ -2852,6 +2885,7 @@ export function Portfolio() {
 {tab === 'mining' && assetEnabled('gomining') ? (
       <GoMiningMinersSection
         items={grouped.miners}
+        classTotal={classTotal('gomining')}
         empty="No miners yet. Add one below."
         onRefresh={refresh}
         received={miningReceived}
@@ -2960,6 +2994,7 @@ export function Portfolio() {
       <MetalsTab
         holdings={grouped.metals}
         sourceInfo={metalsInfo}
+        total={classTotal('metals')}
         onRefresh={refresh}
         onDelete={deleteHolding}
         onSetCost={setHoldingCost}
@@ -3045,23 +3080,22 @@ export function Portfolio() {
       </MetalsTab>
       ) : null}
 
-{tab === 'other' && assetEnabled('forex') ? (
+{tab === 'forex' && assetEnabled('forex') ? (
       <section className="panel">
-        <div className="panel-heading">
-          <h3>
-            Forex
+        <ClassHeading
+          title="Forex"
+          total={classTotal('forex')}
+          info={
             <InfoTip label="About forex values">
-              Foreign cash held outside your bank (e.g. Revolut), converted to NZD at Frankfurter rates. Use Refresh all
-              prices for new rates.
+              Foreign cash held outside your bank (e.g. Revolut), valued in NZD at Frankfurter rates. Use Refresh all prices
+              for new rates.
             </InfoTip>
-          </h3>
-        </div>
+          }
+        />
         {grouped.forex.length === 0 ? (
-          <p className="muted">
-            No forex holdings yet. Add USD/EUR/GBP (etc.) below — valued in NZD via Frankfurter.
-          </p>
+          <p className="muted">No forex holdings yet.</p>
         ) : (
-          <div className="holding-cards" style={{ marginTop: '0.75rem' }}>
+          <div className="holding-cards">
             {grouped.forex.map((h) => (
               <HoldingCard
                 key={h.id}
@@ -3137,28 +3171,34 @@ export function Portfolio() {
       </section>
       ) : null}
 
-{tab === 'other' && assetEnabled('real_estate') ? (
+{tab === 'property' && assetEnabled('real_estate') ? (
       <section className="panel">
-        <div className="panel-heading">
-          <h3>Real estate</h3>
-          <span className="muted small">
-            Manual market value NZD · mortgage as liability · equity on Dashboard
-          </span>
-        </div>
+        <ClassHeading
+          title="Property"
+          total={classTotal('realEstate')}
+          info={
+            <InfoTip label="About property values">
+              Manual valuation only: the market value and mortgage you enter. The total is equity (value minus mortgage).
+              Nothing is estimated.
+            </InfoTip>
+          }
+        />
         {grouped.realEstate.length === 0 ? (
-          <p className="muted">No properties yet. Add below with value, mortgage, optional photo.</p>
+          <p className="muted">No property holdings yet.</p>
         ) : (
-          <div className="holding-cards" style={{ marginTop: '0.75rem' }}>
-            {grouped.realEstate.map((h) => (
-              <HoldingCard key={h.id} holding={h} onDelete={deleteHolding} onSetCost={setHoldingCost} />
-            ))}
-          </div>
+          <PropertyList
+            holdings={grouped.realEstate}
+            onSaveValue={savePropertyValue}
+            onSaveDetails={savePropertyDetails}
+            onSetCost={setHoldingCost}
+            onDelete={deleteHolding}
+          />
         )}
-        <InlineAddDetails label="Add real estate">
+        <InlineAddDetails label="Add property">
           <form className="form-grid" onSubmit={onAddRealEstate}>
-            <h4>Add real estate</h4>
+            <h4>Add property</h4>
             <label>
-              Name / address
+              Address or name
               <input
                 value={realEstateForm.name}
                 onChange={(e) => setRealEstateForm({ ...realEstateForm, name: e.target.value })}
@@ -3232,6 +3272,7 @@ export function Portfolio() {
 {tab === 'collectables' && assetEnabled('collectable') ? (
       <CollectablesPanel
         holdings={grouped.collectables}
+        total={classTotal('collectables')}
         onChanged={reloadAfterEdit}
         onBanner={setMsg}
         initialAdd={cardPrefill}
@@ -3249,11 +3290,18 @@ export function Portfolio() {
       />
       ) : null}
 
-{tab === 'other' && assetEnabled('art') ? (
+{tab === 'art' && assetEnabled('art') ? (
       <Section
         title="Art"
+        total={classTotal('art')}
+        info={
+          <InfoTip label="About art values">
+            Manual valuation only: your appraisal, or your share of the latest valuation you enter. There is no Masterworks
+            API, so nothing is fetched or estimated.
+          </InfoTip>
+        }
         items={grouped.art}
-        empty="No art holdings yet. Add fractional (Masterworks-style) or physical below — manual valuation only."
+        empty="No art holdings yet."
         onDelete={deleteHolding}
         onUpdateArt={updateArtHolding}
         onSetCost={setHoldingCost}
@@ -3261,9 +3309,6 @@ export function Portfolio() {
         <InlineAddDetails label="Add art">
           <form className="form-grid" onSubmit={onAddArt}>
             <h4>Add art</h4>
-            <p className="muted small span-2">
-              No Masterworks API — enter values yourself from the app/UI. Never invent valuations.
-            </p>
             <div className="span-2">
               <div className="chart-toggle" role="group" aria-label="Art kind">
                 <button
@@ -3421,11 +3466,18 @@ export function Portfolio() {
       </Section>
       ) : null}
 
-{tab === 'other' && assetEnabled('stone') ? (
+{tab === 'stones' && assetEnabled('stone') ? (
       <Section
         title="Precious stones"
+        total={classTotal('stones')}
+        info={
+          <InfoTip label="About precious stone values">
+            Diamonds: live OpenFacet (openfacet.net) quote in USD, converted to NZD at Frankfurter rates, or your own value if the quote fails. Other gems: the value
+            you enter; there is no live gem price. Nothing is estimated.
+          </InfoTip>
+        }
         items={grouped.stones}
-        empty="No precious stones yet. Add diamonds (OpenFacet live) or other gems (manual NZD) below."
+        empty="No precious stone holdings yet."
         onRefresh={refresh}
         onDelete={deleteHolding}
         onSetCost={setHoldingCost}
@@ -3549,17 +3601,6 @@ export function Portfolio() {
                 placeholder="Optional"
               />
             </label>
-            <p className="muted small span-2">
-              Diamonds: live{' '}
-              <a href="https://openfacet.net/" target="_blank" rel="noreferrer">
-                OpenFacet
-              </a>{' '}
-              (MCP{' '}
-              <a href="https://mcp.openfacet.net/" target="_blank" rel="noreferrer">
-                mcp.openfacet.net
-              </a>
-              ) USD → Frankfurter NZD (never invent). Other gems: manual NZD only — no live gem API.
-            </p>
             <button type="submit" className="btn primary">
               Add stone
             </button>
