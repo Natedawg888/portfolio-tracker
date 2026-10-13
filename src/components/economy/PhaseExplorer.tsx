@@ -1,12 +1,13 @@
 import { useId, useState } from 'react';
 import { phaseRelation, shortPeriod } from '../../lib/economyView';
 import type { EconomicCycleResponse, EconomicPhase } from '../../types/economy';
+import { YourMix, type MixState } from './YourMix';
 
 /**
  * The five phases as toggle buttons. Selecting one only changes what this panel
  * describes. The calculated phase comes from the payload and is never replaced.
  */
-export function PhaseExplorer({ data }: { data: EconomicCycleResponse }) {
+export function PhaseExplorer({ data, mix }: { data: EconomicCycleResponse; /** The user's own mix (KAN-31). */ mix: MixState }) {
   const current = data.phase?.id ?? null;
   const [selected, setSelected] = useState<EconomicPhase>(current ?? 'expansion');
   const panelId = useId();
@@ -125,6 +126,8 @@ export function PhaseExplorer({ data }: { data: EconomicCycleResponse }) {
               <p className="muted tiny">Dots: filled when today’s reading meets the rule, half when partly, hollow when not.</p>
             </div>
           </div>
+
+          <YourMix state={mix} phaseLabel={guide.label} assets={guide.assets} />
 
           {guide.typical.length > 0 && guide.quartersInPhase > 0 ? (
             <details className="econ-more">

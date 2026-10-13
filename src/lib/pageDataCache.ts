@@ -179,7 +179,7 @@ const SCOPE_PREFIXES: Record<FinancialScope, readonly string[]> = {
   savings: ['savings-goals'],
   debts: ['debts'],
   spending: ['spending'],
-  portfolio: ['=portfolio', 'news-page'],
+  portfolio: ['=portfolio', 'news-page', 'cycle-mix'],
   projections: ['projections'],
   kiwisaver: ['kiwisaver'],
   yearly: ['yearly'],
