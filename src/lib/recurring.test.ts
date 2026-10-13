@@ -8,6 +8,7 @@ import {
   monthlyEquivalent,
   nextDueOnOrAfter,
   occurrencesWithin,
+  possiblePayment,
   possibleSubscriptions,
   type DetectionTxn,
 } from './recurring.ts';
@@ -179,6 +180,27 @@ assert(found[0].monthlyNzd >= found[found.length - 1].monthlyNzd, 'largest month
   eq(canva.occurrences, 2, 'Canva seen twice');
   eq(canva.amountNzd, 12, 'latest amount');
   eq(canva.amountVaries, true, '10 then 12 varies');
+}
+
+// Possible payment for a bill whose payee never matched.
+{
+  const rent = { name: 'Rent', amountNzd: 270, cadence: 'weekly' as const, categoryId: 'cat-housing' };
+  const housing = { categoryId: 'cat-housing', categoryName: 'Housing' };
+  const p = possiblePayment(rent, [
+    txn('2026-10-02', -270, 'TFR TO J LANDLORD', housing),
+    txn('2026-10-05', -270, 'Countdown', { categoryId: 'cat-food' }), // wrong category, no shared word
+    txn('2026-10-06', -150, 'Bond top-up', housing), // amount too far off
+    txn('2026-08-01', -270, 'Old landlord', housing), // older than two weeks + 7 days
+  ], today, new Set());
+  eq(p?.date, '2026-10-02', 'Housing payment of the same amount');
+  eq(p?.amountNzd, 270, 'amount');
+  eq(p?.categoryName, 'Housing', 'category');
+  eq(p?.payee, 'TFR TO J LANDLORD', 'payee');
+  eq(possiblePayment(rent, [txn('2026-10-02', -270, 'TFR TO J LANDLORD', housing)], today, new Set([merchantKey('TFR TO J LANDLORD')])), null, 'payee taken by another bill');
+  eq(possiblePayment({ ...rent, categoryId: null }, [txn('2026-10-02', -270, 'TFR TO J LANDLORD', housing)], today, new Set()), null, 'no category and no shared word');
+  const byName = possiblePayment({ name: 'Spark', amountNzd: 40, cadence: 'monthly', categoryId: null }, [txn('2026-09-28', -41.5, 'SPARK NZ TRADING', {})], today, new Set());
+  eq(byName?.amountNzd, 41.5, 'payee shares a word with the name, within 5%');
+  eq(possiblePayment({ name: 'Spark', amountNzd: 40, cadence: 'monthly', categoryId: null }, [txn('2026-09-28', -44, 'SPARK NZ TRADING', {})], today, new Set()), null, '10% off is not a match');
 }
 
 console.log('recurring detection tests ok');

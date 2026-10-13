@@ -8,7 +8,7 @@ import type { OutputPaySourceInputs, OutputPayType } from '../lib/outputPayCalc'
 import type { DuePreset, GstMode, InvoiceStatus, InvoiceStoredStatus } from '../lib/invoiceCalc';
 import type { MiningPlan, ProjectionClassKey } from '../lib/projectionClasses';
 import type { MiningProjection } from '../lib/miningProjection';
-import type { Cadence, RecurringKind, RecurringStatus, RecurringSuggestion } from '../lib/recurring';
+import type { Cadence, PossiblePayment, RecurringKind, RecurringStatus, RecurringSuggestion } from '../lib/recurring';
 import type { WarrantyStatus } from '../lib/warranty';
 
 export type CurrencyCode = 'NZD' | 'USD' | 'AUD' | 'EUR' | 'GBP';
@@ -1392,6 +1392,8 @@ export interface RecurringItem {
   /** Latest matching payment in the last 15 months. */
   lastPaidDate: string | null;
   lastPaidNzd: number | null;
+  /** Active items with no last paid: a recent payment that looks like this bill, to link. */
+  possiblePayment: PossiblePayment | null;
   createdAt: string;
   updatedAt: string;
 }

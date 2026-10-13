@@ -298,3 +298,50 @@ export function possibleSubscriptions(txns: DetectionTxn[], today: string, skipK
   }
   return out.sort((a, b) => (a.lastDate < b.lastDate ? 1 : a.lastDate > b.lastDate ? -1 : a.name.localeCompare(b.name)));
 }
+
+export type PossiblePayment = {
+  transactionId: string;
+  date: string;
+  amountNzd: number;
+  payee: string;
+  categoryName: string | null;
+};
+
+/**
+ * A recent payment that looks like a saved bill whose payee never matched (so it has
+ * no "last paid"): within 5% (or $1) of the bill's amount, in the last two periods,
+ * and either in the bill's Budget category or sharing a word with its name. Payees
+ * already linked to another bill are skipped. Latest wins; a payee match breaks ties.
+ * Linking it saves that payee's merchantKey on the bill, so later payments match too.
+ */
+export function possiblePayment(
+  bill: { name: string; amountNzd: number; cadence: Cadence; categoryId: string | null },
+  txns: DetectionTxn[],
+  today: string,
+  takenKeys: ReadonlySet<string>,
+): PossiblePayment | null {
+  const nameWords = new Set(merchantKey(bill.name).split(' ').filter((w) => w.length >= 3));
+  const window = CADENCE_DAYS[bill.cadence].days * 2 + 7;
+  let best: { t: DetectionTxn; payeeMatch: boolean } | null = null;
+  for (const t of txns) {
+    if (!(t.amount < 0)) continue;
+    if (Math.abs(Math.abs(t.amount) - bill.amountNzd) > Math.max(1, bill.amountNzd * 0.05)) continue;
+    const age = daysBetween(t.date, today);
+    if (age < 0 || age > window) continue;
+    const key = merchantKey(t.merchant || t.description);
+    if (!key || takenKeys.has(key)) continue;
+    const payeeMatch = key.split(' ').some((w) => nameWords.has(w));
+    const categoryMatch = Boolean(bill.categoryId) && t.categoryId === bill.categoryId;
+    if (!payeeMatch && !categoryMatch) continue;
+    if (!best || t.date > best.t.date || (t.date === best.t.date && payeeMatch && !best.payeeMatch)) best = { t, payeeMatch };
+  }
+  if (!best) return null;
+  const t = best.t;
+  return {
+    transactionId: t.id,
+    date: t.date,
+    amountNzd: Math.round(Math.abs(t.amount) * 100) / 100,
+    payee: (t.merchant || t.description).trim().slice(0, 80),
+    categoryName: t.categoryName,
+  };
+}

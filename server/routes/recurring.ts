@@ -5,6 +5,7 @@
  *   POST   /                    { name, kind, amountNzd, cadence, nextDue, categoryId?, notes?,
  *                                 merchantKey?, source? }  confirm a suggestion or add by hand
  *   PATCH  /:id                 any of the fields above, plus status (active | paused | cancelled)
+ *   POST   /:id/link            { transactionId }  link a payment: its payee becomes the bill's payee
  *   DELETE /:id
  *   POST   /dismiss             { merchantKey }  not a bill: stop suggesting it
  *   POST   /dismissed/restore   bring dismissed suggestions back
@@ -18,6 +19,7 @@ import {
   createRecurring,
   deleteRecurring,
   dismissSuggestion,
+  linkPayment,
   listRecurring,
   parseRecurring,
   restoreDismissed,
@@ -81,6 +83,20 @@ router.patch('/:id', async (req, res) => {
     return;
   }
   res.json(saved);
+});
+
+router.post('/:id/link', async (req, res) => {
+  const db = await getDb();
+  const result = linkPayment(db, uid(req), req.params.id, (req.body ?? {}).transactionId, aucklandToday());
+  if (!result) {
+    res.status(404).json({ error: 'Bill or subscription not found' });
+    return;
+  }
+  if (!result.ok) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  res.json(result.value);
 });
 
 router.delete('/:id', async (req, res) => {

@@ -10172,6 +10172,7 @@ html[data-theme="light"] .bills-page {
   --hero-grad: #f7f3ec;
   --hover-row: rgba(27, 67, 50, 0.05);
   --shadow-card: 0 8px 24px rgba(48, 36, 22, 0.06);
+  --bills-soon: #8a4b0f;
   color: #1a1a1a;
 }
 html[data-theme="dark"] .bills-page,
@@ -10190,6 +10191,7 @@ html:not([data-theme]) .bills-page {
   --hero-grad: #1c2822;
   --hover-row: rgba(243, 238, 228, 0.04);
   --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --bills-soon: #f0b25c;
   color: #f3eee4;
 }
 
@@ -10462,6 +10464,81 @@ html:not([data-theme]) .bills-page :focus-visible {
 .bills-suggestion-facts .bills-chip { margin-right: 0.4rem; }
 .bills-suggestion-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.15rem; }
 .bills-dismissed { margin: 0; text-align: center; }
+.bills-list h3 { margin: 0 0 0.55rem; }
+.bills-card-list { display: grid; gap: 0.75rem; }
+.bills-card { display: grid; gap: 0.65rem; }
+.bills-card--inactive { opacity: 0.62; }
+.bills-card--inactive:focus-within { opacity: 1; }
+.bills-card-head {
+  display: grid;
+  grid-template-columns: 2.4rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+}
+.bills-icon {
+  display: grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: #0d1a14;
+  font-weight: 700;
+  font-size: 1.2rem;
+}
+.bills-card--inactive .bills-icon { color: var(--muted); }
+.bills-card-title { min-width: 0; }
+.bills-card-title h4 { margin: 0; font-size: 1rem; overflow-wrap: anywhere; }
+.bills-card-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.45rem;
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+.bills-card-amount { margin: 0; display: grid; justify-items: end; text-align: right; }
+.bills-card-amount .money { font-size: 1.15rem; font-weight: 700; }
+.bills-card-permonth { color: var(--muted); font-size: 0.78rem; }
+.bills-card-dates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem 1.25rem;
+  margin: 0;
+}
+.bills-card-dates dt { font-size: 0.74rem; font-weight: 600; color: var(--muted); }
+.bills-card-dates dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.35rem;
+  margin: 0.15rem 0 0;
+  font-size: 0.9rem;
+}
+.bills-when { color: var(--muted); }
+.bills-soon { color: var(--bills-soon); font-weight: 650; }
+.bills-chip.bills-chip--soon { border-color: var(--bills-soon); color: var(--bills-soon); }
+.bills-inline-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.86rem;
+}
+.bills-inline-suggest p { margin: 0; min-width: 0; }
+.bills-page .bills-creditor {
+  justify-self: start;
+  color: var(--accent-2);
+  font-size: 0.86rem;
+  text-decoration: none;
+}
+.bills-page .bills-creditor:hover { text-decoration: underline; }
+.bills-card-actions { display: flex; justify-content: flex-end; align-items: center; gap: 0.4rem; }
 .bills-page .bills-dismissed .link-btn { color: var(--muted); font-size: 0.85rem; }
 @media (max-width: 420px) {
   .bills-header { align-items: flex-start; }
@@ -10473,6 +10550,9 @@ html:not([data-theme]) .bills-page :focus-visible {
       ". date when";
   }
   .bills-coming-when { text-align: right; }
+  .bills-card-head { grid-template-columns: 2.4rem minmax(0, 1fr); }
+  .bills-card-amount { grid-column: 2; justify-items: start; text-align: left; }
+  .bills-card-dates { grid-template-columns: 1fr; }
 }
 
 /* Financial health score card (KAN-55), styled like the "This month" card. */

@@ -1,10 +1,10 @@
 /**
  * Bills page view helpers. Header counts (phase 1), the 30-day calendar strip
- * and "Coming up" list (phase 2), and suggestion card text (phase 3). The summary totals stay on the list response;
+ * and "Coming up" list (phase 2), suggestion card text (phase 3), and bill cards (phase 4). The summary totals stay on the list response;
  * occurrences use the same occurrencesWithin walk as the server, so they add up to
  * dueNext30DaysNzd.
  */
-import { CADENCE_LABELS, daysBetween, occurrencesWithin, type Cadence } from '../lib/recurring';
+import { CADENCE_LABELS, daysBetween, merchantKey, occurrencesWithin, type Cadence, type PossiblePayment } from '../lib/recurring';
 
 export type HeaderCounts = { active: number; paused: number; cancelled: number };
 
@@ -65,17 +65,25 @@ export function shortDate(ymd: string): string {
   return `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
 }
 
-/** Every payment of every active bill from `today` through day `days - 1`, by date then name. */
-export function upcomingOccurrences(items: ReadonlyArray<BillLike>, today: string, days = 30): Occurrence[] {
+/** Colour index per active bill: its position among active bills sorted by name. Others get none. */
+export function billColours(items: ReadonlyArray<{ id: string; name: string; status: string }>): Map<string, number> {
   const active = items
     .filter((i) => i.status === 'active')
     .sort((a, b) => a.name.localeCompare(b.name) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return new Map(active.map((i, index) => [i.id, index]));
+}
+
+/** Every payment of every active bill from `today` through day `days - 1`, by date then name. */
+export function upcomingOccurrences(items: ReadonlyArray<BillLike>, today: string, days = 30): Occurrence[] {
+  const colours = billColours(items);
   const out: Occurrence[] = [];
-  active.forEach((item, colourIndex) => {
+  for (const item of items) {
+    const colourIndex = colours.get(item.id);
+    if (colourIndex == null) continue;
     for (const date of occurrencesWithin(item.nextDue, item.cadence, today, days)) {
       out.push({ date, itemId: item.id, name: item.name, amountNzd: item.amountNzd, colourIndex, daysAway: daysBetween(today, date) });
     }
-  });
+  }
   return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.name.localeCompare(b.name)));
 }
 
@@ -146,4 +154,54 @@ export function suggestionFacts(s: SuggestionLike, today: string): string[] {
     s.amountVaries ? 'amount varies' : null,
   ];
   return facts.filter((f): f is string => Boolean(f));
+}
+
+type CardBill = BillLike & { categoryName: string | null; monthlyNzd: number };
+
+/** Active bills by next due date, then paused and cancelled by name. */
+export function orderBills<T extends BillLike>(items: ReadonlyArray<T>): T[] {
+  const byName = (a: T, b: T) => a.name.localeCompare(b.name) || (a.id < b.id ? -1 : 1);
+  const active = items.filter((i) => i.status === 'active').sort((a, b) => (a.nextDue < b.nextDue ? -1 : a.nextDue > b.nextDue ? 1 : byName(a, b)));
+  return [...active, ...items.filter((i) => i.status !== 'active').sort(byName)];
+}
+
+export function billInitial(name: string): string {
+  return (name.match(/[\p{L}\p{N}]/u)?.[0] ?? '?').toUpperCase();
+}
+
+/** "Weekly · Housing", or just "Weekly". */
+export function cadenceLine(b: Pick<CardBill, 'cadence' | 'categoryName'>): string {
+  return [CADENCE_LABELS[b.cadence], b.categoryName].filter(Boolean).join(' · ');
+}
+
+/** "$1,170.00 a month" for bills that are not monthly. */
+export function monthlyNote(b: Pick<CardBill, 'cadence' | 'monthlyNzd'>, money: (n: number) => string): string | null {
+  return b.cadence === 'monthly' ? null : `${money(b.monthlyNzd)} a month`;
+}
+
+/** Days until the active bill's next due date, and whether it is due soon (3 days or less). */
+export function dueInfo(b: Pick<CardBill, 'nextDue' | 'status'>, today: string): { date: string; daysAway: number; soon: boolean } | null {
+  if (b.status !== 'active') return null;
+  const daysAway = daysBetween(today, b.nextDue);
+  return { date: shortDate(b.nextDue), daysAway, soon: daysAway <= 3 };
+}
+
+/** "A $270.00 Housing payment on 10 Oct looks like this bill". */
+export function possiblePaymentText(p: PossiblePayment, today: string, money: (n: number) => string): string {
+  const what = p.categoryName ? `${p.categoryName} payment` : `payment to ${p.payee}`;
+  return `A ${money(p.amountNzd)} ${what} on ${paidDate(p.date, today)} looks like this bill`;
+}
+
+/**
+ * A creditor on Debts with the same name as the bill ("Spark" and "Spark NZ" match:
+ * the same merchantKey, or one name's words start the other's). Only debts still owing.
+ */
+export function creditorFor<D extends { name: string; outstandingNzd: number }>(billName: string, debts: ReadonlyArray<D>): D | null {
+  const bill = merchantKey(billName);
+  if (!bill) return null;
+  const starts = (a: string, b: string) => a === b || a.startsWith(`${b} `);
+  return debts.find((d) => {
+    const key = merchantKey(d.name);
+    return d.outstandingNzd > 0 && Boolean(key) && (starts(bill, key) || starts(key, bill));
+  }) ?? null;
 }
