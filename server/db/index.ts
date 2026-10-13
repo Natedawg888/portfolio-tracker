@@ -556,6 +556,7 @@ function migrateSchema(database: Database) {
     ['device_label', 'TEXT'],
     ['last_seen_at', 'TEXT'],
     ['persistent', 'INTEGER NOT NULL DEFAULT 1'],
+    ['passkey_id', 'TEXT'],
   ] as const) {
     if (sessionCols.size > 0 && !sessionCols.has(col)) database.run(`ALTER TABLE sessions ADD COLUMN ${col} ${type}`);
   }

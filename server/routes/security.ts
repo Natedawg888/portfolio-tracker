@@ -12,6 +12,8 @@ import { listSessions, parseCookieHeader, revokeOtherSessions, revokeSession } f
 import { listAccounts, switchAccount } from '../auth/accounts.ts';
 import { hasPassword } from '../auth/users.ts';
 import { configuredSsoProviders } from '../auth/sso.ts';
+import { listAuthEvents } from '../auth/authEvents.ts';
+import { listPasskeys } from '../auth/passkeys.ts';
 import { listIdentities } from './sso.ts';
 import {
   TRUSTED_DEVICE_COOKIE,
@@ -58,6 +60,8 @@ router.get('/security', async (req: AuthedRequest, res) => {
     twoFactor: twoFactorState(db, req.user.id),
     sessions: listSessions(db, req.user.id, req.user.sessionId),
     trustedDevices: listTrustedDevices(db, req.user.id, browserTrustedTokens(req)),
+    passkeys: listPasskeys(db, req.user.id),
+    recentSignIns: listAuthEvents(db, req.user.id, 10),
   });
 });
 

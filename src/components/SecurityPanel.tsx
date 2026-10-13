@@ -1,12 +1,14 @@
 /**
  * Settings → Security (KAN-16): two-factor sign-in with an authenticator app, backup
- * codes, signed-in sessions and trusted devices. Secrets and codes are shown once and
+ * codes, signed-in sessions and trusted devices. Passkeys and recent sign-ins (KAN-75). Secrets and codes are shown once and
  * never kept in browser storage.
  */
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ApiError, api, type AccountSecurity } from '../api/client';
 import { ssoErrorMessage, ssoStartUrl } from '../lib/sso';
+import { useAuth } from '../auth/AuthContext';
+import { addPasskey, authEventText, hintName, passkeysSupported, readHint, wasCancelled, writeHint } from '../lib/passkeys';
 
 function when(iso: string | null): string {
   if (!iso) return '—';
@@ -319,6 +321,154 @@ function SignInMethods({ data, reload }: { data: AccountSecurity; reload: () => 
   );
 }
 
+function PasskeysSection({ data, reload }: { data: AccountSecurity; reload: () => Promise<void> }) {
+  const { user } = useAuth();
+  const [supported] = useState(passkeysSupported);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [needPassword, setNeedPassword] = useState(false);
+  const [password, setPassword] = useState('');
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
+
+  async function add(e?: FormEvent) {
+    e?.preventDefault();
+    setBusy('add');
+    setError(null);
+    setNotice(null);
+    try {
+      await addPasskey({ password: needPassword ? password : undefined });
+      if (user) writeHint({ email: user.email, name: hintName(user) });
+      setNeedPassword(false);
+      setPassword('');
+      setNotice('Passkey added. You can sign in on this device with one tap.');
+      await reload();
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'REAUTH_REQUIRED') {
+        if (data.hasPassword) {
+          setNeedPassword(true);
+          if (needPassword) setError('That password isn’t right.');
+        } else {
+          setError('For your security, sign out and back in, then add the passkey within 15 minutes.');
+        }
+      } else if (!wasCancelled(err)) {
+        setError(errorText(err, 'Couldn’t add a passkey on this device.'));
+      }
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveName(e: FormEvent) {
+    e.preventDefault();
+    if (!renaming) return;
+    setBusy(renaming.id);
+    setError(null);
+    try {
+      await api.auth.renamePasskey(renaming.id, renaming.name);
+      setRenaming(null);
+      await reload();
+    } catch (err) {
+      setError(errorText(err, 'Couldn’t rename that passkey.'));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function remove(id: string, name: string) {
+    if (!window.confirm(`Remove ${name}? It can’t be used to sign in any more, and anything signed in with it (other than this browser) is signed out.`)) return;
+    setBusy(id);
+    setError(null);
+    setNotice(null);
+    try {
+      const r = await api.auth.removePasskey(id);
+      // The hint on this browser may point at the removed passkey; "Sign in with a passkey" still works.
+      if (data.passkeys.length <= 1 && readHint()?.email === user?.email) writeHint(null);
+      setNotice(r.sessionsEnded > 0 ? `${name} removed. ${r.sessionsEnded} signed-in session${r.sessionsEnded === 1 ? '' : 's'} ended.` : `${name} removed.`);
+      await reload();
+    } catch (err) {
+      setError(errorText(err, 'Couldn’t remove that passkey.'));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section className="panel">
+      <h3>Passkeys</h3>
+      <p className="muted small">
+        Sign in with Face ID, Touch ID, Windows Hello or your device PIN instead of a password. A passkey counts as two-factor
+        sign-in. Your password still works.
+      </p>
+      {error ? <p className="auth-error" role="alert">{error}</p> : null}
+      {notice ? <p className="muted" role="status">{notice}</p> : null}
+      {data.passkeys.length > 0 ? (
+        <ul className="security-list">
+          {data.passkeys.map((p) => (
+            <li key={p.id}>
+              {renaming?.id === p.id ? (
+                <form className="passkey-rename" onSubmit={saveName}>
+                  <label>
+                    Name
+                    <input value={renaming.name} maxLength={60} autoFocus onChange={(e) => setRenaming({ id: p.id, name: e.target.value })} />
+                  </label>
+                  <button type="submit" className="btn small primary" disabled={busy === p.id || !renaming.name.trim()}>
+                    Save
+                  </button>
+                  <button type="button" className="btn small ghost" onClick={() => setRenaming(null)}>
+                    Cancel
+                  </button>
+                </form>
+              ) : (
+                <>
+                  <div>
+                    <strong>{p.name}</strong>
+                    <div className="muted small">
+                      Added {when(p.createdAt)} · {p.lastUsedAt ? `last used ${when(p.lastUsedAt)}` : 'not used yet'}
+                    </div>
+                  </div>
+                  <div className="row gap">
+                    <button type="button" className="btn ghost" disabled={busy != null} onClick={() => setRenaming({ id: p.id, name: p.name })}>
+                      Rename
+                    </button>
+                    <button type="button" className="btn ghost" disabled={busy != null} onClick={() => void remove(p.id, p.name)}>
+                      Remove
+                    </button>
+                  </div>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="muted">No passkeys yet.</p>
+      )}
+      {!supported ? (
+        <p className="muted small">This browser can’t create passkeys. Try a recent version of Chrome, Edge, Safari or Firefox.</p>
+      ) : needPassword ? (
+        <form className="passkey-reauth" onSubmit={(e) => void add(e)}>
+          <label>
+            Confirm your password to add a passkey
+            <input type="password" autoComplete="current-password" value={password} autoFocus onChange={(e) => setPassword(e.target.value)} />
+          </label>
+          <div className="row gap">
+            <button type="submit" className="btn primary" disabled={busy === 'add' || !password}>
+              {busy === 'add' ? 'Waiting for your device…' : 'Continue'}
+            </button>
+            <button type="button" className="btn ghost" onClick={() => setNeedPassword(false)}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : (
+        <button type="button" className="btn" disabled={busy === 'add'} onClick={() => void add()}>
+          {busy === 'add' ? 'Waiting for your device…' : 'Add a passkey on this device'}
+        </button>
+      )}
+    </section>
+  );
+}
+
 export function SecurityPanel() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData] = useState<AccountSecurity | null>(null);
@@ -371,6 +521,7 @@ export function SecurityPanel() {
       {error ? <p className="warn">{error}</p> : null}
       {notice ? <p className="muted" role="status">{notice}</p> : null}
       <SignInMethods data={data} reload={reload} />
+      <PasskeysSection data={data} reload={reload} />
       {data.hasPassword ? (
         <TwoFactorSection state={data.twoFactor} reload={reload} />
       ) : (
@@ -406,6 +557,27 @@ export function SecurityPanel() {
             Sign out all other sessions
           </button>
         ) : null}
+      </section>
+
+      <section className="panel">
+        <h3>Recent sign-ins</h3>
+        <p className="muted small">The last 10 sign-ins and passkey changes on this account. Device names are approximate.</p>
+        {data.recentSignIns.length === 0 ? (
+          <p className="muted">None recorded yet.</p>
+        ) : (
+          <ul className="security-list">
+            {data.recentSignIns.map((e) => (
+              <li key={e.id}>
+                <div>
+                  <strong>{authEventText(e.kind, e.method)}</strong>
+                  <div className="muted small">
+                    {when(e.createdAt)} · {e.deviceLabel ?? 'Unknown device'}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       {data.twoFactor.enabled || data.trustedDevices.length > 0 ? (

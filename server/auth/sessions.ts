@@ -35,7 +35,7 @@ export type NewSession = { id: string; rawToken: string; expiresAt: string; pers
 
 export async function createSession(
   userId: string,
-  opts: { persistent?: boolean; deviceLabel?: string | null } = {},
+  opts: { persistent?: boolean; deviceLabel?: string | null; passkeyId?: string | null } = {},
 ): Promise<NewSession> {
   const db = await getDb();
   const persistent = opts.persistent ?? true;
@@ -47,9 +47,9 @@ export async function createSession(
   const expiresAt = new Date(now.getTime() + ttl).toISOString();
   run(
     db,
-    `INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at, device_label, last_seen_at, persistent)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, userId, tokenHash, expiresAt, now.toISOString(), opts.deviceLabel ?? null, now.toISOString(), persistent ? 1 : 0],
+    `INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at, device_label, last_seen_at, persistent, passkey_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, userId, tokenHash, expiresAt, now.toISOString(), opts.deviceLabel ?? null, now.toISOString(), persistent ? 1 : 0, opts.passkeyId ?? null],
   );
   return { id, rawToken, expiresAt, persistent };
 }

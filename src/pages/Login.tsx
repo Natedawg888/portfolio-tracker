@@ -5,6 +5,17 @@ import { useAuth } from '../auth/AuthContext';
 import { ApiError, api, type AuthUser, type SsoProvider } from '../api/client';
 import { showQuietToast } from '../lib/quietToast';
 import { ssoErrorMessage, ssoStartUrl } from '../lib/sso';
+import {
+  addPasskey,
+  dismissOffer,
+  hintName,
+  offerDismissed,
+  passkeysSupported,
+  readHint,
+  wasCancelled,
+  writeHint,
+  type PasskeyHint,
+} from '../lib/passkeys';
 
 /** Last email used on this browser (never the password). Convenience only — may be unavailable. */
 const LAST_EMAIL_KEY = 'koru.auth.lastEmail';
@@ -26,7 +37,11 @@ function writeLastEmail(email: string | null): void {
   }
 }
 
-type Step = { kind: 'password' } | { kind: 'code'; challenge: string };
+type Step =
+  | { kind: 'password' }
+  | { kind: 'code'; challenge: string }
+  /** After a password sign-in: offer a passkey for next time (KAN-75). */
+  | { kind: 'offer'; user: AuthUser };
 
 /** After Google / Apple / Microsoft sign-in with 2FA on, the server sends #sso2fa=<challenge>. */
 function initialStep(): Step {
@@ -38,7 +53,7 @@ function initialStep(): Step {
 }
 
 export function Login() {
-  const { user, loading, login, completeTwoFactor, status } = useAuth();
+  const { user, loading, login, completeTwoFactor, passkeySignIn, status } = useAuth();
   const navigate = useNavigate();
   // "Add another account" from the profile menu: sign in without leaving the current account.
   const [searchParams] = useSearchParams();
@@ -54,6 +69,8 @@ export function Login() {
   const [trustDevice, setTrustDevice] = useState(false);
   const [error, setError] = useState<string | null>(() => ssoErrorMessage(searchParams.get('sso_error')));
   const [busy, setBusy] = useState(false);
+  const [canPasskey] = useState(passkeysSupported);
+  const [hint, setHint] = useState<PasskeyHint | null>(() => (adding ? null : readHint()));
 
   useEffect(() => {
     let cancelled = false;
@@ -74,11 +91,69 @@ export function Login() {
   }
   if (!loading && status?.needsSetup) return <Navigate to="/register" replace />;
 
-  const done = (u: AuthUser) => {
+  const finish = (u: AuthUser) => {
     writeLastEmail(u.email);
     // After adding an account, reload so no page keeps the previous account's data.
     if (adding) window.location.assign(u.onboardingComplete ? '/' : '/register');
     else navigate(u.onboardingComplete ? '/' : '/register', { replace: true });
+  };
+
+  /** After a password (or 2FA) sign-in, offer a passkey once per account on this browser. */
+  const done = (u: AuthUser) => {
+    const hasHint = hint?.email.toLowerCase() === u.email.toLowerCase();
+    if (canPasskey && !adding && !hasHint && !offerDismissed(u.email)) {
+      writeLastEmail(u.email);
+      setError(null);
+      setStep({ kind: 'offer', user: u });
+      return;
+    }
+    finish(u);
+  };
+
+  const onPasskey = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const u = await passkeySignIn(remember);
+      const next = { email: u.email, name: hintName(u) };
+      writeHint(next);
+      setHint(next);
+      finish(u);
+    } catch (err) {
+      if (wasCancelled(err)) {
+        setError(null);
+      } else if (err instanceof ApiError && err.code === 'UNKNOWN_PASSKEY') {
+        writeHint(null);
+        setHint(null);
+        setError('That passkey was removed from your account. Sign in with your password.');
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Passkey sign-in didn’t work. Try again or use your password.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onAddPasskey = async () => {
+    if (step.kind !== 'offer') return;
+    setError(null);
+    setBusy(true);
+    try {
+      await addPasskey();
+      writeHint({ email: step.user.email, name: hintName(step.user) });
+      showQuietToast('Passkey added. Next time, sign in with one tap.', { kind: 'info' });
+      finish(step.user);
+    } catch (err) {
+      if (wasCancelled(err)) setError(null);
+      else setError(err instanceof ApiError ? err.message : 'Couldn’t add a passkey on this device.');
+      setBusy(false);
+    }
+  };
+
+  const onSkipPasskey = () => {
+    if (step.kind !== 'offer') return;
+    dismissOffer(step.user.email);
+    finish(step.user);
   };
 
   const onPassword = async (e: FormEvent) => {
@@ -128,6 +203,8 @@ export function Login() {
 
   const forgetEmail = () => {
     writeLastEmail(null);
+    writeHint(null);
+    setHint(null);
     setRememberedEmail('');
     setEmail('');
   };
@@ -141,6 +218,15 @@ export function Login() {
             <h2>{adding ? 'Add another account' : 'Sign in'}</h2>
             {adding && user ? (
               <p className="muted small">You&apos;ll stay signed in as {user.email} and can switch from the profile menu.</p>
+            ) : null}
+            {canPasskey && hint ? (
+              <div className="passkey-continue">
+                <button type="button" className="btn primary passkey-continue-btn" disabled={busy} onClick={() => void onPasskey()}>
+                  <span>Continue as {hint.name}</span>
+                  <span className="passkey-continue-email">{hint.email}</span>
+                </button>
+                <p className="sso-divider muted small">or use your password</p>
+              </div>
             ) : null}
             <form className="auth-form" onSubmit={onPassword}>
               <label>
@@ -183,9 +269,17 @@ export function Login() {
                 {busy ? 'Signing in…' : 'Sign in'}
               </button>
             </form>
-            {providers.length > 0 ? (
+            {canPasskey && !hint && !adding ? (
               <div className="sso-buttons">
                 <p className="sso-divider muted small">or</p>
+                <button type="button" className="btn ghost sso-btn" disabled={busy} onClick={() => void onPasskey()}>
+                  Sign in with a passkey
+                </button>
+              </div>
+            ) : null}
+            {providers.length > 0 ? (
+              <div className="sso-buttons">
+                {canPasskey && !hint && !adding ? null : <p className="sso-divider muted small">or</p>}
                 {providers.map((p) => (
                   <a
                     key={p.id}
@@ -206,6 +300,23 @@ export function Login() {
                 </>
               )}
             </p>
+          </>
+        ) : step.kind === 'offer' ? (
+          <>
+            <h2>Sign in faster next time</h2>
+            <p className="muted">
+              Use Face ID, Touch ID, Windows Hello or your device PIN instead of your password on this device. Your password
+              still works.
+            </p>
+            {error ? <p className="auth-error" role="alert">{error}</p> : null}
+            <div className="auth-form">
+              <button type="button" className="btn primary" disabled={busy} onClick={() => void onAddPasskey()}>
+                {busy ? 'Waiting for your device…' : 'Use this device to sign in'}
+              </button>
+              <button type="button" className="btn ghost" disabled={busy} onClick={onSkipPasskey}>
+                Not now
+              </button>
+            </div>
           </>
         ) : (
           <>

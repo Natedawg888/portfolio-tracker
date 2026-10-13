@@ -38,6 +38,7 @@ import { startWalletSyncScheduler } from './chain/index.ts';
 import authRouter from './routes/auth.ts';
 import securityRouter from './routes/security.ts';
 import ssoRouter from './routes/sso.ts';
+import passkeysRouter from './routes/passkeys.ts';
 import economyRouter from './routes/economy.ts';
 import newsRouter from './routes/news.ts';
 import { loadDotEnv } from './akahu/loadEnv.ts';
@@ -124,6 +125,7 @@ async function main() {
   app.use('/api/auth', authRouter);
   app.use('/api/auth', securityRouter);
   app.use('/api/auth', ssoRouter);
+  app.use('/api/auth', passkeysRouter);
   // Uploads are files under /api. GET/HEAD only so a POST cannot 405 here.
   app.use('/api/uploads', uploadsGate());
 

@@ -9454,6 +9454,20 @@ html:not([data-theme]) .settings-page :focus-visible {
   gap: 0.5rem;
   margin-top: 0.85rem;
 }
+.passkey-continue { display: grid; gap: 0.5rem; margin: 0.75rem 0 0.25rem; }
+.passkey-continue-btn {
+  display: grid;
+  justify-items: center;
+  gap: 0.1rem;
+  width: 100%;
+  padding-block: 0.7rem;
+}
+.passkey-continue-email { font-size: 0.8rem; font-weight: 500; opacity: 0.85; overflow-wrap: anywhere; }
+.passkey-rename,
+.passkey-reauth { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.5rem; width: 100%; }
+.passkey-rename label,
+.passkey-reauth label { display: grid; gap: 0.3rem; flex: 1 1 14rem; font-size: 0.85rem; color: var(--muted); }
+.passkey-reauth { margin-top: 0.5rem; }
 .sso-divider {
   margin: 0;
   text-align: center;

@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { api, setUnauthorizedHandler, type AuthUser } from '../api/client';
+import { signInWithPasskey } from '../lib/passkeys';
 import { clearPageCache, syncPageCacheUser } from '../lib/pageDataCache';
 
 type AuthStatus = {
@@ -31,6 +32,8 @@ type AuthContextValue = {
     code: string,
     trustDevice: boolean,
   ) => Promise<{ user: AuthUser; usedBackupCode: boolean; backupCodesRemaining: number | null }>;
+  /** Passkey sign-in (KAN-75): the device unlock replaces the password and the 2FA code. */
+  passkeySignIn: (remember: boolean) => Promise<AuthUser>;
   register: (
     email: string,
     password: string,
@@ -156,6 +159,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [signedIn],
   );
 
+  const passkeySignIn = useCallback(
+    async (remember: boolean) => signedIn(await signInWithPasskey(remember)),
+    [signedIn],
+  );
+
   const register = useCallback(async (
     email: string,
     password: string,
@@ -212,8 +220,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, status, loading, refresh, setUser, login, completeTwoFactor, register, logout, logoutAll, switchAccount }),
-    [user, status, loading, refresh, setUser, login, completeTwoFactor, register, logout, logoutAll, switchAccount],
+    () => ({ user, status, loading, refresh, setUser, login, completeTwoFactor, passkeySignIn, register, logout, logoutAll, switchAccount }),
+    [user, status, loading, refresh, setUser, login, completeTwoFactor, passkeySignIn, register, logout, logoutAll, switchAccount],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
