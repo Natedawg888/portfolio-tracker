@@ -80,6 +80,7 @@ export function PayeResultPanel({
         value={period}
         options={RESULT_PERIOD_OPTIONS}
         onChange={setPeriod}
+        nowrap
       />
       {notice}
       <figure className="paye-split">

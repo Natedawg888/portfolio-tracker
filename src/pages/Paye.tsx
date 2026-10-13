@@ -97,11 +97,11 @@ function isOutputPayType(t: PayePayType): t is OutputPayType {
 }
 
 /** Salary period. Hourly pay has its own pay type, so "hour" is not a choice here. */
-const SALARY_PERIODS: { value: PayFrequency; label: string }[] = [
-  { value: 'year', label: 'Year' },
-  { value: 'month', label: 'Month' },
-  { value: 'fortnight', label: 'Fortnight' },
-  { value: 'week', label: 'Week' },
+const SALARY_PERIODS: { value: PayFrequency; label: string; short: string }[] = [
+  { value: 'year', label: 'Year', short: 'Yr' },
+  { value: 'month', label: 'Month', short: 'Mo' },
+  { value: 'fortnight', label: 'Fortnight', short: 'Fn' },
+  { value: 'week', label: 'Week', short: 'Wk' },
 ];
 
 const EMPLOYMENT_OPTIONS: { value: EmploymentKind; label: string }[] = [
@@ -535,14 +535,15 @@ export function Paye() {
       ).paye.taxCode;
     }
     if (result) return result.taxCode;
+    // No pay entered yet: follow the IETC switch (the result above decides once income is known).
     return buildTaxCode({
       employment,
       studentLoan,
-      ietcApplied: false,
+      ietcApplied: employment === 'primary' && ietc,
       secondaryCode:
         employment === 'secondary' ? pickSecondaryCode(Number(secondaryTotal) || 0).code : null,
     });
-  }, [payType, outputPrefs, payeOptions, rates, result, employment, studentLoan, secondaryTotal]);
+  }, [payType, outputPrefs, payeOptions, rates, result, employment, studentLoan, ietc, secondaryTotal]);
 
   const ksRateOptions = [
     ...kiwiSaverEmployeeRateOptions(KIWISAVER_EMPLOYEE_RATE_CHOICES),
@@ -616,7 +617,7 @@ export function Paye() {
         />
 
         {payType === 'salary' && (
-          <div className="form-grid">
+          <div className="form-grid paye-income-row">
             <label>
               Gross income
               <input
@@ -640,9 +641,13 @@ export function Paye() {
                     type="button"
                     className={'segmented-btn' + (salaryPeriod === period.value ? ' active' : '')}
                     aria-pressed={salaryPeriod === period.value}
+                    aria-label={period.label}
                     onClick={() => setFrequency(period.value)}
                   >
-                    {period.label}
+                    <span className="seg-label-full">{period.label}</span>
+                    <span className="seg-label-short" aria-hidden="true">
+                      {period.short}
+                    </span>
                   </button>
                 ))}
               </div>
