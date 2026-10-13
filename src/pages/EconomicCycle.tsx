@@ -9,6 +9,9 @@ import { IndicatorCard } from '../components/economy/IndicatorCard';
 import { PhaseExplorer } from '../components/economy/PhaseExplorer';
 import { PhaseHistory } from '../components/economy/PhaseHistory';
 import { ScenarioSimulator } from '../components/economy/ScenarioSimulator';
+import type { MixState } from '../components/economy/YourMix';
+import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
+import { cycleMix, type NetWorthTotals } from '../lib/cycleMix';
 import type { EconomicCycleResponse } from '../types/economy';
 import { isCurrentCycleRequest, nextCycleLoad, shouldApplyCyclePayload } from './cycleLoad';
 
@@ -45,6 +48,37 @@ function economyKey(country: string): string {
   return `economy:${country}`;
 }
 
+/** The user's net worth for "Your mix". In the portfolio scope, so holding edits refresh it. */
+const MIX_KEY = 'cycle-mix';
+
+/** Loads the signed-in user's class totals (stale-while-revalidate) for the mix panel. */
+function useMixState(): MixState {
+  const { enabled } = useAssetClassPrefs();
+  const cached = usePageCacheValue<NetWorthTotals>(MIX_KEY);
+  const [failed, setFailed] = useState(false);
+  // Fetch on every visit, and again when an edit elsewhere clears the cached mix.
+  const missing = cached == null;
+  useEffect(() => {
+    let cancelled = false;
+    const stamp = beginPageRead(MIX_KEY);
+    api
+      .netWorth()
+      .then((nw) => {
+        if (!commitPageRead(stamp, nw as NetWorthTotals) || cancelled) return;
+        setFailed(false);
+      })
+      .catch(() => {
+        abandonPageRead(stamp);
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [missing]);
+  if (cached) return { status: 'ready', mix: cycleMix(cached, (pref) => enabled(pref as Parameters<typeof enabled>[0])) };
+  return failed ? { status: 'error' } : { status: 'loading' };
+}
+
 export function EconomicCycle() {
   const [country, setCountry] = useState('NZ');
   const initialCycle = readPageCache<EconomicCycleResponse>(economyKey('NZ'));
@@ -60,6 +94,7 @@ export function EconomicCycle() {
   const mountedRef = useRef(true);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const cardRefs = useRef(new Map<string, HTMLElement>());
+  const mix = useMixState();
 
   const load = useCallback((refresh = false) => {
     const ticket = nextCycleLoad(requestSeq.current, country);
@@ -214,7 +249,7 @@ export function EconomicCycle() {
         controls={<CountryControl country={country} options={options} disabled={loading} onChange={changeCountry} />}
       />
 
-      <PhaseExplorer key={`explore:${dataKey}`} data={showing} />
+      <PhaseExplorer key={`explore:${dataKey}`} data={showing} mix={mix} />
 
       <section className="panel econ-indicators" aria-labelledby="econ-indicators-title">
         <div className="panel-heading">
