@@ -433,10 +433,13 @@ export function KiwiSaver() {
       list.find((a) => isAkahuAccount(a))?.id ||
       list[0]?.id ||
       null;
-    const hist = (await api.kiwisaver.history(pick ?? undefined)) as KiwiSaverHistoryResponse;
-    const act = pick
-      ? ((await api.kiwisaver.activity(pick).catch(() => null)) as KiwiSaverActivityResponse | null)
-      : null;
+    // History and activity only need the chosen account, so they load together.
+    const [hist, act] = await Promise.all([
+      api.kiwisaver.history(pick ?? undefined) as Promise<KiwiSaverHistoryResponse>,
+      pick
+        ? (api.kiwisaver.activity(pick).catch(() => null) as Promise<KiwiSaverActivityResponse | null>)
+        : Promise.resolve(null),
+    ]);
     const bundle: KiwiSaverBundle = {
       accounts: list,
       selectedId: pick,

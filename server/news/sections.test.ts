@@ -10,7 +10,7 @@ import {
   HOLDINGS_FOR_NEWS_SQL,
   planNewsSections,
 } from './sections.ts';
-import { clearRssCache, fetchRss, parseRssFeed } from './rss.ts';
+import { ageRssCacheForTest, clearRssCache, fetchRss, parseRssFeed, settleRssRefreshes } from './rss.ts';
 import { loadNewsSections } from './load.ts';
 
 const failures: string[] = [];
@@ -275,6 +275,72 @@ await check('non-xml 200 is an error, not an empty success', async () => {
   });
   assert.equal(result.ok, false);
   if (!result.ok) assert.match(result.error, /did not return a feed/);
+});
+
+await check('page loads never wait on a feed seen before', async () => {
+  clearRssCache();
+  const realFetch = globalThis.fetch;
+  let calls = 0;
+  let release: (() => void) | null = null;
+  try {
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return new Response(GOOGLE_ITEM, { status: 200, headers: { 'content-type': 'application/xml' } });
+    }) as typeof fetch;
+    const url = 'https://example.test/feed';
+    const first = await fetchRss(url);
+    assert.equal(first.ok, true);
+    assert.equal(calls, 1);
+    await fetchRss(url);
+    assert.equal(calls, 1, 'a fresh copy is reused');
+
+    // Expired: the old copy comes back at once while a hanging refresh runs.
+    ageRssCacheForTest(11 * 60 * 1000);
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    globalThis.fetch = (async () => {
+      calls += 1;
+      await gate;
+      return new Response('<html>down</html>', { status: 503 });
+    }) as typeof fetch;
+    const started = Date.now();
+    const stale = await fetchRss(url);
+    assert.ok(Date.now() - started < 200, 'did not wait for the refresh');
+    assert.equal(stale.ok, true);
+    assert.equal(calls, 2, 'one background refresh started');
+    await fetchRss(url);
+    assert.equal(calls, 2, 'a second load shares the running refresh');
+    release?.();
+    await settleRssRefreshes();
+    const kept = await fetchRss(url);
+    assert.equal(kept.ok, true, 'a failed refresh keeps the last good copy');
+    assert.equal(calls, 2, 'and is not retried straight away');
+  } finally {
+    release?.();
+    globalThis.fetch = realFetch;
+  }
+});
+
+await check('a failing feed is remembered instead of retried on every load', async () => {
+  clearRssCache();
+  const realFetch = globalThis.fetch;
+  let calls = 0;
+  try {
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return new Response('<html>down</html>', { status: 503 });
+    }) as typeof fetch;
+    const url = 'https://example.test/down';
+    assert.equal((await fetchRss(url)).ok, false);
+    assert.equal((await fetchRss(url)).ok, false);
+    assert.equal(calls, 1, 'second load reuses the failure');
+    ageRssCacheForTest(3 * 60 * 1000);
+    await fetchRss(url);
+    assert.equal(calls, 2, 'retried after the failure window');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
 
 if (process.env.NEWS_LIVE === '1') {
