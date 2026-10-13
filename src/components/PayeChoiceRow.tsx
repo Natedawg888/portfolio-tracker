@@ -7,13 +7,17 @@ export function PayeChoiceRow<T extends string>({
   options,
   onChange,
   aside,
+  nowrap = false,
 }: {
   label: string;
   ariaLabel?: string;
   value: T;
-  options: readonly { value: T; label: string }[];
+  /** `short` is shown instead of `label` when a nowrap row is too narrow; `label` stays the accessible name. */
+  options: readonly { value: T; label: string; short?: string }[];
   onChange: (next: T) => void;
   aside?: ReactNode;
+  /** One line, never wrapping (period toggles). */
+  nowrap?: boolean;
 }) {
   function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     if (e.key !== 'ArrowRight' && e.key !== 'ArrowDown' && e.key !== 'ArrowLeft' && e.key !== 'ArrowUp') {
@@ -37,7 +41,12 @@ export function PayeChoiceRow<T extends string>({
         {label}
         {aside}
       </legend>
-      <div className="paye-choice-row" role="radiogroup" aria-label={ariaLabel ?? label} onKeyDown={onKeyDown}>
+      <div
+        className={'paye-choice-row' + (nowrap ? ' paye-choice-row--nowrap' : '')}
+        role="radiogroup"
+        aria-label={ariaLabel ?? label}
+        onKeyDown={onKeyDown}
+      >
         {options.map((opt) => {
           const active = value === opt.value;
           return (
@@ -49,9 +58,19 @@ export function PayeChoiceRow<T extends string>({
               aria-checked={active}
               tabIndex={active ? 0 : -1}
               className={'paye-choice-btn' + (active ? ' active' : '')}
+              aria-label={opt.short ? opt.label : undefined}
               onClick={() => onChange(opt.value)}
             >
-              {opt.label}
+              {opt.short ? (
+                <>
+                  <span className="seg-label-full">{opt.label}</span>
+                  <span className="seg-label-short" aria-hidden="true">
+                    {opt.short}
+                  </span>
+                </>
+              ) : (
+                opt.label
+              )}
             </button>
           );
         })}

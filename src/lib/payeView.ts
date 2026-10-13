@@ -300,11 +300,12 @@ export const INVESTING_CREDITS_TIP =
 /** Display periods for the result panel. Hour stays in the detail table only. */
 export type ResultPeriod = 'year' | 'month' | 'fortnight' | 'week';
 
-export const RESULT_PERIOD_OPTIONS: readonly { value: ResultPeriod; label: string }[] = [
-  { value: 'year', label: 'Year' },
-  { value: 'month', label: 'Month' },
-  { value: 'fortnight', label: 'Fortnight' },
-  { value: 'week', label: 'Week' },
+/** Short labels are shown only when the row is too narrow for the full words (which stay as aria-labels). */
+export const RESULT_PERIOD_OPTIONS: readonly { value: ResultPeriod; label: string; short: string }[] = [
+  { value: 'year', label: 'Year', short: 'Yr' },
+  { value: 'month', label: 'Month', short: 'Mo' },
+  { value: 'fortnight', label: 'Fortnight', short: 'Fn' },
+  { value: 'week', label: 'Week', short: 'Wk' },
 ];
 
 /** Visible suffix beside the take-home figure. */

@@ -7358,6 +7358,10 @@ html[data-theme="light"] .paye-page textarea {
   color: #1a1a1a;
   border: 1px solid #8c7b66;
 }
+html[data-theme="light"] .paye-page {
+  --paye-input-bg: #e7e0d4;
+  --paye-input-border: #8c7b66;
+}
 html[data-theme="light"] .paye-page input::placeholder,
 html[data-theme="light"] .paye-page textarea::placeholder {
   color: #5c564e;
@@ -7444,6 +7448,11 @@ html:not([data-theme]) .paye-page textarea {
   background: #121a16;
   color: #f3eee4;
   border: 1px solid #6f8276;
+}
+html[data-theme="dark"] .paye-page,
+html:not([data-theme]) .paye-page {
+  --paye-input-bg: #121a16;
+  --paye-input-border: #6f8276;
 }
 html[data-theme="dark"] .paye-page input::placeholder,
 html[data-theme="dark"] .paye-page textarea::placeholder,
@@ -7888,7 +7897,66 @@ html:not([data-theme]) .paye-page :focus-visible {
   font-size: inherit;
   color: inherit;
 }
-.paye-page .paye-period .segmented { flex-wrap: wrap; align-self: flex-start; }
+/*
+ * Salary row: Gross income, Period, Hours / week on one line. Period takes the width its
+ * four options need (never wrapping); the inputs share the rest. The inputs panel is the
+ * size container, so the row stacks when that panel (not the window) gets narrow.
+ */
+.paye-page .paye-inputs > .panel { container-type: inline-size; }
+.paye-page .form-grid input,
+.paye-page .form-grid select { line-height: 1.25; }
+.paye-page .paye-income-row {
+  grid-template-columns: minmax(7rem, 1fr) max-content minmax(5.5rem, 0.7fr);
+  align-items: end;
+}
+/* Same box as the inputs beside it: 1px border, 8px radius, same colours, and padding +
+   line-height that add up to the input's height (0.5rem − 3px group padding − 1px button border). */
+.paye-page .paye-period .segmented {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--paye-input-border, var(--border));
+  border-radius: 8px;
+  background: var(--paye-input-bg, var(--bg));
+}
+.paye-page .paye-period .segmented-btn {
+  flex: 1 0 auto;
+  padding: calc(0.5rem - 4px) 0.6rem;
+  border-radius: 5px;
+  font-size: 0.85rem;
+  line-height: 1.25;
+  white-space: nowrap;
+  text-align: center;
+}
+.paye-page .paye-period .segmented-btn:focus-visible { position: relative; z-index: 1; outline-offset: 1px; }
+/* Phones: inputs get min-height 2.75rem (iOS zoom rule above), so the control does too. */
+@media (max-width: 768px) {
+  .paye-page .paye-period .segmented { min-height: 2.75rem; }
+}
+.paye-page .seg-label-short { display: none; }
+@container (max-width: 33rem) {
+  .paye-page .paye-income-row { grid-template-columns: minmax(0, 1fr); }
+}
+@container (max-width: 18.5rem) {
+  .paye-page .paye-period .segmented-btn { padding-left: 0.35rem; padding-right: 0.35rem; }
+  .paye-page .paye-period .seg-label-full { display: none; }
+  .paye-page .paye-period .seg-label-short { display: inline; }
+}
+/* Result panel "Show as": one line; short labels when the row is too narrow for the words. */
+.paye-page .paye-choice { min-width: 0; }
+.paye-page .paye-choice-row--nowrap { flex-wrap: nowrap; gap: 0.3rem; container-type: inline-size; }
+.paye-page .paye-result .paye-choice-row--nowrap .paye-choice-btn {
+  flex: 1 1 0;
+  min-width: max-content;
+  white-space: nowrap;
+}
+.paye-page .paye-choice-row--nowrap .paye-choice-btn:focus-visible { position: relative; z-index: 1; }
+@container (max-width: 17.5rem) {
+  .paye-page .paye-result .paye-choice-row--nowrap .paye-choice-btn { padding-left: 0.2rem; padding-right: 0.2rem; }
+  .paye-page .paye-choice-row--nowrap .seg-label-full { display: none; }
+  .paye-page .paye-choice-row--nowrap .seg-label-short { display: inline; }
+}
 .paye-page .paye-rate-used {
   display: flex;
   flex-direction: column;
