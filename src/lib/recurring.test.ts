@@ -8,6 +8,8 @@ import {
   monthlyEquivalent,
   nextDueOnOrAfter,
   occurrencesWithin,
+  possiblePayment,
+  possibleSubscriptions,
   type DetectionTxn,
 } from './recurring.ts';
 
@@ -138,6 +140,67 @@ assert(found[0].monthlyNzd >= found[found.length - 1].monthlyNzd, 'largest month
   eq(kindOf('Groceries order'), 'bill', 'food category → bill');
   eq(kindOf('Mortgage'), 'bill', 'large fixed payment → bill');
   eq(kindOf('Disney Plus'), 'subscription', 'small fixed payment with no category → subscription');
+}
+
+// Account of the latest payment, and the regular tier.
+{
+  const acct = detectRecurring(
+    [1, 2, 3].map((m) => txn(`2026-0${6 + m}-05`, -9.99, 'Tidal', { accountName: m === 3 ? 'Everyday' : 'Old card' })),
+    today,
+  );
+  eq(acct[0].accountName, 'Everyday', 'latest payment account');
+  eq(acct[0].tier, 'regular', 'repeat-payment rule is the regular tier');
+}
+
+// Lower-confidence tier: Subscriptions-category payees seen once or twice, paid recently.
+{
+  const subs = { categoryName: 'Subscriptions', categoryId: 'cat-subs', accountName: 'Everyday' };
+  const txns = [
+    txn('2026-10-01', -58.08, 'ADOBE *CREATIVE CLD', subs),
+    txn('2026-08-20', -10, 'Canva', subs),
+    txn('2026-09-20', -12, 'Canva', subs),
+    txn('2026-08-01', -5, 'Old one-off app', subs), // more than 35 days ago
+    txn('2026-10-02', -40, 'Pizza place', { categoryName: 'Eating out' }), // not Subscriptions
+    ...[7, 8, 9].map((m) => txn(`2026-0${m}-03`, -14.99, 'Spotify', subs)), // three payments: regular rule decides
+    txn('2026-10-03', -20, 'Already regular', subs),
+  ];
+  const maybe = possibleSubscriptions(txns, today, new Set([merchantKey('Already regular')]));
+  const keys = maybe.map((s) => s.merchantKey);
+  eq(keys.join(','), [merchantKey('ADOBE *CREATIVE CLD'), merchantKey('Canva')].join(','), 'Adobe and Canva only, newest first');
+  const adobe = maybe[0];
+  eq(adobe.tier, 'possible', 'possible tier');
+  eq(adobe.amountNzd, 58.08, 'amount of the payment');
+  eq(adobe.occurrences, 1, 'seen once');
+  eq(adobe.lastDate, '2026-10-01', 'date of the payment');
+  eq(adobe.nextDue, '2026-11-01', 'monthly assumed for next due');
+  eq(adobe.accountName, 'Everyday', 'account');
+  eq(adobe.kind, 'subscription', 'subscription');
+  eq(adobe.amountVaries, false, 'one payment does not vary');
+  const canva = maybe[1];
+  eq(canva.occurrences, 2, 'Canva seen twice');
+  eq(canva.amountNzd, 12, 'latest amount');
+  eq(canva.amountVaries, true, '10 then 12 varies');
+}
+
+// Possible payment for a bill whose payee never matched.
+{
+  const rent = { name: 'Rent', amountNzd: 270, cadence: 'weekly' as const, categoryId: 'cat-housing' };
+  const housing = { categoryId: 'cat-housing', categoryName: 'Housing' };
+  const p = possiblePayment(rent, [
+    txn('2026-10-02', -270, 'TFR TO J LANDLORD', housing),
+    txn('2026-10-05', -270, 'Countdown', { categoryId: 'cat-food' }), // wrong category, no shared word
+    txn('2026-10-06', -150, 'Bond top-up', housing), // amount too far off
+    txn('2026-08-01', -270, 'Old landlord', housing), // older than two weeks + 7 days
+  ], today, new Set());
+  eq(p?.date, '2026-10-02', 'Housing payment of the same amount');
+  eq(p?.amountNzd, 270, 'amount');
+  eq(p?.categoryName, 'Housing', 'category');
+  eq(p?.payee, 'TFR TO J LANDLORD', 'payee');
+  eq(possiblePayment(rent, [txn('2026-10-02', -270, 'TFR TO J LANDLORD', housing)], today, new Set([merchantKey('TFR TO J LANDLORD')])), null, 'payee taken by another bill');
+  eq(possiblePayment({ ...rent, categoryId: null }, [txn('2026-10-02', -270, 'TFR TO J LANDLORD', housing)], today, new Set()), null, 'no category and no shared word');
+  const byName = possiblePayment({ name: 'Spark', amountNzd: 40, cadence: 'monthly', categoryId: null }, [txn('2026-09-28', -41.5, 'SPARK NZ TRADING', {})], today, new Set());
+  eq(byName?.amountNzd, 41.5, 'payee shares a word with the name, within 5%');
+  eq(possiblePayment({ name: 'Spark', amountNzd: 40, cadence: 'monthly', categoryId: null }, [txn('2026-09-28', -44, 'SPARK NZ TRADING', {})], today, new Set()), null, '10% off is not a match');
 }
 
 console.log('recurring detection tests ok');

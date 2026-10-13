@@ -4,33 +4,21 @@
  * and the bills / subscriptions they have saved, with next due date and amount.
  * Phase 1: header and one summary card. Totals are the list response, not recomputed here.
  * Phase 2: the summary card adds a 30-day calendar strip and a "Coming up" list.
+ * Phase 3: suggestions are cards (Track / Not a subscription), shown only when there are some.
+ * Phase 4: one card per saved bill, with a possible payment to link and a note when Debts has the same creditor.
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { api, formatNzd, type RecurringWriteBody } from '../api/client';
+import { api, type RecurringWriteBody } from '../api/client';
+import { BillCard } from '../components/bills/BillCard';
 import { BillsSummary } from '../components/bills/BillsSummary';
+import { SuggestionCard } from '../components/bills/SuggestionCard';
 import { CADENCES, CADENCE_LABELS, type Cadence } from '../lib/recurring';
-import type { RecurringItem, RecurringListResponse } from '../types';
-import { billsSubtitle, headerCounts } from './billsView';
+import type { DebtPerson, RecurringItem, RecurringListResponse } from '../types';
+import { billColours, billsSubtitle, creditorFor, headerCounts, orderBills } from './billsView';
 
 type Suggestion = RecurringListResponse['suggestions'][number];
 type Category = { id: string; name: string; type: string };
-
-function formatDate(ymd: string | null): string {
-  if (!ymd) return '—';
-  const d = new Date(`${ymd}T00:00:00Z`);
-  return Number.isNaN(d.getTime())
-    ? ymd
-    : new Intl.DateTimeFormat('en-NZ', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(d);
-}
-
-function dueText(nextDue: string, today: string): string {
-  const days = Math.round((Date.parse(`${nextDue}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000);
-  if (days === 0) return 'Due today';
-  if (days === 1) return 'Due tomorrow';
-  if (days > 1 && days <= 14) return `Due in ${days} days`;
-  return formatDate(nextDue);
-}
 
 function errText(e: unknown, fallback: string): string {
   return e instanceof Error ? e.message : fallback;
@@ -163,6 +151,7 @@ type DialogState =
 export function Bills() {
   const [data, setData] = useState<RecurringListResponse | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [debts, setDebts] = useState<DebtPerson[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogState>(null);
@@ -182,6 +171,21 @@ export function Bills() {
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(errText(e, 'Could not load bills and subscriptions.'));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reload]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.debts
+      .people()
+      .then((rows) => {
+        if (!cancelled) setDebts(rows);
+      })
+      .catch(() => {
+        /* the "You also owe" note is optional */
       });
     return () => {
       cancelled = true;
@@ -219,8 +223,7 @@ export function Bills() {
   }
 
   const today = data?.today ?? '';
-  const active = data?.items.filter((i) => i.status === 'active') ?? [];
-  const inactive = data?.items.filter((i) => i.status !== 'active') ?? [];
+  const colours = billColours(data?.items ?? []);
   const subtitle = data ? billsSubtitle(headerCounts(data.items)) : null;
 
   const blank: Draft = { name: '', kind: 'bill', amount: '', cadence: 'monthly', nextDue: today, categoryId: '', notes: '' };
@@ -255,153 +258,64 @@ export function Bills() {
         <>
           <BillsSummary totals={data.totals} items={data.items} today={today} />
 
-          <section className="panel">
-            <div className="panel-heading">
-              <h3>Found in your transactions</h3>
-              {data.dismissedCount > 0 ? (
-                <button
-                  type="button"
-                  className="btn small ghost"
-                  disabled={busyKey != null}
-                  onClick={() => void act('restore', () => api.recurring.restoreDismissed(), 'Dismissed suggestions are back.')}
-                >
-                  Show {data.dismissedCount} dismissed
-                </button>
-              ) : null}
-            </div>
-            {data.suggestions.length === 0 ? (
+          {data.suggestions.length > 0 ? (
+            <section className="bills-suggestions" aria-labelledby="bills-suggestions-title">
+              <h3 id="bills-suggestions-title">Found in your transactions</h3>
+              <div className="bills-suggestion-grid">
+                {data.suggestions.map((s) => (
+                  <SuggestionCard
+                    key={s.merchantKey}
+                    suggestion={s}
+                    today={today}
+                    busy={busyKey != null}
+                    onTrack={() => setDialog({ mode: 'confirm', suggestion: s })}
+                    onDismiss={() => void act(s.merchantKey, () => api.recurring.dismiss(s.merchantKey), `${s.name} won’t be suggested again.`)}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          <section className="bills-list" aria-labelledby="bills-list-title">
+            <h3 id="bills-list-title">Your bills &amp; subscriptions</h3>
+            {data.items.length === 0 ? (
               <p className="muted small">
-                Nothing new to review. Payments show up here once the same payee has been paid at least three times on a
-                regular schedule (twice for yearly).
+                None saved yet. Track one found above, or use <strong>+ Add bill</strong>.
               </p>
             ) : (
-              <div className="table-wrap" style={{ overflowX: 'auto' }}>
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Payee</th>
-                      <th>How often</th>
-                      <th style={{ textAlign: 'right' }}>Amount</th>
-                      <th>Next due</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.suggestions.map((s) => (
-                      <tr key={s.merchantKey}>
-                        <td>
-                          {s.name}
-                          <div className="muted small">
-                            {s.kind === 'subscription' ? 'Subscription' : 'Bill'} · {s.occurrences} payments, last {formatDate(s.lastDate)}
-                            {s.amountVaries ? ' · amount varies' : ''}
-                          </div>
-                        </td>
-                        <td>{CADENCE_LABELS[s.cadence]}</td>
-                        <td className="money" style={{ textAlign: 'right' }}>
-                          {formatNzd(s.amountNzd)}
-                        </td>
-                        <td>{dueText(s.nextDue, today)}</td>
-                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                          <button type="button" className="btn small primary" disabled={busyKey != null} onClick={() => setDialog({ mode: 'confirm', suggestion: s })}>
-                            Confirm
-                          </button>{' '}
-                          <button
-                            type="button"
-                            className="btn small"
-                            disabled={busyKey != null}
-                            onClick={() => void act(s.merchantKey, () => api.recurring.dismiss(s.merchantKey), `${s.name} won’t be suggested again.`)}
-                          >
-                            Not a bill
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="bills-card-list">
+                {orderBills(data.items).map((i) => (
+                  <BillCard
+                    key={i.id}
+                    bill={i}
+                    today={today}
+                    colourIndex={colours.get(i.id)}
+                    creditor={creditorFor(i.name, debts)}
+                    busy={busyKey != null}
+                    onTogglePause={() =>
+                      void act(i.id, () => api.recurring.update(i.id, { status: i.status === 'active' ? 'paused' : 'active' }), i.status === 'active' ? `${i.name} paused.` : `${i.name} is active again.`)
+                    }
+                    onEdit={() => setDialog({ mode: 'edit', item: i })}
+                    onRemove={() => void act(i.id, () => api.recurring.remove(i.id), `${i.name} removed.`, `Remove ${i.name}?`)}
+                    onLink={(transactionId) => void act(i.id, () => api.recurring.link(i.id, transactionId), `Payment linked to ${i.name}.`)}
+                  />
+                ))}
               </div>
             )}
           </section>
 
-          <section className="panel">
-            <h3>Your bills &amp; subscriptions</h3>
-            {data.items.length === 0 ? (
-              <p className="muted small">
-                None saved yet. Confirm one found above, or use <strong>Add a bill or subscription</strong>.
-              </p>
-            ) : (
-              <div className="table-wrap" style={{ overflowX: 'auto' }}>
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>How often</th>
-                      <th style={{ textAlign: 'right' }}>Amount</th>
-                      <th style={{ textAlign: 'right' }}>Per month</th>
-                      <th>Next due</th>
-                      <th>Last paid</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[...active, ...inactive].map((i) => (
-                      <tr key={i.id} className={i.status !== 'active' ? 'bills-inactive' : undefined}>
-                        <td>
-                          {i.name}
-                          <div className="muted small">
-                            {i.kind === 'subscription' ? 'Subscription' : 'Bill'}
-                            {i.categoryName ? ` · ${i.categoryName}` : ''}
-                            {i.status !== 'active' ? ` · ${i.status === 'paused' ? 'Paused' : 'Cancelled'}` : ''}
-                            {i.notes ? ` · ${i.notes}` : ''}
-                          </div>
-                        </td>
-                        <td>{CADENCE_LABELS[i.cadence]}</td>
-                        <td className="money" style={{ textAlign: 'right' }}>
-                          {formatNzd(i.amountNzd)}
-                        </td>
-                        <td className="money" style={{ textAlign: 'right' }}>
-                          {formatNzd(i.monthlyNzd)}
-                        </td>
-                        <td>{i.status === 'active' ? dueText(i.nextDue, today) : '—'}</td>
-                        <td>
-                          {i.lastPaidDate ? (
-                            <>
-                              {formatDate(i.lastPaidDate)}
-                              <div className="muted small">{formatNzd(i.lastPaidNzd)}</div>
-                            </>
-                          ) : (
-                            <span className="muted">—</span>
-                          )}
-                        </td>
-                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                          <button type="button" className="btn small" disabled={busyKey != null} onClick={() => setDialog({ mode: 'edit', item: i })}>
-                            Edit
-                          </button>{' '}
-                          <button
-                            type="button"
-                            className="btn small"
-                            disabled={busyKey != null}
-                            onClick={() =>
-                              void act(i.id, () => api.recurring.update(i.id, { status: i.status === 'active' ? 'paused' : 'active' }), i.status === 'active' ? `${i.name} paused.` : `${i.name} is active again.`)
-                            }
-                          >
-                            {i.status === 'active' ? 'Pause' : 'Resume'}
-                          </button>{' '}
-                          <button
-                            type="button"
-                            className="btn small danger"
-                            disabled={busyKey != null}
-                            onClick={() => void act(i.id, () => api.recurring.remove(i.id), `${i.name} removed.`, `Remove ${i.name}?`)}
-                          >
-                            Remove
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
+          {data.dismissedCount > 0 ? (
+            <p className="bills-dismissed">
+              <button
+                type="button"
+                className="link-btn"
+                disabled={busyKey != null}
+                onClick={() => void act('restore', () => api.recurring.restoreDismissed(), 'Dismissed suggestions are back.')}
+              >
+                Show {data.dismissedCount} dismissed {data.dismissedCount === 1 ? 'suggestion' : 'suggestions'}
+              </button>
+            </p>
+          ) : null}
         </>
       ) : null}
 
@@ -422,7 +336,7 @@ export function Bills() {
       ) : null}
       {dialog?.mode === 'confirm' ? (
         <ItemDialog
-          title={`Confirm ${dialog.suggestion.name}`}
+          title={`Track ${dialog.suggestion.name}`}
           initial={{
             name: dialog.suggestion.name,
             kind: dialog.suggestion.kind,
@@ -433,12 +347,12 @@ export function Bills() {
             notes: '',
           }}
           categories={categories}
-          saveLabel="Save"
+          saveLabel="Track"
           onClose={() => setDialog(null)}
           onSave={async (body) => {
             await api.recurring.create({ ...body, merchantKey: dialog.suggestion.merchantKey, source: 'detected' });
             setDialog(null);
-            setMsg(`${body.name} saved.`);
+            setMsg(`${body.name} is being tracked.`);
             load();
           }}
         />

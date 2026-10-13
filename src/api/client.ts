@@ -622,6 +622,8 @@ export const api = {
     update: (id: string, body: Partial<RecurringWriteBody> & { status?: RecurringItem['status'] }) =>
       req<RecurringItem>(`/recurring/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
     remove: (id: string) => req<{ ok: boolean; id: string }>(`/recurring/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    link: (id: string, transactionId: string) =>
+      req<RecurringItem>(`/recurring/${encodeURIComponent(id)}/link`, { method: 'POST', body: JSON.stringify({ transactionId }) }),
     dismiss: (merchantKey: string) =>
       req<{ ok: boolean; merchantKey: string }>('/recurring/dismiss', { method: 'POST', body: JSON.stringify({ merchantKey }) }),
     restoreDismissed: () => req<{ ok: boolean; restored: number }>('/recurring/dismissed/restore', { method: 'POST' }),
