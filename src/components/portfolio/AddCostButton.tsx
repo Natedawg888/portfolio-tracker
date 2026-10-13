@@ -6,9 +6,12 @@ import { useId, useState, type FormEvent } from 'react';
 
 export function AddCostButton({
   name,
+  label = 'cost',
   onSave,
 }: {
   name: string;
+  /** What is being added: "cost" by default, "purchase price" for property. */
+  label?: string;
   /** Resolves true when saved. */
   onSave: (costNzd: number) => Promise<boolean>;
 }) {
@@ -38,7 +41,7 @@ export function AddCostButton({
   if (!open) {
     return (
       <button type="button" className="add-cost-btn" onClick={() => setOpen(true)}>
-        + Add cost<span className="sr-only"> for {name}</span>
+        + Add {label}<span className="sr-only"> for {name}</span>
       </button>
     );
   }
@@ -51,7 +54,7 @@ export function AddCostButton({
       }}
     >
       <label htmlFor={id} className="sr-only">
-        Cost of {name} (NZD)
+        {label.charAt(0).toUpperCase() + label.slice(1)} of {name} (NZD)
       </label>
       <input
         id={id}

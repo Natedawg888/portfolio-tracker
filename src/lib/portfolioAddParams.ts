@@ -34,7 +34,7 @@ export const ADD_TAB: Record<PortfolioAddKind, PortfolioTab> = {
   stock: 'stocks',
   crypto: 'crypto',
   metal: 'metals',
-  forex: 'other',
+  forex: 'forex',
   miner: 'mining',
   card: 'collectables',
 };

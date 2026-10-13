@@ -6,6 +6,7 @@ import { commitPageRead, beginPageRead, readPageCache } from '../lib/pageDataCac
 import type { MtgColour } from '../types';
 import type { PortfolioAddRequest } from '../lib/portfolioAddParams';
 import { focusFirstEmptyField } from '../lib/revealElement';
+import { ClassHeading } from './portfolio/ClassHeading';
 import {
   CARD_FINISHES,
   COLLECTABLE_PRESETS,
@@ -92,6 +93,8 @@ type Props = {
   onInitialAddHandled?: () => void;
   /** Open the list holding this item so Portfolio can scroll to its card. */
   revealHoldingId?: string | null;
+  /** Class total from the portfolio summary; null while loading. */
+  total: number | null;
 };
 
 
@@ -107,6 +110,7 @@ export function CollectablesPanel({
   initialAdd,
   onInitialAddHandled,
   revealHoldingId,
+  total,
 }: Props) {
   const initialTypes = readPageCache<CollectableTypeCache>(COLLECTABLE_TYPES_KEY);
   const [types, setTypes] = useState<CollectableTypeDef[]>(initialTypes?.types ?? []);
@@ -443,15 +447,16 @@ export function CollectablesPanel({
 
   return (
     <section className="panel">
-      <div className="panel-heading">
-        <h3>
-          Collectables
+      <ClassHeading
+        title="Collectables"
+        total={total}
+        info={
           <InfoTip label="Where collectable values come from">
             Magic: The Gathering prices from Scryfall and Pokémon prices from pokemontcg.io, converted to NZD. Other types
             use the value you record. Prices are never estimated; use Refresh all prices at the top for new quotes.
           </InfoTip>
-        </h3>
-      </div>
+        }
+      />
 
       <div className="collectable-type-grid" role="list">
         {visibleTypes.map((def) => {

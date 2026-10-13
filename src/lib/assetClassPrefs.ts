@@ -34,7 +34,7 @@ export const ASSET_CLASS_PREF_OPTIONS: AssetClassPrefMeta[] = [
   { key: 'gomining', label: 'GoMining', blurb: 'Digital miners' },
   { key: 'metal', label: 'Metals', blurb: 'Gold, silver, platinum, palladium' },
   { key: 'forex', label: 'Forex', blurb: 'Foreign cash (Revolut etc.)' },
-  { key: 'real_estate', label: 'Real estate', blurb: 'Property value − mortgage' },
+  { key: 'real_estate', label: 'Property', blurb: 'Market value − mortgage' },
   { key: 'art', label: 'Art', blurb: 'Fractional or physical' },
   { key: 'stone', label: 'Precious stones', blurb: 'Diamonds & gems' },
   { key: 'collectable', label: 'Collectables', blurb: 'MTG, Pokémon, figurines' },

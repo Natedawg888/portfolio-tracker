@@ -10,6 +10,7 @@ import { HoldingIcon } from '../HoldingIcon';
 import { HoldingPriceChart } from '../HoldingPriceChart';
 import { MoreMenu } from '../MoreMenu';
 import { AddCostButton } from './AddCostButton';
+import { ClassHeading } from './ClassHeading';
 import {
   displayCostBasisNzd,
   displayName,
@@ -72,7 +73,11 @@ type Handlers = {
   onSetCost: (id: string, costNzd: number) => Promise<boolean>;
 };
 
-export function StocksTab({ holdings, ...handlers }: { holdings: Holding[] } & Handlers) {
+export function StocksTab({
+  holdings,
+  total,
+  ...handlers
+}: { holdings: Holding[]; /** Class total from the portfolio summary; null while loading. */ total: number | null } & Handlers) {
   const [sort, setSort] = useState<SortKey>('value');
   const [openId, setOpenId] = useState<string | null>(null);
   const [closedOpen, setClosedOpen] = useState(false);
@@ -89,8 +94,7 @@ export function StocksTab({ holdings, ...handlers }: { holdings: Holding[] } & H
 
   return (
     <section className="panel" aria-labelledby="stocks-title">
-      <div className="panel-heading">
-        <h3 id="stocks-title">Stocks</h3>
+      <ClassHeading id="stocks-title" title="Stocks" total={total}>
         <div className="segmented segmented--small" role="group" aria-label="Sort stocks by">
           {(['value', 'return'] as SortKey[]).map((k) => (
             <button
@@ -104,7 +108,7 @@ export function StocksTab({ holdings, ...handlers }: { holdings: Holding[] } & H
             </button>
           ))}
         </div>
-      </div>
+      </ClassHeading>
 
       {open.length === 0 ? (
         <p className="muted">No stock holdings with shares yet.</p>

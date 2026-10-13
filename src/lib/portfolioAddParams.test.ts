@@ -22,7 +22,7 @@ const requests: [PortfolioAddRequest, string][] = [
   [{ kind: 'crypto', ticker: 'BTC' }, '#crypto'],
   [{ kind: 'metal', metal: 'silver', amount: 10, unit: 'oz_t' }, '#metals'],
   [{ kind: 'metal', metal: 'gold', amount: null, unit: null }, '#metals'],
-  [{ kind: 'forex', currency: 'USD', amount: 100 }, '#other'],
+  [{ kind: 'forex', currency: 'USD', amount: 100 }, '#forex'],
   [{ kind: 'miner', ths: 100, wPerTh: 15 }, '#mining'],
   [
     { kind: 'card', game: 'mtg', name: 'Lightning Bolt', set: 'lea', number: '161', finish: 'foil', apiId: null },
