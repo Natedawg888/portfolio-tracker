@@ -7516,6 +7516,21 @@ html:not([data-theme]) .paye-page :focus-visible {
   cursor: pointer;
 }
 .paye-page .paye-included-toggle:hover { color: var(--text); }
+.paye-page .paye-mortgage-toggle { align-self: flex-start; margin-top: 0.5rem; }
+.mortgage-calc h3 { margin: 0 0 0.2rem; }
+.mortgage-calc > .muted { margin: 0; }
+.mortgage-result { margin-top: 1rem; display: grid; gap: 0.6rem; }
+.mortgage-result p { margin: 0; }
+.mortgage-figure { font-size: clamp(1.5rem, 3.5vw, 2rem); font-weight: 700; letter-spacing: -0.015em; }
+.mortgage-figure .muted { font-size: 1rem; font-weight: 500; letter-spacing: 0; }
+.mortgage-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.5rem 1.25rem;
+  margin: 0;
+}
+.mortgage-totals dt { font-size: 0.78rem; font-weight: 600; color: var(--muted); }
+.mortgage-totals dd { margin: 0.15rem 0 0; font-size: 1.05rem; font-weight: 650; }
 .paye-page .paye-included {
   display: flex;
   flex-direction: column;
