@@ -5,23 +5,26 @@
  * exist.
  * Phase 2: the add / edit form (components/warranties/WarrantyForm) with one-tap cover
  * lengths, purchase linking, receipt, and a live "Covered until" line.
+ * Phase 3: one card per warranty (status chip, cover-used bar, ⋯ menu), soonest
+ * ending first, with an All / Covered / Ending soon / Expired filter.
  */
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, formatNzd, type WarrantyWriteBody } from '../api/client';
+import { api, type WarrantyWriteBody } from '../api/client';
 import { WarrantyForm, type WarrantyDraftForm } from '../components/warranties/WarrantyForm';
-import { errText, readFile } from '../components/warranties/receiptFile';
-import { daysLeftText } from '../lib/warranty';
+import { RadioChips } from '../components/warranties/RadioChips';
+import { WarrantyCard } from '../components/warranties/WarrantyCard';
+import { errText } from '../components/warranties/receiptFile';
 import type { Warranty, WarrantyListResponse } from '../types';
-import { WARRANTY_STATUS_LABELS, coverChoiceFor, warrantiesHeaderLine } from './warrantiesView';
-
-function formatDate(ymd: string | null): string {
-  if (!ymd) return '—';
-  const d = new Date(`${ymd}T00:00:00Z`);
-  return Number.isNaN(d.getTime())
-    ? ymd
-    : new Intl.DateTimeFormat('en-NZ', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(d);
-}
+import {
+  coverChoiceFor,
+  emptyFilterText,
+  filterOptions,
+  filterWarranties,
+  sortWarranties,
+  warrantiesHeaderLine,
+  type WarrantyFilter,
+} from './warrantiesView';
 
 function draftFor(w: Warranty): WarrantyDraftForm {
   return {
@@ -78,7 +81,7 @@ export function Warranties() {
   const [msg, setMsg] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [showExpired, setShowExpired] = useState(false);
+  const [filter, setFilter] = useState<WarrantyFilter>('all');
 
   const [reload, setReload] = useState(0);
   const load = () => setReload((n) => n + 1);
@@ -115,19 +118,9 @@ export function Warranties() {
     }
   }
 
-  async function uploadFor(w: Warranty, file: File | undefined) {
-    if (!file) return;
-    try {
-      const dataUrl = await readFile(file);
-      await act(w.id, () => api.warranties.uploadReceipt(w.id, dataUrl), `Receipt saved for ${w.itemName}.`);
-    } catch (e) {
-      setError(errText(e, 'Could not read that file.'));
-    }
-  }
-
   const today = data?.today ?? '';
-  const covered = data?.items.filter((i) => i.status !== 'expired') ?? [];
-  const expired = data?.items.filter((i) => i.status === 'expired') ?? [];
+  const sorted = sortWarranties(data?.items ?? []);
+  const shown = filterWarranties(sorted, filter);
   const blank: WarrantyDraftForm = {
     itemName: '',
     retailer: '',
@@ -164,110 +157,6 @@ export function Warranties() {
     setDialog(null);
     setMsg(`${body.itemName} updated.`);
     load();
-  }
-
-  function row(w: Warranty) {
-    return (
-      <tr key={w.id} className={w.status === 'expired' ? 'bills-inactive' : undefined}>
-        <td>
-          {w.itemName}
-          <div className="muted small">
-            {[w.retailer, w.priceNzd != null ? formatNzd(w.priceNzd) : '', w.notes].filter(Boolean).join(' · ') || ' '}
-          </div>
-        </td>
-        <td>
-          {formatDate(w.endsOn)}
-          <div className="muted small">from {formatDate(w.startsOn)}</div>
-        </td>
-        <td>
-          <span className={`warranty-status warranty-status--${w.status}`}>{WARRANTY_STATUS_LABELS[w.status]}</span>
-          <div className="muted small">{daysLeftText(w.endsOn, today)}</div>
-        </td>
-        <td>
-          {w.purchase ? (
-            <>
-              {w.purchase.description || 'Purchase'}
-              <div className="muted small">
-                {formatDate(w.purchase.date)} · {formatNzd(w.purchase.amountNzd)}
-                {w.purchase.receiptUrl ? (
-                  <>
-                    {' · '}
-                    <a href={w.purchase.receiptUrl} target="_blank" rel="noreferrer">
-                      Receipt
-                    </a>
-                  </>
-                ) : null}
-              </div>
-            </>
-          ) : (
-            <span className="muted">Not linked</span>
-          )}
-        </td>
-        <td style={{ whiteSpace: 'nowrap' }}>
-          {w.receiptUrl ? (
-            <>
-              <a href={w.receiptUrl} target="_blank" rel="noreferrer">
-                View
-              </a>{' '}
-              <button
-                type="button"
-                className="btn small ghost"
-                disabled={busyKey != null}
-                onClick={() => void act(w.id, () => api.warranties.removeReceipt(w.id), `Receipt removed from ${w.itemName}.`, `Remove the receipt from ${w.itemName}?`)}
-              >
-                Remove
-              </button>
-            </>
-          ) : (
-            <label className="btn small warranty-upload">
-              Upload
-              <input
-                type="file"
-                accept="image/*,application/pdf"
-                disabled={busyKey != null}
-                onChange={(e) => {
-                  void uploadFor(w, e.target.files?.[0]);
-                  e.target.value = '';
-                }}
-              />
-            </label>
-          )}
-        </td>
-        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-          <button type="button" className="btn small" disabled={busyKey != null} onClick={() => setDialog({ mode: 'edit', item: w })}>
-            Edit
-          </button>{' '}
-          <button
-            type="button"
-            className="btn small danger"
-            disabled={busyKey != null}
-            onClick={() => void act(w.id, () => api.warranties.remove(w.id), `${w.itemName} removed.`, `Remove the warranty for ${w.itemName}?`)}
-          >
-            Remove
-          </button>
-        </td>
-      </tr>
-    );
-  }
-
-  function table(items: Warranty[]) {
-    return (
-      <div className="table-wrap" style={{ overflowX: 'auto' }}>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th>Cover ends</th>
-              <th>Status</th>
-              <th>Purchase</th>
-              <th>Receipt</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>{items.map(row)}</tbody>
-        </table>
-      </div>
-    );
   }
 
   const openAdd = () => setDialog({ mode: 'add' });
@@ -314,28 +203,33 @@ export function Warranties() {
       {data && data.items.length === 0 ? <EmptyWarranties onAdd={openAdd} /> : null}
 
       {data && data.items.length > 0 ? (
-        <>
-          <section className="panel">
-            <h3>Under warranty</h3>
-            {covered.length === 0 ? (
-              <p className="muted small">Nothing is under warranty right now.</p>
-            ) : (
-              table(covered)
-            )}
-          </section>
-
-          {expired.length > 0 ? (
-            <section className="panel">
-              <div className="panel-heading">
-                <h3>Expired ({expired.length})</h3>
-                <button type="button" className="btn small ghost" onClick={() => setShowExpired((v) => !v)} aria-expanded={showExpired}>
-                  {showExpired ? 'Hide' : 'Show'}
-                </button>
-              </div>
-              {showExpired ? table(expired) : null}
-            </section>
-          ) : null}
-        </>
+        <section className="warranties-list" aria-labelledby="warranties-list-title">
+          <div className="warranties-list-head">
+            <h3 id="warranties-list-title">Your warranties</h3>
+            <div className="warranties-filter">
+              <span id="warranties-filter-label" className="warranties-filter-label">
+                Show
+              </span>
+              <RadioChips small labelId="warranties-filter-label" options={filterOptions(sorted)} value={filter} onChange={(v) => setFilter(v as WarrantyFilter)} />
+            </div>
+          </div>
+          {shown.length === 0 && filter !== 'all' ? (
+            <p className="muted small">{emptyFilterText(filter)}</p>
+          ) : (
+            <div className="warranty-card-list">
+              {shown.map((w) => (
+                <WarrantyCard
+                  key={w.id}
+                  warranty={w}
+                  today={today}
+                  busy={busyKey != null}
+                  onEdit={() => setDialog({ mode: 'edit', item: w })}
+                  onDelete={() => void act(w.id, () => api.warranties.remove(w.id), `${w.itemName} deleted.`, `Delete the warranty for ${w.itemName}? Its receipt is deleted too.`)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
       ) : null}
 
       {dialog?.mode === 'add' ? (

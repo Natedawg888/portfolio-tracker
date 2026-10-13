@@ -1,9 +1,11 @@
 import { isYmd } from '../lib/invoiceCalc';
-import { WARRANTY_LENGTHS, daysLeft, warrantyEndDate } from '../lib/warranty';
+import { daysBetween } from '../lib/recurring';
+import { WARRANTY_LENGTHS, daysLeft, warrantyEndDate, type WarrantyStatus } from '../lib/warranty';
 
 /**
  * Warranties page view helpers. Header (phase 1): subtitle and status words.
- * Add form (phase 2): cover end date, the live cover line, and why Save is off. Counts come from the list response.
+ * Add form (phase 2): cover end date, the live cover line, and why Save is off.
+ * Cards (phase 3): progress, the facts lines, sorting, and the status filter. Counts come from the list response.
  * Active, expiring, and expired are disjoint: active is not inside the
  * expiring window. A missing or negative count is shown as zero.
  */
@@ -110,4 +112,81 @@ export function coverChoiceFor(startsOn: string, endsOn: string): CoverChoice {
   return preset
     ? { cover: String(preset.months), customBy: 'months', customMonths: '', endsOn }
     : { cover: 'custom', customBy: 'date', customMonths: '', endsOn };
+}
+
+type CardWarranty = {
+  itemName: string;
+  retailer: string;
+  priceNzd: number | null;
+  startsOn: string;
+  endsOn: string;
+  status: WarrantyStatus;
+  receiptUrl: string | null;
+  purchase: { receiptUrl: string | null } | null;
+};
+
+/** "Noel Leeming · $1,299.00", one of them, or "No store or price added". */
+export function storePriceLine(w: Pick<CardWarranty, 'retailer' | 'priceNzd'>, money: (n: number) => string): string {
+  const parts = [w.retailer.trim(), w.priceNzd != null ? money(w.priceNzd) : ''].filter(Boolean);
+  return parts.length ? parts.join(' · ') : 'No store or price added';
+}
+
+/**
+ * "Bought 9 Oct 2026 · 11 months left · Ends 8 Oct 2027"; once ended,
+ * "Bought 2 Mar 2024 · Ended 1 Mar 2025 · 591 days ago".
+ */
+export function datesLine(w: Pick<CardWarranty, 'startsOn' | 'endsOn'>, today: string): string {
+  const left = daysLeft(w.endsOn, today);
+  const bought = `Bought ${longDate(w.startsOn)}`;
+  if (left < 0) return `${bought} · Ended ${longDate(w.endsOn)} · ${plural(-left, 'day')} ago`;
+  if (left === 0) return `${bought} · Ends today, ${longDate(w.endsOn)}`;
+  return `${bought} · ${timeLeftText(w.endsOn, today)} · Ends ${longDate(w.endsOn)}`;
+}
+
+/**
+ * Days of cover used, counting both the first and last day: a 1-year warranty is
+ * 365 days. Before cover starts nothing is used; after it ends all of it is.
+ */
+export function coverProgress(w: Pick<CardWarranty, 'startsOn' | 'endsOn'>, today: string): { used: number; total: number; percent: number; label: string } {
+  const total = Math.max(1, daysBetween(w.startsOn, w.endsOn) + 1);
+  const used = Math.min(total, Math.max(0, daysBetween(w.startsOn, today) + 1));
+  return { used, total, percent: Math.round((used / total) * 1000) / 10, label: `${used} of ${total} days used` };
+}
+
+/** Soonest end date first; expired at the bottom, most recently ended first. */
+export function sortWarranties<T extends Pick<CardWarranty, 'endsOn' | 'status' | 'itemName'>>(items: ReadonlyArray<T>): T[] {
+  return [...items].sort((a, b) => {
+    const ax = a.status === 'expired' ? 1 : 0;
+    const bx = b.status === 'expired' ? 1 : 0;
+    if (ax !== bx) return ax - bx;
+    const byEnd = ax ? b.endsOn.localeCompare(a.endsOn) : a.endsOn.localeCompare(b.endsOn);
+    return byEnd || a.itemName.localeCompare(b.itemName);
+  });
+}
+
+export type WarrantyFilter = 'all' | WarrantyStatus;
+
+/** Filter options with counts: "All 6", "Covered 3", "Ending soon 1", "Expired 2". */
+export function filterOptions(items: ReadonlyArray<Pick<CardWarranty, 'status'>>): Array<{ value: WarrantyFilter; label: string }> {
+  const count = (s: WarrantyStatus) => items.filter((i) => i.status === s).length;
+  return [
+    { value: 'all', label: `All ${items.length}` },
+    { value: 'active', label: `${WARRANTY_STATUS_LABELS.active} ${count('active')}` },
+    { value: 'expiring', label: `${WARRANTY_STATUS_LABELS.expiring} ${count('expiring')}` },
+    { value: 'expired', label: `${WARRANTY_STATUS_LABELS.expired} ${count('expired')}` },
+  ];
+}
+
+export function filterWarranties<T extends Pick<CardWarranty, 'status'>>(items: ReadonlyArray<T>, filter: WarrantyFilter): T[] {
+  return filter === 'all' ? [...items] : items.filter((i) => i.status === filter);
+}
+
+/** "No warranties ending soon." for an empty filter. */
+export function emptyFilterText(filter: Exclude<WarrantyFilter, 'all'>): string {
+  return { active: 'No warranties covered for more than 60 days.', expiring: 'No warranties ending soon.', expired: 'No expired warranties.' }[filter];
+}
+
+/** The warranty's own receipt, else the linked purchase's. */
+export function receiptFor(w: Pick<CardWarranty, 'receiptUrl' | 'purchase'>): string | null {
+  return w.receiptUrl ?? w.purchase?.receiptUrl ?? null;
 }
