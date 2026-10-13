@@ -1,3 +1,9 @@
+import type {
+  AuthenticationResponseJSON,
+  PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
+  RegistrationResponseJSON,
+} from '@simplewebauthn/browser';
 import { isMoneyHidden, MONEY_MASK } from '../lib/privacy';
 import type { AdsConfig } from '../lib/ads';
 import type { EconomicCycleResponse, EconomicScenarioResult, PhaseNewsResponse } from '../types/economy.ts';
@@ -191,7 +197,18 @@ export type AccountSecurity = {
     expiresAt: string;
     current: boolean;
   }>;
+  passkeys: PasskeyInfo[];
+  recentSignIns: Array<{
+    id: string;
+    kind: 'sign_in' | 'passkey_added' | 'passkey_removed';
+    method: string | null;
+    deviceLabel: string | null;
+    createdAt: string;
+  }>;
 };
+
+/** A passkey on the account (KAN-75). */
+export type PasskeyInfo = { id: string; name: string; createdAt: string; lastUsedAt: string | null; backedUp: boolean };
 
 export const api = {
   auth: {
@@ -221,6 +238,19 @@ export const api = {
         body: JSON.stringify(body),
       }),
     security: () => req<AccountSecurity>('/auth/security'),
+    // Passkeys (KAN-75). Options and responses are WebAuthn JSON, passed through as is.
+    passkeyRegisterOptions: (body: { password?: string }) =>
+      req<PublicKeyCredentialCreationOptionsJSON>('/auth/passkeys/register/options', { method: 'POST', body: JSON.stringify(body) }),
+    passkeyRegisterVerify: (body: { response: RegistrationResponseJSON; name?: string }) =>
+      req<PasskeyInfo>('/auth/passkeys/register/verify', { method: 'POST', body: JSON.stringify(body) }),
+    passkeyLoginOptions: (body: { remember: boolean }) =>
+      req<PublicKeyCredentialRequestOptionsJSON>('/auth/passkeys/login/options', { method: 'POST', body: JSON.stringify(body) }),
+    passkeyLoginVerify: (body: { response: AuthenticationResponseJSON }) =>
+      req<{ user: AuthUser }>('/auth/passkeys/login/verify', { method: 'POST', body: JSON.stringify(body) }),
+    renamePasskey: (id: string, name: string) =>
+      req<PasskeyInfo>(`/auth/passkeys/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+    removePasskey: (id: string) =>
+      req<{ ok: boolean; sessionsEnded: number }>(`/auth/passkeys/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     ssoProviders: () => req<{ providers: SsoProvider[] }>('/auth/sso/providers'),
     disconnectIdentity: (id: string) => req<{ ok: boolean }>(`/auth/identities/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     twoFactorSetup: (password: string) =>

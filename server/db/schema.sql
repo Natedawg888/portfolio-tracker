@@ -366,7 +366,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at   TEXT NOT NULL,
   device_label TEXT,                  -- "Chrome on Windows" (coarse, from User-Agent)
   last_seen_at TEXT,                  -- updated at most every 10 min
-  persistent   INTEGER NOT NULL DEFAULT 1  -- 0 = "keep me signed in" unticked (browser-session cookie)
+  persistent   INTEGER NOT NULL DEFAULT 1, -- 0 = "keep me signed in" unticked (browser-session cookie)
+  passkey_id   TEXT                       -- passkey that opened it (KAN-75); removing the passkey ends it
 );
 
 -- 2FA backup codes: SHA-256 of a high-entropy code, each usable once.
@@ -401,6 +402,45 @@ CREATE TABLE IF NOT EXISTS trusted_devices (
   expires_at   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_trusted_devices_user ON trusted_devices(user_id);
+
+-- Passkeys (KAN-75): WebAuthn credentials. public_key is the credential's COSE public key
+-- (base64url); it is not a secret. credential_id is the authenticator's id (base64url).
+CREATE TABLE IF NOT EXISTS user_passkeys (
+  id            TEXT PRIMARY KEY,
+  user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  credential_id TEXT NOT NULL UNIQUE,
+  public_key    TEXT NOT NULL,
+  counter       INTEGER NOT NULL DEFAULT 0,
+  transports    TEXT,
+  name          TEXT NOT NULL,
+  backed_up     INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL,
+  last_used_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_user_passkeys_user ON user_passkeys(user_id);
+
+-- Single-use WebAuthn challenges (5 min). user_id is set for registration; sign-in
+-- challenges have none, because the passkey itself says whose it is.
+CREATE TABLE IF NOT EXISTS webauthn_challenges (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT,
+  purpose     TEXT NOT NULL,
+  challenge   TEXT NOT NULL UNIQUE,
+  persistent  INTEGER NOT NULL DEFAULT 1,
+  created_at  TEXT NOT NULL,
+  expires_at  TEXT NOT NULL
+);
+
+-- Sign-in audit log (KAN-75): sign-ins and passkey changes. Device label only, no IP.
+CREATE TABLE IF NOT EXISTS auth_events (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind         TEXT NOT NULL,
+  method       TEXT,
+  device_label TEXT,
+  created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_auth_events_user ON auth_events(user_id, created_at);
 
 -- Single sign-on links: one row per provider account (Google / Apple / Microsoft).
 -- subject = the provider's stable user id ("sub"), never the email (emails change).

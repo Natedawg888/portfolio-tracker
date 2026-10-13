@@ -192,6 +192,22 @@ function loadUserRow(db: Awaited<ReturnType<typeof getDb>>, userId: string) {
   );
 }
 
+/** The signed-in user's public shape, as password sign-in returns it (KAN-75 passkey sign-in). */
+export function publicUserById(db: Awaited<ReturnType<typeof getDb>>, userId: string) {
+  const row = loadUserRow(db, userId);
+  if (!row) return null;
+  return toPublicUser(db, {
+    id: row.id,
+    email: row.email,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    displayName: row.display_name,
+    avatarUrl: row.avatar_url,
+    createdAt: row.created_at,
+    preferences_json: row.preferences_json,
+  });
+}
+
 /** Setup / session status (safe for unauthenticated clients). */
 router.get('/status', async (_req, res) => {
   const db = await getDb();
@@ -280,7 +296,7 @@ router.post('/register', async (req, res) => {
   const now = created.createdAt;
   const prefsJson = created.preferencesJson;
 
-  await startSession(req, res, id, parseRemember(req.body));
+  await startSession(req, res, id, parseRemember(req.body), { method: 'register' });
   res.status(201).json({
     user: toPublicUser(db, {
       id,
@@ -343,7 +359,7 @@ router.post('/login', async (req, res) => {
   clearLoginFailures(email);
 
   const row = loadUserRow(db, user.id);
-  await startSession(req, res, user.id, remember);
+  await startSession(req, res, user.id, remember, { method: 'password' });
   res.json({
     user: toPublicUser(db, {
       id: user.id,
@@ -395,7 +411,7 @@ router.post('/login/2fa', async (req, res) => {
   deleteChallenge(db, c.id);
   clearLoginFailures(row.email);
 
-  await startSession(req, res, row.id, c.persistent);
+  await startSession(req, res, row.id, c.persistent, { method: 'two_factor' });
   if (req.body?.trustDevice === true) {
     const existing = parseTrustedCookie(parseCookieHeader(req.headers.cookie, TRUSTED_DEVICE_COOKIE));
     const token = createTrustedDevice(db, row.id, deviceLabel(req.headers['user-agent']));
@@ -803,6 +819,9 @@ router.post('/delete-account', async (req: AuthedRequest, res) => {
   run(db, `DELETE FROM trusted_devices WHERE user_id = ?`, [userId]);
   run(db, `DELETE FROM login_challenges WHERE user_id = ?`, [userId]);
   run(db, `DELETE FROM user_identities WHERE user_id = ?`, [userId]);
+  run(db, `DELETE FROM user_passkeys WHERE user_id = ?`, [userId]);
+  run(db, `DELETE FROM webauthn_challenges WHERE user_id = ?`, [userId]);
+  run(db, `DELETE FROM auth_events WHERE user_id = ?`, [userId]);
 
   // 5) data_owner_user_id — reassign or clear; never leave a dangling owner id
   if (wasOwner) {

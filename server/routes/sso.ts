@@ -172,7 +172,7 @@ router.get('/sso/:provider/callback', async (req: AuthedRequest, res) => {
         return;
       }
     }
-    await startSession(req as Request, res, userId, state.remember);
+    await startSession(req as Request, res, userId, state.remember, { method: 'sso' });
     const prefs = queryOne<{ preferences_json: string | null }>(db, `SELECT preferences_json FROM users WHERE id = ?`, [userId]);
     const onboarded = parseOnboardingFromPreferencesJson(prefs?.preferences_json ?? null).complete;
     res.redirect(303, onboarded ? '/' : '/register');
