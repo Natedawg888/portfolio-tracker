@@ -340,11 +340,22 @@ async function fetchSimplePriceNzd(
 
   if (!force) {
     const hit = priceCache.get(cacheKey);
-    if (hit && hit.status === 'ok' && Date.now() - hit.at < PRICE_TTL_MS) {
-      return hit;
+    if (hit && hit.status === 'ok') {
+      const age = Date.now() - hit.at;
+      if (age < PRICE_TTL_MS) return hit;
+      // An older good price comes back at once (with its real time) while one shared
+      // refresh runs, so page loads never wait on CoinGecko or the spot fallbacks.
+      if (age < STALE_OK_MAX_MS) {
+        void refreshSimplePriceNzd(ticker, coingeckoId, cacheKey).catch(() => undefined);
+        return hit;
+      }
     }
   }
+  return refreshSimplePriceNzd(ticker, coingeckoId, cacheKey);
+}
 
+/** One shared live fetch per coin (CoinGecko, then public spot venues, then last good). */
+function refreshSimplePriceNzd(ticker: string, coingeckoId: string | null, cacheKey: string): Promise<PriceCacheEntry> {
   const existing = inflightPrice.get(cacheKey);
   if (existing) return existing;
 
@@ -685,6 +696,16 @@ export async function resolveCoingeckoId(
   const found = await searchCoingeckoId(ticker);
   if (found) return { ticker, coingeckoId: found.id, name: found.name };
   return { ticker, coingeckoId: null, name: ticker };
+}
+
+/** Test hook: make every cached price `ms` older. */
+export function ageCryptoPriceCacheForTest(ms: number): void {
+  for (const entry of priceCache.values()) entry.at -= ms;
+}
+
+/** Test hook: wait for background price refreshes. */
+export async function settleCryptoRefreshes(): Promise<void> {
+  await Promise.all([...inflightPrice.values()].map((p) => p.catch(() => undefined)));
 }
 
 export function clearCryptoQuoteCache(): void {
