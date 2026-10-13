@@ -10717,6 +10717,13 @@ html:not([data-theme]) .warranties-page {
 .warranty-purchase p { margin: 0; overflow-wrap: anywhere; }
 .warranty-purchase-label { display: block; font-size: 0.74rem; font-weight: 600; color: var(--muted); }
 .warranty-purchase-actions { display: flex; gap: 0.75rem; align-items: center; }
+.warranties-cga {
+  margin: 1rem 0 0;
+  max-width: 62ch;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
 @media (max-width: 420px) {
   .warranty-card-head { grid-template-columns: minmax(0, 1fr) auto; }
   .warranties-page .warranty-card .warranty-status { grid-column: 1; grid-row: 2; justify-self: start; }

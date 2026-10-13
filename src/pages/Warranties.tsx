@@ -7,6 +7,7 @@
  * lengths, purchase linking, receipt, and a live "Covered until" line.
  * Phase 3: one card per warranty (status chip, cover-used bar, ⋯ menu), soonest
  * ending first, with an All / Covered / Ending soon / Expired filter.
+ * Phase 4: a one-line Consumer Guarantees Act note under the list.
  */
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -229,6 +230,10 @@ export function Warranties() {
               ))}
             </div>
           )}
+          <p className="warranties-cga">
+            After a warranty ends, the Consumer Guarantees Act can still cover faults for a reasonable time, depending on the
+            product and what it cost, so keep the receipt. General information, not legal advice.
+          </p>
         </section>
       ) : null}
 
