@@ -1,7 +1,7 @@
 /**
  * Warranties header counts (phase 1). Run: npm run test:warranties
  */
-import { warrantiesSubtitle } from './warrantiesView.ts';
+import { WARRANTY_STATUS_LABELS, warrantiesHeaderLine, warrantiesSubtitle } from './warrantiesView.ts';
 
 function eq(a: unknown, b: unknown, msg: string): void {
   if (a !== b) throw new Error(`FAIL: ${msg} (got ${String(a)}, expected ${String(b)})`);
@@ -44,5 +44,9 @@ eq(
   '0 covered · 0 ending in 0 days · 1 expired',
   'non-counts become zero; a fractional expired count floors',
 );
+
+eq(warrantiesHeaderLine(0, { active: 0, expiring: 0, expired: 0 }, days), 'What you bought, and when the cover ends', 'no counts before the first warranty');
+eq(warrantiesHeaderLine(6, { active: 3, expiring: 1, expired: 2 }, days), '3 covered · 1 ending in 60 days · 2 expired', 'counts once there are warranties');
+eq(WARRANTY_STATUS_LABELS.expiring, 'Ending soon', 'ending soon wording');
 
 console.log('warranties view tests ok');

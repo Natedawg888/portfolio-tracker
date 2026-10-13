@@ -1,14 +1,15 @@
 /**
  * Warranties (KAN-61). Reached from the Budget page (not the nav bar).
- * Phase 1: header counts from the list totals, and an empty state when there
- * are none. The add/edit dialog, tables, purchase link, and receipts are unchanged.
+ * Phase 1: header counts from the list totals (a short line before the first
+ * warranty), an empty state when there are none, and "+ Add warranty" once some
+ * exist. The add/edit dialog, tables, purchase link, and receipts are unchanged.
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { api, formatNzd, type WarrantyWriteBody } from '../api/client';
 import { WARRANTY_LENGTHS, daysLeftText, warrantyEndDate } from '../lib/warranty';
 import type { Warranty, WarrantyListResponse, WarrantyPurchase } from '../types';
-import { warrantiesSubtitle } from './warrantiesView';
+import { WARRANTY_STATUS_LABELS, warrantiesHeaderLine } from './warrantiesView';
 
 function formatDate(ymd: string | null): string {
   if (!ymd) return '—';
@@ -36,8 +37,6 @@ function readFile(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
-
-const STATUS_LABEL: Record<Warranty['status'], string> = { active: 'Covered', expiring: 'Expiring soon', expired: 'Expired' };
 
 function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return (
@@ -441,7 +440,7 @@ export function Warranties() {
           <div className="muted small">from {formatDate(w.startsOn)}</div>
         </td>
         <td>
-          <span className={`warranty-status warranty-status--${w.status}`}>{STATUS_LABEL[w.status]}</span>
+          <span className={`warranty-status warranty-status--${w.status}`}>{WARRANTY_STATUS_LABELS[w.status]}</span>
           <div className="muted small">{daysLeftText(w.endsOn, today)}</div>
         </td>
         <td>
@@ -541,13 +540,17 @@ export function Warranties() {
             ‹ Budget
           </Link>
           <h2 className="page-title">Warranties</h2>
-          {data ? <p className="muted small warranties-header-line">{warrantiesSubtitle(data.totals, data.expiringSoonDays)}</p> : null}
+          {data ? (
+            <p className="muted small warranties-header-line">{warrantiesHeaderLine(data.items.length, data.totals, data.expiringSoonDays)}</p>
+          ) : null}
         </div>
-        <div className="warranties-header-actions">
-          <button type="button" className="btn small primary" onClick={openAdd} disabled={!data}>
-            + Add warranty
-          </button>
-        </div>
+        {data && data.items.length > 0 ? (
+          <div className="warranties-header-actions">
+            <button type="button" className="btn small primary" onClick={openAdd}>
+              + Add warranty
+            </button>
+          </div>
+        ) : null}
       </header>
 
       {error ? (
