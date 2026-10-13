@@ -3,7 +3,15 @@
  */
 import { occurrencesWithin } from '../lib/recurring.ts';
 import {
+  billColours,
+  billInitial,
   billsSubtitle,
+  cadenceLine,
+  creditorFor,
+  dueInfo,
+  monthlyNote,
+  orderBills,
+  possiblePaymentText,
   calendarDays,
   dayAriaLabel,
   dismissLabel,
@@ -107,5 +115,34 @@ eq(paidDate('2025-12-28', today), '28 Dec 2025', 'another year shows it');
 eq(suggestionFacts(adobe, today).join(' · '), 'Everyday · Paid 10 Oct · seen once', 'possible tier facts, no frequency');
 eq(suggestionFacts(power, today).join(' · '), 'Last paid 28 Dec 2025 · seen 4 times · monthly · amount varies', 'regular tier facts, no account');
 eq(suggestionFacts({ ...adobe, occurrences: 2 }, today).join(' · '), 'Everyday · Last paid 10 Oct · seen twice', 'seen twice');
+
+// Bill cards (phase 4).
+const colours = billColours([spark, gym, rent]);
+eq(colours.get('r'), 0, 'Rent first by name');
+eq(colours.get('s'), 1, 'Spark second');
+eq(colours.has('g'), false, 'paused bill has no colour');
+eq(colours.get('r'), occ.find((o) => o.itemId === 'r')!.colourIndex, 'card and calendar share the colour');
+eq(orderBills([spark, gym, rent]).map((b) => b.id).join(','), 'r,s,g', 'active by next due, paused last');
+eq(billInitial('rent'), 'R', 'initial');
+eq(billInitial('  2degrees'), '2', 'digit initial');
+eq(billInitial('***'), '?', 'no letters');
+eq(cadenceLine({ cadence: 'weekly', categoryName: 'Housing' }), 'Weekly · Housing', 'cadence and category');
+eq(cadenceLine({ cadence: 'monthly', categoryName: null }), 'Monthly', 'no category');
+eq(monthlyNote({ cadence: 'weekly', monthlyNzd: 1170 }, money), '$1170.00 a month', 'weekly shows a monthly figure');
+eq(monthlyNote({ cadence: 'monthly', monthlyNzd: 40 }, money), null, 'monthly does not');
+eq(dueInfo(rent, today)?.daysAway, 2, 'Rent in 2 days');
+eq(dueInfo(rent, today)?.soon, true, '2 days is due soon');
+eq(dueInfo({ ...rent, nextDue: '2026-10-16' }, today)?.soon, true, '3 days is due soon');
+eq(dueInfo({ ...rent, nextDue: '2026-10-17' }, today)?.soon, false, '4 days is not');
+eq(dueInfo(gym, today), null, 'paused bill has no due date');
+const pay = { transactionId: 't', date: '2026-10-10', amountNzd: 270, payee: 'TFR TO J LANDLORD', categoryName: 'Housing' };
+eq(possiblePaymentText(pay, today, money), 'A $270.00 Housing payment on 10 Oct looks like this bill', 'with category');
+eq(possiblePaymentText({ ...pay, categoryName: null }, today, money), 'A $270.00 payment to TFR TO J LANDLORD on 10 Oct looks like this bill', 'with payee');
+const debts = [{ name: 'Mum', outstandingNzd: 500 }, { name: 'Spark NZ', outstandingNzd: 113.29 }, { name: 'Gym Co', outstandingNzd: 0 }];
+eq(creditorFor('Spark', debts)?.outstandingNzd, 113.29, 'Spark matches Spark NZ');
+eq(creditorFor('Spark Broadband', debts)?.name, 'Spark NZ', 'longer bill name matches');
+eq(creditorFor('Sparkle', debts), null, 'not a prefix of a word');
+eq(creditorFor('Gym', debts), null, 'paid-off debt is not mentioned');
+eq(creditorFor('Rent', debts), null, 'no creditor');
 
 console.log('bills view tests ok');

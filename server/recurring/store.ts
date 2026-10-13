@@ -17,6 +17,7 @@ import {
   monthlyEquivalent,
   nextDueOnOrAfter,
   occurrencesWithin,
+  possiblePayment,
   possibleSubscriptions,
   type Cadence,
   type DetectionTxn,
@@ -157,6 +158,7 @@ function present(r: Row, today: string, lastPaid: Map<string, { date: string; am
     notes: r.notes,
     lastPaidDate: paid?.date ?? null,
     lastPaidNzd: paid ? roundMoney(Math.abs(paid.amount)) : null,
+    possiblePayment: null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -175,10 +177,15 @@ function lastPaidByKey(txns: DetectionTxn[]): Map<string, { date: string; amount
 export function listRecurring(db: Database, userId: string, today: string): RecurringListResponse {
   const txns = spendingTxns(db, userId, today);
   const paid = lastPaidByKey(txns);
-  const items = queryAll<Row>(db, `${SELECT} WHERE r.user_id = ? ORDER BY r.name COLLATE NOCASE, r.id`, [userId]).map((r) =>
+  const saved = queryAll<Row>(db, `${SELECT} WHERE r.user_id = ? ORDER BY r.name COLLATE NOCASE, r.id`, [userId]).map((r) =>
     present(r, today, paid),
   );
-  const savedKeys = new Set(items.map((i) => i.merchantKey).filter(Boolean));
+  const savedKeys = new Set(saved.map((i) => i.merchantKey).filter(Boolean));
+  const items = saved.map((i) => {
+    if (i.status !== 'active' || i.lastPaidDate) return i;
+    const taken = new Set([...savedKeys].filter((k) => k !== i.merchantKey) as string[]);
+    return { ...i, possiblePayment: possiblePayment(i, txns, today, taken) };
+  });
   const dismissed = new Set(
     queryAll<{ merchant_key: string }>(db, `SELECT merchant_key FROM recurring_dismissed WHERE user_id = ?`, [userId]).map((d) => d.merchant_key),
   );
@@ -249,6 +256,27 @@ export function updateRecurring(db: Database, userId: string, id: string, patch:
     ],
   );
   return getRecurring(db, userId, id, today);
+}
+
+/**
+ * Link one of the user's payments to a bill: saves the payment's payee (merchantKey)
+ * on the bill, so "last paid" and later payments match it through lastPaidByKey.
+ */
+export function linkPayment(db: Database, userId: string, id: string, transactionId: unknown, today: string): Parsed<RecurringItem> | null {
+  if (!queryOne(db, `SELECT id FROM recurring_items WHERE id = ? AND user_id = ?`, [id, userId])) return null;
+  if (typeof transactionId !== 'string' || !transactionId) return { ok: false, error: 'transactionId is required' };
+  const t = queryOne<{ description: string | null; merchant: string | null; amount: number }>(
+    db,
+    `SELECT description, merchant, amount FROM transactions WHERE id = ? AND user_id = ?`,
+    [transactionId, userId],
+  );
+  if (!t || !(Number(t.amount) < 0)) return { ok: false, error: 'Payment not found' };
+  const key = merchantKey(t.merchant || t.description || '');
+  if (!key) return { ok: false, error: 'That payment has no payee to match on' };
+  const other = queryOne<{ name: string }>(db, `SELECT name FROM recurring_items WHERE user_id = ? AND merchant_key = ? AND id != ?`, [userId, key, id]);
+  if (other) return { ok: false, error: `That payee is already linked to ${other.name}` };
+  run(db, `UPDATE recurring_items SET merchant_key = ?, updated_at = ? WHERE id = ? AND user_id = ?`, [key, new Date().toISOString(), id, userId]);
+  return { ok: true, value: getRecurring(db, userId, id, today)! };
 }
 
 export function deleteRecurring(db: Database, userId: string, id: string): boolean {

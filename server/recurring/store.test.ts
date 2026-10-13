@@ -45,6 +45,7 @@ for (const [id, email] of [[userA, 'a@example.com'], [userB, 'b@example.com']]) 
 }
 const subsA = resolveCategoryId(db, userA, 'cat-subscriptions');
 const invA = resolveCategoryId(db, userA, 'cat-investments');
+const housingA = resolveCategoryId(db, userA, 'cat-housing');
 
 let n = 0;
 function txn(userId: string, date: string, amount: number, description: string, categoryId: string | null = null, accountId: string | null = null) {
@@ -56,6 +57,8 @@ function txn(userId: string, date: string, amount: number, description: string, 
   );
 }
 run(db, `INSERT INTO bank_accounts (id, user_id, name, created_at, updated_at) VALUES (?,?,?,?,?)`, ['rec_acct_a', userA, 'Everyday', now, now]);
+// A Housing payment to the landlord: no bill has this payee yet.
+txn(userA, addCadence(today, 'weekly', -1), -270, 'TFR TO J LANDLORD', housingA, 'rec_acct_a');
 // One recent Adobe payment filed under Subscriptions: a lower-confidence suggestion.
 txn(userA, addCadence(today, 'weekly', -1), -58.08, 'ADOBE CREATIVE CLOUD', subsA, 'rec_acct_a');
 // Four monthly Spotify payments ending last month; a monthly transfer to Sharesies (not a bill).
@@ -128,6 +131,25 @@ try {
   const paused = await call('PATCH', `/api/recurring/${rent.json.id}`, A, { status: 'paused', amountNzd: 650 });
   assert(paused.status === 200 && paused.json.status === 'paused' && paused.json.amountNzd === 650, 'edited and paused');
   assert((await call('GET', '/api/recurring', A)).json.totals.activeCount === 1, 'paused items leave the totals');
+
+  // A bill whose payee never matched gets a possible payment; linking teaches the matcher.
+  const flat = await call('POST', '/api/recurring', A, { name: 'Flat rent', kind: 'bill', amountNzd: 270, cadence: 'weekly', nextDue: today, categoryId: housingA });
+  assert(flat.json.lastPaidDate === null, 'manual bill without a payee has no last paid');
+  const flatListed = (await call('GET', '/api/recurring', A)).json.items.find((i: Json) => i.id === flat.json.id);
+  const maybe = flatListed.possiblePayment;
+  assert(maybe && maybe.amountNzd === 270 && maybe.categoryName === 'Housing' && maybe.date === addCadence(today, 'weekly', -1), 'Housing $270 payment looks like Flat rent');
+  assert((await call('POST', `/api/recurring/${flat.json.id}/link`, B, { transactionId: maybe.transactionId })).status === 404, 'B cannot link to A’s bill');
+  assert((await call('POST', `/api/recurring/${flat.json.id}/link`, A, {})).status === 400, 'link needs a transaction');
+  const linked = await call('POST', `/api/recurring/${flat.json.id}/link`, A, { transactionId: maybe.transactionId });
+  assert(linked.status === 200 && linked.json.merchantKey === merchantKey('TFR TO J LANDLORD'), 'payee saved on the bill');
+  assert(linked.json.lastPaidDate === maybe.date && linked.json.lastPaidNzd === 270, 'last paid from the linked payment');
+  const flatAfter = (await call('GET', '/api/recurring', A)).json.items.find((i: Json) => i.id === flat.json.id);
+  assert(flatAfter.lastPaidDate === maybe.date && flatAfter.possiblePayment === null, 'matched by payee from now on');
+  const other = await call('POST', '/api/recurring', A, { name: 'Other rent', kind: 'bill', amountNzd: 270, cadence: 'weekly', nextDue: today, categoryId: housingA });
+  assert((await call('GET', '/api/recurring', A)).json.items.find((i: Json) => i.id === other.json.id).possiblePayment === null, 'a linked payee is not offered to another bill');
+  assert((await call('POST', `/api/recurring/${other.json.id}/link`, A, { transactionId: maybe.transactionId })).status === 400, 'one payee, one bill');
+  await call('DELETE', `/api/recurring/${flat.json.id}`, A);
+  await call('DELETE', `/api/recurring/${other.json.id}`, A);
 
   // Validation.
   assert((await call('POST', '/api/recurring', A, { name: '', kind: 'bill', amountNzd: 1, cadence: 'monthly', nextDue: today })).status === 400, 'name required');
