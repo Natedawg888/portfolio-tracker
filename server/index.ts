@@ -44,6 +44,9 @@ import { loadDotEnv } from './akahu/loadEnv.ts';
 import { ensureUploadDirs, uploadsGate } from './lib/uploads.ts';
 import { attachUser, requireAuth, isPublicApiPath } from './middleware/requireAuth.ts';
 import { logger } from './lib/logger.ts';
+
+/** Requests at or above this many ms also log a slow_request warning. */
+const SLOW_REQUEST_MS = 300;
 import { apiNotFound, mountSpa } from './lib/spaHost.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -100,13 +103,11 @@ async function main() {
       if (req.path === '/api/health' || req.path === '/health') {
         if (res.statusCode < 400) return; // quiet successful health checks
       }
-      logger.info('http_request', {
-        method: req.method,
-        path: req.path,
-        status: res.statusCode,
-        ms: Date.now() - started,
-        ip: req.ip,
-      });
+      const ms = Date.now() - started;
+      const fields = { method: req.method, path: req.path, status: res.statusCode, ms, ip: req.ip };
+      logger.info('http_request', fields);
+      // A separate line for slow requests, so they are easy to find in the logs.
+      if (ms >= SLOW_REQUEST_MS) logger.warn('slow_request', fields);
     });
     next();
   });
