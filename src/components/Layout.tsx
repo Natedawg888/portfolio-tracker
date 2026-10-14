@@ -1,5 +1,5 @@
 import { cloneElement, isValidElement, Suspense, useEffect, useState, type ReactNode } from 'react';
-import { NavLink, useLocation, useOutlet } from 'react-router-dom';
+import { Link, NavLink, useLocation, useOutlet } from 'react-router-dom';
 import { applyTheme, resolveTheme, setTheme, type Theme } from '../lib/theme';
 import {
   MoneyHiddenProvider,
@@ -18,7 +18,7 @@ import { visibleSearchTypes } from '../lib/valueSearchDetect';
 import type { ValueSearchPrefs } from '../lib/valueSearchPrefs';
 import { prefetchNavTarget, schedulePrefetchAppRoutes } from '../lib/routePrefetch';
 
-/** Pages that don't show the local-first / metals / sync footer. */
+/** Pages that don't show the metals / sync / legal links footer. */
 const FOOTERLESS_PATHS = new Set(['/', '/portfolio', '/debts', '/warranties', '/rentals']);
 
 const links: Array<{
@@ -317,7 +317,8 @@ export function Layout({ children }: { children?: ReactNode }) {
       {/* Dashboard carries this note behind its net worth ⓘ; Portfolio, Debts, Warranties and Rentals drop it. */}
       {FOOTERLESS_PATHS.has(location.pathname) ? null : (
         <footer className="app-footer">
-          Local-first · email/password · {metalProviderFooter(metalProvider)} · sync failures stay quiet
+          {metalProviderFooter(metalProvider)} · sync failures stay quiet ·{' '}
+          <Link to="/privacy">Privacy policy</Link> · <Link to="/terms">Terms of use</Link>
         </footer>
       )}
     </div>

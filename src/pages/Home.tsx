@@ -185,6 +185,7 @@ export function Home() {
         <p>Portfolio Tracker · a personal record, not financial advice</p>
         <nav aria-label="Legal">
           <Link to="/privacy">Privacy policy</Link>
+          <Link to="/terms">Terms of use</Link>
         </nav>
       </footer>
     </div>

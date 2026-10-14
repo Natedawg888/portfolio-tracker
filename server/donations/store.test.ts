@@ -237,7 +237,21 @@ claimUnscopedRowsForOwner(db, userA);
 assert(getDonation(db, userA, 'don_unscoped')?.recipient === 'Legacy', 'unscoped donations are claimed by the data owner');
 assert(getDonation(db, userB, 'don_unscoped') == null, 'the other user does not receive the claim');
 
+// Receipt files on disk: A's go with A's account, B's stay.
+const { UPLOADS_DIR } = await import('../lib/uploads.ts');
+const receiptFile = (name: string) => path.join(UPLOADS_DIR, 'receipts', name);
+const aReceipt = `txn_a_receipt-${process.pid}.pdf`;
+const bReceipt = `txn_b_receipt-${process.pid}.pdf`;
+fs.mkdirSync(path.join(UPLOADS_DIR, 'receipts'), { recursive: true });
+fs.writeFileSync(receiptFile(aReceipt), 'a');
+fs.writeFileSync(receiptFile(bReceipt), 'b');
+run(db, `UPDATE transactions SET receipt_path = ? WHERE id = 'txn_a_plain'`, [`receipts/${aReceipt}`]);
+run(db, `UPDATE transactions SET receipt_path = ? WHERE id = 'txn_b_receipt'`, [`receipts/${bReceipt}`]);
+
 const removed = deleteScopedDataForUser(db, userA);
+assert(!fs.existsSync(receiptFile(aReceipt)), 'account delete removes that user’s receipt files');
+assert(fs.existsSync(receiptFile(bReceipt)), 'account delete keeps the other user’s receipt file');
+fs.rmSync(receiptFile(bReceipt), { force: true });
 assert((removed.tables.donations ?? 0) >= 1, 'account delete counts donations');
 assert(listDonations(db, userA, null).length === 0, 'account delete removes that user’s donations');
 const keptReceipt = queryOne<{ id?: string }>(

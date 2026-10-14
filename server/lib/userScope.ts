@@ -6,7 +6,7 @@
 import type { Database } from 'sql.js';
 import type { Response } from 'express';
 import { getDb, queryAll, queryOne, run } from '../db/index.ts';
-import { deletePropertyPhoto, deleteWarrantyReceipt } from './uploads.ts';
+import { deleteCharityReceipt, deletePropertyPhoto, deleteWarrantyReceipt } from './uploads.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 
 export const SCOPED_TABLES = [
@@ -135,6 +135,15 @@ export function deleteScopedDataForUser(
     [userId],
   )) {
     deleteWarrantyReceipt(row.p);
+  }
+
+  // Receipt files attached to transactions (e.g. donation receipts for IR526).
+  for (const row of queryAll<{ p: string | null }>(
+    db,
+    `SELECT receipt_path AS p FROM transactions WHERE user_id = ? AND receipt_path IS NOT NULL`,
+    [userId],
+  )) {
+    deleteCharityReceipt(row.p);
   }
 
   // Dependents first, then parents. debt_people cascades repayments;

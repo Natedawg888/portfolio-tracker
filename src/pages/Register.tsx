@@ -537,6 +537,10 @@ export function Register() {
                 )}
               </div>
             ) : null}
+            <p className="auth-hint auth-legal">
+              By creating an account you agree to the <Link to="/terms">terms of use</Link> and acknowledge the{' '}
+              <Link to="/privacy">privacy policy</Link>.
+            </p>
             {!firstUser ? (
               <p className="auth-switch">
                 Already have an account? <Link to="/login">Sign in</Link>
