@@ -3,7 +3,9 @@
  * Default window: from 2026-10-01 inclusive (Pacific/Auckland).
  * Dedupe on external_id = Akahu _id. Never invent amounts.
  */
-import { linkInvoicePaymentsToBankCredits } from '../invoices/store.ts';
+import { linkMirroredIncomeToBankCredits } from '../lib/incomeBankLink.ts';
+import { linkRentalExpensesToBankDebits } from '../rentals/store.ts';
+import { TXN_SYNC_FROM_DATE } from '../lib/syncFloor.ts';
 import type { Database } from 'sql.js';
 import { queryAll, queryOne, run, newId } from '../db/index.ts';
 import {
@@ -18,7 +20,7 @@ import { upsertAkahuCashAccounts } from './sync.ts';
 import { createCategoryPredictor } from '../lib/categoryPredict.ts';
 
 /** First calendar day to keep (Auckland date string). */
-export const TXN_SYNC_FROM_DATE = '2026-10-01';
+export { TXN_SYNC_FROM_DATE };
 
 /**
  * NZDT (UTC+13) midnight on 2026-10-01 = 2026-09-30T11:00:00.000Z.
@@ -325,8 +327,10 @@ export async function syncBankTransactionsFromAkahu(
     }
   }
 
-  // A synced deposit may be an invoice payment already counted as income (KAN-71).
-  linkInvoicePaymentsToBankCredits(db, userId);
+  // A synced deposit may be an invoice payment or rent already counted as income (KAN-71,
+  // KAN-66); a synced debit may be a rental expense already counted as spending (KAN-66).
+  linkMirroredIncomeToBankCredits(db, userId);
+  linkRentalExpensesToBankDebits(db, userId);
 
   return {
     ok: true,

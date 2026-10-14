@@ -10,6 +10,7 @@ import type { MiningPlan, ProjectionClassKey } from '../lib/projectionClasses';
 import type { MiningProjection } from '../lib/miningProjection';
 import type { Cadence, PossiblePayment, RecurringKind, RecurringStatus, RecurringSuggestion } from '../lib/recurring';
 import type { WarrantyStatus } from '../lib/warranty';
+import type { RentalCategory, RentalEntryKind } from '../lib/rental';
 
 export type CurrencyCode = 'NZD' | 'USD' | 'AUD' | 'EUR' | 'GBP';
 
@@ -1459,4 +1460,47 @@ export interface WarrantyListResponse {
   items: Warranty[];
   expiringSoonDays: number;
   totals: { active: number; expiring: number; expired: number };
+}
+
+/** A rental property (KAN-66). */
+export interface RentalProperty {
+  id: string;
+  name: string;
+  address: string;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Money in or out on a rental property (KAN-66). amountNzd is always positive. */
+export interface RentalEntry {
+  id: string;
+  propertyId: string;
+  date: string;
+  kind: RentalEntryKind;
+  category: RentalCategory;
+  amountNzd: number;
+  description: string;
+  /** User asked for this entry to count in Budget / Income. */
+  addToMoney: boolean;
+  /**
+   * The entry currently shows in Budget / Income (as an income row or a spending
+   * transaction). False when not asked for, dated before those views start, or the
+   * mirrored row was deleted there.
+   */
+  inMoneyViews: boolean;
+  /** Expense matched to this bank / imported debit instead of adding its own transaction. */
+  bankMatch: { date: string; description: string } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RentalListResponse {
+  today: string;
+  /** Budget and Income count rental entries from this date. */
+  moneyViewsFrom: string;
+  /** Oldest first by name. */
+  properties: RentalProperty[];
+  /** Newest first. */
+  entries: RentalEntry[];
 }

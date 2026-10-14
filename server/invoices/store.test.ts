@@ -39,7 +39,7 @@ const { createSession, SESSION_COOKIE } = await import('../auth/sessions.ts');
 const { attachUser, requireAuth, isPublicApiPath } = await import('../middleware/requireAuth.ts');
 const { homeMonthSnapshot } = await import('../budget/homeSnapshot.ts');
 const { aucklandToday } = await import('../debts/model.ts');
-const { linkInvoicePaymentsToBankCredits } = await import('./store.ts');
+const { linkMirroredIncomeToBankCredits } = await import('../lib/incomeBankLink.ts');
 const { setEmailFetchForTest } = await import('./email.ts');
 const { default: invoicesRouter } = await import('../routes/invoices.ts');
 const { default: publicInvoicesRouter } = await import('../routes/publicInvoices.ts');
@@ -222,7 +222,7 @@ try {
      VALUES ('txn_dep_1', ?, ?, 'MATAI ORCHARDS', 400, 'credit', ?, 'NZD', ?, 'akahu')`,
     [userA, today, incomeCat?.id ?? null, now],
   );
-  assert(linkInvoicePaymentsToBankCredits(db, userA) === 1, 'deposit linked to the invoice payment');
+  assert(linkMirroredIncomeToBankCredits(db, userA) === 1, 'deposit linked to the invoice payment');
   eq(homeMonthSnapshot(db, userA, month)?.incomeNzd, 400, 'deposit not counted twice');
 
   const full = await call('POST', `/api/invoices/${id1}/payments`, A, { date: today, amountNzd: 500, addToIncome: false });

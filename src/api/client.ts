@@ -32,6 +32,9 @@ import type {
   RecurringListResponse,
   Warranty,
   WarrantyListResponse,
+  RentalEntry,
+  RentalListResponse,
+  RentalProperty,
   WarrantyPurchase,
   BusinessProfile,
   Invoice,
@@ -108,6 +111,18 @@ export type WarrantyWriteBody = {
   endsOn: string;
   transactionId: string | null;
   notes: string;
+};
+
+export type RentalPropertyWriteBody = { name: string; address: string; notes: string };
+
+export type RentalEntryWriteBody = {
+  propertyId: string;
+  date: string;
+  kind: RentalEntry['kind'];
+  category: RentalEntry['category'];
+  amountNzd: number;
+  description: string;
+  addToMoney: boolean;
 };
 
 /** Draft invoice fields sent to the API. Totals are always computed by the server. */
@@ -671,6 +686,20 @@ export const api = {
     uploadReceipt: (id: string, receiptBase64: string) =>
       req<Warranty>(`/warranties/${encodeURIComponent(id)}/receipt`, { method: 'POST', body: JSON.stringify({ receiptBase64 }) }),
     removeReceipt: (id: string) => req<Warranty>(`/warranties/${encodeURIComponent(id)}/receipt`, { method: 'DELETE' }),
+  },
+  rentals: {
+    list: () => req<RentalListResponse>('/rentals'),
+    createProperty: (body: RentalPropertyWriteBody) =>
+      req<RentalProperty>('/rentals/properties', { method: 'POST', body: JSON.stringify(body) }),
+    updateProperty: (id: string, body: Partial<RentalPropertyWriteBody>) =>
+      req<RentalProperty>(`/rentals/properties/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    removeProperty: (id: string) =>
+      req<{ ok: boolean; id: string }>(`/rentals/properties/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    createEntry: (body: RentalEntryWriteBody) =>
+      req<RentalEntry>('/rentals/entries', { method: 'POST', body: JSON.stringify(body) }),
+    updateEntry: (id: string, body: Partial<RentalEntryWriteBody>) =>
+      req<RentalEntry>(`/rentals/entries/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    removeEntry: (id: string) => req<{ ok: boolean; id: string }>(`/rentals/entries/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
   invoices: {
     list: (filters: { status?: string; clientId?: string; from?: string; to?: string } = {}) => {

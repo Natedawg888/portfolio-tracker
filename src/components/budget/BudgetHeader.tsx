@@ -1,6 +1,6 @@
 /**
  * Budget page header: ‹ Month Year › switcher (Prev stops at the import floor),
- * a "Day X of Y" caption, Bills / Warranties links and one "+ Add" menu.
+ * a "Day X of Y" caption, Bills / Warranties / Rentals links and one "+ Add" menu.
  */
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -94,6 +94,14 @@ export function BudgetHeader({
           onFocus={() => prefetchNavTarget('/warranties')}
         >
           Warranties
+        </Link>
+        <Link
+          className="btn small ghost"
+          to="/rentals"
+          onMouseEnter={() => prefetchNavTarget('/rentals')}
+          onFocus={() => prefetchNavTarget('/rentals')}
+        >
+          Rentals
         </Link>
         <div className="budget-add" ref={menuRef}>
           <button
