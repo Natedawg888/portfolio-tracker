@@ -6,6 +6,7 @@ import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import { ApiError, api, type SsoProvider } from '../api/client';
 import { ssoStartUrl } from '../lib/sso';
 import { AssetClassToggles } from '../components/AssetClassToggles';
+import { GoogleButton } from '../components/auth/AuthControls';
 import { AddWalletPanel } from '../components/AddWalletPanel';
 import {
   defaultAssetClassPrefs,
@@ -525,11 +526,15 @@ export function Register() {
             {!firstUser && providers.length > 0 ? (
               <div className="sso-buttons">
                 <p className="sso-divider muted small">or</p>
-                {providers.map((p) => (
-                  <a key={p.id} className={`btn ghost sso-btn sso-btn--${p.id}`} href={ssoStartUrl(p.id)}>
-                    Sign up with {p.label}
-                  </a>
-                ))}
+                {providers.map((p) =>
+                  p.id === 'google' ? (
+                    <GoogleButton key={p.id} href={ssoStartUrl(p.id)} text="Sign up with Google" />
+                  ) : (
+                    <a key={p.id} className={`btn ghost sso-btn sso-btn--${p.id}`} href={ssoStartUrl(p.id)}>
+                      Sign up with {p.label}
+                    </a>
+                  ),
+                )}
               </div>
             ) : null}
             {!firstUser ? (

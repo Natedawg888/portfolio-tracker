@@ -3887,6 +3887,18 @@ html:not([data-theme]) .login-page .auth-switch a { color: var(--login-link); }
 }
 .login-page .auth-card > .muted { color: var(--login-muted); }
 
+html[data-theme="light"] .register-page {
+  --google-bg: #ffffff;
+  --google-border: #747775;
+  --google-text: #1f1f1f;
+}
+html[data-theme="dark"] .register-page,
+html:not([data-theme]) .register-page {
+  --google-bg: #131314;
+  --google-border: #8e918f;
+  --google-text: #e3e3e3;
+}
+.google-btn:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 /* Google sign-in button (Google branding: standard "G", Roboto Medium, light / dark colours). */
 .google-btn {
   display: inline-flex;

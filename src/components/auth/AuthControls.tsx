@@ -1,5 +1,5 @@
 /**
- * Small sign-in page pieces: the password field (show / hide, Caps Lock warning),
+ * Small sign-in / sign-up page pieces: the password field (show / hide, Caps Lock warning),
  * the Google button, a button spinner and the one inline error message.
  * Presentation only; the page owns every sign-in call.
  */
@@ -100,12 +100,21 @@ function GoogleG() {
   );
 }
 
-/** "Continue with Google" in Google's branding (logo, text and light / dark colours). */
-export function GoogleButton({ href, disabled }: { href: string; disabled: boolean }) {
+/** Google's branded button (logo, approved wording and light / dark colours). */
+export function GoogleButton({
+  href,
+  disabled = false,
+  text = 'Continue with Google',
+}: {
+  href: string;
+  disabled?: boolean;
+  /** One of Google's approved labels. */
+  text?: 'Continue with Google' | 'Sign up with Google' | 'Sign in with Google';
+}) {
   return (
     <a className={'google-btn' + (disabled ? ' is-disabled' : '')} href={href} aria-disabled={disabled || undefined} onClick={(e) => (disabled ? e.preventDefault() : undefined)}>
       <GoogleG />
-      <span>Continue with Google</span>
+      <span>{text}</span>
     </a>
   );
 }
