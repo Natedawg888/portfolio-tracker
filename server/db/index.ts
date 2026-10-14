@@ -533,6 +533,10 @@ function migrateSchema(database: Database) {
   if (incomeCols.size > 0 && !incomeCols.has('invoice_payment_id')) {
     database.run('ALTER TABLE income_records ADD COLUMN invoice_payment_id TEXT');
   }
+  // Rental income entries mirrored into income (KAN-66).
+  if (incomeCols.size > 0 && !incomeCols.has('rental_entry_id')) {
+    database.run('ALTER TABLE income_records ADD COLUMN rental_entry_id TEXT');
+  }
 
   // Savings goal → savings account link (KAN-20).
   const goalCols = tableColumns(database, 'savings_goals');

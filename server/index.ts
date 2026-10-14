@@ -30,6 +30,7 @@ import invoicesRouter from './routes/invoices.ts';
 import publicInvoicesRouter from './routes/publicInvoices.ts';
 import recurringRouter from './routes/recurring.ts';
 import warrantiesRouter from './routes/warranties.ts';
+import rentalsRouter from './routes/rentals.ts';
 import adsRouter from './routes/ads.ts';
 import healthScoreRouter from './routes/healthScore.ts';
 import projectionsRouter from './routes/projections.ts';
@@ -149,6 +150,7 @@ async function main() {
   app.use('/api/public', publicInvoicesRouter);
   app.use('/api/recurring', recurringRouter);
   app.use('/api/warranties', warrantiesRouter);
+  app.use('/api/rentals', rentalsRouter);
   app.use('/api/ads', adsRouter);
   app.use('/api/health-score', healthScoreRouter);
   app.use('/api/projections', projectionsRouter);

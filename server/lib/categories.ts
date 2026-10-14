@@ -42,6 +42,9 @@ export const INCOME_MINING_SLUG = 'cat-income-mining';
 export const INCOME_DIVIDENDS_SLUG = 'cat-income-dividends';
 export const DEBT_SLUG = 'cat-debt';
 export const CHARITY_SLUG = 'cat-charity';
+/** Rental income / expenses (KAN-66). Added the first time a user records rental money, not seeded for everyone. */
+export const RENTAL_INCOME_SLUG = 'cat-income-rental';
+export const RENTAL_EXPENSES_SLUG = 'cat-rental';
 
 /** Deterministic id for a user's seeded category (non-owner / fresh rows). */
 export function categoryIdForUser(userId: string, slug: string): string {
@@ -72,6 +75,28 @@ export function resolveCategoryId(
   if (byId?.id) return String(byId.id);
 
   return null;
+}
+
+/**
+ * This user's category for a well-known slug that is not in the default seeds,
+ * created on first use. A user who renames it keeps their name.
+ */
+export function ensureCategory(
+  db: Database,
+  userId: string,
+  seed: { slug: string; name: string; type: 'income' | 'spending'; sortOrder: number },
+): string {
+  const existing = resolveCategoryId(db, userId, seed.slug);
+  if (existing) return existing;
+  const id = categoryIdForUser(userId, seed.slug);
+  run(
+    db,
+    `INSERT OR IGNORE INTO budget_categories
+       (id, user_id, slug, name, parent_id, colour, type, is_income, sort_order)
+     VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?)`,
+    [id, userId, seed.slug, seed.name, seed.type, seed.type === 'income' ? 1 : 0, seed.sortOrder],
+  );
+  return id;
 }
 
 /** Like resolveCategoryId but returns slug itself as last-resort soft fallback (never cross-user). */

@@ -10971,6 +10971,56 @@ html:not([data-theme]) .warranties-page {
 }
 .warranty-linked { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
 
+/* Rental income (KAN-66). Builds on the Warranties page layout. */
+.rentals-page .budget-month-switch { margin-top: 0.4rem; }
+.rental-summary { display: grid; gap: 0.4rem; }
+.rental-summary-label { margin: 0; }
+.rental-totals {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+}
+.rental-totals div {
+  padding: 0.5rem 0.65rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  min-width: 0;
+}
+.rental-totals dt { font-size: 0.74rem; font-weight: 600; color: var(--muted); }
+.rental-totals dd { margin: 0.1rem 0 0; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.rental-totals .rental-net--loss { color: var(--warranty-soon); }
+.rental-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+}
+.rental-card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.6rem; }
+.rental-card-actions .link-btn { font-size: 0.85rem; }
+.rental-entries { list-style: none; margin: 0; padding: 0; }
+.rental-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  padding: 0.45rem 0;
+}
+.rental-entry + .rental-entry { border-top: 1px solid var(--border-soft); }
+.rental-entry-what { display: grid; min-width: 0; }
+.rental-entry-what > span:first-child { overflow-wrap: anywhere; }
+.rental-entry-amount { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--warranty-ok); white-space: nowrap; }
+.rental-entry-amount--out { color: var(--text); }
+.rental-entry-actions { display: flex; gap: 0.6rem; font-size: 0.85rem; }
+.rental-money-toggle { display: grid; gap: 0.25rem; }
+.rental-money-toggle input[type="checkbox"] { width: auto; margin: 0 0.35rem 0 0; vertical-align: middle; }
+@media (max-width: 420px) {
+  .rental-entry { grid-template-columns: minmax(0, 1fr) auto; }
+  .rental-entry-actions { grid-column: 1 / -1; }
+}
+
 /* Ad banners (KAN-72). Wide screens: fixed beside the 1120px column, so they never push or
    squeeze content. Smaller screens: one banner fixed to the bottom, with room kept at the end
    of the page. Dashed frame + label keep ads apart from app content; all sit below modals (80). */

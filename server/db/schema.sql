@@ -315,7 +315,9 @@ CREATE TABLE IF NOT EXISTS income_records (
   -- Set when this row mirrors one paid dividend. One income row per dividend per user.
   dividend_event_id TEXT,
   -- Set when this row mirrors one invoice payment (KAN-71).
-  invoice_payment_id TEXT
+  invoice_payment_id TEXT,
+  -- Set when this row mirrors one rental income entry (KAN-66).
+  rental_entry_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_income_records_date ON income_records(date);
@@ -829,6 +831,37 @@ CREATE TABLE IF NOT EXISTS warranties (
   updated_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_warranties_user ON warranties(user_id, ends_on);
+
+-- Rental properties and their income / expenses (KAN-66). amount_nzd is positive; kind
+-- says which way. When add_to_money is set (and the date is in range) an income entry is
+-- mirrored to income_records.rental_entry_id and an expense to a manual spending
+-- transaction (transaction_id), so Budget, Income and Yearly count the net figures.
+CREATE TABLE IF NOT EXISTS rental_properties (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT,
+  name        TEXT NOT NULL,
+  address     TEXT NOT NULL DEFAULT '',
+  notes       TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rental_properties_user ON rental_properties(user_id);
+
+CREATE TABLE IF NOT EXISTS rental_entries (
+  id              TEXT PRIMARY KEY,
+  user_id         TEXT,
+  property_id     TEXT NOT NULL,
+  date            TEXT NOT NULL,
+  kind            TEXT NOT NULL,              -- income | expense
+  category        TEXT NOT NULL,
+  amount_nzd      REAL NOT NULL,
+  description     TEXT NOT NULL DEFAULT '',
+  add_to_money    INTEGER NOT NULL DEFAULT 1,
+  transaction_id  TEXT,                       -- expense mirror
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rental_entries_user ON rental_entries(user_id, date);
 
 -- Read-only crypto wallets: public address only. Never store seed phrases / private keys.
 -- No balance column on purpose: balances come from chain providers at sync time

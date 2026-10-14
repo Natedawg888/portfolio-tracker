@@ -19,6 +19,7 @@ import {
   PublicInvoicePage,
   BillsPage,
   WarrantiesPage,
+  RentalsPage,
   PortfolioPage,
   ProjectionsPage,
   SettingsPage,
@@ -57,6 +58,7 @@ export default function App() {
                 <Route path="bills" element={<BillsPage />} />
                 {/* Warranties: opened from Budget, not in the nav bar (KAN-61). */}
                 <Route path="warranties" element={<WarrantiesPage />} />
+                <Route path="rentals" element={<RentalsPage />} />
                 <Route path="debts" element={<DebtsPage />} />
                 <Route path="yearly" element={<YearlyReportPage />} />
                 <Route path="economic-cycle" element={<EconomicCyclePage />} />
