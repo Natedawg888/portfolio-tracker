@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { ApiError, api, type AuthUser, type SsoProvider } from '../api/client';
 import { showQuietToast } from '../lib/quietToast';
+import { BusyLabel, FormError, GoogleButton, PasswordField } from '../components/auth/AuthControls';
 import { ssoErrorMessage, ssoStartUrl } from '../lib/sso';
 import {
   addPasskey,
@@ -58,7 +59,8 @@ export function Login() {
   // "Add another account" from the profile menu: sign in without leaving the current account.
   const [searchParams] = useSearchParams();
   const adding = searchParams.get('add') === '1';
-  const [rememberedEmail, setRememberedEmail] = useState(() => (adding ? '' : readLastEmail()));
+  // The remembered account: last email used here, else the account this browser has a passkey for.
+  const [rememberedEmail, setRememberedEmail] = useState(() => (adding ? '' : readLastEmail() || readHint()?.email || ''));
   const [email, setEmail] = useState(rememberedEmail);
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
@@ -71,6 +73,17 @@ export function Login() {
   const [busy, setBusy] = useState(false);
   const [canPasskey] = useState(passkeysSupported);
   const [hint, setHint] = useState<PasskeyHint | null>(() => (adding ? null : readHint()));
+  // Layout only: which button shows a spinner, and whether a returning user opened the password form.
+  const [pending, setPending] = useState<'passkey' | 'password' | 'code' | 'addPasskey' | null>(null);
+  const [usePassword, setUsePassword] = useState(false);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  const attempted = useRef(false);
+
+  // After a sign-in attempt fails, move focus to its error (not for an error shown on page load).
+  useEffect(() => {
+    if (error && attempted.current) errorRef.current?.focus();
+    attempted.current = false;
+  }, [error]);
 
   useEffect(() => {
     let cancelled = false;
@@ -207,90 +220,165 @@ export function Login() {
     setHint(null);
     setRememberedEmail('');
     setEmail('');
+    setUsePassword(false);
+    setError(null);
   };
+
+  /** Runs a sign-in action; its button shows the spinner for as long as the page is busy. */
+  const track = (key: NonNullable<typeof pending>, fn: () => Promise<void>) => {
+    setPending(key);
+    attempted.current = true;
+    void fn();
+  };
+  const spinning = (key: NonNullable<typeof pending>) => busy && pending === key;
+
+  const returning = !adding && Boolean(rememberedEmail);
+  const sameAccount = (h: PasskeyHint | null) => Boolean(h && h.email.toLowerCase() === rememberedEmail.toLowerCase());
+  const accountName = sameAccount(hint) ? hint!.name : null;
+  // "Continue" is a passkey sign-in, offered when this browser has a passkey for the remembered account.
+  const canContinue = returning && canPasskey && sameAccount(hint);
+  const passwordOpen = !returning || !canContinue || usePassword;
+  const offerPasskeyButton = canPasskey && !adding && !canContinue;
+  const google = providers.find((p) => p.id === 'google');
+  const otherProviders = providers.filter((p) => p.id !== 'google');
+  const ssoHref = (id: SsoProvider['id']) => ssoStartUrl(id, { remember, mode: adding ? 'add' : 'signin' });
+  const hasAlternatives = Boolean(google) || otherProviders.length > 0 || offerPasskeyButton;
+  const initial = Array.from((accountName || rememberedEmail).trim())[0]?.toUpperCase() ?? '?';
+
+  // Applies to password, passkey and Google sign-in alike, so it's on every sign-in view.
+  const keepSignedIn = (
+    <label className="auth-check">
+      <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} disabled={busy} />
+      <span>Keep me signed in</span>
+    </label>
+  );
+
+  const passwordForm = (
+    <form className="auth-form" onSubmit={(e) => track('password', () => onPassword(e))}>
+      {returning ? (
+        // Lets password managers match the saved login; the email is shown once, in the account row.
+        <input
+          className="sr-only"
+          type="email"
+          name="username"
+          autoComplete="username"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          tabIndex={-1}
+          aria-hidden="true"
+        />
+      ) : (
+        <div className="auth-field">
+          <label htmlFor="login-email">Email</label>
+          <input
+            id="login-email"
+            type="email"
+            name="username"
+            autoComplete="username"
+            inputMode="email"
+            autoCapitalize="off"
+            spellCheck={false}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            disabled={busy}
+            autoFocus
+          />
+        </div>
+      )}
+      <PasswordField value={password} onChange={setPassword} disabled={busy} autoFocus={returning} />
+      {keepSignedIn}
+      <FormError ref={errorRef} message={error} />
+      <button type="submit" className="btn primary auth-primary" disabled={busy}>
+        <BusyLabel busy={spinning('password')} busyText="Signing in…">
+          Sign in
+        </BusyLabel>
+      </button>
+    </form>
+  );
 
   return (
     <div className="auth-page login-page">
-      <div className="auth-card panel">
+      <main className="auth-card panel">
         <p className="eyebrow">Portfolio Tracker</p>
         {step.kind === 'password' ? (
           <>
-            <h2>{adding ? 'Add another account' : 'Sign in'}</h2>
+            <h1 className="auth-title">{adding ? 'Add another account' : returning ? 'Welcome back' : 'Sign in'}</h1>
             {adding && user ? (
               <p className="muted small">You&apos;ll stay signed in as {user.email} and can switch from the profile menu.</p>
             ) : null}
-            {canPasskey && hint ? (
-              <div className="passkey-continue">
-                <button type="button" className="btn primary passkey-continue-btn" disabled={busy} onClick={() => void onPasskey()}>
-                  <span>Continue as {hint.name}</span>
-                  <span className="passkey-continue-email">{hint.email}</span>
+
+            {returning ? (
+              <div className="auth-account">
+                <span className="auth-avatar" aria-hidden="true">
+                  {initial}
+                </span>
+                <div className="auth-account-text">
+                  {accountName ? <span className="auth-account-name">{accountName}</span> : null}
+                  <span className={accountName ? 'auth-account-email' : 'auth-account-name'}>{rememberedEmail}</span>
+                </div>
+                <button type="button" className="link-btn auth-not-you" onClick={forgetEmail} disabled={busy}>
+                  Not you?
                 </button>
-                <p className="sso-divider muted small">or use your password</p>
               </div>
             ) : null}
-            <form className="auth-form" onSubmit={onPassword}>
-              <label>
-                Email
-                <input
-                  type="email"
-                  autoComplete="username"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
+
+            {passwordOpen ? (
+              passwordForm
+            ) : (
+              <div className="auth-form">
+                {keepSignedIn}
+                <FormError ref={errorRef} message={error} />
+                <button type="button" className="btn primary auth-primary" disabled={busy} onClick={() => track('passkey', onPasskey)}>
+                  <BusyLabel busy={spinning('passkey')} busyText="Waiting for your device…">
+                    Continue
+                  </BusyLabel>
+                </button>
+              </div>
+            )}
+            {canContinue ? (
+              <p className="auth-toggle">
+                <button
+                  type="button"
+                  className="link-btn"
                   disabled={busy}
-                />
-              </label>
-              {rememberedEmail && email === rememberedEmail ? (
-                <p className="muted small auth-remembered">
-                  Remembered on this browser ·{' '}
-                  <button type="button" className="link-btn" onClick={forgetEmail}>
-                    Use a different email
-                  </button>
+                  onClick={() => {
+                    setUsePassword((v) => !v);
+                    setError(null);
+                  }}
+                >
+                  {usePassword ? 'Use your passkey instead' : 'Use password instead'}
+                </button>
+              </p>
+            ) : null}
+
+            {hasAlternatives ? (
+              <div className="sso-buttons">
+                <p className="auth-divider">
+                  <span>or</span>
                 </p>
-              ) : null}
-              <label>
-                Password
-                <input
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  disabled={busy}
-                  autoFocus={Boolean(rememberedEmail)}
-                />
-              </label>
-              <label className="auth-check">
-                <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} disabled={busy} />
-                <span>Keep me signed in</span>
-              </label>
-              {error ? <p className="auth-error" role="alert">{error}</p> : null}
-              <button type="submit" className="btn primary" disabled={busy}>
-                {busy ? 'Signing in…' : 'Sign in'}
-              </button>
-            </form>
-            {canPasskey && !hint && !adding ? (
-              <div className="sso-buttons">
-                <p className="sso-divider muted small">or</p>
-                <button type="button" className="btn ghost sso-btn" disabled={busy} onClick={() => void onPasskey()}>
-                  Sign in with a passkey
-                </button>
-              </div>
-            ) : null}
-            {providers.length > 0 ? (
-              <div className="sso-buttons">
-                {canPasskey && !hint && !adding ? null : <p className="sso-divider muted small">or</p>}
-                {providers.map((p) => (
+                {google ? <GoogleButton href={ssoHref('google')} disabled={busy} /> : null}
+                {otherProviders.map((p) => (
                   <a
                     key={p.id}
-                    className={`btn ghost sso-btn sso-btn--${p.id}`}
-                    href={ssoStartUrl(p.id, { remember, mode: adding ? 'add' : 'signin' })}
+                    className={`btn ghost sso-btn sso-btn--${p.id}` + (busy ? ' is-disabled' : '')}
+                    href={ssoHref(p.id)}
+                    aria-disabled={busy || undefined}
+                    onClick={(e) => (busy ? e.preventDefault() : undefined)}
                   >
                     Continue with {p.label}
                   </a>
                 ))}
+                {offerPasskeyButton ? (
+                  <button type="button" className="btn ghost sso-btn" disabled={busy} onClick={() => track('passkey', onPasskey)}>
+                    <BusyLabel busy={spinning('passkey')} busyText="Waiting for your device…">
+                      Sign in with a passkey
+                    </BusyLabel>
+                  </button>
+                ) : null}
               </div>
             ) : null}
+
             <p className="auth-switch">
               {adding && user ? (
                 <Link to="/">Cancel</Link>
@@ -303,33 +391,36 @@ export function Login() {
           </>
         ) : step.kind === 'offer' ? (
           <>
-            <h2>Sign in faster next time</h2>
+            <h1 className="auth-title">Sign in faster next time</h1>
             <p className="muted">
               Use Face ID, Touch ID, Windows Hello or your device PIN instead of your password on this device. Your password
               still works.
             </p>
-            {error ? <p className="auth-error" role="alert">{error}</p> : null}
             <div className="auth-form">
-              <button type="button" className="btn primary" disabled={busy} onClick={() => void onAddPasskey()}>
-                {busy ? 'Waiting for your device…' : 'Use this device to sign in'}
+              <FormError ref={errorRef} message={error} />
+              <button type="button" className="btn primary auth-primary" disabled={busy} onClick={() => track('addPasskey', onAddPasskey)}>
+                <BusyLabel busy={spinning('addPasskey')} busyText="Waiting for your device…">
+                  Use this device to sign in
+                </BusyLabel>
               </button>
-              <button type="button" className="btn ghost" disabled={busy} onClick={onSkipPasskey}>
+              <button type="button" className="btn ghost auth-secondary" disabled={busy} onClick={onSkipPasskey}>
                 Not now
               </button>
             </div>
           </>
         ) : (
           <>
-            <h2>Two-factor sign-in</h2>
+            <h1 className="auth-title">Two-factor sign-in</h1>
             <p className="muted">
               {useBackup
                 ? 'Enter one of your backup codes. Each code works once.'
                 : 'Enter the 6-digit code from your authenticator app.'}
             </p>
-            <form className="auth-form" onSubmit={onCode}>
-              <label>
-                {useBackup ? 'Backup code' : 'Authenticator code'}
+            <form className="auth-form" onSubmit={(e) => track('code', () => onCode(e))}>
+              <div className="auth-field">
+                <label htmlFor="login-code">{useBackup ? 'Backup code' : 'Authenticator code'}</label>
                 <input
+                  id="login-code"
                   key={useBackup ? 'backup' : 'totp'}
                   type="text"
                   inputMode={useBackup ? 'text' : 'numeric'}
@@ -344,7 +435,7 @@ export function Login() {
                   disabled={busy}
                   autoFocus
                 />
-              </label>
+              </div>
               <label className="auth-check">
                 <input
                   type="checkbox"
@@ -354,9 +445,11 @@ export function Login() {
                 />
                 <span>Trust this device for 30 days</span>
               </label>
-              {error ? <p className="auth-error" role="alert">{error}</p> : null}
-              <button type="submit" className="btn primary" disabled={busy || !code.trim()}>
-                {busy ? 'Checking…' : 'Verify'}
+              <FormError ref={errorRef} message={error} />
+              <button type="submit" className="btn primary auth-primary" disabled={busy || !code.trim()}>
+                <BusyLabel busy={spinning('code')} busyText="Checking…">
+                  Verify
+                </BusyLabel>
               </button>
             </form>
             <p className="auth-switch">
@@ -385,7 +478,7 @@ export function Login() {
             </p>
           </>
         )}
-      </div>
+      </main>
     </div>
   );
 }
