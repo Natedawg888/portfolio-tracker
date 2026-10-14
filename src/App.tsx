@@ -30,6 +30,7 @@ import {
 import { AuthProvider } from './auth/AuthContext';
 import { AssetClassPrefsProvider } from './auth/AssetClassPrefsContext';
 import { RequireAuth } from './auth/RequireAuth';
+import { HomeGate } from './auth/HomeGate';
 import './App.css';
 
 export default function App() {
@@ -50,29 +51,32 @@ export default function App() {
                 </Suspense>
               }
             />
-            <Route element={<RequireAuth />}>
-              <Route element={<Layout />}>
-                <Route index element={<Dashboard />} />
-                <Route path="spending" element={<SpendingPage />} />
-                {/* Bills & subscriptions: opened from Budget, not in the nav bar (KAN-27). */}
-                <Route path="bills" element={<BillsPage />} />
-                {/* Warranties: opened from Budget, not in the nav bar (KAN-61). */}
-                <Route path="warranties" element={<WarrantiesPage />} />
-                <Route path="rentals" element={<RentalsPage />} />
-                <Route path="debts" element={<DebtsPage />} />
-                <Route path="yearly" element={<YearlyReportPage />} />
-                <Route path="economic-cycle" element={<EconomicCyclePage />} />
-                <Route path="portfolio" element={<PortfolioPage />} />
-                <Route path="projections" element={<ProjectionsPage />} />
-                <Route path="news" element={<NewsPage />} />
-                <Route path="kiwisaver" element={<KiwiSaverPage />} />
-                <Route path="paye" element={<PayePage />} />
-                <Route path="invoices" element={<InvoicesPage />} />
-                <Route path="invoices/new" element={<InvoiceEditorPage />} />
-                <Route path="invoices/:id" element={<InvoiceDetailPage />} />
-                <Route path="invoices/:id/edit" element={<InvoiceEditorPage />} />
-                <Route path="value-search" element={<ValueSearchPage />} />
-                <Route path="settings" element={<SettingsPage />} />
+            {/* Signed out at "/": public home page. Otherwise the app as before. */}
+            <Route element={<HomeGate />}>
+              <Route element={<RequireAuth />}>
+                <Route element={<Layout />}>
+                  <Route index element={<Dashboard />} />
+                  <Route path="spending" element={<SpendingPage />} />
+                  {/* Bills & subscriptions: opened from Budget, not in the nav bar (KAN-27). */}
+                  <Route path="bills" element={<BillsPage />} />
+                  {/* Warranties: opened from Budget, not in the nav bar (KAN-61). */}
+                  <Route path="warranties" element={<WarrantiesPage />} />
+                  <Route path="rentals" element={<RentalsPage />} />
+                  <Route path="debts" element={<DebtsPage />} />
+                  <Route path="yearly" element={<YearlyReportPage />} />
+                  <Route path="economic-cycle" element={<EconomicCyclePage />} />
+                  <Route path="portfolio" element={<PortfolioPage />} />
+                  <Route path="projections" element={<ProjectionsPage />} />
+                  <Route path="news" element={<NewsPage />} />
+                  <Route path="kiwisaver" element={<KiwiSaverPage />} />
+                  <Route path="paye" element={<PayePage />} />
+                  <Route path="invoices" element={<InvoicesPage />} />
+                  <Route path="invoices/new" element={<InvoiceEditorPage />} />
+                  <Route path="invoices/:id" element={<InvoiceDetailPage />} />
+                  <Route path="invoices/:id/edit" element={<InvoiceEditorPage />} />
+                  <Route path="value-search" element={<ValueSearchPage />} />
+                  <Route path="settings" element={<SettingsPage />} />
+                </Route>
               </Route>
             </Route>
             <Route path="*" element={<NotFoundRoute />} />
