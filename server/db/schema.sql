@@ -834,8 +834,10 @@ CREATE INDEX IF NOT EXISTS idx_warranties_user ON warranties(user_id, ends_on);
 
 -- Rental properties and their income / expenses (KAN-66). amount_nzd is positive; kind
 -- says which way. When add_to_money is set (and the date is in range) an income entry is
--- mirrored to income_records.rental_entry_id and an expense to a manual spending
--- transaction (transaction_id), so Budget, Income and Yearly count the net figures.
+-- mirrored to income_records.rental_entry_id and an expense to a spending transaction
+-- (transaction_id), so Budget, Income and Yearly count the net figures. An expense links
+-- the matching bank debit when there is one (txn_owned = 0, never edited or deleted here);
+-- otherwise it adds its own manual transaction (txn_owned = 1).
 CREATE TABLE IF NOT EXISTS rental_properties (
   id          TEXT PRIMARY KEY,
   user_id     TEXT,
@@ -858,6 +860,7 @@ CREATE TABLE IF NOT EXISTS rental_entries (
   description     TEXT NOT NULL DEFAULT '',
   add_to_money    INTEGER NOT NULL DEFAULT 1,
   transaction_id  TEXT,                       -- expense mirror
+  txn_owned       INTEGER NOT NULL DEFAULT 1,  -- 1 = transaction_id was added by this entry
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );

@@ -1489,6 +1489,8 @@ export interface RentalEntry {
    * mirrored row was deleted there.
    */
   inMoneyViews: boolean;
+  /** Expense matched to this bank / imported debit instead of adding its own transaction. */
+  bankMatch: { date: string; description: string } | null;
   createdAt: string;
   updatedAt: string;
 }

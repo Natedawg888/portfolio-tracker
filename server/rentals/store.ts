@@ -6,8 +6,12 @@
  * start (TXN_SYNC_FROM_DATE), is mirrored so those pages count the net rental figures:
  *   - income  → an income_records row (rental_entry_id) in "Rental income", linked to
  *               the matching bank deposit when there is one so it isn't counted twice
- *   - expense → a manual spending transaction (transaction_id) in "Rental property"
+ *   - expense → the matching bank debit when there is one (same amount, within 10 days,
+ *               not linked to another entry), else its own manual spending transaction in
+ *               "Rental property". A debit synced or imported later replaces that manual
+ *               transaction (linkRentalExpensesToBankDebits), so it isn't counted twice.
  * Editing an entry updates its mirror; deleting the entry or its property removes it.
+ * A linked bank debit is never edited or deleted here, only linked and unlinked.
  */
 import type { Database } from 'sql.js';
 import type { RentalEntry, RentalListResponse, RentalProperty } from '../../src/types/index.ts';
@@ -17,7 +21,10 @@ import { newId, queryAll, queryOne, run } from '../db/index.ts';
 import { roundMoney } from '../debts/model.ts';
 import { RENTAL_EXPENSES_SLUG, RENTAL_INCOME_SLUG, ensureCategory } from '../lib/categories.ts';
 import { linkMirroredIncomeToBankCredits } from '../lib/incomeBankLink.ts';
-import { TXN_SYNC_FROM_DATE } from '../akahu/syncTransactions.ts';
+import { TXN_SYNC_FROM_DATE } from '../lib/syncFloor.ts';
+
+const RENTAL_INCOME_CATEGORY = { slug: RENTAL_INCOME_SLUG, name: 'Rental income', type: 'income', sortOrder: 5 } as const;
+const RENTAL_EXPENSES_CATEGORY = { slug: RENTAL_EXPENSES_SLUG, name: 'Rental property', type: 'spending', sortOrder: 88 } as const;
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -111,15 +118,19 @@ type EntryRow = {
   description: string;
   add_to_money: number;
   transaction_id: string | null;
+  txn_owned: number;
   created_at: string;
   updated_at: string;
   income_mirror: string | null;
   txn_mirror: string | null;
+  txn_date: string | null;
+  txn_description: string | null;
+  txn_merchant: string | null;
 };
 
 const ENTRY_SELECT = `SELECT e.*,
     (SELECT r.id FROM income_records r WHERE r.user_id = e.user_id AND r.rental_entry_id = e.id LIMIT 1) AS income_mirror,
-    t.id AS txn_mirror
+    t.id AS txn_mirror, t.date AS txn_date, t.description AS txn_description, t.merchant AS txn_merchant
   FROM rental_entries e
   LEFT JOIN transactions t ON t.id = e.transaction_id AND t.user_id = e.user_id`;
 
@@ -138,6 +149,10 @@ function presentEntry(r: EntryRow): RentalEntry {
     description: r.description ?? '',
     addToMoney: Boolean(r.add_to_money),
     inMoneyViews: Boolean(r.kind === 'income' ? r.income_mirror : r.txn_mirror),
+    bankMatch:
+      r.kind === 'expense' && r.txn_mirror && !r.txn_owned
+        ? { date: r.txn_date ?? '', description: (r.txn_merchant || r.txn_description || '').trim() }
+        : null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -259,10 +274,14 @@ export function updateEntry(db: Database, userId: string, id: string, patch: Par
 }
 
 export function deleteEntry(db: Database, userId: string, id: string): boolean {
-  const r = queryOne<{ transaction_id: string | null }>(db, `SELECT transaction_id FROM rental_entries WHERE id = ? AND user_id = ?`, [id, userId]);
+  const r = queryOne<{ transaction_id: string | null; txn_owned: number }>(
+    db,
+    `SELECT transaction_id, txn_owned FROM rental_entries WHERE id = ? AND user_id = ?`,
+    [id, userId],
+  );
   if (!r) return false;
   removeIncomeMirror(db, userId, id);
-  removeTxnMirror(db, userId, r.transaction_id);
+  if (r.txn_owned) removeTxnMirror(db, userId, r.transaction_id);
   run(db, `DELETE FROM rental_entries WHERE id = ? AND user_id = ?`, [id, userId]);
   return true;
 }
@@ -300,8 +319,7 @@ export function syncMirror(db: Database, userId: string, entryId: string): void 
   // Only one side is ever mirrored; drop the other (kind may have changed).
   if (!wanted || e.kind !== 'income') removeIncomeMirror(db, userId, e.id);
   if (!wanted || e.kind !== 'expense') {
-    removeTxnMirror(db, userId, e.transaction_id);
-    if (e.transaction_id) run(db, `UPDATE rental_entries SET transaction_id = NULL WHERE id = ? AND user_id = ?`, [e.id, userId]);
+    clearTxnLink(db, userId, e);
   }
   if (!wanted) return;
 
@@ -320,7 +338,7 @@ export function syncMirror(db: Database, userId: string, entryId: string): void 
         [e.date, amount, description, inc.id, userId],
       );
     } else {
-      const categoryId = ensureCategory(db, userId, { slug: RENTAL_INCOME_SLUG, name: 'Rental income', type: 'income', sortOrder: 5 });
+      const categoryId = ensureCategory(db, userId, RENTAL_INCOME_CATEGORY);
       run(
         db,
         `INSERT INTO income_records (id, user_id, date, amount_nzd, kind, description, category_id, notes, created_at, rental_entry_id)
@@ -332,16 +350,34 @@ export function syncMirror(db: Database, userId: string, entryId: string): void 
     return;
   }
 
-  const txn = e.transaction_id
-    ? queryOne<{ id: string }>(db, `SELECT id FROM transactions WHERE id = ? AND user_id = ?`, [e.transaction_id, userId])
+  let linked = e.transaction_id
+    ? queryOne<{ id: string; date: string; amount: number }>(db, `SELECT id, date, amount FROM transactions WHERE id = ? AND user_id = ?`, [e.transaction_id, userId])
     : null;
-  if (txn) {
+
+  if (linked && !e.txn_owned) {
+    // Keep a bank match while it still matches the entry; otherwise let it go.
+    if (debitMatches(linked, e.date, amount)) return;
+    clearTxnLink(db, userId, e);
+    linked = null;
+  }
+
+  const bank = findBankDebit(db, userId, e.id, e.date, amount);
+  if (bank) {
+    if (linked && e.txn_owned) removeTxnMirror(db, userId, linked.id);
+    run(db, `UPDATE rental_entries SET transaction_id = ?, txn_owned = 0 WHERE id = ? AND user_id = ?`, [bank.id, e.id, userId]);
+    // Put an uncategorised debit under Rental property; never override the user's own choice.
+    const categoryId = ensureCategory(db, userId, RENTAL_EXPENSES_CATEGORY);
+    run(db, `UPDATE transactions SET category_id = ? WHERE id = ? AND user_id = ? AND category_id IS NULL`, [categoryId, bank.id, userId]);
+    return;
+  }
+
+  if (linked && e.txn_owned) {
     run(db, `UPDATE transactions SET date=?, amount=?, description=?, merchant=? WHERE id=? AND user_id=?`, [
-      e.date, -amount, description, e.property_name, txn.id, userId,
+      e.date, -amount, description, e.property_name, linked.id, userId,
     ]);
     return;
   }
-  const categoryId = ensureCategory(db, userId, { slug: RENTAL_EXPENSES_SLUG, name: 'Rental property', type: 'spending', sortOrder: 88 });
+  const categoryId = ensureCategory(db, userId, RENTAL_EXPENSES_CATEGORY);
   const txnId = newId('txn');
   run(
     db,
@@ -349,5 +385,73 @@ export function syncMirror(db: Database, userId: string, entryId: string): void 
      VALUES (?,?,NULL,?,?,?, 'debit', ?, 'NZD', ?, 'Rental', ?, 'manual')`,
     [txnId, userId, e.date, description, -amount, categoryId, now, e.property_name],
   );
-  run(db, `UPDATE rental_entries SET transaction_id = ? WHERE id = ? AND user_id = ?`, [txnId, e.id, userId]);
+  run(db, `UPDATE rental_entries SET transaction_id = ?, txn_owned = 1 WHERE id = ? AND user_id = ?`, [txnId, e.id, userId]);
+}
+
+/** Drop the entry's expense link; its own manual transaction is deleted, a bank debit kept. */
+function clearTxnLink(db: Database, userId: string, e: { id: string; transaction_id: string | null; txn_owned: number }): void {
+  if (!e.transaction_id) return;
+  if (e.txn_owned) removeTxnMirror(db, userId, e.transaction_id);
+  run(db, `UPDATE rental_entries SET transaction_id = NULL, txn_owned = 1 WHERE id = ? AND user_id = ?`, [e.id, userId]);
+  e.transaction_id = null;
+  e.txn_owned = 1;
+}
+
+const BANK_MATCH_DAYS = 10;
+
+function shiftDays(date: string, days: number): string {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+function dayGap(a: string, b: string): number {
+  return Math.abs(Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000;
+}
+
+function debitMatches(t: { date: string; amount: number }, date: string, amount: number): boolean {
+  return Number(t.amount) < 0 && Math.abs(-Number(t.amount) - amount) < 0.005 && dayGap(t.date, date) <= BANK_MATCH_DAYS;
+}
+
+/**
+ * The debit that is this expense: same amount, within 10 days, not linked to another
+ * entry and not a manual transaction added by a rental entry (this one's included). Closest date wins.
+ */
+function findBankDebit(db: Database, userId: string, entryId: string, date: string, amount: number): { id: string } | null {
+  const rows = queryAll<{ id: string; date: string }>(
+    db,
+    `SELECT t.id, t.date FROM transactions t
+     WHERE t.user_id = ? AND t.amount < 0 AND ABS(-t.amount - ?) < 0.005 AND t.date >= ? AND t.date <= ?
+       AND NOT EXISTS (SELECT 1 FROM rental_entries r WHERE r.user_id = t.user_id AND r.transaction_id = t.id AND (r.id != ? OR r.txn_owned = 1))`,
+    [userId, amount, shiftDays(date, -BANK_MATCH_DAYS), shiftDays(date, BANK_MATCH_DAYS), entryId],
+  );
+  rows.sort((a, b) => dayGap(a.date, date) - dayGap(b.date, date) || a.id.localeCompare(b.id));
+  return rows[0] ?? null;
+}
+
+/**
+ * After bank sync, an import or a manual debit: an expense counted through its own manual
+ * transaction (or not counted) switches to a matching debit, and one whose linked debit was
+ * deleted gets its own transaction back. A manual rental transaction the user deleted in
+ * Budget is not re-added here. Returns how many are now bank-matched.
+ */
+export function linkRentalExpensesToBankDebits(db: Database, userId: string): number {
+  const open = queryAll<{ id: string; date: string; amount_nzd: number; txn_owned: number; txn_exists: number }>(
+    db,
+    `SELECT e.id, e.date, e.amount_nzd, e.txn_owned,
+            EXISTS (SELECT 1 FROM transactions t WHERE t.id = e.transaction_id AND t.user_id = e.user_id) AS txn_exists
+     FROM rental_entries e
+     WHERE e.user_id = ? AND e.kind = 'expense' AND e.add_to_money = 1 AND e.date >= ?
+     ORDER BY e.date, e.id`,
+    [userId, TXN_SYNC_FROM_DATE],
+  );
+  let linked = 0;
+  for (const e of open) {
+    const bankLinkGone = !e.txn_owned && !e.txn_exists;
+    const canMatch = Boolean(e.txn_owned) && findBankDebit(db, userId, e.id, e.date, roundMoney(Number(e.amount_nzd)));
+    if (!bankLinkGone && !canMatch) continue;
+    if (bankLinkGone) run(db, `UPDATE rental_entries SET transaction_id = NULL, txn_owned = 1 WHERE id = ? AND user_id = ?`, [e.id, userId]);
+    syncMirror(db, userId, e.id);
+    const r = queryOne<{ txn_owned: number; transaction_id: string | null }>(db, `SELECT txn_owned, transaction_id FROM rental_entries WHERE id = ?`, [e.id]);
+    if (r?.transaction_id && !r.txn_owned) linked += 1;
+  }
+  return linked;
 }

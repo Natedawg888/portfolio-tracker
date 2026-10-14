@@ -2,8 +2,8 @@
  * Rental income (KAN-66). Reached from the Budget page (not the nav bar).
  * Properties, each with its rent and expenses for the selected tax year (1 April –
  * 31 March), and income / expenses / net totals. Entries can also count in Budget and
- * Income: rent as a "Rental income" income row, expenses as a "Rental property"
- * spending transaction (the server keeps those rows in step with the entry).
+ * Income: rent as a "Rental income" income row, expenses as the matching bank debit or
+ * else a "Rental property" spending transaction (the server keeps those in step with the entry).
  */
 import { useEffect, useId, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
@@ -220,7 +220,7 @@ function EntryForm({ title, initial, properties, moneyViewsFrom, onSave, onClose
           <span className="muted small">
             {d.kind === 'income'
               ? 'A matching bank deposit is linked so it isn’t counted twice.'
-              : 'Turn this off if the payment already shows in your bank transactions.'}
+              : 'If the payment is in your bank transactions (same amount, within 10 days), it’s matched instead of added twice.'}
             {d.date && d.date < moneyViewsFrom ? ` Budget and Income start on ${longDate(moneyViewsFrom)}, so this one stays here only.` : ''}
           </span>
         </label>
@@ -251,6 +251,7 @@ function Totals({ income, expenses, net }: { income: number; expenses: number; n
 }
 
 function moneyNote(e: RentalEntry, moneyViewsFrom: string): string {
+  if (e.bankMatch) return `In Budget · matched to ${e.bankMatch.description || 'bank payment'} on ${longDate(e.bankMatch.date)}`;
   if (e.inMoneyViews) return e.kind === 'income' ? 'In Income' : 'In Budget';
   if (!e.addToMoney) return 'Not in Budget';
   if (e.date < moneyViewsFrom) return 'Before Budget starts';

@@ -533,6 +533,11 @@ function migrateSchema(database: Database) {
   if (incomeCols.size > 0 && !incomeCols.has('invoice_payment_id')) {
     database.run('ALTER TABLE income_records ADD COLUMN invoice_payment_id TEXT');
   }
+  // Rental expenses linked to a bank debit instead of their own transaction (KAN-66).
+  const rentalCols = tableColumns(database, 'rental_entries');
+  if (rentalCols.size > 0 && !rentalCols.has('txn_owned')) {
+    database.run('ALTER TABLE rental_entries ADD COLUMN txn_owned INTEGER NOT NULL DEFAULT 1');
+  }
   // Rental income entries mirrored into income (KAN-66).
   if (incomeCols.size > 0 && !incomeCols.has('rental_entry_id')) {
     database.run('ALTER TABLE income_records ADD COLUMN rental_entry_id TEXT');

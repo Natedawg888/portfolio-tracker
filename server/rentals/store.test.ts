@@ -1,6 +1,6 @@
 /**
  * Rentals API (KAN-66): properties and entries, validation, Budget / Income mirrors
- * (add, edit, switch off, kind change, delete), bank-deposit dedupe, user isolation
+ * (add, edit, switch off, kind change, delete), bank-deposit and bank-debit matching, user isolation
  * and account delete.
  * Run: npm run test:rentals
  *
@@ -25,6 +25,7 @@ const { deleteScopedDataForUser, SCOPED_TABLES } = await import('../lib/userScop
 const { createSession, SESSION_COOKIE } = await import('../auth/sessions.ts');
 const { attachUser, requireAuth, isPublicApiPath } = await import('../middleware/requireAuth.ts');
 const { default: rentalsRouter } = await import('../routes/rentals.ts');
+const { linkRentalExpensesToBankDebits } = await import('./store.ts');
 const { default: incomeRouter } = await import('../routes/income.ts');
 
 const userA = 'rent_user_a';
@@ -156,6 +157,79 @@ try {
   const later = await entry({ amountNzd: 700, date: '2026-10-14' });
   assert(incomeRow(rent.json.id)!.transaction_id === 'rent_bank', 'closest open income row gets the deposit');
   assert(incomeRow(later.json.id)!.transaction_id === null, 'a deposit links to one income row only');
+
+  // Expenses match a bank debit instead of adding a second transaction.
+  const bankDebit = (id: string, userId: string, date: string, amount: number, categoryId: string | null = null) =>
+    run(
+      db,
+      `INSERT INTO transactions (id, user_id, date, description, merchant, amount, kind, category_id, currency, source, created_at)
+       VALUES (?,?,?,?,?,?, 'debit', ?, 'NZD', 'akahu', ?)`,
+      [id, userId, date, 'AUCKLAND COUNCIL RATES', 'Auckland Council', amount, categoryId, now],
+    );
+  const catOf = (id: string) => queryOne<{ category_id: string | null }>(db, `SELECT category_id FROM transactions WHERE id = ?`, [id])?.category_id ?? null;
+  const owned = (entryId: string) => queryOne<{ txn_owned: number }>(db, `SELECT txn_owned FROM rental_entries WHERE id = ?`, [entryId])!.txn_owned;
+  const manualCount = () => queryAll(db, `SELECT id FROM transactions WHERE user_id = ? AND card_name = 'Rental'`, [userA]).length;
+  const bachExp = (body: Json) => entry({ propertyId: bach.id, kind: 'expense', category: 'rates', ...body });
+
+  bankDebit('bank_rates', userA, '2026-10-18', -245.5);
+  bankDebit('bank_rates_b', userB, '2026-10-20', -99);
+  const manualBefore = manualCount();
+  const matched = await bachExp({ amountNzd: 245.5, date: '2026-10-20' });
+  assert(matched.status === 201 && matched.json.inMoneyViews, 'matched expense counts');
+  assert(entryTxnId(matched.json.id) === 'bank_rates' && owned(matched.json.id) === 0, 'linked to the bank debit');
+  assert(matched.json.bankMatch?.date === '2026-10-18' && matched.json.bankMatch.description === 'Auckland Council', 'bank match shown');
+  assert(manualCount() === manualBefore, 'no second transaction added');
+  const rentalCatId = queryOne<{ id: string }>(db, `SELECT id FROM budget_categories WHERE user_id = ? AND slug = 'cat-rental'`, [userA])!.id;
+  assert(catOf('bank_rates') === rentalCatId, 'uncategorised debit filed under Rental property');
+
+  // One debit is one expense: a second entry for the same amount adds its own transaction.
+  const twin = await bachExp({ amountNzd: 245.5, date: '2026-10-19' });
+  assert(owned(twin.json.id) === 1 && entryTxnId(twin.json.id) !== 'bank_rates' && twin.json.bankMatch === null, 'a debit links to one entry only');
+  assert((await call('DELETE', `/api/rentals/entries/${twin.json.id}`, A)).status === 200, 'twin deleted');
+
+  // Another user's debit never matches.
+  const otherUser = await bachExp({ amountNzd: 99, date: '2026-10-20' });
+  assert(owned(otherUser.json.id) === 1 && txnRow(entryTxnId(otherUser.json.id))!.user_id === userA, 'B’s debit is not matched');
+
+  // A categorised debit keeps the user's category.
+  run(db, `INSERT INTO budget_categories (id, user_id, slug, name, type, is_income, sort_order) VALUES ('cat_mine', ?, NULL, 'House', 'spending', 0, 99)`, [userA]);
+  bankDebit('bank_ins', userA, '2026-10-25', -130, 'cat_mine');
+  const ins = await bachExp({ category: 'insurance', amountNzd: 130, date: '2026-10-25' });
+  assert(entryTxnId(ins.json.id) === 'bank_ins' && catOf('bank_ins') === 'cat_mine', 'user category kept');
+
+  // Edit so it no longer matches: unlinked, own transaction added, bank debit untouched.
+  await call('PATCH', `/api/rentals/entries/${ins.json.id}`, A, { amountNzd: 135 });
+  assert(owned(ins.json.id) === 1 && txnRow(entryTxnId(ins.json.id))!.amount === -135, 'no longer matching adds its own transaction');
+  assert(txnRow('bank_ins')!.amount === -130, 'bank debit untouched');
+  // Edit back: matches again and its own transaction is removed.
+  const ownTxn = entryTxnId(ins.json.id);
+  await call('PATCH', `/api/rentals/entries/${ins.json.id}`, A, { amountNzd: 130 });
+  assert(entryTxnId(ins.json.id) === 'bank_ins' && !txnRow(ownTxn), 'matches again, own transaction removed');
+  // Switching off or deleting only unlinks.
+  await call('PATCH', `/api/rentals/entries/${ins.json.id}`, A, { addToMoney: false });
+  assert(entryTxnId(ins.json.id) === null && txnRow('bank_ins'), 'switching off keeps the bank debit');
+  await call('PATCH', `/api/rentals/entries/${ins.json.id}`, A, { addToMoney: true });
+  assert(entryTxnId(ins.json.id) === 'bank_ins', 'switching on links again');
+  await call('DELETE', `/api/rentals/entries/${ins.json.id}`, A);
+  assert(txnRow('bank_ins'), 'deleting the entry keeps the bank debit');
+
+  // The debit arrives after the entry (bank sync / import): its own transaction is swapped out.
+  const early = await bachExp({ category: 'repairs', amountNzd: 410, date: '2026-10-22' });
+  const earlyOwn = entryTxnId(early.json.id);
+  assert(owned(early.json.id) === 1 && txnRow(earlyOwn), 'no debit yet: own transaction');
+  assert(linkRentalExpensesToBankDebits(db, userA) === 0, 'nothing to link yet');
+  bankDebit('bank_plumber', userA, '2026-10-24', -410);
+  assert(linkRentalExpensesToBankDebits(db, userA) === 1, 'synced debit linked');
+  assert(entryTxnId(early.json.id) === 'bank_plumber' && !txnRow(earlyOwn), 'own transaction replaced by the bank debit');
+  assert(linkRentalExpensesToBankDebits(db, userA) === 0, 'linking is idempotent');
+  // A bank debit deleted later: the entry falls back to its own transaction on the next pass.
+  run(db, `DELETE FROM transactions WHERE id = 'bank_plumber'`);
+  linkRentalExpensesToBankDebits(db, userA);
+  assert(owned(early.json.id) === 1 && txnRow(entryTxnId(early.json.id))?.amount === -410, 'deleted debit: own transaction again');
+  // A manual rental transaction the user deleted in Budget stays deleted after a sync.
+  run(db, `DELETE FROM transactions WHERE id = ?`, [entryTxnId(early.json.id)]);
+  linkRentalExpensesToBankDebits(db, userA);
+  assert(!txnRow(entryTxnId(early.json.id)), 'user-deleted manual transaction not re-added');
 
   // List: newest first, own only.
   const all = (await call('GET', '/api/rentals', A)).json;
