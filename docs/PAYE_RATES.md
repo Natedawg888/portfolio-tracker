@@ -246,6 +246,10 @@ IRD's chart for that year (IR271, July 2025) shows weekly amounts but not the ye
 
 Not modelled: shared care, foster care / orphan's / unsupported child's benefits, and changes part-way through the year.
 
+## Payslip check (KAN-78)
+
+Budget → Payslips compares each payslip with what the calculator expects for its pay period, tax code and the tax year of its pay date (`src/lib/payslipCheck.ts`): PAYE (income tax after IETC on ME), the ACC earners' levy (or PAYE including ACC, when the payslip shows them together), the KiwiSaver employee contribution (at the rate given, or whichever standard rate it matches) and student loan (per-period threshold on M/ME; every dollar on secondary codes). Pay is annualised (×52, ×26, ×13 or ×12) and divided back, as IRD's payroll specification does. A difference of up to $1, or 1% when that's more, counts as matching because IRD's period tables round. Covered tax codes: M, ME, SB, S, SH, ST, SA, each with or without SL. ESCT and other codes are recorded but not checked. A pay date in a tax year without loaded rates isn't checked.
+
 ## Files
 
 | Path | Role |

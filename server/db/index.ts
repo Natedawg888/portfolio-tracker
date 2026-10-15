@@ -542,6 +542,10 @@ function migrateSchema(database: Database) {
   if (incomeCols.size > 0 && !incomeCols.has('rental_entry_id')) {
     database.run('ALTER TABLE income_records ADD COLUMN rental_entry_id TEXT');
   }
+  // Payslip net pay mirrored into income (KAN-78).
+  if (incomeCols.size > 0 && !incomeCols.has('payslip_id')) {
+    database.run('ALTER TABLE income_records ADD COLUMN payslip_id TEXT');
+  }
 
   // Savings goal → savings account link (KAN-20).
   const goalCols = tableColumns(database, 'savings_goals');

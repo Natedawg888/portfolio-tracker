@@ -16,6 +16,7 @@ const loaders = {
   bills: () => import('../pages/Bills'),
   warranties: () => import('../pages/Warranties'),
   rentals: () => import('../pages/Rentals'),
+  payslips: () => import('../pages/Payslips'),
   shopping: () => import('../pages/ShoppingLists'),
   household: () => import('../pages/Household'),
   valueSearch: () => import('../pages/ValueSearch'),
@@ -68,6 +69,8 @@ function exportName(name: PageName): string {
       return 'Warranties';
     case 'rentals':
       return 'Rentals';
+    case 'payslips':
+      return 'Payslips';
     case 'shopping':
       return 'ShoppingLists';
     case 'household':
@@ -96,6 +99,7 @@ export const PublicInvoicePage = lazyNamed('publicInvoice');
 export const BillsPage = lazyNamed('bills');
 export const WarrantiesPage = lazyNamed('warranties');
 export const RentalsPage = lazyNamed('rentals');
+export const PayslipsPage = lazyNamed('payslips');
 export const ShoppingListsPage = lazyNamed('shopping');
 export const HouseholdPage = lazyNamed('household');
 export const ValueSearchPage = lazyNamed('valueSearch');
@@ -115,6 +119,7 @@ const NAV_PAGES: Record<string, PageName> = {
   '/bills': 'bills',
   '/warranties': 'warranties',
   '/rentals': 'rentals',
+  '/payslips': 'payslips',
   '/shopping': 'shopping',
   '/household': 'household',
   '/value-search': 'valueSearch',

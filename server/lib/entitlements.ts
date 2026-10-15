@@ -12,10 +12,12 @@ import { queryOne, run } from '../db/index.ts';
 
 export const PLANS = ['free', 'plus', 'pro'] as const;
 export type Plan = (typeof PLANS)[number];
-export type Feature = 'household';
+export type Feature = 'household' | 'payslips';
 
 const FEATURES: Record<Feature, readonly Plan[]> = {
   household: ['plus', 'pro'],
+  /** Payslips (KAN-78): unlimited payslips, the PAYE check, and net pay into Income linked to the bank. */
+  payslips: ['plus', 'pro'],
 };
 
 export function isPlan(v: unknown): v is Plan {

@@ -317,7 +317,9 @@ CREATE TABLE IF NOT EXISTS income_records (
   -- Set when this row mirrors one invoice payment (KAN-71).
   invoice_payment_id TEXT,
   -- Set when this row mirrors one rental income entry (KAN-66).
-  rental_entry_id TEXT
+  rental_entry_id TEXT,
+  -- Set when this row mirrors one payslip's net pay (KAN-78).
+  payslip_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_income_records_date ON income_records(date);
@@ -1050,6 +1052,44 @@ CREATE TABLE IF NOT EXISTS household_pay_settings (
   feed_budget   INTEGER NOT NULL DEFAULT 0,
   updated_at    TEXT NOT NULL
 );
+
+-- Payslips (KAN-78). One per pay period per pay source (source_key = saved pay source id, or
+-- the employer name in lower case). acc_nzd NULL = ACC is included in PAYE on the payslip.
+-- file_path = uploaded payslip (uploads/payslips/<id>.<ext>). Net pay can be mirrored into
+-- Income (income_records.payslip_id) and linked to the bank deposit; deleting a payslip
+-- removes only that income row, never the bank transaction.
+CREATE TABLE IF NOT EXISTS payslips (
+  id                    TEXT PRIMARY KEY,
+  user_id               TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  pay_source_id         TEXT,
+  employer              TEXT NOT NULL,
+  source_key            TEXT NOT NULL,
+  frequency             TEXT NOT NULL,
+  period_start          TEXT NOT NULL,
+  period_end            TEXT NOT NULL,
+  pay_date              TEXT NOT NULL,
+  tax_code              TEXT NOT NULL DEFAULT '',
+  hours                 REAL,
+  hourly_rate           REAL,
+  gross_nzd             REAL NOT NULL,
+  paye_nzd              REAL NOT NULL DEFAULT 0,
+  acc_nzd               REAL,
+  ks_employee_nzd       REAL NOT NULL DEFAULT 0,
+  ks_rate_pct           REAL,
+  ks_employer_nzd       REAL NOT NULL DEFAULT 0,
+  esct_nzd              REAL NOT NULL DEFAULT 0,
+  student_loan_nzd      REAL NOT NULL DEFAULT 0,
+  other_deductions_nzd  REAL NOT NULL DEFAULT 0,
+  allowances_nzd        REAL NOT NULL DEFAULT 0,
+  net_nzd               REAL NOT NULL,
+  add_to_income         INTEGER NOT NULL DEFAULT 1,
+  file_path             TEXT,
+  notes                 TEXT NOT NULL DEFAULT '',
+  created_at            TEXT NOT NULL,
+  updated_at            TEXT NOT NULL,
+  UNIQUE (user_id, source_key, period_start, period_end)
+);
+CREATE INDEX IF NOT EXISTS idx_payslips_user_date ON payslips(user_id, pay_date);
 
 -- Read-only crypto wallets: public address only. Never store seed phrases / private keys.
 -- No balance column on purpose: balances come from chain providers at sync time

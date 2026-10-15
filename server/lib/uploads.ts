@@ -244,7 +244,26 @@ export function saveWarrantyReceipt(warrantyId: string, dataUrlOrBase64: string)
   return rel;
 }
 
-const UPLOAD_FOLDERS = new Set(['properties', 'collectables', 'art', 'avatars', 'receipts', 'warranties']);
+export const PAYSLIPS_DIR = path.join(UPLOADS_DIR, 'payslips');
+
+/** Save an uploaded payslip (KAN-78); returns relative path payslips/<id><ext>. */
+export function savePayslipFile(payslipId: string, dataUrlOrBase64: string): string {
+  fs.mkdirSync(PAYSLIPS_DIR, { recursive: true });
+  const decoded = decodeReceiptBase64(dataUrlOrBase64);
+  if (!decoded) {
+    throw new Error('Invalid file — use a JPEG/PNG/WebP/GIF photo or a PDF (max 8MB)');
+  }
+  const safeId = payslipId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
+  for (const e of RECEIPT_EXT) {
+    const prev = path.join(PAYSLIPS_DIR, `${safeId}${e}`);
+    if (fs.existsSync(prev)) fs.unlinkSync(prev);
+  }
+  const rel = `payslips/${safeId}${decoded.ext}`;
+  fs.writeFileSync(path.join(UPLOADS_DIR, rel), decoded.buffer);
+  return rel;
+}
+
+const UPLOAD_FOLDERS = new Set(['properties', 'collectables', 'art', 'avatars', 'receipts', 'warranties', 'payslips']);
 
 /** Relative path `folder/file` under data/uploads, or null if it is not a single file there. */
 export function normalizeUploadRel(rawPath: string): string | null {
@@ -306,6 +325,10 @@ export function userOwnsUpload(
       `SELECT receipt_path AS p FROM warranties WHERE user_id = ? AND receipt_path IS NOT NULL`,
       [userId],
     );
+    return rows.some((r) => storedPathMatches(r.p, rel));
+  }
+  if (folder === 'payslips') {
+    const rows = queryAll<{ p: string | null }>(db, `SELECT file_path AS p FROM payslips WHERE user_id = ? AND file_path IS NOT NULL`, [userId]);
     return rows.some((r) => storedPathMatches(r.p, rel));
   }
   if (folder === 'properties' || folder === 'collectables' || folder === 'art') {
@@ -384,4 +407,9 @@ export function deleteCharityReceipt(receiptPath: string | null | undefined) {
 /** Remove a warranty's receipt file (same rules as charity receipts). */
 export function deleteWarrantyReceipt(receiptPath: string | null | undefined) {
   deleteCharityReceipt(receiptPath);
+}
+
+/** Remove an uploaded payslip file (KAN-78). */
+export function deletePayslipFile(filePath: string | null | undefined) {
+  deleteCharityReceipt(filePath);
 }

@@ -28,6 +28,7 @@ const { default: accountsRouter } = await import('../routes/accounts.ts');
 const { default: incomeRouter } = await import('../routes/income.ts');
 const { default: settingsRouter } = await import('../routes/settings.ts');
 const { default: householdRouter } = await import('../routes/household.ts');
+const { default: payslipsRouter } = await import('../routes/payslips.ts');
 const { setPlan } = await import('../lib/entitlements.ts');
 const { uploadsGate, UPLOADS_DIR } = await import('../lib/uploads.ts');
 const { applyBtcLink, reverseBtcDelta } = await import('../lib/txnBtcLink.ts');
@@ -46,6 +47,7 @@ app.use('/api/accounts', accountsRouter);
 app.use('/api/income', incomeRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/household', householdRouter);
+app.use('/api/payslips', payslipsRouter);
 
 const server: Server = await new Promise((resolve) => {
   const s = app.listen(0, '127.0.0.1', () => resolve(s));
@@ -383,7 +385,26 @@ try {
   const afterRemoval = await req('GET', '/api/household', { cookie: b.cookie });
   assert((afterRemoval.json as { household: unknown }).household === null, 'B loses access at once');
 
-  console.log('OK: cross-user BTC, income, uploads, settings, and households');
+  // Payslips (KAN-78): another user can't list, change, delete or open A's payslip or its file.
+  const slip = await req('POST', '/api/payslips', {
+    cookie: a.cookie,
+    body: { employer: 'Alpha Secret Employer', frequency: 'weekly', periodStart: '2026-10-01', periodEnd: '2026-10-07', payDate: '2026-10-08', taxCode: 'M', grossNzd: 1000, payeNzd: 150, netNzd: 850 },
+  });
+  assert(slip.status === 201, 'A adds a payslip');
+  const slipId = String((slip.json as { id: string }).id);
+  const fileBody = 'SECRET_PAYSLIP_FILE';
+  const up = await req('POST', `/api/payslips/${slipId}/file`, { cookie: a.cookie, body: { fileBase64: `data:application/pdf;base64,${Buffer.from(`%PDF-1.4 ${fileBody} ${'x'.repeat(40)}`).toString('base64')}` } });
+  assert(up.status === 200, 'A uploads the payslip');
+  const bSlips = await req('GET', '/api/payslips', { cookie: b.cookie });
+  assert(!JSON.stringify(bSlips.json).includes('Alpha Secret Employer'), 'B can’t list A’s payslips');
+  assert((await req('PUT', `/api/payslips/${slipId}`, { cookie: b.cookie, body: { employer: 'x', frequency: 'weekly', periodStart: '2026-10-01', periodEnd: '2026-10-07', payDate: '2026-10-08', grossNzd: 1, netNzd: 1 } })).status === 404, 'B can’t edit it');
+  assert((await req('DELETE', `/api/payslips/${slipId}`, { cookie: b.cookie })).status === 404, 'B can’t delete it');
+  const otherSlipFile = await req('GET', `/api/uploads/payslips/${slipId}.pdf`, { cookie: b.cookie, raw: true });
+  assert(otherSlipFile.status === 404 && !otherSlipFile.text.includes(fileBody), 'B can’t open the payslip file');
+  const ownSlipFile = await req('GET', `/api/uploads/payslips/${slipId}.pdf`, { cookie: a.cookie, raw: true });
+  assert(ownSlipFile.status === 200 && ownSlipFile.text.includes(fileBody), 'A can');
+
+  console.log('OK: cross-user BTC, income, uploads, settings, households, and payslips');
 } finally {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 }
