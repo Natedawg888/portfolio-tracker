@@ -323,6 +323,66 @@ export const SCHEDULAR_SOURCES = [
 ] as const;
 
 /**
+ * Working for Families tax credits (KAN-79). Family income = the principal caregiver's and
+ * partner's income before tax. Abatement comes off the family tax credit first, then the
+ * in-work tax credit; Best Start abates separately. Instalments are the yearly amount ÷ 52,
+ * rounded down.
+ */
+export type WffRates = {
+  /** Where the figures were copied from, and when they were checked. */
+  sources: readonly { label: string; url: string }[];
+  checkedOn: string;
+  ftcEldestAnnual: number;
+  ftcSubsequentAnnual: number;
+  abatementThreshold: number;
+  abatementRate: number;
+  /** In-work tax credit for 1–3 children, and each child after the 3rd. */
+  iwtcAnnual: number;
+  iwtcPerExtraChildAnnual: number;
+  /** Shown with the estimate, e.g. a temporary rate. */
+  iwtcNote: string | null;
+  /** Minimum family tax credit: family income after income tax is topped up to this. */
+  mftcGuaranteedAfterTax: number;
+  mftcHoursSole: number;
+  mftcHoursCouple: number;
+  bestStartAnnual: number;
+  bestStartThreshold: number;
+  bestStartAbatementRate: number;
+  /** Children born on or after this date are income-tested from birth; earlier births aren't in their 1st year. */
+  bestStartTestedFromBirthOn: string | null;
+};
+
+/**
+ * 1 April 2026 – 31 March 2027. Checked 16 Oct 2026 against IRD's payment pages and the
+ * IR271 "Working for Families weekly payments 2027" chart (April 2026).
+ */
+export const WFF_2026: WffRates = {
+  sources: [
+    { label: 'IRD — Family tax credit', url: 'https://www.ird.govt.nz/working-for-families/types/family-tax-credit' },
+    { label: 'IRD — In-work tax credit', url: 'https://www.ird.govt.nz/working-for-families/types/in-work-tax-credit' },
+    { label: 'IRD — Minimum family tax credit', url: 'https://www.ird.govt.nz/working-for-families/types/minimum-family-tax-credit' },
+    { label: 'IRD — Best Start', url: 'https://www.ird.govt.nz/working-for-families/types/best-start' },
+    { label: 'IRD — IR271 Working for Families weekly payments 2027', url: 'https://www.ird.govt.nz/-/media/project/ir/home/documents/forms-and-guides/ir200---ir299/ir271/ir271-2027.pdf' },
+  ],
+  checkedOn: '2026-10-16',
+  ftcEldestAnnual: 7_921,
+  ftcSubsequentAnnual: 6_454,
+  abatementThreshold: 44_900,
+  abatementRate: 0.275,
+  iwtcAnnual: 7_670,
+  iwtcPerExtraChildAnnual: 780,
+  iwtcNote:
+    'The in-work tax credit is temporarily $147 a week from 1 April 2026. It goes back to $97 a week ($5,070 a year) after 31 March 2027, or sooner if 91 petrol stays under $3 a litre for 4 weeks.',
+  mftcGuaranteedAfterTax: 36_604,
+  mftcHoursSole: 20,
+  mftcHoursCouple: 30,
+  bestStartAnnual: 4_041,
+  bestStartThreshold: 79_000,
+  bestStartAbatementRate: 0.21,
+  bestStartTestedFromBirthOn: '2026-04-01',
+};
+
+/**
  * Per-tax-year rates for the pay tools. Keyed by the calendar year the tax year starts
  * (2026 = 1 April 2026 – 31 March 2027). Add a new entry when IRD / Employment NZ publish
  * the next year's figures; the calculators read only from here (KAN-22 / KAN-70).
@@ -348,6 +408,8 @@ export type PayTaxYearRates = {
   studentLoanRate: number;
   studentLoanAnnualThreshold: number;
   ietc: { minIncome: number; fullMaxIncome: number; abateEnd: number; fullAnnual: number; abateRate: number };
+  /** Working for Families (KAN-79). null = not loaded for this year (the estimate shows a dash). */
+  wff: WffRates | null;
   schedularActivities: readonly SchedularActivity[];
   schedularElectedMinRate: number;
   schedularNoNotificationRate: number;
@@ -374,6 +436,7 @@ export const PAY_TAX_YEARS: Readonly<Record<number, PayTaxYearRates>> = {
     studentLoanRate: STUDENT_LOAN_RATE,
     studentLoanAnnualThreshold: STUDENT_LOAN_ANNUAL_THRESHOLD,
     ietc: IETC_2024,
+    wff: WFF_2026,
     schedularActivities: SCHEDULAR_ACTIVITIES,
     schedularElectedMinRate: SCHEDULAR_ELECTED_MIN_RATE,
     schedularNoNotificationRate: SCHEDULAR_NO_NOTIFICATION_RATE,
@@ -407,6 +470,8 @@ export const PAY_TAX_YEARS: Readonly<Record<number, PayTaxYearRates>> = {
     studentLoanRate: STUDENT_LOAN_RATE,
     studentLoanAnnualThreshold: STUDENT_LOAN_ANNUAL_THRESHOLD,
     ietc: IETC_2024,
+    // Not loaded: IRD's 2025/26 chart (IR271 July 2025) doesn't state the yearly family tax credit amounts.
+    wff: null,
     schedularActivities: SCHEDULAR_ACTIVITIES,
     schedularElectedMinRate: SCHEDULAR_ELECTED_MIN_RATE,
     schedularNoNotificationRate: SCHEDULAR_NO_NOTIFICATION_RATE,

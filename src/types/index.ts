@@ -1700,3 +1700,33 @@ export interface HouseholdWhatIfResult {
   netChangePerPeriod: { week: number; fortnight: number; month: number; year: number };
   notes: string[];
 }
+
+/** Working for Families estimate (KAN-79). Annual NZD unless noted; weekly amounts are rounded down. */
+export interface WffAmounts {
+  ftc: number;
+  iwtc: number;
+  mftc: number;
+  bestStart: number;
+  total: number;
+}
+export interface HouseholdFamilyView {
+  taxYear: number;
+  yearLabel: string;
+  canEdit: boolean;
+  members: { id: string; name: string }[];
+  partners: { memberId: string; name: string; sharesPay: boolean }[];
+  children: { id: string; birthMonth: string; memberId: string | null; memberName: string | null }[];
+  mainBenefit: boolean;
+  rates: { checkedOn: string; sources: { label: string; url: string }[] } | null;
+  missing: string | null;
+  familyIncomeNzd: number | null;
+  estimate: {
+    annual: WffAmounts;
+    weekly: WffAmounts;
+    abated: { ftc: number; iwtc: number; bestStart: number };
+    full: { ftc: number; iwtc: number; bestStart: number };
+    dependentChildren: number;
+    bestStartChildren: number;
+    notes: string[];
+  } | null;
+}

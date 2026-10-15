@@ -43,7 +43,15 @@ export type PayInputs = {
 
 /** Annual NZD. paye = income tax after IETC (ACC shown separately). */
 export type PayFigures = { grossNzd: number; payeNzd: number; accNzd: number; kiwiSaverNzd: number; studentLoanNzd: number; netNzd: number };
-export type PayLine = PayFigures & { label: string; kind: 'salary' | 'piece' | 'schedular' | 'share_of_catch'; taxCode: string | null; onPaye: boolean };
+export type PayLine = PayFigures & {
+  label: string;
+  kind: 'salary' | 'piece' | 'schedular' | 'share_of_catch';
+  taxCode: string | null;
+  onPaye: boolean;
+  /** Income tax before credits (no ACC), and hours a week: for Working for Families. */
+  incomeTaxNzd: number;
+  hoursPerWeek: number;
+};
 export type MemberPay = { memberId: string; name: string; isMe: boolean; lines: PayLine[]; totals: PayFigures };
 
 export type HouseholdPayeView = {
@@ -143,7 +151,7 @@ export function memberLines(db: Database, userId: string, inputs: PayInputs | nu
   const lines: PayLine[] = [];
   if (inputs) {
     const b = calculatePaye({ ...inputs, taxYear, payrollGivingAnnual: 0 });
-    lines.push({ label: 'Salary or wages', kind: 'salary', taxCode: b.taxCode, onPaye: true, ...fromBreakdown(b) });
+    lines.push({ label: 'Salary or wages', kind: 'salary', taxCode: b.taxCode, onPaye: true, incomeTaxNzd: b.incomeTax, hoursPerWeek: inputs.hoursPerWeek || 40, ...fromBreakdown(b) });
   }
   if (includePaySources) {
     const rows = queryAll<{ name: string; inputs_json: string }>(db, `SELECT name, inputs_json FROM pay_sources WHERE user_id = ? ORDER BY created_at`, [userId]);
@@ -157,11 +165,11 @@ export function memberLines(db: Database, userId: string, inputs: PayInputs | nu
       const label = `${row.name} · ${PAY_TYPE_LABEL[src.payType] ?? 'Pay source'}`;
       if (src.payType === 'piece') {
         const p = calculatePieceRate(src.piece, src.paye, rates).paye;
-        lines.push({ label, kind: 'piece', taxCode: p.taxCode, onPaye: true, ...fromBreakdown(p) });
+        lines.push({ label, kind: 'piece', taxCode: p.taxCode, onPaye: true, incomeTaxNzd: p.incomeTax, hoursPerWeek: src.piece.hoursPerWeek || 0, ...fromBreakdown(p) });
       } else {
         // Contract and share-of-catch pay isn't taxed through payroll: gross and what's received only.
         const f = outputPaySourceFigures(src, rates);
-        lines.push({ label, kind: src.payType, taxCode: null, onPaye: false, ...ZERO, grossNzd: roundMoney(f.weeklyGross * 52), netNzd: roundMoney(f.weeklyNet * 52) });
+        lines.push({ label, kind: src.payType, taxCode: null, onPaye: false, incomeTaxNzd: 0, hoursPerWeek: 0, ...ZERO, grossNzd: roundMoney(f.weeklyGross * 52), netNzd: roundMoney(f.weeklyNet * 52) });
       }
     }
   }
@@ -190,7 +198,13 @@ function payRows(db: Database, householdId: string): PayRow[] {
   );
 }
 
-function nameOf(db: Database, userId: string): string {
+/** One member's shared pay for a tax year, or null when they don't share it. */
+export function sharedPayOf(db: Database, householdId: string, userId: string, taxYear: number): PayLine[] | null {
+  const row = payRows(db, householdId).find((r) => r.user_id === userId);
+  return row ? memberLines(db, userId, readInputs(row), row.include_pay_sources === 1, taxYear) : null;
+}
+
+export function nameOf(db: Database, userId: string): string {
   const u = queryOne<{ first_name: string | null; last_name: string | null; email: string }>(db, `SELECT first_name, last_name, email FROM users WHERE id = ?`, [userId]);
   return u ? [u.first_name, u.last_name].filter(Boolean).join(' ').trim() || u.email.split('@')[0] : 'Member';
 }
