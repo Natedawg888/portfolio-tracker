@@ -1,6 +1,7 @@
-import { cloneElement, isValidElement, Suspense, useEffect, useState, type ReactNode } from 'react';
+import { cloneElement, isValidElement, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, useLocation, useOutlet } from 'react-router-dom';
 import { BrandLockup } from './BrandLockup';
+import { CloseIcon, MOBILE_NAV_ID, MobileNavDrawer } from './MobileNavDrawer';
 import { applyTheme, resolveTheme, setTheme, type Theme } from '../lib/theme';
 import {
   MoneyHiddenProvider,
@@ -98,6 +99,7 @@ export function Layout({ children }: { children?: ReactNode }) {
   const location = useLocation();
   const [theme, setThemeState] = useState<Theme>(() => resolveTheme());
   const [navOpen, setNavOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   const [metalProvider, setMetalProvider] = useState<string | null>(null);
   const moneyHidden = useMoneyHidden();
   const outlet = useOutlet();
@@ -157,7 +159,7 @@ export function Layout({ children }: { children?: ReactNode }) {
       if (e.key === 'Escape') setNavOpen(false);
     };
     const onTouchMove = (e: TouchEvent) => {
-      const nav = document.getElementById('app-primary-nav');
+      const nav = document.getElementById(MOBILE_NAV_ID);
       const target = e.target;
       // Keep the page/backdrop locked, but let the drawer consume vertical
       // swipes when its own overflow area needs to scroll.
@@ -189,6 +191,17 @@ export function Layout({ children }: { children?: ReactNode }) {
     };
   }, [navOpen]);
 
+  // The drawer is for phones: close it if the window widens to the desktop layout.
+  useEffect(() => {
+    if (!navOpen || typeof window.matchMedia !== 'function') return;
+    const desktop = window.matchMedia('(min-width: 769px)');
+    const onChange = () => {
+      if (desktop.matches) setNavOpen(false);
+    };
+    desktop.addEventListener('change', onChange);
+    return () => desktop.removeEventListener('change', onChange);
+  }, [navOpen]);
+
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === 'portfolio-tracker-theme') {
@@ -218,20 +231,48 @@ export function Layout({ children }: { children?: ReactNode }) {
     toggleMoneyHidden();
   };
 
-  const openNav = () => setNavOpen(true);
   const closeNav = () => setNavOpen(false);
+
+  // Hide-amounts and theme controls: in the header, and again at the bottom of the phone drawer.
+  const tools = (
+    <div className="header-tools">
+      <button
+        type="button"
+        className={'privacy-toggle' + (moneyHidden ? ' active' : '')}
+        onClick={handleMoneyToggle}
+        aria-label={moneyHidden ? 'Show monetary values' : 'Hide monetary values'}
+        aria-pressed={moneyHidden}
+        title={moneyHidden ? 'Show amounts' : 'Hide amounts'}
+      >
+        {moneyHidden ? <EyeOffIcon /> : <EyeOpenIcon />}
+      </button>
+      <div className="theme-switch" role="group" aria-label="Colour theme">
+        <button
+          type="button"
+          className={theme === 'light' ? 'theme-switch-btn active' : 'theme-switch-btn'}
+          onClick={() => choose('light')}
+          aria-label="Light mode"
+          aria-pressed={theme === 'light'}
+          title="Light mode"
+        >
+          <SunIcon />
+        </button>
+        <button
+          type="button"
+          className={theme === 'dark' ? 'theme-switch-btn active' : 'theme-switch-btn'}
+          onClick={() => choose('dark')}
+          aria-label="Dark mode"
+          aria-pressed={theme === 'dark'}
+          title="Dark mode"
+        >
+          <MoonIcon />
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div className={'app-shell' + (navOpen ? ' nav-drawer-open' : '')}>
-      {navOpen ? (
-        <button
-          type="button"
-          className="nav-backdrop"
-          aria-label="Close navigation"
-          tabIndex={-1}
-          onClick={closeNav}
-        />
-      ) : null}
       <header className="app-header">
         <div className="brand">
           <ProfileMenu triggerClassName="brand-mark" />
@@ -239,8 +280,8 @@ export function Layout({ children }: { children?: ReactNode }) {
             <BrandLockup size="sm" />
           </h1>
         </div>
-        {/* Mobile: fixed overlay drawer (CSS). Desktop: in-flow pill. Never inside .header-actions. */}
-        <nav id="app-primary-nav" className={'nav' + (navOpen ? ' open' : '')}>
+        {/* Desktop nav pill. Phones use MobileNavDrawer (this nav is hidden at 768px and below). */}
+        <nav id="app-primary-nav" className="nav">
           {visibleLinks.map((l) => (
             <NavLink
               key={l.to}
@@ -257,54 +298,21 @@ export function Layout({ children }: { children?: ReactNode }) {
           ))}
         </nav>
         <div className="header-actions">
-          {!navOpen ? (
-            <button
-              type="button"
-              className="nav-toggle"
-              aria-label="Open navigation"
-              aria-expanded={false}
-              aria-controls="app-primary-nav"
-              onClick={openNav}
-            >
-              <MenuIcon />
-            </button>
-          ) : null}
-          <div className="header-tools">
-            <button
-              type="button"
-              className={'privacy-toggle' + (moneyHidden ? ' active' : '')}
-              onClick={handleMoneyToggle}
-              aria-label={moneyHidden ? 'Show monetary values' : 'Hide monetary values'}
-              aria-pressed={moneyHidden}
-              title={moneyHidden ? 'Show amounts' : 'Hide amounts'}
-            >
-              {moneyHidden ? <EyeOffIcon /> : <EyeOpenIcon />}
-            </button>
-            <div className="theme-switch" role="group" aria-label="Colour theme">
-              <button
-                type="button"
-                className={theme === 'light' ? 'theme-switch-btn active' : 'theme-switch-btn'}
-                onClick={() => choose('light')}
-                aria-label="Light mode"
-                aria-pressed={theme === 'light'}
-                title="Light mode"
-              >
-                <SunIcon />
-              </button>
-              <button
-                type="button"
-                className={theme === 'dark' ? 'theme-switch-btn active' : 'theme-switch-btn'}
-                onClick={() => choose('dark')}
-                aria-label="Dark mode"
-                aria-pressed={theme === 'dark'}
-                title="Dark mode"
-              >
-                <MoonIcon />
-              </button>
-            </div>
-          </div>
+          {tools}
+          <button
+            ref={menuButtonRef}
+            type="button"
+            className="nav-toggle"
+            aria-label={navOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={navOpen}
+            aria-controls={MOBILE_NAV_ID}
+            onClick={() => setNavOpen((o) => !o)}
+          >
+            {navOpen ? <CloseIcon /> : <MenuIcon />}
+          </button>
         </div>
       </header>
+      <MobileNavDrawer open={navOpen} onClose={closeNav} links={visibleLinks} tools={tools} returnFocusRef={menuButtonRef} />
       <main className="app-main">
         <MoneyHiddenProvider>
           <Suspense fallback={<div className="panel"><p className="muted">Loading…</p></div>}>
