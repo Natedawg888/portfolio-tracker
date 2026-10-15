@@ -9,10 +9,10 @@ export function Terms() {
   return (
     <LegalLayout
       title="Terms of use"
-      docTitle="Terms of use · Portfolio Tracker"
+      docTitle="Terms of use · KoruLedger"
       intro={
         <p>
-          These terms apply when you use Portfolio Tracker, run by KoruLedger (“we”, “us”). By creating an account or
+          These terms apply when you use KoruLedger (“we”, “us”, “the app”). By creating an account or
           using the app you agree to them. Questions: <ContactEmail />.
         </p>
       }
@@ -20,7 +20,7 @@ export function Terms() {
       <section aria-labelledby="t-service">
         <h2 id="t-service">1. What the app is</h2>
         <p>
-          Portfolio Tracker is a personal record of your finances in New Zealand dollars: accounts, holdings, KiwiSaver,
+          KoruLedger is a personal record of your finances in New Zealand dollars: accounts, holdings, KiwiSaver,
           budget, debts, bills, invoices and tax estimates. It shows figures from what you enter, what you connect and
           public price sources.
         </p>

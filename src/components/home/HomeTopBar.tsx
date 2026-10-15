@@ -4,6 +4,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { BrandLockup } from '../BrandLockup';
 
 const ANCHORS = [
   { href: '#features', label: 'Features' },
@@ -37,8 +38,7 @@ export function HomeTopBar() {
   return (
     <header className="home-topbar">
       <a className="home-brand" href="#top">
-        <img src="/favicon.svg" alt="" width="28" height="28" />
-        <span>Portfolio Tracker</span>
+        <BrandLockup size="sm" />
       </a>
       <nav className="home-anchors" aria-label="On this page">
         {ANCHORS.map((a) => (

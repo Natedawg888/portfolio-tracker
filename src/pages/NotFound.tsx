@@ -1,11 +1,14 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { BrandLockup } from '../components/BrandLockup';
 import { Layout } from '../components/Layout';
 
 function NotFoundMessage({ signedIn }: { signedIn: boolean }) {
   return (
     <section className={signedIn ? 'panel not-found-panel' : 'auth-card panel not-found-panel'}>
-      <p className="eyebrow">Portfolio Tracker</p>
+      <div className="auth-brand">
+          <BrandLockup size="md" />
+        </div>
       <h2 className="page-title">Page not found</h2>
       <p className="page-lead">That address is not a page in this app.</p>
       <div className="row gap">

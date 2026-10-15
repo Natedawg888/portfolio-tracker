@@ -8,7 +8,7 @@ import { Link } from 'react-router-dom';
 import { HomeTopBar } from '../components/home/HomeTopBar';
 import { PreviewCard } from '../components/home/PreviewCard';
 
-const PAGE_TITLE = 'Portfolio Tracker · your whole financial picture in NZD';
+const PAGE_TITLE = 'KoruLedger · your whole financial picture in NZD';
 
 function Icon({ children }: { children: ReactNode }) {
   return (
@@ -157,7 +157,7 @@ export function Home() {
         <section id="privacy" className="home-section home-privacy" aria-labelledby="privacy-title">
           <h2 id="privacy-title">Your numbers, kept honest</h2>
           <p className="home-section-lead">
-            Portfolio Tracker shows what is really there: balances from your bank, prices from real sources, and an empty
+            KoruLedger shows what is really there: balances from your bank, prices from real sources, and an empty
             space where something isn’t known.
           </p>
           <ul className="home-checklist">
@@ -182,7 +182,7 @@ export function Home() {
         </section>
       </main>
       <footer className="home-footer">
-        <p>Portfolio Tracker · a personal record, not financial advice</p>
+        <p>KoruLedger · a personal record, not financial advice</p>
         <nav aria-label="Legal">
           <Link to="/privacy">Privacy policy</Link>
           <Link to="/terms">Terms of use</Link>
