@@ -244,10 +244,6 @@ a { color: var(--accent-2); }
   outline: 2px solid var(--accent-2);
   outline-offset: 2px;
 }
-/* Mobile drawer backdrop — hidden until .nav-drawer-open on narrow viewports */
-.nav-backdrop {
-  display: none;
-}
 .brand .profile-menu-dropdown {
   left: 0;
   right: auto;
@@ -2976,87 +2972,9 @@ body.nav-drawer-open {
     height: 2.5rem;
   }
 
-  /*
-   * Mobile overlay drawer: nav is fixed under the header bar.
-   * Close via backdrop / Escape / NavLink only — hamburger hidden while open (no X).
-   * Stacking when open: backdrop 50 < header-tools 55 < brand 80 < drawer 90.
-   */
-  .nav-drawer-open .app-header {
-    position: relative;
-    z-index: 70;
-  }
-
-  .nav-drawer-open .brand {
-    position: relative;
-    z-index: 80;
-  }
-
-  /* Tools stay usable in the chrome row but sit under the open drawer panel */
-  .nav-drawer-open .header-actions {
-    z-index: 55;
-  }
-
-  .nav-drawer-open .header-tools {
-    z-index: 55;
-  }
-
-  .nav-drawer-open .nav-toggle {
+  /* Phones use the drawer (MobileNavDrawer); the header keeps only the menu button. */
+  .app-header > .nav {
     display: none;
-  }
-
-  .nav-backdrop {
-    display: block;
-    position: fixed;
-    inset: 0;
-    z-index: 50;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    background: rgba(6, 10, 16, 0.55);
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-  }
-
-  html[data-theme='light'] .nav-backdrop {
-    background: rgba(20, 28, 40, 0.4);
-  }
-
-  .nav {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 90;
-    flex-direction: column;
-    flex-wrap: nowrap;
-    align-items: stretch;
-    gap: 0.25rem;
-    width: auto;
-    max-height: min(70vh, calc(100dvh - 5.5rem));
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-    touch-action: pan-y;
-    margin: 4.75rem 0.7rem 0;
-    padding: 0.45rem;
-    border-radius: 14px;
-    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
-    pointer-events: auto;
-  }
-
-  .nav.open {
-    display: flex;
-  }
-
-  .nav-link {
-    display: flex;
-    align-items: center;
-    min-height: 2.75rem;
-    padding: 0.55rem 0.85rem;
-    font-size: 0.95rem;
-    border-radius: 10px;
   }
 
   .panel,
@@ -3322,11 +3240,6 @@ body.nav-drawer-open {
 
 /* Landscape phones / short height: keep nav usable */
 @media (max-width: 900px) and (max-height: 480px) {
-  .nav.open {
-    max-height: min(55vh, calc(100dvh - 4.5rem));
-    overflow-y: auto;
-  }
-
   .modal-dialog,
   .modal-dialog-wide {
     max-height: 94vh;
@@ -7518,7 +7431,8 @@ html:not([data-theme]):has(.paye-page) .app-footer {
 /* Shared with the public home page so it matches the app exactly. */
 html[data-theme="light"] .paye-page,
 html[data-theme="light"] .home-page,
-html[data-theme="light"] .legal-page {
+html[data-theme="light"] .legal-page,
+html[data-theme="light"] .mobile-nav-root {
   --bg: #e7e0d4;
   --surface: #f7f3ec;
   --surface-2: #f7f3ec;
@@ -7547,7 +7461,9 @@ html:not([data-theme]) .paye-page,
 html[data-theme="dark"] .home-page,
 html:not([data-theme]) .home-page,
 html[data-theme="dark"] .legal-page,
-html:not([data-theme]) .legal-page {
+html:not([data-theme]) .legal-page,
+html[data-theme="dark"] .mobile-nav-root,
+html:not([data-theme]) .mobile-nav-root {
   --bg: #121a16;
   --surface: #1c2822;
   --surface-2: #1c2822;
@@ -12894,3 +12810,98 @@ html:not([data-theme]) .brand-wordmark--light { display: none; }
 .retire-status { margin: 0.4rem 0 0.75rem; padding: 0.55rem 0.75rem; border-radius: var(--radius-sm); border-left: 3px solid var(--accent); background: var(--surface-2); font-size: 0.92rem; }
 .retire-status--short { border-left-color: var(--warn); }
 .retire-disclaimer { margin: 0.75rem 0 0; font-size: 0.85rem; font-weight: 600; color: var(--muted); }
+/* ---------------------------------------------------------------- Phone navigation drawer */
+/* Rendered in a portal at the end of <body>; colours come from the shared page palette above. */
+.mobile-nav-root { position: fixed; inset: 0; z-index: 200; }
+.mobile-nav-backdrop {
+  position: absolute;
+  inset: 0;
+  /* The theme's deep green, dark in both themes, so the page dims rather than washes out. */
+  background: color-mix(in srgb, var(--accent-deep) 60%, transparent);
+  animation: mobile-nav-fade 200ms ease-out;
+}
+.mobile-nav-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  width: min(80vw, 320px);
+  height: 100dvh;
+  background: var(--surface);
+  color: var(--text);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+  animation: mobile-nav-slide 200ms ease-out;
+}
+.mobile-nav-root.is-closing .mobile-nav-panel { animation: mobile-nav-slide-out 200ms ease-in forwards; }
+.mobile-nav-root.is-closing .mobile-nav-backdrop { animation: mobile-nav-fade-out 200ms ease-in forwards; }
+@keyframes mobile-nav-slide { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes mobile-nav-slide-out { from { transform: translateX(0); } to { transform: translateX(100%); } }
+@keyframes mobile-nav-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mobile-nav-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .mobile-nav-panel,
+  .mobile-nav-backdrop,
+  .mobile-nav-root.is-closing .mobile-nav-panel,
+  .mobile-nav-root.is-closing .mobile-nav-backdrop { animation: none; }
+}
+.mobile-nav-root :focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.mobile-nav-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 0.75rem 0.75rem 1rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+.mobile-nav-close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.mobile-nav-close svg { width: 1.15rem; height: 1.15rem; }
+.mobile-nav-links {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.mobile-nav-link {
+  display: flex;
+  align-items: center;
+  min-height: 3rem;
+  padding: 0 1rem;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid transparent;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+.mobile-nav-link:hover { background: var(--hover-row); }
+.mobile-nav-link.active {
+  font-weight: 700;
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+}
+.mobile-nav-tools {
+  display: flex;
+  justify-content: center;
+  padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+  border-top: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+.mobile-nav-tools .privacy-toggle,
+.mobile-nav-tools .theme-switch-btn { min-width: 2.75rem; min-height: 2.75rem; }
