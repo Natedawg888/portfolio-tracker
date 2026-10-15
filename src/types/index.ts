@@ -1616,5 +1616,26 @@ export interface HouseholdDashboard {
   budgets: { id: string; owner: string; name: string; plannedNzd: number | null; spentNzd: number; remainingNzd: number | null }[];
   bills: { id: string; owner: string; name: string; amountNzd: number; nextDue: string; cadence: string }[];
   goals: { id: string; owner: string; name: string; targetNzd: number; currentAmountNzd: number; deadline: string | null; amountSource: 'account' | 'manual' }[];
-  transactions: { id: string; member: string; account: string; date: string; description: string; amountNzd: number }[];
+  transactions: { id: string; member: string; account: string; date: string; description: string; amountNzd: number; splitId: string | null }[];
+}
+
+/** Household splits and settle-up (KAN-77 phase 3). */
+export type HouseholdSplitMethod = 'equal' | 'percent' | 'amount';
+export interface HouseholdSplitsView {
+  canEdit: boolean;
+  members: { id: string; name: string }[];
+  splits: {
+    id: string;
+    transactionId: string;
+    payerId: string;
+    payer: string;
+    description: string;
+    date: string;
+    totalNzd: number;
+    method: HouseholdSplitMethod;
+    shares: { memberId: string; name: string; amountNzd: number; input: number | null }[];
+  }[];
+  settlements: { id: string; fromId: string; from: string; toId: string; to: string; amountNzd: number; paidOn: string; note: string }[];
+  balances: { memberId: string; name: string; netNzd: number; left: boolean }[];
+  suggestions: { fromId: string; from: string; toId: string; to: string; amountNzd: number }[];
 }

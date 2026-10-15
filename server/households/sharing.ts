@@ -159,7 +159,8 @@ export type HouseholdDashboard = {
   budgets: { id: string; owner: string; name: string; plannedNzd: number | null; spentNzd: number; remainingNzd: number | null }[];
   bills: { id: string; owner: string; name: string; amountNzd: number; nextDue: string; cadence: string }[];
   goals: { id: string; owner: string; name: string; targetNzd: number; currentAmountNzd: number; deadline: string | null; amountSource: 'account' | 'manual' }[];
-  transactions: { id: string; member: string; account: string; date: string; description: string; amountNzd: number }[];
+  /** splitId: this spend is already split in the household (phase 3). */
+  transactions: { id: string; member: string; account: string; date: string; description: string; amountNzd: number; splitId: string | null }[];
 };
 
 export async function dashboard(db: Database, userId: string): Promise<Result<HouseholdDashboard>> {
@@ -277,10 +278,14 @@ export async function dashboard(db: Database, userId: string): Promise<Result<Ho
        WHERE t.user_id = ? AND t.account_id IN (${inList(accts)}) AND t.date >= ? ORDER BY t.date DESC LIMIT 50`,
       [member, ...accts, addDays(today, -30)],
     )) {
-      transactions.push({ id: t.id, member: names.get(member) ?? 'Member', account: t.account_name, date: t.date, description: (t.merchant || t.description || '').trim(), amountNzd: roundMoney(Number(t.amount)) });
+      transactions.push({ id: t.id, member: names.get(member) ?? 'Member', account: t.account_name, date: t.date, description: (t.merchant || t.description || '').trim(), amountNzd: roundMoney(Number(t.amount)), splitId: null });
     }
   }
   transactions.sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+  const splitOf = new Map(
+    queryAll<{ id: string; transaction_id: string }>(db, `SELECT id, transaction_id FROM household_splits WHERE household_id = ?`, [m.householdId]).map((r) => [r.transaction_id, r.id]),
+  );
+  for (const t of transactions) t.splitId = splitOf.get(t.id) ?? null;
 
   return {
     ok: true,

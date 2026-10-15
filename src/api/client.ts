@@ -37,6 +37,8 @@ import type {
   HouseholdDashboard,
   HouseholdShareable,
   HouseholdShareKind,
+  HouseholdSplitMethod,
+  HouseholdSplitsView,
   HouseholdRole,
   ShoppingCompareResponse,
   ShoppingListDetail,
@@ -720,6 +722,15 @@ export const api = {
     setShared: (kind: HouseholdShareKind, itemId: string, shared: boolean) =>
       req<HouseholdShareable>('/household/shares', { method: 'PUT', body: JSON.stringify({ kind, itemId, shared }) }),
     dashboard: () => req<HouseholdDashboard>('/household/dashboard'),
+    splits: () => req<HouseholdSplitsView>('/household/splits'),
+    createSplit: (transactionId: string, method: HouseholdSplitMethod, shares: { memberId: string; value?: number }[]) =>
+      req<HouseholdSplitsView>('/household/splits', { method: 'POST', body: JSON.stringify({ transactionId, method, shares }) }),
+    updateSplit: (id: string, method: HouseholdSplitMethod, shares: { memberId: string; value?: number }[]) =>
+      req<HouseholdSplitsView>(`/household/splits/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ method, shares }) }),
+    removeSplit: (id: string) => req<HouseholdSplitsView>(`/household/splits/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    recordSettlement: (body: { fromId: string; toId: string; amountNzd: number; paidOn?: string; note?: string }) =>
+      req<HouseholdSplitsView>('/household/settlements', { method: 'POST', body: JSON.stringify(body) }),
+    removeSettlement: (id: string) => req<HouseholdSplitsView>(`/household/settlements/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     setBudgetPlan: (categoryId: string, amountNzd: number) =>
       req<{ ok: boolean }>(`/household/shared/budget/${encodeURIComponent(categoryId)}`, { method: 'PATCH', body: JSON.stringify({ amountNzd }) }),
     updateGoal: (id: string, body: { targetNzd?: number; currentAmountNzd?: number }) =>

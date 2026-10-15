@@ -157,6 +157,9 @@ export function deleteHousehold(db: Database, userId: string): Result<{ ok: true
   if (m.role !== 'owner') return fail(403, 'Only the household owner can delete it');
   // Shared items never moved, so dropping the share rows returns them to their owners.
   run(db, `DELETE FROM household_shares WHERE household_id = ?`, [m.householdId]);
+  run(db, `DELETE FROM household_split_shares WHERE split_id IN (SELECT id FROM household_splits WHERE household_id = ?)`, [m.householdId]);
+  run(db, `DELETE FROM household_splits WHERE household_id = ?`, [m.householdId]);
+  run(db, `DELETE FROM household_settlements WHERE household_id = ?`, [m.householdId]);
   run(db, `DELETE FROM household_activity WHERE household_id = ?`, [m.householdId]);
   run(db, `DELETE FROM household_invites WHERE household_id = ?`, [m.householdId]);
   run(db, `DELETE FROM household_members WHERE household_id = ?`, [m.householdId]);

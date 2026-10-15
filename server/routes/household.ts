@@ -20,6 +20,13 @@
  *   PATCH  /shared/budget/:categoryId    { amountNzd }                 adults: this month's plan
  *   PATCH  /shared/goal/:id              { targetNzd?, currentAmountNzd? }  adults
  *   PATCH  /shared/bill/:id              { amountNzd?, nextDue? }      adults
+ * Splits and settle-up (phase 3):
+ *   GET    /splits                       splits, payments, balances, suggested payments
+ *   POST   /splits                       { transactionId, method, shares: [{ memberId, value? }] }  adults
+ *   PUT    /splits/:id                   { method, shares }                                     adults
+ *   DELETE /splits/:id                                                                          adults
+ *   POST   /settlements                  { fromId, toId, amountNzd, paidOn?, note? }            adults
+ *   DELETE /settlements/:id                                                                     adults
  */
 import { Router, type Request, type Response } from 'express';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
@@ -41,6 +48,7 @@ import {
   setRole,
   transferOwnership,
 } from '../households/store.ts';
+import { createSplit, deleteSettlement, deleteSplit, listSplits, recordSettlement, updateSplit } from '../households/splits.ts';
 import { dashboard, setShared, setSharedBudgetPlan, shareable, updateSharedBill, updateSharedGoal } from '../households/sharing.ts';
 
 const router = Router();
@@ -106,5 +114,12 @@ router.get('/dashboard', async (req, res) => send(res, await dashboard(await get
 router.patch('/shared/budget/:categoryId', async (req, res) => send(res, setSharedBudgetPlan(await getDb(), uid(req), req.params.categoryId, req.body)));
 router.patch('/shared/goal/:id', async (req, res) => send(res, updateSharedGoal(await getDb(), uid(req), req.params.id, req.body)));
 router.patch('/shared/bill/:id', async (req, res) => send(res, updateSharedBill(await getDb(), uid(req), req.params.id, req.body)));
+
+router.get('/splits', async (req, res) => send(res, listSplits(await getDb(), uid(req))));
+router.post('/splits', async (req, res) => send(res, createSplit(await getDb(), uid(req), req.body), true));
+router.put('/splits/:id', async (req, res) => send(res, updateSplit(await getDb(), uid(req), req.params.id, req.body)));
+router.delete('/splits/:id', async (req, res) => send(res, deleteSplit(await getDb(), uid(req), req.params.id)));
+router.post('/settlements', async (req, res) => send(res, recordSettlement(await getDb(), uid(req), req.body), true));
+router.delete('/settlements/:id', async (req, res) => send(res, deleteSettlement(await getDb(), uid(req), req.params.id)));
 
 export default router;
