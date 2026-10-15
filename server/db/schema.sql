@@ -1091,6 +1091,38 @@ CREATE TABLE IF NOT EXISTS payslips (
 );
 CREATE INDEX IF NOT EXISTS idx_payslips_user_date ON payslips(user_id, pay_date);
 
+-- Vehicles (KAN-65). Value is what the user records (never estimated). Count in net worth:
+-- value as an asset, minus a manually entered loan balance. A loan can instead be linked to a
+-- bank loan account (loan_account_id), which net worth already counts, so it isn't counted twice.
+-- running_costs_json: [{ kind, amountNzd, frequency, label? }].
+CREATE TABLE IF NOT EXISTS vehicles (
+  id                     TEXT PRIMARY KEY,
+  user_id                TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name                   TEXT NOT NULL,
+  kind                   TEXT NOT NULL DEFAULT 'car',
+  make                   TEXT NOT NULL DEFAULT '',
+  model                  TEXT NOT NULL DEFAULT '',
+  year                   INTEGER,
+  plate                  TEXT NOT NULL DEFAULT '',
+  purchase_date          TEXT,
+  purchase_price_nzd     REAL,
+  value_nzd              REAL,
+  valued_on              TEXT,
+  count_in_net_worth     INTEGER NOT NULL DEFAULT 1,
+  loan_kind              TEXT NOT NULL DEFAULT 'none',
+  loan_account_id        TEXT,
+  loan_balance_nzd       REAL,
+  loan_lender            TEXT NOT NULL DEFAULT '',
+  loan_rate_pct          REAL,
+  loan_repayment_nzd     REAL,
+  loan_repayment_freq    TEXT,
+  running_costs_json     TEXT NOT NULL DEFAULT '[]',
+  notes                  TEXT NOT NULL DEFAULT '',
+  created_at             TEXT NOT NULL,
+  updated_at             TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_vehicles_user ON vehicles(user_id);
+
 -- Read-only crypto wallets: public address only. Never store seed phrases / private keys.
 -- No balance column on purpose: balances come from chain providers at sync time
 -- (balance is never stored as the source of truth here).

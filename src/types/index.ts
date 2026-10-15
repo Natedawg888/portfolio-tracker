@@ -930,6 +930,10 @@ export interface NetWorthSummary {
   realEstateMortgageNzd?: number | null;
   /** Gross value − mortgage */
   realEstateEquityNzd?: number | null;
+  /** Vehicles counted in net worth (KAN-65): recorded value, loans entered on them, the difference. */
+  vehiclesNzd?: number | null;
+  vehicleLoansNzd?: number | null;
+  vehiclesEquityNzd?: number | null;
   /** Collectables (cards) market NZD when quotes ok */
   collectablesNzd: number | null;
   /** Sharesies KiwiSaver (read-only) */
@@ -1793,4 +1797,47 @@ export interface PayslipsView {
   };
   history: { payDate: string; employer: string; grossNzd: number; netNzd: number }[];
   paySources: { id: string; name: string }[];
+}
+
+/** Vehicles (KAN-65). */
+export type VehicleCostFrequency = 'week' | 'fortnight' | 'month' | 'quarter' | 'year';
+export type VehicleCostKind = 'fuel' | 'charging' | 'insurance' | 'registration' | 'wof' | 'servicing' | 'tyres' | 'ruc' | 'parking' | 'other';
+export interface VehicleWriteBody {
+  name: string;
+  kind: 'car' | 'ute' | 'van' | 'motorbike' | 'campervan' | 'truck' | 'boat' | 'trailer' | 'other';
+  make: string;
+  model: string;
+  year: number | null;
+  plate: string;
+  purchaseDate: string | null;
+  purchasePriceNzd: number | null;
+  valueNzd: number | null;
+  valuedOn: string | null;
+  countInNetWorth: boolean;
+  loan: {
+    kind: 'none' | 'manual' | 'account';
+    accountId: string | null;
+    balanceNzd: number | null;
+    lender: string;
+    ratePct: number | null;
+    repaymentNzd: number | null;
+    repaymentFrequency: VehicleCostFrequency | null;
+  };
+  runningCosts: { kind: VehicleCostKind; amountNzd: number; frequency: VehicleCostFrequency; label?: string }[];
+  notes: string;
+}
+type VehiclePerPeriod = { week: number; month: number; year: number };
+export interface Vehicle extends VehicleWriteBody {
+  id: string;
+  loanOwedNzd: number | null;
+  loanAccountName: string | null;
+  equityNzd: number | null;
+  costToOwn: { running: VehiclePerPeriod; loan: VehiclePerPeriod; total: VehiclePerPeriod; byKind: { kind: VehicleCostKind; label: string; year: number }[] };
+  createdAt: string;
+  updatedAt: string;
+}
+export interface VehiclesView {
+  vehicles: Vehicle[];
+  totals: { count: number; valueNzd: number; loansNzd: number; equityNzd: number; runningPerMonthNzd: number; costToOwnPerMonthNzd: number };
+  loanAccounts: { id: string; name: string; balanceNzd: number }[];
 }

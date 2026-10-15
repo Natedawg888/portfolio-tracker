@@ -23,6 +23,7 @@ import {
   WarrantiesPage,
   RentalsPage,
   PayslipsPage,
+  VehiclesPage,
   ShoppingListsPage,
   HouseholdPage,
   PortfolioPage,
@@ -71,6 +72,7 @@ export default function App() {
                   <Route path="warranties" element={<WarrantiesPage />} />
                   <Route path="rentals" element={<RentalsPage />} />
                   <Route path="payslips" element={<PayslipsPage />} />
+                  <Route path="vehicles" element={<VehiclesPage />} />
                   <Route path="shopping" element={<ShoppingListsPage />} />
                   <Route path="household" element={<HouseholdPage />} />
                   <Route path="debts" element={<DebtsPage />} />

@@ -24,6 +24,7 @@ import type { MetalKind, MetalUnit } from '../../src/types/index.ts';
 import { aucklandToday } from '../debts/model.ts';
 import { isClosedQuantity, isTotalNotUnitQuote, parseNzdValueFromNotes } from '../../src/lib/holdingValue.ts';
 import { applyScheduledInterestForUser } from '../debts/store.ts';
+import { vehicleTotals } from '../vehicles/store.ts';
 import '../chain/index.ts'; // registers chain adapters for wallet balances
 import { combineValuations, valueWallet, type WalletValuation } from '../chain/valuation.ts';
 import type { WalletRef } from '../chain/service.ts';
@@ -75,6 +76,10 @@ export type NetWorthResult = {
   realEstateMortgageNzd: number | null;
   realEstateEquityNzd: number | null;
   collectablesNzd: number | null;
+  /** Vehicles counted in net worth (KAN-65): recorded value, loans entered on them, and the difference. */
+  vehiclesNzd: number | null;
+  vehicleLoansNzd: number | null;
+  vehiclesEquityNzd: number | null;
   kiwiSaverNzd: number | null;
   /** Sum of debt_people.outstanding_nzd (personal I-owe liabilities). */
   debtOutstandingNzd: number;
@@ -473,6 +478,14 @@ export async function computeNetWorth(
   const cryptoNzdValue = cryptoHoldingsNzd + (cryptoWalletsNzd ?? 0);
 
   const realEstateEquity = realEstateHas ? realEstateValue - realEstateMortgage : null;
+  // Vehicles (KAN-65): recorded value in assets; loans entered on them subtracted below. Loans
+  // linked to a bank loan account are already in cashLiabilities.
+  const vehicles = vehicleTotals(db, userId);
+  const vehiclesValue = vehicles?.valueNzd ?? 0;
+  const vehicleLoans = vehicles?.manualLoansNzd ?? 0;
+  for (const v of vehicles?.perVehicle ?? []) {
+    holdingPoints.push({ id: v.id, label: v.name, assetClass: 'vehicle', valueNzd: v.valueNzd - v.loanNzd });
+  }
   // Gross property value in assets; mortgage subtracted with personal debt below
   const assetsKnownNzd =
     cashNzd +
@@ -486,10 +499,11 @@ export async function computeNetWorth(
     (forexNzdValue ?? 0) +
     (realEstateHas ? realEstateValue : 0) +
     (collectablesHas ? collectablesVal : 0) +
+    vehiclesValue +
     kiwiSaverNzd;
 
   // Net worth = known assets − personal debt − real-estate mortgages (never invent)
-  const totalKnownNzd = assetsKnownNzd - debtOutstandingNzd - (realEstateHas ? realEstateMortgage : 0);
+  const totalKnownNzd = assetsKnownNzd - debtOutstandingNzd - (realEstateHas ? realEstateMortgage : 0) - vehicleLoans;
 
   const hasCrypto = cryptoNzdValue !== 0 || wallets.length > 0 || holdings.some((h) => h.asset_class === 'crypto');
   const cryptoPctOfNetWorth =
@@ -516,6 +530,9 @@ export async function computeNetWorth(
     realEstateMortgage: realEstateHas ? realEstateMortgage : null,
     realEstateEquity: realEstateEquity,
     collectables: collectablesHas ? collectablesVal : null,
+    vehicles: vehicles ? vehiclesValue : null,
+    vehicleLoans: vehicles ? vehicleLoans : null,
+    vehiclesEquity: vehicles ? vehiclesValue - vehicleLoans : null,
     kiwiSaver: ks.length ? kiwiSaverNzd : null,
     debt: debtOutstandingNzd,
     assets: assetsKnownNzd,
@@ -550,6 +567,9 @@ export async function computeNetWorth(
     realEstateMortgageNzd: realEstateHas ? realEstateMortgage : null,
     realEstateEquityNzd: realEstateEquity,
     collectablesNzd: collectablesHas ? collectablesVal : null,
+    vehiclesNzd: vehicles ? vehiclesValue : null,
+    vehicleLoansNzd: vehicles ? vehicleLoans : null,
+    vehiclesEquityNzd: vehicles ? vehiclesValue - vehicleLoans : null,
     kiwiSaverNzd: ks.length ? kiwiSaverNzd : null,
     debtOutstandingNzd,
     debtPersonCount,

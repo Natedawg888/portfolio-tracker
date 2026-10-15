@@ -68,6 +68,8 @@ export const CLASS_LABELS: Record<string, string> = {
   collectables: 'Collectables',
   cashLiabilities: 'Cash liabilities (credit cards)',
   realEstateMortgage: 'Mortgage',
+  vehicles: 'Vehicles',
+  vehicleLoans: 'Vehicle loans',
   debt: 'Debt',
 };
 
@@ -83,6 +85,7 @@ export const ASSET_CLASS_TO_CLASS_KEY: Record<string, string> = {
   stone: 'stones',
   real_estate: 'realEstate',
   collectable: 'collectables',
+  vehicle: 'vehicles',
 };
 
 export function classLabel(classKey: string): string {
@@ -98,7 +101,7 @@ export function assetClassLabel(assetClass: string): string {
  * The net worth line already shows total/assets; cryptoWallets is part of crypto
  * and realEstateEquity is property minus mortgage, so plotting them double counts.
  */
-const CHART_EXCLUDED_CLASS_KEYS = new Set(['total', 'assets', 'cryptoWallets', 'realEstateEquity']);
+const CHART_EXCLUDED_CLASS_KEYS = new Set(['total', 'assets', 'cryptoWallets', 'realEstateEquity', 'vehiclesEquity']);
 
 /** byClass keys with at least one real value this year, labelled ones first in label order. */
 export function chartClassKeys(snapshots: { breakdown?: { byClass?: Record<string, number | null> } }[]): string[] {

@@ -13333,3 +13333,21 @@ html .bills-page.shopping-page .btn.shop-remove {
 .payslip-form { grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); overflow-x: hidden; }
 .payslip-form > * { min-width: 0; }
 .payslip-form input:not([type='checkbox']), .payslip-form select { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+
+/* Vehicles (KAN-65) */
+.dashboard-tile-link { display: block; color: inherit; text-decoration: none; }
+.dashboard-tile-link:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.vehicle-form { grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); max-height: 70vh; overflow-y: auto; overflow-x: hidden; }
+.vehicle-form > * { min-width: 0; }
+.vehicle-form input:not([type='checkbox']), .vehicle-form select { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.vehicle-cost-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr)); gap: 0.5rem; align-items: end; margin: 0; padding: 0.6rem; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); }
+.vehicle-cost-row label { display: grid; gap: 0.2rem; min-width: 0; }
+.vehicle-cost-remove { justify-self: start; min-height: 2.75rem; }
+.vehicle-cost-add { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.vehicle-cost-add .btn { min-height: 2.75rem; }
+.vehicle-costs { margin-top: 0.4rem; }
+.vehicle-costs p { margin: 0; }
+.vehicle-cost-list { margin: 0.3rem 0 0; padding: 0; list-style: none; }
+.vehicle-cost-list li { display: flex; justify-content: space-between; gap: 0.75rem; padding: 0.25rem 0; border-top: 1px solid var(--border-soft); }
+.vehicle-cost-list .money { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.form-grid label.payslip-check { flex-direction: row; align-items: center; justify-content: flex-start; text-align: left; }
