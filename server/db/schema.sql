@@ -921,6 +921,56 @@ CREATE TABLE IF NOT EXISTS price_observations (
 CREATE INDEX IF NOT EXISTS idx_price_obs_lookup ON price_observations(product_key, chain, branch_key, observed_on);
 CREATE INDEX IF NOT EXISTS idx_price_obs_contributor ON price_observations(contributor, created_at);
 
+-- Plans (KAN-77). No row = free. Granted by the operator (npm run plan:set) until billing exists.
+CREATE TABLE IF NOT EXISTS user_entitlements (
+  user_id     TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  plan        TEXT NOT NULL DEFAULT 'free',       -- free | plus | pro
+  note        TEXT NOT NULL DEFAULT '',
+  updated_at  TEXT NOT NULL
+);
+
+-- Households (KAN-77). A user belongs to at most one household. Roles: owner (one per
+-- household), adult (edits shared items), viewer (read-only). Invites are single-use links
+-- tied to an email address; only the token's hash is stored.
+CREATE TABLE IF NOT EXISTS households (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  owner_id    TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS household_members (
+  household_id  TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+  user_id       TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  role          TEXT NOT NULL,                     -- owner | adult | viewer
+  joined_at     TEXT NOT NULL,
+  PRIMARY KEY (household_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS household_invites (
+  id            TEXT PRIMARY KEY,
+  household_id  TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+  email         TEXT NOT NULL,
+  role          TEXT NOT NULL,                     -- adult | viewer
+  token_hash    TEXT NOT NULL UNIQUE,
+  invited_by    TEXT NOT NULL,
+  created_at    TEXT NOT NULL,
+  expires_at    TEXT NOT NULL,
+  accepted_at   TEXT,
+  revoked_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_household_invites_household ON household_invites(household_id);
+-- Who changed what in the household. actor_id may point to someone who has since left.
+CREATE TABLE IF NOT EXISTS household_activity (
+  id            TEXT PRIMARY KEY,
+  household_id  TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+  actor_id      TEXT,
+  actor_name    TEXT NOT NULL,
+  action        TEXT NOT NULL,
+  detail        TEXT NOT NULL DEFAULT '',
+  created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_household_activity ON household_activity(household_id, created_at);
+
 -- Read-only crypto wallets: public address only. Never store seed phrases / private keys.
 -- No balance column on purpose: balances come from chain providers at sync time
 -- (balance is never stored as the source of truth here).

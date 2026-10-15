@@ -33,6 +33,8 @@ import type {
   Warranty,
   WarrantyListResponse,
   RentalEntry,
+  HouseholdView,
+  HouseholdRole,
   ShoppingCompareResponse,
   ShoppingListDetail,
   ShoppingListSummary,
@@ -691,6 +693,26 @@ export const api = {
     uploadReceipt: (id: string, receiptBase64: string) =>
       req<Warranty>(`/warranties/${encodeURIComponent(id)}/receipt`, { method: 'POST', body: JSON.stringify({ receiptBase64 }) }),
     removeReceipt: (id: string) => req<Warranty>(`/warranties/${encodeURIComponent(id)}/receipt`, { method: 'DELETE' }),
+  },
+  household: {
+    get: () => req<HouseholdView>('/household'),
+    create: (name: string) => req<HouseholdView>('/household', { method: 'POST', body: JSON.stringify({ name }) }),
+    rename: (name: string) => req<HouseholdView>('/household', { method: 'PATCH', body: JSON.stringify({ name }) }),
+    remove: () => req<{ ok: boolean }>('/household', { method: 'DELETE' }),
+    invite: (email: string, role: 'adult' | 'viewer') =>
+      req<HouseholdView & { invite: { link: string; emailed: boolean } }>('/household/invites', { method: 'POST', body: JSON.stringify({ email, role }) }),
+    revokeInvite: (id: string) => req<HouseholdView>(`/household/invites/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    previewInvite: (token: string) =>
+      req<{ householdName: string; inviterName: string; role: HouseholdRole; alreadyInHousehold: boolean }>('/household/invites/preview', {
+        method: 'POST',
+        body: JSON.stringify({ token }),
+      }),
+    acceptInvite: (token: string) => req<HouseholdView>('/household/invites/accept', { method: 'POST', body: JSON.stringify({ token }) }),
+    setRole: (userId: string, role: 'adult' | 'viewer') =>
+      req<HouseholdView>(`/household/members/${encodeURIComponent(userId)}`, { method: 'PATCH', body: JSON.stringify({ role }) }),
+    removeMember: (userId: string) => req<HouseholdView>(`/household/members/${encodeURIComponent(userId)}`, { method: 'DELETE' }),
+    transfer: (userId: string) => req<HouseholdView>('/household/transfer', { method: 'POST', body: JSON.stringify({ userId }) }),
+    leave: () => req<{ ok: boolean }>('/household/leave', { method: 'POST' }),
   },
   shopping: {
     lists: () => req<ShoppingListSummary[]>('/shopping/lists'),

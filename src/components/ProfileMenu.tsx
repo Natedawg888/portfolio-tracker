@@ -146,6 +146,17 @@ export function ProfileMenu({ triggerClassName }: { triggerClassName?: string })
           </button>
           <div className="profile-menu-sep" role="separator" />
           <Link
+            to="/household"
+            role="menuitem"
+            className="profile-menu-item"
+            onClick={() => setOpen(false)}
+            onMouseEnter={() => prefetchNavTarget('/household')}
+            onFocus={() => prefetchNavTarget('/household')}
+            onTouchStart={() => prefetchNavTarget('/household')}
+          >
+            Household
+          </Link>
+          <Link
             to="/settings?tab=account"
             role="menuitem"
             className="profile-menu-item"

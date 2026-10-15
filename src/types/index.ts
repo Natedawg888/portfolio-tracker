@@ -1582,3 +1582,21 @@ export interface ShoppingCompareResponse {
   from: string;
   to: string;
 }
+
+/** Households (KAN-77). */
+export type HouseholdRole = 'owner' | 'adult' | 'viewer';
+
+export interface HouseholdView {
+  plan: { householdFeature: boolean };
+  household: null | {
+    id: string;
+    name: string;
+    /** False when the owner's plan no longer covers households. */
+    active: boolean;
+    myRole: HouseholdRole;
+    members: { userId: string; name: string; email: string; role: HouseholdRole; joinedAt: string; isMe: boolean }[];
+    /** Pending invites; only the owner receives them. */
+    invites: { id: string; email: string; role: HouseholdRole; createdAt: string; expiresAt: string; expired: boolean }[];
+    activity: { id: string; actorName: string; action: string; detail: string; createdAt: string }[];
+  };
+}

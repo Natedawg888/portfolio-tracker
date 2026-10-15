@@ -27,6 +27,8 @@ const { default: authRouter } = await import('../routes/auth.ts');
 const { default: accountsRouter } = await import('../routes/accounts.ts');
 const { default: incomeRouter } = await import('../routes/income.ts');
 const { default: settingsRouter } = await import('../routes/settings.ts');
+const { default: householdRouter } = await import('../routes/household.ts');
+const { setPlan } = await import('../lib/entitlements.ts');
 const { uploadsGate, UPLOADS_DIR } = await import('../lib/uploads.ts');
 const { applyBtcLink, reverseBtcDelta } = await import('../lib/txnBtcLink.ts');
 const { attachUser, requireAuth, isPublicApiPath } = await import('../middleware/requireAuth.ts');
@@ -43,6 +45,7 @@ app.use('/api/uploads', uploadsGate());
 app.use('/api/accounts', accountsRouter);
 app.use('/api/income', incomeRouter);
 app.use('/api/settings', settingsRouter);
+app.use('/api/household', householdRouter);
 
 const server: Server = await new Promise((resolve) => {
   const s = app.listen(0, '127.0.0.1', () => resolve(s));
@@ -361,7 +364,26 @@ try {
   });
   assert(traversal.status === 404, 'path traversal is rejected');
 
-  console.log('OK: cross-user BTC, income, uploads, and settings');
+  // Households (KAN-77): joining a household shares nothing personal by itself.
+  setPlan(db, a.id, 'plus');
+  const hh = await req('POST', '/api/household', { cookie: a.cookie, body: { name: 'Iso home' } });
+  assert(hh.status === 201, 'A creates a household');
+  const outsider = await req('GET', '/api/household', { cookie: b.cookie });
+  assert((outsider.json as { household: unknown }).household === null, 'B is not in A’s household');
+  const inv = await req('POST', '/api/household/invites', { cookie: a.cookie, body: { email: 'iso-b@example.test', role: 'adult' } });
+  const token = String((inv.json as { invite: { link: string } }).invite.link).split('#token=')[1];
+  const joined = await req('POST', '/api/household/invites/accept', { cookie: b.cookie, body: { token } });
+  assert(joined.status === 200, 'B joins');
+  const bTxns = await req('GET', '/api/accounts/transactions?from=2026-10-01&to=2026-10-31', { cookie: b.cookie });
+  assert(!JSON.stringify(bTxns.json).includes('alpha spend'), 'a household member still can’t see the other’s transactions');
+  const bIncome = await req('GET', '/api/income', { cookie: b.cookie });
+  assert(!JSON.stringify(bIncome.json).includes(a.id), 'or their income');
+  const removed = await req('DELETE', `/api/household/members/${b.id}`, { cookie: a.cookie });
+  assert(removed.status === 200, 'A removes B');
+  const afterRemoval = await req('GET', '/api/household', { cookie: b.cookie });
+  assert((afterRemoval.json as { household: unknown }).household === null, 'B loses access at once');
+
+  console.log('OK: cross-user BTC, income, uploads, settings, and households');
 } finally {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 }

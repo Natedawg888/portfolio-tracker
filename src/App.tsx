@@ -7,6 +7,7 @@ import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Privacy } from './pages/Privacy';
 import { Terms } from './pages/Terms';
+import { HouseholdJoin } from './pages/HouseholdJoin';
 import { NotFoundRoute } from './pages/NotFound';
 import {
   DebtsPage,
@@ -22,6 +23,7 @@ import {
   WarrantiesPage,
   RentalsPage,
   ShoppingListsPage,
+  HouseholdPage,
   PortfolioPage,
   ProjectionsPage,
   SettingsPage,
@@ -46,6 +48,8 @@ export default function App() {
             {/* Privacy policy and terms of use (KAN-14): public, no ads. */}
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/terms" element={<Terms />} />
+            {/* Household invite links work before signing in (KAN-77). */}
+            <Route path="/household/join" element={<HouseholdJoin />} />
             <Route
               path="/i/:token"
               element={
@@ -66,6 +70,7 @@ export default function App() {
                   <Route path="warranties" element={<WarrantiesPage />} />
                   <Route path="rentals" element={<RentalsPage />} />
                   <Route path="shopping" element={<ShoppingListsPage />} />
+                  <Route path="household" element={<HouseholdPage />} />
                   <Route path="debts" element={<DebtsPage />} />
                   <Route path="yearly" element={<YearlyReportPage />} />
                   <Route path="economic-cycle" element={<EconomicCyclePage />} />
