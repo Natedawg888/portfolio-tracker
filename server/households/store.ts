@@ -1,6 +1,6 @@
 /**
- * Households, phase 1 (KAN-77): the household, members and roles, invites, leaving and
- * removal, ownership transfer, and an activity log. Sharing items comes in phase 2.
+ * Households (KAN-77): the household, members and roles, invites, leaving and removal,
+ * ownership transfer, and an activity log. Sharing items is in sharing.ts.
  *
  * Access is decided from household_members on every call, so removing someone takes effect
  * on their next request. A user belongs to at most one household.
@@ -57,6 +57,11 @@ export function logActivity(db: Database, householdId: string, actorId: string |
     `INSERT INTO household_activity (id, household_id, actor_id, actor_name, action, detail, created_at) VALUES (?,?,?,?,?,?,?)`,
     [newId('hact'), householdId, actorId, actorId ? displayName(db, actorId) : 'KoruLedger', action, detail.slice(0, 200), new Date().toISOString()],
   );
+}
+
+/** A member's shares go when they leave or are removed; the items themselves stay theirs. */
+function dropShares(db: Database, householdId: string, userId: string): void {
+  run(db, `DELETE FROM household_shares WHERE household_id = ? AND owner_id = ?`, [householdId, userId]);
 }
 
 function hashToken(token: string): string {
@@ -150,7 +155,8 @@ export function deleteHousehold(db: Database, userId: string): Result<{ ok: true
   const m = membershipOf(db, userId);
   if (!m) return fail(404, 'You are not in a household');
   if (m.role !== 'owner') return fail(403, 'Only the household owner can delete it');
-  // Phase 1 shares nothing yet. Phase 2 returns shared items to their owners here.
+  // Shared items never moved, so dropping the share rows returns them to their owners.
+  run(db, `DELETE FROM household_shares WHERE household_id = ?`, [m.householdId]);
   run(db, `DELETE FROM household_activity WHERE household_id = ?`, [m.householdId]);
   run(db, `DELETE FROM household_invites WHERE household_id = ?`, [m.householdId]);
   run(db, `DELETE FROM household_members WHERE household_id = ?`, [m.householdId]);
@@ -232,6 +238,7 @@ export function removeMember(db: Database, userId: string, memberId: string): Re
   const target = queryOne(db, `SELECT 1 FROM household_members WHERE household_id = ? AND user_id = ?`, [g.value.householdId, memberId]);
   if (!target) return fail(404, 'Member not found');
   const name = displayName(db, memberId);
+  dropShares(db, g.value.householdId, memberId);
   run(db, `DELETE FROM household_members WHERE household_id = ? AND user_id = ?`, [g.value.householdId, memberId]);
   logActivity(db, g.value.householdId, userId, `removed ${name}`);
   return { ok: true, value: getHousehold(db, userId) };
@@ -263,6 +270,7 @@ export function leaveHousehold(db: Database, userId: string): Result<{ ok: true 
   if (!m) return fail(404, 'You are not in a household');
   if (m.role === 'owner') return fail(400, 'Transfer ownership or delete the household first');
   logActivity(db, m.householdId, userId, 'left the household');
+  dropShares(db, m.householdId, userId);
   run(db, `DELETE FROM household_members WHERE household_id = ? AND user_id = ?`, [m.householdId, userId]);
   return { ok: true, value: { ok: true } };
 }
@@ -317,6 +325,7 @@ export function removeUserFromHouseholds(db: Database, userId: string): void {
   if (!m) return;
   if (m.role !== 'owner') {
     logActivity(db, m.householdId, null, `${displayName(db, userId)} deleted their account and left`);
+    dropShares(db, m.householdId, userId);
     run(db, `DELETE FROM household_members WHERE user_id = ?`, [userId]);
     return;
   }
@@ -329,6 +338,7 @@ export function removeUserFromHouseholds(db: Database, userId: string): void {
     run(db, `UPDATE household_members SET role = 'owner' WHERE household_id = ? AND user_id = ?`, [m.householdId, heir.user_id]);
     run(db, `UPDATE households SET owner_id = ?, updated_at = ? WHERE id = ?`, [heir.user_id, new Date().toISOString(), m.householdId]);
     logActivity(db, m.householdId, null, `${displayName(db, userId)} deleted their account; ${displayName(db, heir.user_id)} is now the owner`);
+    dropShares(db, m.householdId, userId);
     run(db, `DELETE FROM household_members WHERE user_id = ?`, [userId]);
     return;
   }

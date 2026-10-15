@@ -13,6 +13,13 @@
  *   DELETE /members/:userId                                     owner
  *   POST   /transfer              { userId }                    owner
  *   POST   /leave                                               member (always allowed)
+ * Sharing (phase 2):
+ *   GET    /shareable                    my items, each with shared on / off
+ *   PUT    /shares                       { kind, itemId, shared }      my own items only
+ *   GET    /dashboard                    shared net worth, budgets, bills, goals, transactions
+ *   PATCH  /shared/budget/:categoryId    { amountNzd }                 adults: this month's plan
+ *   PATCH  /shared/goal/:id              { targetNzd?, currentAmountNzd? }  adults
+ *   PATCH  /shared/bill/:id              { amountNzd?, nextDue? }      adults
  */
 import { Router, type Request, type Response } from 'express';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
@@ -34,6 +41,7 @@ import {
   setRole,
   transferOwnership,
 } from '../households/store.ts';
+import { dashboard, setShared, setSharedBudgetPlan, shareable, updateSharedBill, updateSharedGoal } from '../households/sharing.ts';
 
 const router = Router();
 
@@ -91,5 +99,12 @@ router.patch('/members/:userId', async (req, res) => send(res, setRole(await get
 router.delete('/members/:userId', async (req, res) => send(res, removeMember(await getDb(), uid(req), req.params.userId)));
 router.post('/transfer', async (req, res) => send(res, transferOwnership(await getDb(), uid(req), req.body)));
 router.post('/leave', async (req, res) => send(res, leaveHousehold(await getDb(), uid(req))));
+
+router.get('/shareable', async (req, res) => send(res, shareable(await getDb(), uid(req))));
+router.put('/shares', async (req, res) => send(res, setShared(await getDb(), uid(req), req.body)));
+router.get('/dashboard', async (req, res) => send(res, await dashboard(await getDb(), uid(req))));
+router.patch('/shared/budget/:categoryId', async (req, res) => send(res, setSharedBudgetPlan(await getDb(), uid(req), req.params.categoryId, req.body)));
+router.patch('/shared/goal/:id', async (req, res) => send(res, updateSharedGoal(await getDb(), uid(req), req.params.id, req.body)));
+router.patch('/shared/bill/:id', async (req, res) => send(res, updateSharedBill(await getDb(), uid(req), req.params.id, req.body)));
 
 export default router;

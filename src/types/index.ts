@@ -1600,3 +1600,21 @@ export interface HouseholdView {
     activity: { id: string; actorName: string; action: string; detail: string; createdAt: string }[];
   };
 }
+
+/** Household sharing (KAN-77 phase 2). */
+export type HouseholdShareKind = 'budget' | 'bill' | 'goal' | 'holding' | 'account';
+export type HouseholdShareable = Record<HouseholdShareKind, { id: string; name: string; detail: string; shared: boolean }[]>;
+export interface HouseholdDashboard {
+  canEdit: boolean;
+  month: string;
+  netWorth: {
+    totalNzd: number;
+    holdings: { id: string; owner: string; name: string; valueNzd: number }[];
+    accounts: { id: string; owner: string; name: string; balanceNzd: number }[];
+    unvalued: number;
+  };
+  budgets: { id: string; owner: string; name: string; plannedNzd: number | null; spentNzd: number; remainingNzd: number | null }[];
+  bills: { id: string; owner: string; name: string; amountNzd: number; nextDue: string; cadence: string }[];
+  goals: { id: string; owner: string; name: string; targetNzd: number; currentAmountNzd: number; deadline: string | null; amountSource: 'account' | 'manual' }[];
+  transactions: { id: string; member: string; account: string; date: string; description: string; amountNzd: number }[];
+}

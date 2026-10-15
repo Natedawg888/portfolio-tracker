@@ -970,6 +970,19 @@ CREATE TABLE IF NOT EXISTS household_activity (
   created_at    TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_household_activity ON household_activity(household_id, created_at);
+-- Items a member shares with their household (KAN-77 phase 2). Nothing moves: the item stays
+-- in its owner's tables; this row only makes it visible (and, for budgets, goals and bills,
+-- editable by adults). kind: budget (budget_categories.id) | bill (recurring_items.id) |
+-- goal (savings_goals.id) | holding (holdings.id) | account (bank_accounts.id).
+CREATE TABLE IF NOT EXISTS household_shares (
+  household_id  TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+  owner_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind          TEXT NOT NULL,
+  item_id       TEXT NOT NULL,
+  shared_at     TEXT NOT NULL,
+  PRIMARY KEY (household_id, kind, item_id)
+);
+CREATE INDEX IF NOT EXISTS idx_household_shares_owner ON household_shares(owner_id);
 
 -- Read-only crypto wallets: public address only. Never store seed phrases / private keys.
 -- No balance column on purpose: balances come from chain providers at sync time
