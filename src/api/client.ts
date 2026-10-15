@@ -33,6 +33,11 @@ import type {
   Warranty,
   WarrantyListResponse,
   RentalEntry,
+  ShoppingCompareResponse,
+  ShoppingListDetail,
+  ShoppingListSummary,
+  ShoppingPrefs,
+  ShoppingStore,
   RentalListResponse,
   RentalProperty,
   WarrantyPurchase,
@@ -686,6 +691,35 @@ export const api = {
     uploadReceipt: (id: string, receiptBase64: string) =>
       req<Warranty>(`/warranties/${encodeURIComponent(id)}/receipt`, { method: 'POST', body: JSON.stringify({ receiptBase64 }) }),
     removeReceipt: (id: string) => req<Warranty>(`/warranties/${encodeURIComponent(id)}/receipt`, { method: 'DELETE' }),
+  },
+  shopping: {
+    lists: () => req<ShoppingListSummary[]>('/shopping/lists'),
+    createList: (body: { name: string; categoryId?: string | null }) =>
+      req<ShoppingListDetail>('/shopping/lists', { method: 'POST', body: JSON.stringify(body) }),
+    list: (id: string) => req<ShoppingListDetail>(`/shopping/lists/${encodeURIComponent(id)}`),
+    updateList: (id: string, body: { name?: string; categoryId?: string | null }) =>
+      req<ShoppingListDetail>(`/shopping/lists/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    removeList: (id: string) => req<{ ok: boolean }>(`/shopping/lists/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    resetList: (id: string) => req<ShoppingListDetail>(`/shopping/lists/${encodeURIComponent(id)}/reset`, { method: 'POST' }),
+    addItem: (listId: string, body: { name: string; quantity?: number; estPriceNzd?: number | null; categoryId?: string | null }) =>
+      req<ShoppingListDetail>(`/shopping/lists/${encodeURIComponent(listId)}/items`, { method: 'POST', body: JSON.stringify(body) }),
+    updateItem: (
+      id: string,
+      body: Partial<{ name: string; quantity: number; estPriceNzd: number | null; categoryId: string | null; ticked: boolean; productKey: string | null }>,
+    ) => req<ShoppingListDetail>(`/shopping/items/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    removeItem: (id: string) => req<ShoppingListDetail>(`/shopping/items/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    recordPrices: (listId: string, body: { chain: string; branch: string; prices: { itemId: string; priceNzd: number }[] }) =>
+      req<{ list: ShoppingListDetail; shared: number; notShared: number }>(`/shopping/lists/${encodeURIComponent(listId)}/prices`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    compare: (listId: string) => req<ShoppingCompareResponse>(`/shopping/lists/${encodeURIComponent(listId)}/compare`),
+    prefs: () => req<ShoppingPrefs & { sharedCount: number; chains: { id: string; label: string }[] }>('/shopping/prefs'),
+    savePrefs: (body: Partial<{ contributePrices: boolean; stores: ShoppingStore[]; windowDays: number }>) =>
+      req<ShoppingPrefs & { sharedCount: number; chains: { id: string; label: string }[] }>('/shopping/prefs', { method: 'PUT', body: JSON.stringify(body) }),
+    products: (q: string) => req<{ key: string; name: string }[]>(`/shopping/products?${new URLSearchParams({ q })}`),
+    branches: (chain: string, q: string) => req<string[]>(`/shopping/branches?${new URLSearchParams({ chain, q })}`),
+    removeMyPrices: () => req<{ ok: boolean; removed: number }>('/shopping/prices/mine', { method: 'DELETE' }),
   },
   rentals: {
     list: () => req<RentalListResponse>('/rentals'),

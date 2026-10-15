@@ -8,6 +8,7 @@ import type { Response } from 'express';
 import { getDb, queryAll, queryOne, run } from '../db/index.ts';
 import { deleteCharityReceipt, deletePropertyPhoto, deleteWarrantyReceipt } from './uploads.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
+import { priceContributor } from '../shopping/prices.ts';
 
 export const SCOPED_TABLES = [
   'holdings',
@@ -38,6 +39,9 @@ export const SCOPED_TABLES = [
   'warranties',
   'rental_properties',
   'rental_entries',
+  'shopping_lists',
+  'shopping_items',
+  'shopping_prefs',
 ] as const;
 
 export type ScopedTable = (typeof SCOPED_TABLES)[number];
@@ -149,6 +153,9 @@ export function deleteScopedDataForUser(
   // Dependents first, then parents. debt_people cascades repayments;
   // kiwisaver_accounts cascades history + activity.
   const deleteOrder: ScopedTable[] = [
+    'shopping_items',
+    'shopping_lists',
+    'shopping_prefs',
     'rental_entries',
     'rental_properties',
     'warranties',
@@ -178,6 +185,9 @@ export function deleteScopedDataForUser(
     'budget_categories',
     'wallets',
   ];
+
+  // Supermarket prices this person shared (KAN-74): the shared table holds a pseudonym, not the id.
+  run(db, `DELETE FROM price_observations WHERE contributor = ?`, [priceContributor(userId)]);
 
   const seen = new Set<string>();
   for (const table of deleteOrder) {

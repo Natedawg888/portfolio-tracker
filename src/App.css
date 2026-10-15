@@ -12905,3 +12905,71 @@ html:not([data-theme]) .brand-wordmark--light { display: none; }
 }
 .mobile-nav-tools .privacy-toggle,
 .mobile-nav-tools .theme-switch-btn { min-width: 2.75rem; min-height: 2.75rem; }
+
+/* ---------------------------------------------------------------- Shopping lists (KAN-74) */
+.shopping-page h3 { margin: 0 0 0.6rem; }
+.shop-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.shop-row > input:not(.shop-qty):not(.shop-price) { flex: 1 1 12rem; min-width: 0; }
+.shop-list-cards { display: grid; gap: 0.5rem; margin: 0 0 1rem; padding: 0; list-style: none; }
+.shop-list-card {
+  display: grid;
+  gap: 0.15rem;
+  width: 100%;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.shop-list-card:hover { background: var(--hover-row); }
+.shop-list-card-name { font-weight: 650; }
+.shop-new-list { display: grid; gap: 0.35rem; }
+.shop-new-list > label { font-size: 0.85rem; color: var(--muted); }
+.shop-detail { display: grid; gap: 0.75rem; }
+.shop-detail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; }
+.shop-totals { margin: 0; }
+.shop-budget { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.35rem; }
+.shop-budget li { padding: 0.5rem 0.7rem; border-left: 3px solid var(--accent); border-radius: var(--radius-sm); background: var(--surface-2); font-size: 0.9rem; }
+.shop-budget li.is-over { border-left-color: var(--warn); }
+.shop-items { margin: 0; padding: 0; list-style: none; }
+.shop-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.35rem 0.75rem; padding: 0.55rem 0; }
+.shop-item + .shop-item { border-top: 1px solid color-mix(in srgb, var(--border) 45%, transparent); }
+.shop-tick { display: flex; align-items: center; gap: 0.6rem; min-height: 2.75rem; min-width: 0; cursor: pointer; }
+.shop-tick input { width: 1.25rem; height: 1.25rem; flex: none; accent-color: var(--accent); }
+.shop-item-name { overflow-wrap: anywhere; }
+.shop-item.is-ticked .shop-item-name { text-decoration: line-through; color: var(--muted); }
+.shop-item-fields { display: flex; align-items: center; gap: 0.4rem; }
+.shop-qty { width: 4.2rem; }
+.shop-price { width: 5.5rem; }
+.shop-line-total { min-width: 5rem; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.shop-item-more { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 1rem; padding-left: 1.85rem; font-size: 0.85rem; }
+.shop-item-more select { max-width: 12rem; font-size: 0.85rem; }
+.shop-match { grid-column: 1 / -1; display: grid; gap: 0.35rem; padding-left: 1.85rem; }
+.shop-match ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.2rem; }
+.shop-add { padding-top: 0.5rem; border-top: 1px solid color-mix(in srgb, var(--border) 45%, transparent); }
+.shop-record { display: grid; gap: 0.6rem; }
+.shop-record > label { display: grid; gap: 0.3rem; max-width: 22rem; font-size: 0.9rem; }
+.shop-record-rows { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.35rem; }
+.shop-record-rows li { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.shop-record-rows li span { min-width: 0; overflow-wrap: anywhere; }
+.shop-record-rows input { width: 7rem; flex: none; }
+.shop-compare { display: grid; gap: 0.6rem; }
+.shop-compare-verdict { margin: 0; padding: 0.6rem 0.75rem; border-left: 3px solid var(--accent); border-radius: var(--radius-sm); background: var(--surface-2); }
+.shop-compare-table th[scope="row"] { font-weight: 500; }
+.shop-store-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 0.6rem; padding: 0; list-style: none; }
+.shop-store-chips li { padding: 0.25rem 0.4rem 0.25rem 0.7rem; border: 1px solid var(--border); border-radius: 999px; font-size: 0.88rem; }
+.shop-settings { display: grid; gap: 0.6rem; }
+.shop-share { align-items: flex-start; }
+.shop-window { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
+@media (max-width: 480px) {
+  .shop-item { grid-template-columns: minmax(0, 1fr); }
+  .shop-item-fields { padding-left: 1.85rem; }
+  .shop-item-more { padding-left: 1.85rem; }
+}
+.shop-compare-table tbody th[scope="row"],
+.shop-compare-table tfoot th[scope="row"] { text-transform: none; letter-spacing: normal; font-size: 0.9rem; color: var(--text); }
+.shopping-page .link-btn { color: var(--accent-2); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+.shop-store-chips .link-btn { text-decoration: none; padding: 0 0.3rem; font-size: 1rem; }

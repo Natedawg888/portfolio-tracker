@@ -8,7 +8,7 @@
  *
  * Stored format: v1:<iv b64url>:<tag b64url>:<ciphertext b64url>
  */
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DATA_DIR } from '../db/index.ts';
@@ -48,6 +48,14 @@ function key(): Buffer {
   fs.writeFileSync(file, `${k.toString('hex')}\n`, { mode: 0o600, flag: 'wx' });
   cachedKey = k;
   return k;
+}
+
+/**
+ * Stable keyed pseudonym for an id (HMAC-SHA256 with the server key), so a shared table can
+ * group one person's rows without storing who they are. Not reversible without the key.
+ */
+export function pseudonym(purpose: string, id: string): string {
+  return createHmac('sha256', key()).update(`${purpose}:${id}`).digest('base64url');
 }
 
 export function sealSecret(plain: string): string {
