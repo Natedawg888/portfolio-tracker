@@ -20,6 +20,7 @@ import { parsePatchSavingsGoal } from '../savings/model.ts';
 import { listRecurring, parseRecurring, updateRecurring } from '../recurring/store.ts';
 import { aucklandToday, roundMoney } from '../debts/model.ts';
 import { householdActive, logActivity, membershipOf, type Membership } from './store.ts';
+import { budgetMoneyIn } from './paye.ts';
 
 export const SHARE_KINDS = ['budget', 'bill', 'goal', 'holding', 'account'] as const;
 export type ShareKind = (typeof SHARE_KINDS)[number];
@@ -161,6 +162,11 @@ export type HouseholdDashboard = {
   goals: { id: string; owner: string; name: string; targetNzd: number; currentAmountNzd: number; deadline: string | null; amountSource: 'account' | 'manual' }[];
   /** splitId: this spend is already split in the household (phase 3). */
   transactions: { id: string; member: string; account: string; date: string; description: string; amountNzd: number; splitId: string | null }[];
+  /**
+   * KAN-79: when the household turns it on, combined take-home pay this month (members who
+   * share their pay, this tax year) as money in, beside the shared budget plans. Else null.
+   */
+  moneyIn: { monthlyNzd: number; includedCount: number; plannedNzd: number; leftNzd: number } | null;
 };
 
 export async function dashboard(db: Database, userId: string): Promise<Result<HouseholdDashboard>> {
@@ -297,8 +303,16 @@ export async function dashboard(db: Database, userId: string): Promise<Result<Ho
       bills,
       goals,
       transactions: transactions.slice(0, 50),
+      moneyIn: moneyInFor(db, m.householdId, budgets),
     },
   };
+}
+
+function moneyInFor(db: Database, householdId: string, budgets: HouseholdDashboard['budgets']): HouseholdDashboard['moneyIn'] {
+  const pay = budgetMoneyIn(db, householdId);
+  if (!pay) return null;
+  const plannedNzd = roundMoney(budgets.reduce((s, b) => s + (b.plannedNzd ?? 0), 0));
+  return { ...pay, plannedNzd, leftNzd: roundMoney(pay.monthlyNzd - plannedNzd) };
 }
 
 // ---------------------------------------------------------------- editing shared items

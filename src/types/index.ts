@@ -1617,6 +1617,8 @@ export interface HouseholdDashboard {
   bills: { id: string; owner: string; name: string; amountNzd: number; nextDue: string; cadence: string }[];
   goals: { id: string; owner: string; name: string; targetNzd: number; currentAmountNzd: number; deadline: string | null; amountSource: 'account' | 'manual' }[];
   transactions: { id: string; member: string; account: string; date: string; description: string; amountNzd: number; splitId: string | null }[];
+  /** KAN-79: combined monthly take-home as money in, when the household turns it on. */
+  moneyIn: { monthlyNzd: number; includedCount: number; plannedNzd: number; leftNzd: number } | null;
 }
 
 /** Household splits and settle-up (KAN-77 phase 3). */
@@ -1638,4 +1640,63 @@ export interface HouseholdSplitsView {
   settlements: { id: string; fromId: string; from: string; toId: string; to: string; amountNzd: number; paidOn: string; note: string }[];
   balances: { memberId: string; name: string; netNzd: number; left: boolean }[];
   suggestions: { fromId: string; from: string; toId: string; to: string; amountNzd: number }[];
+}
+
+/** Household PAYE (KAN-79). Annual NZD; payeNzd is income tax after IETC, ACC is separate. */
+export interface HouseholdPayFigures {
+  grossNzd: number;
+  payeNzd: number;
+  accNzd: number;
+  kiwiSaverNzd: number;
+  studentLoanNzd: number;
+  netNzd: number;
+}
+export interface HouseholdPayInputs {
+  amount: number;
+  frequency: 'hour' | 'week' | 'fortnight' | 'month' | 'year';
+  hoursPerWeek: number;
+  employment: 'primary' | 'secondary';
+  secondaryTotalAnnualIncome: number;
+  otherAnnualGross: number;
+  kiwiSaverOptIn: boolean;
+  kiwiSaverEmployeeRatePct: number;
+  kiwiSaverEmployerRatePct: number;
+  salarySacrifice: boolean;
+  studentLoan: boolean;
+  ietc: boolean;
+}
+export interface HouseholdPayeView {
+  taxYear: number;
+  years: { startYear: number; label: string; current: boolean }[];
+  canSeeMembers: boolean;
+  canEdit: boolean;
+  active: boolean;
+  members: {
+    memberId: string;
+    name: string;
+    isMe: boolean;
+    lines: (HouseholdPayFigures & { label: string; kind: 'salary' | 'piece' | 'schedular' | 'share_of_catch'; taxCode: string | null; onPaye: boolean })[];
+    totals: HouseholdPayFigures;
+  }[];
+  includedCount: number;
+  totals: HouseholdPayFigures;
+  netPerPeriod: { week: number; fortnight: number; month: number; year: number };
+  mine: { optedIn: boolean; inputs: HouseholdPayInputs | null; includePaySources: boolean; paySourceCount: number };
+  feedBudget: boolean;
+}
+export type HouseholdWhatIfChange =
+  | { kind: 'hours'; hoursPerWeek: number }
+  | { kind: 'salary'; annualNzd: number }
+  | { kind: 'stop' }
+  | { kind: 'kiwisaver'; ratePct: number };
+export interface HouseholdWhatIfResult {
+  taxYear: number;
+  memberName: string;
+  description: string;
+  before: HouseholdPayFigures;
+  after: HouseholdPayFigures;
+  memberBefore: HouseholdPayFigures;
+  memberAfter: HouseholdPayFigures;
+  netChangePerPeriod: { week: number; fortnight: number; month: number; year: number };
+  notes: string[];
 }

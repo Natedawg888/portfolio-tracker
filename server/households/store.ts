@@ -59,9 +59,13 @@ export function logActivity(db: Database, householdId: string, actorId: string |
   );
 }
 
-/** A member's shares go when they leave or are removed; the items themselves stay theirs. */
+/**
+ * A member's shares and shared pay (KAN-79) go when they leave, are removed or delete their
+ * account; the items themselves stay theirs.
+ */
 function dropShares(db: Database, householdId: string, userId: string): void {
   run(db, `DELETE FROM household_shares WHERE household_id = ? AND owner_id = ?`, [householdId, userId]);
+  run(db, `DELETE FROM household_pay WHERE household_id = ? AND user_id = ?`, [householdId, userId]);
 }
 
 function hashToken(token: string): string {
@@ -160,6 +164,8 @@ export function deleteHousehold(db: Database, userId: string): Result<{ ok: true
   run(db, `DELETE FROM household_split_shares WHERE split_id IN (SELECT id FROM household_splits WHERE household_id = ?)`, [m.householdId]);
   run(db, `DELETE FROM household_splits WHERE household_id = ?`, [m.householdId]);
   run(db, `DELETE FROM household_settlements WHERE household_id = ?`, [m.householdId]);
+  run(db, `DELETE FROM household_pay WHERE household_id = ?`, [m.householdId]);
+  run(db, `DELETE FROM household_pay_settings WHERE household_id = ?`, [m.householdId]);
   run(db, `DELETE FROM household_activity WHERE household_id = ?`, [m.householdId]);
   run(db, `DELETE FROM household_invites WHERE household_id = ?`, [m.householdId]);
   run(db, `DELETE FROM household_members WHERE household_id = ?`, [m.householdId]);

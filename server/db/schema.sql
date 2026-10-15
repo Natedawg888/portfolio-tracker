@@ -1022,6 +1022,25 @@ CREATE TABLE IF NOT EXISTS household_settlements (
 );
 CREATE INDEX IF NOT EXISTS idx_household_settlements ON household_settlements(household_id, paid_on);
 
+-- Household PAYE (KAN-79). A member's pay, shared only by opting in (a row here means opted in).
+-- inputs_json holds PAYE calculator inputs (no tax year: figures are worked out for whichever
+-- year is viewed); NULL when the member shares only their saved pay sources. Removed when the
+-- member leaves, is removed or deletes their account, and with the household.
+CREATE TABLE IF NOT EXISTS household_pay (
+  household_id         TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+  user_id              TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  inputs_json          TEXT,
+  include_pay_sources  INTEGER NOT NULL DEFAULT 0,
+  updated_at           TEXT NOT NULL,
+  PRIMARY KEY (household_id, user_id)
+);
+-- Household-wide PAYE settings: feed_budget = show combined take-home as the shared budgets' money in.
+CREATE TABLE IF NOT EXISTS household_pay_settings (
+  household_id  TEXT PRIMARY KEY REFERENCES households(id) ON DELETE CASCADE,
+  feed_budget   INTEGER NOT NULL DEFAULT 0,
+  updated_at    TEXT NOT NULL
+);
+
 -- Read-only crypto wallets: public address only. Never store seed phrases / private keys.
 -- No balance column on purpose: balances come from chain providers at sync time
 -- (balance is never stored as the source of truth here).
