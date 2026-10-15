@@ -219,6 +219,10 @@ Sources:
 - IRD — IETC: https://www.ird.govt.nz/income-tax/income-tax-for-individuals/individual-tax-credits/independent-earner-tax-credit-ietc
 - Employment NZ — Previous minimum wage rates: https://www.employment.govt.nz/pay-and-hours/pay-and-wages/minimum-wage/previous-min-wage-rates
 
+## Household take-home pay (KAN-79)
+
+The Household page adds up members who opt in to sharing their pay. Each member is worked out on their own with `calculatePaye` for the tax year being viewed (NZ has no joint filing), and saved piece-rate sources go through the same engine. Contract and share-of-catch sources aren't taxed through payroll, so only their gross and amount received are counted. Payroll giving and investing credits aren't part of the household inputs. Code: `server/households/paye.ts`; tests: `server/households/paye.test.ts`.
+
 ## Files
 
 | Path | Role |

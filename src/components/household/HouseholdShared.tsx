@@ -59,7 +59,7 @@ function AmountEdit({ label, value, onSave }: { label: string; value: number | n
   );
 }
 
-export function HouseholdShared({ active, onNote }: { active: boolean; onNote: (msg: string) => void }) {
+export function HouseholdShared({ active, refresh = 0, onNote }: { active: boolean; refresh?: number; onNote: (msg: string) => void }) {
   const [dash, setDash] = useState<HouseholdDashboard | null>(null);
   const [mine, setMine] = useState<HouseholdShareable | null>(null);
   const [splits, setSplits] = useState<HouseholdSplitsView | null>(null);
@@ -71,7 +71,7 @@ export function HouseholdShared({ active, onNote }: { active: boolean; onNote: (
     api.household.shareable().then(setMine).catch(() => {});
     api.household.splits().then(setSplits).catch(() => {});
   }, []);
-  useEffect(load, [load]);
+  useEffect(load, [load, refresh]);
 
   async function edit(fn: () => Promise<unknown>, note: string) {
     setError(null);
@@ -104,6 +104,7 @@ export function HouseholdShared({ active, onNote }: { active: boolean; onNote: (
 
   const empty =
     dash &&
+    !dash.moneyIn &&
     dash.budgets.length + dash.bills.length + dash.goals.length + dash.netWorth.holdings.length + dash.netWorth.accounts.length === 0;
 
   return (
@@ -138,6 +139,28 @@ export function HouseholdShared({ active, onNote }: { active: boolean; onNote: (
                   ))}
                 </ul>
                 {dash.netWorth.unvalued ? <p className="muted small">{dash.netWorth.unvalued} shared holding(s) have no value right now and are left out.</p> : null}
+              </div>
+            ) : null}
+
+            {dash.moneyIn ? (
+              <div className="hh-block">
+                <h4>Money in this month</h4>
+                <ul className="hh-rows">
+                  <li>
+                    <span>
+                      Take-home pay <span className="muted small">· {dash.moneyIn.includedCount === 1 ? '1 person' : `${dash.moneyIn.includedCount} people`} sharing pay</span>
+                    </span>
+                    <span className="money">{formatNzd(dash.moneyIn.monthlyNzd)}</span>
+                  </li>
+                  <li>
+                    <span>Shared budget plans</span>
+                    <span className="money">{formatNzd(-dash.moneyIn.plannedNzd)}</span>
+                  </li>
+                  <li>
+                    <span>{dash.moneyIn.leftNzd < 0 ? 'Planned beyond take-home' : 'Left after plans'}</span>
+                    <span className={'money' + (dash.moneyIn.leftNzd < 0 ? ' hh-over' : '')}>{formatNzd(Math.abs(dash.moneyIn.leftNzd))}</span>
+                  </li>
+                </ul>
               </div>
             ) : null}
 

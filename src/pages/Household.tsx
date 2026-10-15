@@ -9,6 +9,7 @@ import { api } from '../api/client';
 import type { HouseholdView } from '../types';
 import { LEGAL_CONTACT_EMAIL } from '../components/legal/LegalLayout';
 import { HouseholdShared } from '../components/household/HouseholdShared';
+import { HouseholdPaye } from '../components/household/HouseholdPaye';
 import { showQuietToast } from '../lib/quietToast';
 import { useMoneyHidden } from '../lib/privacy';
 
@@ -28,6 +29,8 @@ export function Household() {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Bumped when the budget feed changes so the shared dashboard reloads its money-in line.
+  const [payRev, setPayRev] = useState(0);
   const [name, setName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'adult' | 'viewer'>('adult');
@@ -181,7 +184,9 @@ export function Household() {
             </ul>
           </section>
 
-          <HouseholdShared key={hh.id} active={hh.active} onNote={(m) => showQuietToast(m, { kind: 'info', ttlMs: 4000 })} />
+          <HouseholdShared key={hh.id} active={hh.active} refresh={payRev} onNote={(m) => showQuietToast(m, { kind: 'info', ttlMs: 4000 })} />
+
+          <HouseholdPaye key={`pay-${hh.id}`} onBudgetFeedChange={() => setPayRev((n) => n + 1)} onNote={(m) => showQuietToast(m, { kind: 'info', ttlMs: 4000 })} />
 
           {owner ? (
             <section className="panel" aria-labelledby="hh-invite-title">

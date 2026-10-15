@@ -39,6 +39,10 @@ import type {
   HouseholdShareKind,
   HouseholdSplitMethod,
   HouseholdSplitsView,
+  HouseholdPayeView,
+  HouseholdPayInputs,
+  HouseholdWhatIfChange,
+  HouseholdWhatIfResult,
   HouseholdRole,
   ShoppingCompareResponse,
   ShoppingListDetail,
@@ -731,6 +735,13 @@ export const api = {
     recordSettlement: (body: { fromId: string; toId: string; amountNzd: number; paidOn?: string; note?: string }) =>
       req<HouseholdSplitsView>('/household/settlements', { method: 'POST', body: JSON.stringify(body) }),
     removeSettlement: (id: string) => req<HouseholdSplitsView>(`/household/settlements/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    paye: (year?: number) => req<HouseholdPayeView>(`/household/paye${year ? `?year=${year}` : ''}`),
+    setMyPay: (body: { inputs: HouseholdPayInputs | null; includePaySources: boolean }) =>
+      req<HouseholdPayeView>('/household/paye/mine', { method: 'PUT', body: JSON.stringify(body) }),
+    clearMyPay: () => req<HouseholdPayeView>('/household/paye/mine', { method: 'DELETE' }),
+    setPayFeedBudget: (feedBudget: boolean) => req<HouseholdPayeView>('/household/paye/settings', { method: 'PUT', body: JSON.stringify({ feedBudget }) }),
+    payWhatIf: (memberId: string, taxYear: number, change: HouseholdWhatIfChange) =>
+      req<HouseholdWhatIfResult>('/household/paye/what-if', { method: 'POST', body: JSON.stringify({ memberId, taxYear, change }) }),
     setBudgetPlan: (categoryId: string, amountNzd: number) =>
       req<{ ok: boolean }>(`/household/shared/budget/${encodeURIComponent(categoryId)}`, { method: 'PATCH', body: JSON.stringify({ amountNzd }) }),
     updateGoal: (id: string, body: { targetNzd?: number; currentAmountNzd?: number }) =>

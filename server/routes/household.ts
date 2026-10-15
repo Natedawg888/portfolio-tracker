@@ -27,6 +27,12 @@
  *   DELETE /splits/:id                                                                          adults
  *   POST   /settlements                  { fromId, toId, amountNzd, paidOn?, note? }            adults
  *   DELETE /settlements/:id                                                                     adults
+ * Household PAYE (KAN-79):
+ *   GET    /paye?year=2026               totals (everyone), each opted-in member (owner/adults), my opt-in
+ *   PUT    /paye/mine                    { inputs | null, includePaySources }   opt in / change (Plus)
+ *   DELETE /paye/mine                                                           opt out (always allowed)
+ *   PUT    /paye/settings                { feedBudget }                         adults
+ *   POST   /paye/what-if                 { memberId, taxYear, change }          adults
  */
 import { Router, type Request, type Response } from 'express';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
@@ -49,6 +55,7 @@ import {
   transferOwnership,
 } from '../households/store.ts';
 import { createSplit, deleteSettlement, deleteSplit, listSplits, recordSettlement, updateSplit } from '../households/splits.ts';
+import { clearMyPay, householdPaye, setFeedBudget, setMyPay, whatIf } from '../households/paye.ts';
 import { dashboard, setShared, setSharedBudgetPlan, shareable, updateSharedBill, updateSharedGoal } from '../households/sharing.ts';
 
 const router = Router();
@@ -121,5 +128,11 @@ router.put('/splits/:id', async (req, res) => send(res, updateSplit(await getDb(
 router.delete('/splits/:id', async (req, res) => send(res, deleteSplit(await getDb(), uid(req), req.params.id)));
 router.post('/settlements', async (req, res) => send(res, recordSettlement(await getDb(), uid(req), req.body), true));
 router.delete('/settlements/:id', async (req, res) => send(res, deleteSettlement(await getDb(), uid(req), req.params.id)));
+
+router.get('/paye', async (req, res) => send(res, householdPaye(await getDb(), uid(req), req.query.year)));
+router.put('/paye/mine', async (req, res) => send(res, setMyPay(await getDb(), uid(req), req.body)));
+router.delete('/paye/mine', async (req, res) => send(res, clearMyPay(await getDb(), uid(req))));
+router.put('/paye/settings', async (req, res) => send(res, setFeedBudget(await getDb(), uid(req), req.body)));
+router.post('/paye/what-if', async (req, res) => send(res, whatIf(await getDb(), uid(req), req.body)));
 
 export default router;
