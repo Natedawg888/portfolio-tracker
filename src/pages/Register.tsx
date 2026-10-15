@@ -438,7 +438,9 @@ export function Register() {
     <div className={`auth-page${step === 'credentials' ? ' register-page' : step === 'assets' ? ' assets-page' : ''}`}>
       <div className={`auth-card panel${wide ? ' auth-card-wide' : ''}`}>
         <div className="auth-brand">
-          <BrandLockup size="md" />
+          <Link to="/" className="auth-brand-link" aria-label="KoruLedger home">
+            <BrandLockup size="md" />
+          </Link>
         </div>
         {step === 'credentials' ? (
           <>

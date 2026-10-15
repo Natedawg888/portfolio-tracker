@@ -12882,6 +12882,8 @@ html[data-theme="dark"] .brand-wordmark--light,
 html:not([data-theme]) .brand-wordmark--light { display: none; }
 .app-header .brand h1.brand-title { margin: 0; line-height: 0; }
 .auth-brand { display: flex; justify-content: center; margin: 0 0 1.25rem; }
+.auth-brand-link { display: inline-flex; border-radius: 8px; }
+.auth-brand-link:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
 @media (max-width: 480px) {
   .app-header .brand-lockup--sm { --lockup-icon: 1.9rem; --lockup-word: 1.15rem; }
   .auth-brand .brand-lockup--md { --lockup-icon: 2.7rem; --lockup-word: 1.75rem; }
