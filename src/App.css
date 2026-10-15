@@ -12693,7 +12693,6 @@ button.asset-row-hit:hover { background: color-mix(in srgb, var(--text) 3%, tran
   background: var(--bg);
 }
 .home-page a.home-brand { display: inline-flex; align-items: center; gap: 0.55rem; color: var(--text); font-weight: 700; text-decoration: none; margin-right: auto; }
-.home-brand img { border-radius: 8px; }
 .home-anchors { display: flex; gap: 1.1rem; }
 .home-page .home-anchors a { color: var(--text); font-weight: 600; text-decoration: none; }
 .home-page .home-anchors a:hover { text-decoration: underline; }
@@ -12820,7 +12819,7 @@ button.asset-row-hit:hover { background: color-mix(in srgb, var(--text) 3%, tran
   .home-auth { gap: 0.4rem; }
   .home-auth .btn, .home-menu-toggle { padding-inline: 0.6rem; font-size: 0.85rem; }
   /* Logo only; the name stays available to screen readers. */
-  .home-brand span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .home-brand .brand-lockup-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .home-preview { padding: 1rem; }
   .home-preview-tabs .segmented-btn { font-size: 0.78rem; padding-inline: 0.3rem; }
 }
@@ -12835,7 +12834,6 @@ button.asset-row-hit:hover { background: color-mix(in srgb, var(--text) 3%, tran
 .legal-page a { color: var(--accent-2); font-weight: 600; }
 .legal-topbar { max-width: 760px; margin: 0 auto; padding: 1rem; }
 .legal-page a.legal-brand { display: inline-flex; align-items: center; gap: 0.55rem; color: var(--text); font-weight: 700; text-decoration: none; }
-.legal-brand img { border-radius: 8px; }
 .legal-main { max-width: 760px; margin: 0 auto; padding: 0 1rem 2rem; }
 .legal-doc { line-height: 1.6; overflow-wrap: anywhere; }
 .legal-doc h1,
@@ -12868,3 +12866,24 @@ button.asset-row-hit:hover { background: color-mix(in srgb, var(--text) 3%, tran
 .legal-footer p { margin: 0; }
 .legal-footer nav, .home-footer nav { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; }
 .register-page .auth-legal { margin-top: 1rem; text-align: center; }
+
+/* ---------------------------------------------------------------- KoruLedger logo lockup (KAN-49) */
+.brand-lockup { display: inline-flex; align-items: center; gap: 0.6em; line-height: 0; vertical-align: middle; }
+.brand-lockup-icon { height: var(--lockup-icon); width: auto; flex: none; }
+.brand-lockup-text { display: inline-grid; justify-items: stretch; gap: 0.35em; }
+.brand-wordmark { display: block; height: var(--lockup-word); width: auto; }
+.brand-tagline { display: block; width: 100%; height: auto; }
+.brand-lockup--sm { --lockup-icon: 2.1rem; --lockup-word: 1.3rem; }
+.brand-lockup--md { --lockup-icon: 3.2rem; --lockup-word: 2.1rem; }
+.brand-lockup--lg { --lockup-icon: 4.5rem; --lockup-word: 3rem; }
+/* "Koru" is cream in the artwork: dark-text copy on the light theme. */
+html[data-theme="light"] .brand-wordmark--dark,
+html[data-theme="dark"] .brand-wordmark--light,
+html:not([data-theme]) .brand-wordmark--light { display: none; }
+.app-header .brand h1.brand-title { margin: 0; line-height: 0; }
+.auth-brand { display: flex; justify-content: center; margin: 0 0 1.25rem; }
+@media (max-width: 480px) {
+  .app-header .brand-lockup--sm { --lockup-icon: 1.9rem; --lockup-word: 1.15rem; }
+  .auth-brand .brand-lockup--md { --lockup-icon: 2.7rem; --lockup-word: 1.75rem; }
+}
+.app-footer a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }

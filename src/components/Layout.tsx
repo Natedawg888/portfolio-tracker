@@ -1,5 +1,6 @@
 import { cloneElement, isValidElement, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { Link, NavLink, useLocation, useOutlet } from 'react-router-dom';
+import { BrandLockup } from './BrandLockup';
 import { applyTheme, resolveTheme, setTheme, type Theme } from '../lib/theme';
 import {
   MoneyHiddenProvider,
@@ -234,10 +235,9 @@ export function Layout({ children }: { children?: ReactNode }) {
       <header className="app-header">
         <div className="brand">
           <ProfileMenu triggerClassName="brand-mark" />
-          <div>
-            <h1>Portfolio Tracker</h1>
-            <p className="sub">NZD · Auckland</p>
-          </div>
+          <h1 className="brand-title">
+            <BrandLockup size="sm" />
+          </h1>
         </div>
         {/* Mobile: fixed overlay drawer (CSS). Desktop: in-flow pill. Never inside .header-actions. */}
         <nav id="app-primary-nav" className={'nav' + (navOpen ? ' open' : '')}>

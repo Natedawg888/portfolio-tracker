@@ -1,5 +1,5 @@
 /**
- * NZD Portfolio Tracker — shared domain types
+ * KoruLedger (NZD) — shared domain types
  * Currency default: NZD. Display timezone: Pacific/Auckland.
  * Never invent live prices, miner secondary-market values, or stone valuations.
  */

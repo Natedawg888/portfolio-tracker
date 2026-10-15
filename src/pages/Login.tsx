@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { BrandLockup } from '../components/BrandLockup';
 import { ApiError, api, type AuthUser, type SsoProvider } from '../api/client';
 import { showQuietToast } from '../lib/quietToast';
 import { BusyLabel, FormError, GoogleButton, PasswordField } from '../components/auth/AuthControls';
@@ -300,7 +301,9 @@ export function Login() {
   return (
     <div className="auth-page login-page">
       <main className="auth-card panel">
-        <p className="eyebrow">Portfolio Tracker</p>
+        <div className="auth-brand">
+          <BrandLockup size="md" />
+        </div>
         {step.kind === 'password' ? (
           <>
             <h1 className="auth-title">{adding ? 'Add another account' : returning ? 'Welcome back' : 'Sign in'}</h1>

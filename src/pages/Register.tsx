@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { BrandLockup } from '../components/BrandLockup';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import { ApiError, api, type SsoProvider } from '../api/client';
 import { ssoStartUrl } from '../lib/sso';
@@ -436,7 +437,9 @@ export function Register() {
   return (
     <div className={`auth-page${step === 'credentials' ? ' register-page' : step === 'assets' ? ' assets-page' : ''}`}>
       <div className={`auth-card panel${wide ? ' auth-card-wide' : ''}`}>
-        <p className="eyebrow">Portfolio Tracker</p>
+        <div className="auth-brand">
+          <BrandLockup size="md" />
+        </div>
         {step === 'credentials' ? (
           <>
             <h2>{firstUser ? 'Create your account' : 'Create account'}</h2>

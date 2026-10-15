@@ -4,6 +4,7 @@
  */
 import { useEffect, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { BrandLockup } from '../BrandLockup';
 
 export const LEGAL_CONTACT_EMAIL = 'koruledger@gmail.com';
 export const LEGAL_UPDATED = '15 October 2026';
@@ -28,8 +29,7 @@ export function LegalLayout({ title, docTitle, intro, children }: { title: strin
       </a>
       <header className="legal-topbar">
         <Link className="legal-brand" to="/">
-          <img src="/favicon.svg" alt="" width="28" height="28" />
-          <span>Portfolio Tracker</span>
+          <BrandLockup size="sm" />
         </Link>
       </header>
       <main id="legal-main" tabIndex={-1} className="legal-main">
@@ -41,7 +41,7 @@ export function LegalLayout({ title, docTitle, intro, children }: { title: strin
         </article>
       </main>
       <footer className="legal-footer">
-        <p>Portfolio Tracker · a personal record, not financial advice</p>
+        <p>KoruLedger · a personal record, not financial advice</p>
         <nav aria-label="Legal">
           <Link to="/privacy">Privacy policy</Link>
           <Link to="/terms">Terms of use</Link>

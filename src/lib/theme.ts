@@ -1,4 +1,4 @@
-/** Light / dark theme preference for Portfolio Tracker. */
+/** Light / dark theme preference for KoruLedger. */
 
 export type Theme = 'light' | 'dark';
 

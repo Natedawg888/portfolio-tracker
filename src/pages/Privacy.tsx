@@ -10,10 +10,10 @@ export function Privacy() {
   return (
     <LegalLayout
       title="Privacy policy"
-      docTitle="Privacy policy · Portfolio Tracker"
+      docTitle="Privacy policy · KoruLedger"
       intro={
         <p>
-          Portfolio Tracker is run by KoruLedger (“we”, “us”). This policy explains what personal information the app
+          This policy applies to KoruLedger (“we”, “us”, “the app”). It explains what personal information the app
           collects, why, where it is kept, who it is shared with, and your rights under the New Zealand{' '}
           <strong>Privacy Act 2020</strong> and its information privacy principles. Questions or requests: <ContactEmail />.
         </p>
