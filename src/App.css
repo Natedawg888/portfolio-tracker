@@ -12889,3 +12889,8 @@ html:not([data-theme]) .brand-wordmark--light { display: none; }
   .auth-brand .brand-lockup--md { --lockup-icon: 2.7rem; --lockup-word: 1.75rem; }
 }
 .app-footer a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+
+/* Retirement calculator (KAN-58) */
+.retire-status { margin: 0.4rem 0 0.75rem; padding: 0.55rem 0.75rem; border-radius: var(--radius-sm); border-left: 3px solid var(--accent); background: var(--surface-2); font-size: 0.92rem; }
+.retire-status--short { border-left-color: var(--warn); }
+.retire-disclaimer { margin: 0.75rem 0 0; font-size: 0.85rem; font-weight: 600; color: var(--muted); }
