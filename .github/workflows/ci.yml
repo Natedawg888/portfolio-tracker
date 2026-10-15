@@ -52,4 +52,5 @@ jobs:
       - run: npm run test:invoices
       - run: npm run test:bills
       - run: npm run test:rentals
+      - run: npm run test:shopping
       - run: npm run build

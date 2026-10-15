@@ -1504,3 +1504,81 @@ export interface RentalListResponse {
   /** Newest first. */
   entries: RentalEntry[];
 }
+
+/** Shopping lists (KAN-74). */
+export interface ShoppingListSummary {
+  id: string;
+  name: string;
+  categoryId: string | null;
+  itemCount: number;
+  tickedCount: number;
+  estimatedTotalNzd: number;
+  updatedAt: string;
+}
+
+export interface ShoppingItem {
+  id: string;
+  name: string;
+  quantity: number;
+  /** Price of one unit; null when unknown. */
+  estPriceNzd: number | null;
+  lineTotalNzd: number | null;
+  categoryId: string | null;
+  ticked: boolean;
+  /** Key used to look up shared prices: the corrected match, else the normalised name. */
+  productKey: string;
+  matchCorrected: boolean;
+}
+
+export interface ShoppingBudgetLine {
+  categoryId: string;
+  categoryName: string;
+  /** Unticked items in this category. */
+  toBuyNzd: number;
+  /** This month's plans for the category; null when there is no plan. */
+  plannedNzd: number | null;
+  spentNzd: number;
+  remainingNzd: number | null;
+}
+
+export interface ShoppingListDetail {
+  id: string;
+  name: string;
+  categoryId: string | null;
+  updatedAt: string;
+  items: ShoppingItem[];
+  totals: { estimatedNzd: number; toBuyNzd: number; unpricedCount: number };
+  budget: ShoppingBudgetLine[];
+}
+
+export type ShoppingChain = 'woolworths' | 'paknsave' | 'newworld' | 'freshchoice' | 'supervalue' | 'foursquare' | 'warehouse' | 'costco';
+
+export interface ShoppingStore {
+  chain: ShoppingChain;
+  branch: string;
+}
+
+export interface ShoppingPrefs {
+  contributePrices: boolean;
+  stores: ShoppingStore[];
+  windowDays: number;
+}
+
+export interface ShoppingStoreComparison {
+  chain: ShoppingChain;
+  chainLabel: string;
+  branch: string;
+  total: number;
+  pricedCount: number;
+  items: Record<string, { unitPrice: number; lineTotal: number; observedOn: string } | null>;
+}
+
+export interface ShoppingCompareResponse {
+  itemCount: number;
+  stores: ShoppingStoreComparison[];
+  cheapest: ShoppingStore | null;
+  split: { total: number; pricedCount: number; savingVsCheapest: number | null } | null;
+  windowDays: number;
+  from: string;
+  to: string;
+}

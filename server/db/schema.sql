@@ -866,6 +866,61 @@ CREATE TABLE IF NOT EXISTS rental_entries (
 );
 CREATE INDEX IF NOT EXISTS idx_rental_entries_user ON rental_entries(user_id, date);
 
+-- Shopping lists (KAN-74). Per user. est_price_nzd is the price of one unit (× quantity for
+-- the line). category_id links an item, or the whole list, to a budget category.
+CREATE TABLE IF NOT EXISTS shopping_lists (
+  id            TEXT PRIMARY KEY,
+  user_id       TEXT,
+  name          TEXT NOT NULL,
+  category_id   TEXT,
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_shopping_lists_user ON shopping_lists(user_id);
+
+CREATE TABLE IF NOT EXISTS shopping_items (
+  id             TEXT PRIMARY KEY,
+  user_id        TEXT,
+  list_id        TEXT NOT NULL,
+  name           TEXT NOT NULL,
+  quantity       REAL NOT NULL DEFAULT 1,
+  est_price_nzd  REAL,
+  category_id    TEXT,
+  ticked         INTEGER NOT NULL DEFAULT 0,
+  product_key    TEXT,                       -- set when the user corrects the price match
+  sort_order     INTEGER NOT NULL DEFAULT 0,
+  created_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_shopping_items_list ON shopping_items(list_id, sort_order);
+
+-- Per-user shopping settings: opt-in to contribute prices, the stores to compare, and how
+-- recent a price must be. stores_json: [{ "chain": "paknsave", "branch": "Royal Oak" }].
+CREATE TABLE IF NOT EXISTS shopping_prefs (
+  user_id           TEXT PRIMARY KEY,
+  contribute_prices INTEGER NOT NULL DEFAULT 0,
+  stores_json       TEXT NOT NULL DEFAULT '[]',
+  window_days       INTEGER NOT NULL DEFAULT 60,
+  updated_at        TEXT NOT NULL
+);
+
+-- Crowdsourced supermarket prices (KAN-74), shared by all users who opt in. No user_id:
+-- contributor is a keyed pseudonym (HMAC with the server key) used only for rate limits,
+-- outlier checks and removing a person's own prices. It is never returned by the API.
+CREATE TABLE IF NOT EXISTS price_observations (
+  id            TEXT PRIMARY KEY,
+  product_key   TEXT NOT NULL,              -- normalised item name
+  product_name  TEXT NOT NULL,              -- as typed, tidied
+  chain         TEXT NOT NULL,              -- woolworths | paknsave | newworld | …
+  branch_key    TEXT NOT NULL,              -- normalised branch name
+  branch_name   TEXT NOT NULL,
+  price_nzd     REAL NOT NULL,              -- one unit
+  observed_on   TEXT NOT NULL,              -- YYYY-MM-DD (Pacific/Auckland)
+  contributor   TEXT NOT NULL,
+  created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_price_obs_lookup ON price_observations(product_key, chain, branch_key, observed_on);
+CREATE INDEX IF NOT EXISTS idx_price_obs_contributor ON price_observations(contributor, created_at);
+
 -- Read-only crypto wallets: public address only. Never store seed phrases / private keys.
 -- No balance column on purpose: balances come from chain providers at sync time
 -- (balance is never stored as the source of truth here).

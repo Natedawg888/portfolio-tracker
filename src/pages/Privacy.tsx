@@ -65,6 +65,10 @@ export function Privacy() {
             balances and transactions. The connection is read-only; the app cannot move money.
           </li>
           <li>Public crypto wallet addresses you add. We never ask for or store seed phrases or private keys.</li>
+          <li>
+            Shopping lists, and the supermarket prices you record. If you turn on price sharing, the item name, store,
+            price and date are also added to a shared price table (see <a href="#share">who we share it with</a>).
+          </li>
         </ul>
         <h3>Information about other people</h3>
         <p>
@@ -117,6 +121,13 @@ export function Privacy() {
             which receive the public wallet addresses you add so balances can be read.
           </li>
           <li>
+            <strong>Other KoruLedger users</strong>, only if you turn on price sharing for shopping lists: the item names,
+            stores, prices and dates you record, so everyone can compare supermarkets. Shared prices are stored without your
+            name, email or account id, other users never see who recorded them, and an item name is only suggested to others
+            once at least two people have used it. Your lists stay private. You can remove the prices you have shared at
+            any time on the Shopping lists page.
+          </li>
+          <li>
             <strong>Google AdSense</strong> shows ads. It receives what your browser sends it, not your financial
             information. See <a href="#advertising">Advertising</a>.
           </li>
@@ -155,12 +166,13 @@ export function Privacy() {
         <ul>
           <li>Your account and financial records are kept until you delete them or your account.</li>
           <li>Sign-in history is kept for 180 days.</li>
+          <li>Shared supermarket prices are kept until you remove them or delete your account; comparisons only use recent ones.</li>
           <li>Sign-in sessions last up to 30 days (24 hours if you untick “Keep me signed in”); trusted devices for 30 days.</li>
           <li>Server logs are kept by our hosting provider for a limited time.</li>
         </ul>
         <p>
           When you delete your account (Settings → Account), we delete your profile, financial records, uploaded files,
-          connected-account tokens, sessions and security settings. Deleting your account here does not end your consent
+          connected-account tokens, sessions, security settings and any supermarket prices you shared. Deleting your account here does not end your consent
           with Akahu; you can do that at <a href="https://my.akahu.nz" target="_blank" rel="noreferrer">my.akahu.nz</a>.
           If you signed up with Google, Apple or Microsoft and have no password, email us and we will delete your account.
         </p>
