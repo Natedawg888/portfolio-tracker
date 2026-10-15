@@ -40,6 +40,9 @@ import type {
   HouseholdSplitMethod,
   HouseholdSplitsView,
   HouseholdPayeView,
+  Payslip,
+  PayslipWriteBody,
+  PayslipsView,
   HouseholdFamilyView,
   HouseholdPayInputs,
   HouseholdWhatIfChange,
@@ -703,6 +706,14 @@ export const api = {
     uploadReceipt: (id: string, receiptBase64: string) =>
       req<Warranty>(`/warranties/${encodeURIComponent(id)}/receipt`, { method: 'POST', body: JSON.stringify({ receiptBase64 }) }),
     removeReceipt: (id: string) => req<Warranty>(`/warranties/${encodeURIComponent(id)}/receipt`, { method: 'DELETE' }),
+  },
+  payslips: {
+    list: (year?: number) => req<PayslipsView>(`/payslips${year ? `?year=${year}` : ''}`),
+    create: (body: PayslipWriteBody) => req<Payslip>('/payslips', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: PayslipWriteBody) => req<Payslip>(`/payslips/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    remove: (id: string) => req<{ ok: boolean }>(`/payslips/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    uploadFile: (id: string, fileBase64: string) => req<Payslip>(`/payslips/${encodeURIComponent(id)}/file`, { method: 'POST', body: JSON.stringify({ fileBase64 }) }),
+    removeFile: (id: string) => req<Payslip>(`/payslips/${encodeURIComponent(id)}/file`, { method: 'DELETE' }),
   },
   household: {
     get: () => req<HouseholdView>('/household'),

@@ -6,7 +6,7 @@
 import type { Database } from 'sql.js';
 import type { Response } from 'express';
 import { getDb, queryAll, queryOne, run } from '../db/index.ts';
-import { deleteCharityReceipt, deletePropertyPhoto, deleteWarrantyReceipt } from './uploads.ts';
+import { deleteCharityReceipt, deletePayslipFile, deletePropertyPhoto, deleteWarrantyReceipt } from './uploads.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { priceContributor } from '../shopping/prices.ts';
 import { removeUserFromHouseholds } from '../households/store.ts';
@@ -43,6 +43,7 @@ export const SCOPED_TABLES = [
   'shopping_lists',
   'shopping_items',
   'shopping_prefs',
+  'payslips',
 ] as const;
 
 export type ScopedTable = (typeof SCOPED_TABLES)[number];
@@ -142,6 +143,11 @@ export function deleteScopedDataForUser(
     deleteWarrantyReceipt(row.p);
   }
 
+  // Uploaded payslips (KAN-78).
+  for (const row of queryAll<{ p: string | null }>(db, `SELECT file_path AS p FROM payslips WHERE user_id = ? AND file_path IS NOT NULL`, [userId])) {
+    deletePayslipFile(row.p);
+  }
+
   // Receipt files attached to transactions (e.g. donation receipts for IR526).
   for (const row of queryAll<{ p: string | null }>(
     db,
@@ -154,6 +160,7 @@ export function deleteScopedDataForUser(
   // Dependents first, then parents. debt_people cascades repayments;
   // kiwisaver_accounts cascades history + activity.
   const deleteOrder: ScopedTable[] = [
+    'payslips',
     'shopping_items',
     'shopping_lists',
     'shopping_prefs',

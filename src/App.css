@@ -13293,3 +13293,43 @@ html .bills-page.shopping-page .btn.shop-remove {
 .hh-child-row .hh-edit { justify-self: start; }
 .hh-pay-fields legend { padding: 0; margin-bottom: 0.25rem; font-size: 0.85rem; color: var(--muted); }
 .hh-wff-sources { margin: 0.25rem 0 0.75rem; }
+
+/* Payslips (KAN-78) */
+.payslips-ytd-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.payslips-ytd-head h3 { margin: 0; }
+.payslips-year select { min-height: 2.75rem; }
+.payslip-chart { margin: 0.75rem 0 0; }
+.payslip-chart svg { display: block; width: 100%; height: 7rem; }
+.payslip-bar-gross { fill: color-mix(in srgb, var(--accent) 35%, var(--muted)); opacity: 0.55; }
+.payslip-bar-net { fill: var(--accent); }
+.payslip-key { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 2px; vertical-align: -1px; margin-left: 0.25rem; }
+.payslip-key-net { background: var(--accent); }
+.payslip-key-gross { background: color-mix(in srgb, var(--accent) 35%, var(--muted)); opacity: 0.55; }
+.payslip-missing { margin: 0.6rem 0 0; padding: 0.6rem 0.75rem 0.6rem 1.6rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.payslip-plan { margin: 0.75rem 0 0; padding: 0.6rem 0.75rem; border-radius: var(--radius-sm); background: var(--surface-2); }
+.payslip-list { display: grid; gap: 0.75rem; }
+.payslip-card { padding: 0.9rem 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.payslip-card-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 0.4rem 0.75rem; }
+.payslip-card-top h4 { margin: 0; font-size: 1rem; overflow-wrap: anywhere; }
+.payslip-card-top p { margin: 0.1rem 0 0; }
+.payslip-badge { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px; border: 1px solid var(--border); font-size: 0.78rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.payslip-badge-ok { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+.payslip-badge-warn { color: var(--btn-danger-text); border-color: var(--btn-danger-border); }
+.payslip-figs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; margin: 0.6rem 0 0.25rem; }
+.payslip-figs dt { font-size: 0.78rem; color: var(--muted); }
+.payslip-figs dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.payslip-card > p { margin: 0.25rem 0 0; }
+.payslip-actions { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; margin-top: 0.35rem; }
+.payslip-actions .link-btn { min-height: 2.75rem; display: inline-flex; align-items: center; }
+.payslip-check-detail { margin-top: 0.4rem; }
+.payslip-check-detail p { margin: 0.25rem 0 0; }
+.payslip-row-warn th, .payslip-row-warn td { color: var(--btn-danger-text); }
+.payslip-form { max-height: 70vh; overflow-y: auto; }
+.payslip-form-group { margin: 0.5rem 0 0; font-size: 0.9rem; }
+.payslip-check { display: flex; align-items: center; gap: 0.6rem; min-height: 2.75rem; }
+.payslip-check input { width: 1.3rem; height: 1.3rem; flex: none; accent-color: var(--accent); }
+.payslip-file { display: grid; gap: 0.35rem; }
+.payslip-use-net { justify-self: start; min-height: 2.75rem; }
+.payslip-form { grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); overflow-x: hidden; }
+.payslip-form > * { min-width: 0; }
+.payslip-form input:not([type='checkbox']), .payslip-form select { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }

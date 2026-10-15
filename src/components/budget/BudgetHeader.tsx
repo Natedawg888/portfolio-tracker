@@ -105,6 +105,14 @@ export function BudgetHeader({
         </Link>
         <Link
           className="btn small ghost"
+          to="/payslips"
+          onMouseEnter={() => prefetchNavTarget('/payslips')}
+          onFocus={() => prefetchNavTarget('/payslips')}
+        >
+          Payslips
+        </Link>
+        <Link
+          className="btn small ghost"
           to="/shopping"
           onMouseEnter={() => prefetchNavTarget('/shopping')}
           onFocus={() => prefetchNavTarget('/shopping')}

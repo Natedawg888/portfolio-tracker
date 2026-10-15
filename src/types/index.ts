@@ -1730,3 +1730,67 @@ export interface HouseholdFamilyView {
     notes: string[];
   } | null;
 }
+
+/** Payslips (KAN-78). */
+export type PayslipFrequency = 'weekly' | 'fortnightly' | 'four_weekly' | 'monthly' | 'other';
+export interface PayslipWriteBody {
+  paySourceId: string | null;
+  employer: string;
+  frequency: PayslipFrequency;
+  periodStart: string;
+  periodEnd: string;
+  payDate: string;
+  taxCode: string;
+  hours: number | null;
+  hourlyRate: number | null;
+  grossNzd: number;
+  payeNzd: number;
+  /** null when the payslip includes ACC in PAYE. */
+  accNzd: number | null;
+  kiwiSaverEmployeeNzd: number;
+  kiwiSaverRatePct: number | null;
+  kiwiSaverEmployerNzd: number;
+  esctNzd: number;
+  studentLoanNzd: number;
+  otherDeductionsNzd: number;
+  allowancesNzd: number;
+  netNzd: number;
+  addToIncome: boolean;
+  notes: string;
+}
+export type PayslipCheck =
+  | {
+      status: 'checked';
+      allOk: boolean;
+      taxYear: number;
+      items: { key: string; label: string; actual: number; expected: number; difference: number; ok: boolean; note?: string }[];
+      tolerance: string;
+      notes: string[];
+    }
+  | { status: 'not_checked'; reason: string };
+export interface Payslip extends PayslipWriteBody {
+  id: string;
+  taxYear: number;
+  fileUrl: string | null;
+  netCheck: { expected: number; matches: boolean };
+  check: PayslipCheck | null;
+  income: { inIncome: boolean; bankMatch: { transactionId: string; date: string; description: string; amountNzd: number } | null; reason: string | null };
+}
+export interface PayslipsView {
+  plan: { plus: boolean; freeLimit: number; usedThisYear: number };
+  taxYear: number;
+  years: { startYear: number; label: string }[];
+  payslips: Payslip[];
+  ytd: {
+    count: number;
+    grossNzd: number;
+    taxNzd: number;
+    accNzd: number;
+    kiwiSaverNzd: number;
+    studentLoanNzd: number;
+    netNzd: number;
+    bySource: { sourceKey: string; employer: string; count: number; grossNzd: number; netNzd: number; missing: { after: string; before: string }[] }[];
+  };
+  history: { payDate: string; employer: string; grossNzd: number; netNzd: number }[];
+  paySources: { id: string; name: string }[];
+}
