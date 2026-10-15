@@ -13230,3 +13230,23 @@ html .bills-page.shopping-page .btn.shop-remove {
 .hh-share-item { display: flex; align-items: center; gap: 0.6rem; min-height: 2.75rem; cursor: pointer; }
 .hh-share-item input { width: 1.4rem; height: 1.4rem; margin: 0; flex: none; accent-color: var(--accent); }
 .hh-share-item span { min-width: 0; overflow-wrap: anywhere; }
+
+/* Household splits and settle-up (KAN-77 phase 3) */
+.hh-row-wrap > .hh-split-line, .hh-row-wrap > .hh-split-editor { flex-basis: 100%; }
+.hh-split-line { color: var(--muted); overflow-wrap: anywhere; }
+.hh-split-editor { display: grid; gap: 0.6rem; margin-top: 0.35rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.hh-split-methods { justify-self: start; max-width: 100%; }
+.hh-split-methods .segmented-btn { flex: 1 1 auto; min-height: 2.75rem; padding: 0.25rem 0.8rem; font-size: 0.85rem; }
+.hh-split-btn { text-align: left; }
+.hh-split-people { margin: 0; padding: 0; border: 0; display: grid; gap: 0.15rem; }
+.hh-split-people legend { padding: 0; margin-bottom: 0.25rem; font-size: 0.85rem; color: var(--muted); }
+.hh-split-person { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.25rem 0.75rem; }
+.hh-split-person .hh-share-item { flex: 1 1 6rem; min-width: 0; }
+.hh-split-value { display: inline-flex; align-items: center; gap: 0.3rem; }
+.hh-split-value input { width: 5.75rem; min-height: 2.75rem; }
+.hh-split-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.hh-split-actions .btn { min-height: 2.75rem; }
+.hh-owed { color: var(--text); }
+.hh-owes { color: var(--btn-danger-text); }
+.hh-settle-end { display: inline-flex; align-items: center; gap: 0.75rem; }
+.hh-settle-end .link-btn, .household-page .hh-rows .btn { min-height: 2.75rem; }

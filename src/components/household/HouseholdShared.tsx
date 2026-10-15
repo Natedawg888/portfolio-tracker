@@ -1,13 +1,15 @@
 /**
  * Household page, phase 2 (KAN-77): what the household shares (net worth, budgets, bills,
  * goals, recent transactions on shared accounts with who made them) and what you share.
- * Adults and the owner can change shared budgets, goals and bills; viewers only see them.
+ * Adults and the owner can change shared budgets, goals and bills, and split shared spending
+ * (phase 3, HouseholdSplits); viewers only see them.
  * Amounts follow Hide amounts through formatNzd.
  */
 import { useCallback, useEffect, useId, useState, type FormEvent } from 'react';
 import { api, formatNzd } from '../../api/client';
-import type { HouseholdDashboard, HouseholdShareKind, HouseholdShareable } from '../../types';
+import type { HouseholdDashboard, HouseholdShareKind, HouseholdShareable, HouseholdSplitsView } from '../../types';
 import { longDate } from '../../pages/warrantiesView';
+import { SettleUp, SplitEditor, SplitLine } from './HouseholdSplits';
 
 const KIND_TITLES: Record<HouseholdShareKind, string> = {
   budget: 'Budgets',
@@ -60,11 +62,14 @@ function AmountEdit({ label, value, onSave }: { label: string; value: number | n
 export function HouseholdShared({ active, onNote }: { active: boolean; onNote: (msg: string) => void }) {
   const [dash, setDash] = useState<HouseholdDashboard | null>(null);
   const [mine, setMine] = useState<HouseholdShareable | null>(null);
+  const [splits, setSplits] = useState<HouseholdSplitsView | null>(null);
+  const [splitting, setSplitting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     api.household.dashboard().then(setDash).catch((e: unknown) => setError(errText(e, 'Could not load what’s shared.')));
     api.household.shareable().then(setMine).catch(() => {});
+    api.household.splits().then(setSplits).catch(() => {});
   }, []);
   useEffect(load, [load]);
 
@@ -78,6 +83,24 @@ export function HouseholdShared({ active, onNote }: { active: boolean; onNote: (
       setError(errText(e, 'Could not save.'));
     }
   }
+
+  /** Splits and payments: errors are shown by the caller (the split editor shows its own). */
+  async function changeSplits(fn: () => Promise<HouseholdSplitsView>, note: string) {
+    const v = await fn();
+    setSplits(v);
+    setSplitting(null);
+    onNote(note);
+    api.household.dashboard().then(setDash).catch(() => {});
+  }
+  async function changeSplitsQuietly(fn: () => Promise<HouseholdSplitsView>, note: string) {
+    setError(null);
+    try {
+      await changeSplits(fn, note);
+    } catch (e) {
+      setError(errText(e, 'Could not save.'));
+    }
+  }
+  const splitById = new Map((splits?.splits ?? []).map((s) => [s.id, s]));
 
   const empty =
     dash &&
@@ -189,17 +212,43 @@ export function HouseholdShared({ active, onNote }: { active: boolean; onNote: (
               <div className="hh-block">
                 <h4>Recent spending on shared accounts</h4>
                 <ul className="hh-rows">
-                  {dash.transactions.slice(0, 20).map((t) => (
-                    <li key={t.id}>
-                      <span>
-                        {t.description || 'Transaction'}{' '}
-                        <span className="muted small">
-                          · {t.member} · {longDate(t.date)}
+                  {dash.transactions.slice(0, 20).map((t) => {
+                    const split = t.splitId ? splitById.get(t.splitId) ?? null : null;
+                    const canSplit = !!splits?.canEdit && active && t.amountNzd < 0;
+                    const name = t.description || 'Transaction';
+                    return (
+                      <li key={t.id} className="hh-row-wrap">
+                        <span>
+                          {name}{' '}
+                          <span className="muted small">
+                            · {t.member} · {longDate(t.date)}
+                          </span>
                         </span>
-                      </span>
-                      <span className="money">{formatNzd(t.amountNzd)}</span>
-                    </li>
-                  ))}
+                        <span className="money">{formatNzd(t.amountNzd)}</span>
+                        {split ? <SplitLine split={split} /> : null}
+                        {canSplit && splitting !== t.id ? (
+                          <button type="button" className="link-btn hh-edit hh-split-btn" aria-label={`${split ? 'Change split' : 'Split'}: ${name}`} onClick={() => setSplitting(t.id)}>
+                            {split ? 'Change split' : 'Split'}
+                          </button>
+                        ) : null}
+                        {canSplit && splitting === t.id && splits ? (
+                          <SplitEditor
+                            totalNzd={-t.amountNzd}
+                            members={splits.members}
+                            existing={split}
+                            onCancel={() => setSplitting(null)}
+                            onSave={(method, shares) =>
+                              changeSplits(
+                                () => (split ? api.household.updateSplit(split.id, method, shares) : api.household.createSplit(t.id, method, shares)),
+                                `${name} is split.`,
+                              )
+                            }
+                            onRemove={split ? () => changeSplitsQuietly(() => api.household.removeSplit(split.id), `${name} is no longer split.`) : null}
+                          />
+                        ) : null}
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             ) : null}
@@ -207,6 +256,14 @@ export function HouseholdShared({ active, onNote }: { active: boolean; onNote: (
           </div>
         ) : null}
       </section>
+
+      {splits && (splits.splits.length + splits.settlements.length > 0 || dash?.transactions.some((t) => t.amountNzd < 0)) ? (
+        <SettleUp
+          view={splits}
+          onRecord={(p, note) => changeSplitsQuietly(() => api.household.recordSettlement(p), note)}
+          onRemove={(id) => changeSplitsQuietly(() => api.household.removeSettlement(id), 'Payment removed.')}
+        />
+      ) : null}
 
       <section className="panel" aria-labelledby="hh-mine-title">
         <h3 id="hh-mine-title">What you share</h3>

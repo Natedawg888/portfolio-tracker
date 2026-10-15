@@ -983,6 +983,44 @@ CREATE TABLE IF NOT EXISTS household_shares (
   PRIMARY KEY (household_id, kind, item_id)
 );
 CREATE INDEX IF NOT EXISTS idx_household_shares_owner ON household_shares(owner_id);
+-- Splits and settle-up (KAN-77 phase 3). A split divides one spend on a shared account
+-- between members; the payer is owed everyone else's share. total_nzd is kept so balances stay
+-- right even if the transaction is later deleted. Rows stay when someone leaves (their balance
+-- is still shown), and go with the household.
+CREATE TABLE IF NOT EXISTS household_splits (
+  id              TEXT PRIMARY KEY,
+  household_id    TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+  transaction_id  TEXT NOT NULL,
+  payer_id        TEXT NOT NULL,
+  method          TEXT NOT NULL,              -- equal | percent | amount
+  total_nzd       REAL NOT NULL,
+  description     TEXT NOT NULL DEFAULT '',
+  txn_date        TEXT NOT NULL,
+  created_by      TEXT NOT NULL,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL,
+  UNIQUE (household_id, transaction_id)
+);
+CREATE TABLE IF NOT EXISTS household_split_shares (
+  split_id    TEXT NOT NULL REFERENCES household_splits(id) ON DELETE CASCADE,
+  member_id   TEXT NOT NULL,
+  amount_nzd  REAL NOT NULL,
+  input       REAL,                           -- the percent or amount typed, for editing
+  PRIMARY KEY (split_id, member_id)
+);
+-- Money paid between members to settle up: from_id paid to_id.
+CREATE TABLE IF NOT EXISTS household_settlements (
+  id            TEXT PRIMARY KEY,
+  household_id  TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+  from_id       TEXT NOT NULL,
+  to_id         TEXT NOT NULL,
+  amount_nzd    REAL NOT NULL,
+  paid_on       TEXT NOT NULL,
+  note          TEXT NOT NULL DEFAULT '',
+  created_by    TEXT NOT NULL,
+  created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_household_settlements ON household_settlements(household_id, paid_on);
 
 -- Read-only crypto wallets: public address only. Never store seed phrases / private keys.
 -- No balance column on purpose: balances come from chain providers at sync time
