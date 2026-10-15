@@ -136,6 +136,8 @@ type Props = {
   pointAriaLabel?: (point: LinePoint, series: LineSeries) => string;
   /** Legend under the plot. On by default; a single-series card can turn it off. */
   showLegend?: boolean;
+  /** Custom x-axis and tooltip labels (e.g. ages instead of dates). Other charts use dates. */
+  xAxisLabel?: (at: string) => string;
 };
 
 /** Non-empty label means the dot is an accessible, focusable point. Blank keeps it presentational. */
@@ -292,7 +294,9 @@ export function AssetLineChart({
   hideTitle = false,
   pointAriaLabel,
   showLegend = true,
+  xAxisLabel,
 }: Props) {
+  const xLabel = (at: string) => (xAxisLabel ? xAxisLabel(at) : axisLabel(at, resolution));
   const [tip, setTip] = useState<{ key: string; label: string; x: number; y: number; pinned: boolean } | null>(null);
   const resampled = resampleSeries(series, resolution);
   const active = resampled.filter((s) => s.points.length > 0);
@@ -338,7 +342,15 @@ export function AssetLineChart({
   }
 
   const tickStep = Math.max(1, Math.ceil(uniqueTimes.length / 6));
-  const xTicks = uniqueTimes.filter((_, i) => i % tickStep === 0 || i === uniqueTimes.length - 1);
+  // Every tickStep-th time, plus the last. When the last lands within half a step of the one
+  // before it, drop that one so the two labels don't overlap.
+  const tickIdx = uniqueTimes.map((_, i) => i).filter((i) => i % tickStep === 0);
+  const lastIdx = uniqueTimes.length - 1;
+  if (lastIdx > 0 && tickIdx[tickIdx.length - 1] !== lastIdx) {
+    if (tickIdx.length > 1 && lastIdx - tickIdx[tickIdx.length - 1] < tickStep / 2) tickIdx.pop();
+    tickIdx.push(lastIdx);
+  }
+  const xTicks = tickIdx.map((i) => uniqueTimes[i]);
 
   const yTicks = computeYTicks(vMin, vMax);
   const painted = seriesPaintOrder(active, foregroundKey);
@@ -346,7 +358,7 @@ export function AssetLineChart({
   function dot(s: LineSeries, p: LinePoint, radius: number) {
     const x = xOf(p.at);
     const y = yOf(p.value);
-    const title = `${s.label}: ${formatNzd(p.value)} @ ${axisLabel(p.at, resolution)}${p.flagNote ? `. ${p.flagNote}` : ''}`;
+    const title = `${s.label}: ${formatNzd(p.value)} @ ${xLabel(p.at)}${p.flagNote ? `. ${p.flagNote}` : ''}`;
     const name = pointAriaLabel ? focusablePointName(pointAriaLabel(p, s)) : null;
     const id = `${s.key}-${p.at}`;
     const ring = p.flagged ? (
@@ -421,7 +433,7 @@ export function AssetLineChart({
             textAnchor={i === xTicks.length - 1 && xTicks.length > 1 ? 'end' : 'middle'}
             className="line-chart-axis"
           >
-            {axisLabel(at, resolution)}
+            {xLabel(at)}
           </text>
         ))}
 

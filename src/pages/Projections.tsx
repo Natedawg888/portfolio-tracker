@@ -10,6 +10,7 @@ import { useSearchParams } from 'react-router-dom';
 import { ApiError, api, formatNzd } from '../api/client';
 import { AssetLineChart, type LineSeries } from '../components/AssetLineChart';
 import { CompoundInterestCalculator } from '../components/CompoundInterestCalculator';
+import { RetirementCalculator } from '../components/RetirementCalculator';
 import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import { showQuietToast } from '../lib/quietToast';
 import type { ProjectionAssetClass, ProjectionAssumption, ProjectionMining, ProjectionResponse } from '../types';
@@ -54,7 +55,7 @@ import {
 
 const WITH_GROWTH = '#3d9a6a';
 const TODAY_PLUS_ADDED = '#4a8fd4';
-type ProjectionMode = 'worth' | 'compound';
+type ProjectionMode = 'worth' | 'compound' | 'retirement';
 
 /** Keep a range input on its step so the thumb matches a real amount. */
 function onSliderStep(value: number, min: number, max: number, step: number): number {
@@ -392,7 +393,11 @@ export function Projections() {
   };
 
   const [mode, setMode] = useState<ProjectionMode>(() =>
-    window.location.hash === '#calculators' || window.location.hash === '#compound-interest' ? 'compound' : 'worth',
+    window.location.hash === '#retirement'
+      ? 'retirement'
+      : window.location.hash === '#calculators' || window.location.hash === '#compound-interest'
+        ? 'compound'
+        : 'worth',
   );
   const [fineOpen, setFineOpen] = useState(false);
 
@@ -540,11 +545,21 @@ export function Projections() {
           >
             Compound interest
           </button>
+          <button
+            type="button"
+            className={'segmented-btn' + (mode === 'retirement' ? ' active' : '')}
+            aria-pressed={mode === 'retirement'}
+            onClick={() => setMode('retirement')}
+          >
+            Retirement
+          </button>
         </div>
       </header>
 
       {mode === 'compound' ? (
         <CompoundInterestCalculator startingAmountNzd={data?.starting.compoundingAssetsNzd ?? null} />
+      ) : mode === 'retirement' ? (
+        <RetirementCalculator startingAmountNzd={data?.starting.compoundingAssetsNzd ?? null} />
       ) : (
         <>
           {error ? (
