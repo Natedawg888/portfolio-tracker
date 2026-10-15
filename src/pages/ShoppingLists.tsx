@@ -3,25 +3,29 @@
  * the store comparison uses only prices KoruLedger users recorded and chose to share
  * (no scraping, nothing estimated). Amounts follow Hide amounts through formatNzd.
  */
-import { useCallback, useEffect, useId, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, formatNzd } from '../api/client';
 import type {
   BudgetCategory,
   ShoppingCompareResponse,
-  ShoppingItem,
   ShoppingListDetail,
   ShoppingListSummary,
   ShoppingPrefs,
   ShoppingStore,
 } from '../types';
-import { longDate } from './warrantiesView';
 import { useMoneyHidden } from '../lib/privacy';
+import { showQuietToast } from '../lib/quietToast';
+import { readListStore, storeKey as storeKeyOf, storeLabel, writeListStore } from '../lib/shoppingView';
+import { ListHeader } from '../components/shopping/ListHeader';
+import { BudgetCard } from '../components/shopping/BudgetCard';
+import { AddItemRow, ItemsList } from '../components/shopping/Items';
+import { CompareStores, PriceNote } from '../components/shopping/Prices';
+import { aucklandToday } from '../lib/debtModel';
 
 type Prefs = ShoppingPrefs & { sharedCount: number; chains: { id: string; label: string }[] };
 
 const errText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
-const qtyText = (q: number) => (Number.isInteger(q) ? String(q) : q.toFixed(2).replace(/0+$/, ''));
 const storeKey = (s: ShoppingStore) => `${s.chain}|${s.branch.toLowerCase().replace(/\s+/g, ' ').trim()}`;
 
 function CategorySelect({ value, categories, onChange, label }: { value: string | null; categories: BudgetCategory[]; onChange: (v: string | null) => void; label: string }) {
@@ -90,258 +94,18 @@ function ListsOverview({ lists, categories, onOpen, onCreated }: { lists: Shoppi
   );
 }
 
-function MatchPicker({ item, onPick }: { item: ShoppingItem; onPick: (key: string | null) => void }) {
-  const [q, setQ] = useState(item.name);
-  const [rows, setRows] = useState<{ key: string; name: string }[] | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    const t = window.setTimeout(() => {
-      api.shopping
-        .products(q)
-        .then((r) => !cancelled && setRows(r))
-        .catch(() => !cancelled && setRows([]));
-    }, 250);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(t);
-    };
-  }, [q]);
-  return (
-    <div className="shop-match">
-      <input type="search" aria-label={`Find the product for ${item.name}`} value={q} onChange={(e) => setQ(e.target.value)} />
-      {rows && rows.length === 0 ? <p className="muted small">No shared products match yet.</p> : null}
-      <ul>
-        {(rows ?? []).map((r) => (
-          <li key={r.key}>
-            <button type="button" className="link-btn" onClick={() => onPick(r.key)}>
-              {r.name}
-            </button>
-          </li>
-        ))}
-      </ul>
-      {item.matchCorrected ? (
-        <button type="button" className="link-btn" onClick={() => onPick(null)}>
-          Match by my item’s name again
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function ItemRow({ item, categories, busy, onChange, onDelete }: {
-  item: ShoppingItem;
-  categories: BudgetCategory[];
-  busy: boolean;
-  onChange: (patch: Parameters<typeof api.shopping.updateItem>[1]) => void;
-  onDelete: () => void;
+function StoresAndSharing({
+  prefs,
+  onSaved,
+  panelRef,
+  onClose,
+}: {
+  prefs: Prefs;
+  onSaved: (p: Prefs, note: string) => void;
+  panelRef?: React.Ref<HTMLElement>;
+  /** Set when shown as a panel on a list; closes it. */
+  onClose?: () => void;
 }) {
-  const [qty, setQty] = useState(qtyText(item.quantity));
-  const [price, setPrice] = useState(item.estPriceNzd == null ? '' : String(item.estPriceNzd));
-  const [matching, setMatching] = useState(false);
-  const commitQty = () => {
-    const n = Number(qty);
-    if (Number.isFinite(n) && n > 0 && n !== item.quantity) onChange({ quantity: n });
-    else setQty(qtyText(item.quantity));
-  };
-  const commitPrice = () => {
-    const next = price.trim() === '' ? null : Number(price);
-    if (next === item.estPriceNzd) return;
-    if (next === null || (Number.isFinite(next) && next >= 0)) onChange({ estPriceNzd: next });
-    else setPrice(item.estPriceNzd == null ? '' : String(item.estPriceNzd));
-  };
-  return (
-    <li className={'shop-item' + (item.ticked ? ' is-ticked' : '')}>
-      <label className="shop-tick">
-        <input type="checkbox" checked={item.ticked} disabled={busy} onChange={(e) => onChange({ ticked: e.target.checked })} />
-        <span className="shop-item-name">{item.name}</span>
-      </label>
-      <div className="shop-item-fields">
-        <label>
-          <span className="sr-only">Quantity of {item.name}</span>
-          <input className="shop-qty" type="number" min={0.01} step="any" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} onBlur={commitQty} />
-        </label>
-        <label>
-          <span className="sr-only">Price each for {item.name} (NZD)</span>
-          <input className="shop-price" type="number" min={0} step="0.01" inputMode="decimal" placeholder="Price" value={price} onChange={(e) => setPrice(e.target.value)} onBlur={commitPrice} />
-        </label>
-        <span className="shop-line-total">{item.lineTotalNzd == null ? '—' : formatNzd(item.lineTotalNzd)}</span>
-      </div>
-      <div className="shop-item-more">
-        <CategorySelect label={`Budget category for ${item.name}`} value={item.categoryId} categories={categories} onChange={(v) => onChange({ categoryId: v })} />
-        <button type="button" className="link-btn" aria-expanded={matching} onClick={() => setMatching((m) => !m)}>
-          {item.matchCorrected ? 'Price match corrected' : 'Fix price match'}
-        </button>
-        <button type="button" className="link-btn" disabled={busy} onClick={onDelete}>
-          Remove
-        </button>
-      </div>
-      {matching ? (
-        <MatchPicker
-          item={item}
-          onPick={(key) => {
-            setMatching(false);
-            onChange({ productKey: key });
-          }}
-        />
-      ) : null}
-    </li>
-  );
-}
-
-function RecordPrices({ list, prefs, onSaved }: { list: ShoppingListDetail; prefs: Prefs; onSaved: (l: ShoppingListDetail, note: string) => void }) {
-  const [store, setStore] = useState(prefs.stores[0] ? storeKey(prefs.stores[0]) : '');
-  const [prices, setPrices] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const chosen = prefs.stores.find((s) => storeKey(s) === store);
-  const entries = list.items
-    .map((i) => ({ itemId: i.id, priceNzd: Number(prices[i.id]) }))
-    .filter((e) => prices[e.itemId]?.trim() && Number.isFinite(e.priceNzd) && e.priceNzd > 0);
-
-  if (prefs.stores.length === 0) {
-    return <p className="muted small">Add the stores you shop at under “Stores and price sharing” to record prices.</p>;
-  }
-
-  async function save() {
-    if (!chosen || entries.length === 0) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await api.shopping.recordPrices(list.id, { chain: chosen.chain, branch: chosen.branch, prices: entries });
-      setPrices({});
-      onSaved(
-        r.list,
-        r.shared > 0
-          ? `Saved ${entries.length} price${entries.length === 1 ? '' : 's'} and shared ${r.shared} anonymously. Thank you.`
-          : `Saved ${entries.length} price${entries.length === 1 ? '' : 's'} to your list${prefs.contributePrices ? ' (daily sharing limit reached)' : ''}.`,
-      );
-    } catch (e) {
-      setError(errText(e, 'Could not save the prices.'));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="shop-record">
-      <label>
-        Shopping at
-        <select value={store} onChange={(e) => setStore(e.target.value)}>
-          {prefs.stores.map((s) => (
-            <option key={storeKey(s)} value={storeKey(s)}>
-              {prefs.chains.find((c) => c.id === s.chain)?.label ?? s.chain} {s.branch}
-            </option>
-          ))}
-        </select>
-      </label>
-      <ul className="shop-record-rows">
-        {list.items.map((i) => (
-          <li key={i.id}>
-            <span>{i.name}</span>
-            <input
-              type="number"
-              min={0.01}
-              step="0.01"
-              inputMode="decimal"
-              aria-label={`Price paid each for ${i.name} (NZD)`}
-              placeholder="Price each"
-              value={prices[i.id] ?? ''}
-              onChange={(e) => setPrices((p) => ({ ...p, [i.id]: e.target.value }))}
-            />
-          </li>
-        ))}
-      </ul>
-      {error ? <p className="auth-error" role="alert">{error}</p> : null}
-      <div className="row gap">
-        <button type="button" className="btn primary" disabled={busy || entries.length === 0} onClick={() => void save()}>
-          Save prices
-        </button>
-        <span className="muted small">
-          {prefs.contributePrices ? 'Prices are also shared anonymously to help others compare.' : 'Saved to your list only. Sharing is off.'}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function Comparison({ list, data }: { list: ShoppingListDetail; data: ShoppingCompareResponse }) {
-  if (data.stores.length === 0) return <p className="muted small">Add the stores you shop at to compare prices.</p>;
-  const cheapest = data.cheapest ? data.stores.find((s) => s.chain === data.cheapest!.chain && s.branch === data.cheapest!.branch) : null;
-  return (
-    <div className="shop-compare">
-      <p className="shop-compare-verdict" aria-live="polite">
-        {cheapest
-          ? `${cheapest.chainLabel} ${cheapest.branch} looks cheapest: ${formatNzd(cheapest.total)} for the ${cheapest.pricedCount} of ${data.itemCount} items with a recent price.`
-          : 'No recent shared prices for these items at your stores yet.'}
-        {data.split && data.split.savingVsCheapest != null && data.split.savingVsCheapest > 0.004
-          ? ` Splitting the shop would save about ${formatNzd(data.split.savingVsCheapest)}.`
-          : ''}
-      </p>
-      <div className="table-wrap" style={{ overflowX: 'auto' }}>
-        <table className="data-table shop-compare-table">
-          <thead>
-            <tr>
-              <th scope="col">Item</th>
-              {data.stores.map((s) => (
-                <th key={`${s.chain}|${s.branch}`} scope="col" style={{ textAlign: 'right' }}>
-                  {s.chainLabel}
-                  <br />
-                  <span className="muted small">{s.branch}</span>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {list.items.map((i) => (
-              <tr key={i.id}>
-                <th scope="row">
-                  {i.name}
-                  {i.quantity !== 1 ? <span className="muted small"> × {qtyText(i.quantity)}</span> : null}
-                </th>
-                {data.stores.map((s) => {
-                  const cell = s.items[i.id];
-                  return (
-                    <td key={`${s.chain}|${s.branch}`} className="money" style={{ textAlign: 'right' }}>
-                      {cell ? (
-                        <>
-                          {formatNzd(cell.lineTotal)}
-                          <br />
-                          <span className="muted small">{longDate(cell.observedOn)}</span>
-                        </>
-                      ) : (
-                        <span aria-label="No recent price">—</span>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr>
-              <th scope="row">Total (items priced)</th>
-              {data.stores.map((s) => (
-                <td key={`${s.chain}|${s.branch}`} className="money" style={{ textAlign: 'right' }}>
-                  {s.pricedCount ? formatNzd(s.total) : '—'}
-                  <br />
-                  <span className="muted small">
-                    {s.pricedCount} of {data.itemCount} priced
-                  </span>
-                </td>
-              ))}
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-      <p className="muted small">
-        Prices from the last {data.windowDays} days, recorded by KoruLedger users. Informational only: prices change in store, and
-        totals only cover items with a recent price.
-      </p>
-    </div>
-  );
-}
-
-function StoresAndSharing({ prefs, onSaved }: { prefs: Prefs; onSaved: (p: Prefs, note: string) => void }) {
   const [chain, setChain] = useState(prefs.chains[0]?.id ?? 'woolworths');
   const [branch, setBranch] = useState('');
   const [suggest, setSuggest] = useState<string[]>([]);
@@ -372,16 +136,34 @@ function StoresAndSharing({ prefs, onSaved }: { prefs: Prefs; onSaved: (p: Prefs
   }
 
   return (
-    <section className="panel shop-settings" aria-labelledby="shop-settings-title">
-      <h3 id="shop-settings-title">Stores and price sharing</h3>
+    <section
+      ref={panelRef}
+      className={'panel shop-settings' + (onClose ? ' is-panel' : '')}
+      aria-labelledby="shop-settings-title"
+      tabIndex={-1}
+      onKeyDown={(e) => {
+        if (onClose && e.key === 'Escape') {
+          e.stopPropagation();
+          onClose();
+        }
+      }}
+    >
+      <div className="shop-settings-head">
+        <h3 id="shop-settings-title">Stores and price sharing</h3>
+        {onClose ? (
+          <button type="button" className="btn shop-settings-done" onClick={onClose}>
+            Done
+          </button>
+        ) : null}
+      </div>
       <ul className="shop-store-chips">
         {prefs.stores.map((s) => (
           <li key={storeKey(s)}>
-            {prefs.chains.find((c) => c.id === s.chain)?.label} {s.branch}{' '}
+            {storeLabel(s)}{' '}
             <button
               type="button"
-              className="link-btn"
-              aria-label={`Remove ${s.branch}`}
+              className="shop-chip-remove"
+              aria-label={`Remove ${storeLabel(s)}`}
               onClick={() => void save({ stores: prefs.stores.filter((x) => storeKey(x) !== storeKey(s)) }, 'Store removed.')}
             >
               ×
@@ -464,9 +246,15 @@ export function ShoppingLists() {
   const [prefs, setPrefs] = useState<Prefs | null>(null);
   const [categories, setCategories] = useState<BudgetCategory[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [newItem, setNewItem] = useState({ name: '', quantity: '1', price: '' });
+  const [storesOpen, setStoresOpen] = useState(false);
+  const [storeChoice, setStoreChoice] = useState<Record<string, string>>({});
+  const [categoryRequest, setCategoryRequest] = useState(0);
+  // Option (b): prices typed at a store stay private until shared. Kept on this page only.
+  const [pending, setPending] = useState<Record<string, string[]>>({});
+  const storesRef = useRef<HTMLElement>(null);
+  const toast = (note: string) => showQuietToast(note, { kind: 'info', ttlMs: 4000 });
+  const [today] = useState(() => aucklandToday());
   const spending = useMemo(() => categories.filter((c) => c.type === 'spending'), [categories]);
 
   const loadLists = useCallback(() => {
@@ -505,8 +293,8 @@ export function ShoppingLists() {
   }, [listKey]);
 
   const open = (id: string | null) => {
-    setMsg(null);
     setError(null);
+    setStoresOpen(false);
     setCompare(null);
     setParams(id ? { list: id } : {});
   };
@@ -517,7 +305,7 @@ export function ShoppingLists() {
     try {
       const l = await fn();
       if (l) setList(l);
-      if (note) setMsg(note);
+      if (note) toast(note);
       loadLists();
     } catch (e) {
       setError(errText(e, 'Something went wrong.'));
@@ -526,37 +314,112 @@ export function ShoppingLists() {
     }
   }
 
-  async function addItem(e: FormEvent) {
-    e.preventDefault();
-    if (!shown || !newItem.name.trim()) return;
-    await act(() =>
-      api.shopping.addItem(shown.id, {
-        name: newItem.name,
-        quantity: Number(newItem.quantity) > 0 ? Number(newItem.quantity) : 1,
-        estPriceNzd: newItem.price.trim() === '' ? null : Number(newItem.price),
-      }),
-    );
-    setNewItem({ name: '', quantity: '1', price: '' });
+  /** The store chosen for this list (remembered per list in this browser), else the first. */
+  const store = useMemo(() => {
+    if (!shown || !prefs) return null;
+    const key = storeChoice[shown.id];
+    return (key ? prefs.stores.find((s) => storeKeyOf(s) === key) : undefined) ?? readListStore(shown.id, prefs.stores);
+  }, [shown, prefs, storeChoice]);
+
+  /** Items priced at the chosen store since the last share that still have a price. */
+  const pendingHere = useMemo(() => {
+    if (!shown || !store) return [];
+    const ids = new Set(pending[storeKeyOf(store)] ?? []);
+    return shown.items.filter((i) => ids.has(i.id) && i.estPriceNzd != null && i.estPriceNzd > 0);
+  }, [shown, store, pending]);
+
+  async function shareTyped() {
+    if (!shown || !store || pendingHere.length === 0) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api.shopping.recordPrices(shown.id, {
+        chain: store.chain,
+        branch: store.branch,
+        prices: pendingHere.map((i) => ({ itemId: i.id, priceNzd: i.estPriceNzd as number })),
+      });
+      setList(r.list);
+      setPending((p) => ({ ...p, [storeKeyOf(store)]: [] }));
+      toast(
+        r.shared > 0
+          ? `Shared ${r.shared} price${r.shared === 1 ? '' : 's'} anonymously. Thank you.`
+          : r.notShared > 0
+            ? 'Not shared: the daily sharing limit is reached.'
+            : 'Not shared: price sharing is off.',
+      );
+    } catch (e) {
+      setError(errText(e, 'Could not share the prices.'));
+    } finally {
+      setBusy(false);
+    }
   }
+
+  const openStores = () => {
+    setStoresOpen(true);
+    window.requestAnimationFrame(() => {
+      storesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      storesRef.current?.focus({ preventScroll: true });
+    });
+  };
 
   return (
     <div className="stack bills-page warranties-page shopping-page">
-      <header className="warranties-header">
-        <div>
-          {shown ? (
-            <button type="button" className="link-btn warranties-back" onClick={() => open(null)}>
-              ‹ All lists
-            </button>
-          ) : (
+      {shown ? (
+        <ListHeader
+          name={shown.name}
+          categoryId={shown.categoryId}
+          categories={spending}
+          stores={prefs?.stores ?? []}
+          store={store}
+          busy={busy}
+          categoryEditorRequest={categoryRequest}
+          onBack={() => open(null)}
+          onPickStore={(s) => {
+            writeListStore(shown.id, s);
+            setStoreChoice((c) => ({ ...c, [shown.id]: storeKeyOf(s) }));
+          }}
+          onAddStore={openStores}
+          onOpenStores={openStores}
+          onRename={async (name) => {
+            await act(() => api.shopping.updateList(shown.id, { name }), 'List renamed.');
+            return true;
+          }}
+          onCategory={async (categoryId) => {
+            await act(() => api.shopping.updateList(shown.id, { categoryId }), 'Budget category updated.');
+            return true;
+          }}
+          onUntickAll={() => void act(() => api.shopping.resetList(shown.id), 'Everything unticked, ready to shop again.')}
+          onDelete={() => {
+            if (!window.confirm(`Delete “${shown.name}” and its items?`)) return;
+            void api.shopping.removeList(shown.id).then(() => {
+              loadLists();
+              open(null);
+              toast('List deleted.');
+            });
+          }}
+        />
+      ) : (
+        <header className="warranties-header">
+          <div>
             <Link className="warranties-back" to="/spending">
               ‹ Budget
             </Link>
-          )}
-          <h2 className="page-title">{shown ? shown.name : 'Shopping lists'}</h2>
-        </div>
-      </header>
+            <h2 className="page-title">Shopping lists</h2>
+          </div>
+        </header>
+      )}
       {error ? <p className="auth-error" role="alert">{error}</p> : null}
-      {msg ? <p className="banner" role="status">{msg}</p> : null}
+      {prefs && shown && storesOpen ? (
+        <StoresAndSharing
+          panelRef={storesRef}
+          prefs={prefs}
+          onSaved={(p, note) => { setPrefs(p); toast(note); }}
+          onClose={() => {
+            setStoresOpen(false);
+            window.requestAnimationFrame(() => document.querySelector<HTMLElement>('.shop-head .txn-menu-toggle')?.focus());
+          }}
+        />
+      ) : null}
       {!lists && !error ? <p className="muted">Loading…</p> : null}
 
       {!openId && lists ? (
@@ -565,98 +428,46 @@ export function ShoppingLists() {
 
       {shown ? (
         <>
-          <section className="panel shop-detail" aria-label={shown.name}>
-            <div className="shop-detail-head">
-              <p className="shop-totals">
-                About <strong>{formatNzd(shown.totals.estimatedNzd)}</strong> · still to buy {formatNzd(shown.totals.toBuyNzd)}
-                {shown.totals.unpricedCount ? ` · ${shown.totals.unpricedCount} without a price` : ''}
-              </p>
-              <div className="row gap">
-                <CategorySelect label="Budget category for this list" value={shown.categoryId} categories={spending} onChange={(v) => void act(() => api.shopping.updateList(shown.id, { categoryId: v }))} />
-                <button type="button" className="btn small" disabled={busy} onClick={() => void act(() => api.shopping.resetList(shown.id), 'Everything unticked, ready to shop again.')}>
-                  Untick all
-                </button>
-                <button
-                  type="button"
-                  className="btn small ghost"
-                  disabled={busy}
-                  onClick={() => {
-                    const name = window.prompt('Rename list', shown.name);
-                    if (name && name.trim() && name !== shown.name) void act(() => api.shopping.updateList(shown.id, { name }));
-                  }}
-                >
-                  Rename
-                </button>
-                <button
-                  type="button"
-                  className="btn small ghost"
-                  disabled={busy}
-                  onClick={() => {
-                    if (!window.confirm(`Delete “${shown.name}” and its items?`)) return;
-                    void api.shopping.removeList(shown.id).then(() => {
-                      loadLists();
-                      open(null);
-                      setMsg('List deleted.');
-                    });
-                  }}
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-
-            {shown.budget.length > 0 ? (
-              <ul className="shop-budget">
-                {shown.budget.map((b) => (
-                  <li key={b.categoryId} className={b.remainingNzd != null && b.toBuyNzd > b.remainingNzd ? 'is-over' : ''}>
-                    <strong>{b.categoryName}</strong>: still to buy {formatNzd(b.toBuyNzd)}
-                    {b.remainingNzd == null
-                      ? ` · no plan this month (spent ${formatNzd(b.spentNzd)})`
-                      : ` · ${formatNzd(b.remainingNzd)} left of ${formatNzd(b.plannedNzd)} this month${b.toBuyNzd > b.remainingNzd ? ', so this list goes over' : ''}`}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-
-            <ul className="shop-items">
-              {shown.items.map((i) => (
-                <ItemRow
-                  key={`${i.id}:${i.quantity}:${i.estPriceNzd}`}
-                  item={i}
-                  categories={spending}
-                  busy={busy}
-                  onChange={(patch) => void act(() => api.shopping.updateItem(i.id, patch))}
-                  onDelete={() => void act(() => api.shopping.removeItem(i.id))}
-                />
-              ))}
-            </ul>
-            {shown.items.length === 0 ? <p className="muted small">No items yet.</p> : null}
-
-            <form className="shop-row shop-add" onSubmit={(e) => void addItem(e)}>
-              <input aria-label="Item" value={newItem.name} maxLength={80} placeholder="Add an item, e.g. Milk 2L" onChange={(e) => setNewItem((n) => ({ ...n, name: e.target.value }))} />
-              <input aria-label="Quantity" className="shop-qty" type="number" min={0.01} step="any" inputMode="decimal" value={newItem.quantity} onChange={(e) => setNewItem((n) => ({ ...n, quantity: e.target.value }))} />
-              <input aria-label="Price each (optional)" className="shop-price" type="number" min={0} step="0.01" inputMode="decimal" placeholder="Price" value={newItem.price} onChange={(e) => setNewItem((n) => ({ ...n, price: e.target.value }))} />
-              <button type="submit" className="btn primary" disabled={busy || !newItem.name.trim()}>
-                Add
-              </button>
-            </form>
+          <BudgetCard list={shown} onChangeCategory={() => setCategoryRequest((n) => n + 1)} />
+          <section className="panel shop-detail" aria-label={`Items on ${shown.name}`}>
+            <AddItemRow busy={busy} onAdd={(name, price) => act(() => api.shopping.addItem(shown.id, { name, estPriceNzd: price })).then(() => undefined)} />
+            <ItemsList
+              items={shown.items}
+              categories={spending}
+              store={store}
+              storePrices={store && compare ? (compare.stores.find((c) => storeKeyOf({ chain: c.chain, branch: c.branch }) === storeKeyOf(store)) ?? null) : null}
+              today={today}
+              busy={busy}
+              onChange={(i, patch) => void act(() => api.shopping.updateItem(i.id, patch))}
+              onPriceTyped={(i, price) => {
+                void act(() => api.shopping.updateItem(i.id, { estPriceNzd: price }));
+                if (!store) return;
+                const k = storeKeyOf(store);
+                setPending((p) => {
+                  const ids = (p[k] ?? []).filter((x) => x !== i.id);
+                  return { ...p, [k]: price != null && price > 0 ? [...ids, i.id] : ids };
+                });
+              }}
+              onDelete={(i) => void act(() => api.shopping.removeItem(i.id), `${i.name} removed.`)}
+            />
+            <PriceNote
+              store={store}
+              sharing={Boolean(prefs?.contributePrices)}
+              pending={pendingHere.length}
+              busy={busy}
+              onOpenSettings={openStores}
+              onShare={() => void shareTyped()}
+            />
           </section>
 
           <section className="panel" aria-labelledby="shop-compare-title">
             <h3 id="shop-compare-title">Compare stores</h3>
-            {compare ? <Comparison list={shown} data={compare} /> : <p className="muted small">Loading prices…</p>}
+            <CompareStores list={shown} data={compare} onAddStore={openStores} />
           </section>
-
-          {prefs ? (
-            <section className="panel" aria-labelledby="shop-record-title">
-              <h3 id="shop-record-title">Record prices</h3>
-              <RecordPrices key={shown.id} list={shown} prefs={prefs} onSaved={(l, note) => { setList(l); setMsg(note); loadLists(); }} />
-            </section>
-          ) : null}
         </>
       ) : null}
 
-      {prefs ? <StoresAndSharing prefs={prefs} onSaved={(p, note) => { setPrefs(p); setMsg(note); }} /> : null}
+      {prefs && !shown ? <StoresAndSharing prefs={prefs} onSaved={(p, note) => { setPrefs(p); toast(note); }} /> : null}
     </div>
   );
 }

@@ -23,6 +23,8 @@ import { prefetchNavTarget, schedulePrefetchAppRoutes } from '../lib/routePrefet
 
 /** Pages that don't show the metals / sync / legal links footer. */
 const FOOTERLESS_PATHS = new Set(['/', '/portfolio', '/debts', '/warranties', '/rentals']);
+/** Pages whose footer keeps only the legal links (no metals / sync note). */
+const LEGAL_ONLY_FOOTER_PATHS = new Set(['/shopping']);
 
 const links: Array<{
   to: string;
@@ -332,7 +334,7 @@ export function Layout({ children }: { children?: ReactNode }) {
       {/* Dashboard carries this note behind its net worth ⓘ; Portfolio, Debts, Warranties and Rentals drop it. */}
       {FOOTERLESS_PATHS.has(location.pathname) ? null : (
         <footer className="app-footer">
-          {metalProviderFooter(metalProvider)} · sync failures stay quiet ·{' '}
+          {LEGAL_ONLY_FOOTER_PATHS.has(location.pathname) ? null : <>{metalProviderFooter(metalProvider)} · sync failures stay quiet ·{' '}</>}
           <Link to="/privacy">Privacy policy</Link> · <Link to="/terms">Terms of use</Link>
         </footer>
       )}
