@@ -302,7 +302,9 @@ export function Login() {
     <div className="auth-page login-page">
       <main className="auth-card panel">
         <div className="auth-brand">
-          <BrandLockup size="md" />
+          <Link to="/" className="auth-brand-link" aria-label="KoruLedger home">
+            <BrandLockup size="md" />
+          </Link>
         </div>
         {step.kind === 'password' ? (
           <>
