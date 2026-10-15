@@ -388,7 +388,7 @@ export function Dashboard() {
             Total is assets minus debt outstanding. Accessible also leaves out KiwiSaver, which you generally
             can&apos;t withdraw until 65. The trend uses one snapshot a day, saved when you open the dashboard.{' '}
             {quoteNote ? `${quoteNote} ` : ''}
-            Local-first; {metalProviderFooter(summary.metalsSpotSource ?? null)}. Sync failures stay quiet and the last
+            {metalProviderFooter(summary.metalsSpotSource ?? null)}. Sync failures stay quiet and the last
             data is shown. Updated {asOfText} NZT.
           </>
         }
