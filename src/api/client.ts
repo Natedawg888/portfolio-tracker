@@ -41,6 +41,9 @@ import type {
   HouseholdSplitsView,
   HouseholdPayeView,
   Payslip,
+  Vehicle,
+  VehicleWriteBody,
+  VehiclesView,
   PayslipWriteBody,
   PayslipsView,
   HouseholdFamilyView,
@@ -706,6 +709,12 @@ export const api = {
     uploadReceipt: (id: string, receiptBase64: string) =>
       req<Warranty>(`/warranties/${encodeURIComponent(id)}/receipt`, { method: 'POST', body: JSON.stringify({ receiptBase64 }) }),
     removeReceipt: (id: string) => req<Warranty>(`/warranties/${encodeURIComponent(id)}/receipt`, { method: 'DELETE' }),
+  },
+  vehicles: {
+    list: () => req<VehiclesView>('/vehicles'),
+    create: (body: VehicleWriteBody) => req<Vehicle>('/vehicles', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: VehicleWriteBody) => req<Vehicle>(`/vehicles/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    remove: (id: string) => req<{ ok: boolean }>(`/vehicles/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
   payslips: {
     list: (year?: number) => req<PayslipsView>(`/payslips${year ? `?year=${year}` : ''}`),

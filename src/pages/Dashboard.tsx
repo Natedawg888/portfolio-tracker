@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { api, coerceBalance, formatAuckland, formatNzd } from '../api/client';
 import { maybeAutoSyncBankTransactions, maybeAutoSyncPortfolio } from '../lib/akahuTxnAutoSync';
 import {
@@ -57,6 +58,9 @@ type Summary = {
   realEstateMortgageNzd?: number | null;
   realEstateEquityNzd?: number | null;
   collectablesNzd: number | null;
+  vehiclesNzd?: number | null;
+  vehicleLoansNzd?: number | null;
+  vehiclesEquityNzd?: number | null;
   kiwiSaverNzd: number | null;
   debtOutstandingNzd?: number;
   debtPersonCount?: number;
@@ -332,6 +336,7 @@ export function Dashboard() {
       colour: '#7a9e5a',
     },
     { key: 'collectables', name: 'Collectables', value: summary.collectablesNzd ?? 0, colour: '#c45a9a' },
+    { key: 'vehicles', name: 'Vehicles', value: summary.vehiclesEquityNzd ?? 0, colour: '#8a7a5a' },
     { key: 'kiwiSaver', name: 'KiwiSaver', value: summary.kiwiSaverNzd ?? 0, colour: '#6a8fd4' },
   ]
     .filter((row) => {
@@ -466,6 +471,18 @@ export function Dashboard() {
             Magic: The Gathering prices from Scryfall and Pokémon prices from the Pokémon TCG API, converted to NZD.
             Prices are never estimated.
           </Bucket>
+        ) : null}
+        {summary.vehiclesNzd != null ? (
+          <Link className="card dashboard-tile dashboard-tile-link" to="/vehicles">
+            <span className="dashboard-tile-hit">
+              <span className="dashboard-tile-title">Vehicles (equity)</span>
+              <span className="card-value">{formatNzd(summary.vehiclesEquityNzd ?? summary.vehiclesNzd)}</span>
+              <span className="dashboard-tile-cue">
+                {summary.vehicleLoansNzd ? `Value ${formatNzd(summary.vehiclesNzd)} minus loans ${formatNzd(summary.vehicleLoansNzd)}` : 'Value you recorded'} ·{' '}
+                Open <span aria-hidden="true">›</span>
+              </span>
+            </span>
+          </Link>
         ) : null}
         {assetEnabled('kiwisaver') ? (
           <Bucket {...tile('kiwisaver')} title="KiwiSaver" value={summary.kiwiSaverNzd} updated={summary.asOf}>

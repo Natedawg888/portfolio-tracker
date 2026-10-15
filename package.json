@@ -32,6 +32,7 @@
     "test:output-pay": "node --import tsx src/lib/outputPayCalc.test.ts",
     "test:paye": "node --import tsx src/lib/payeCalc.test.ts",
     "test:wff": "node --import tsx src/lib/wffCalc.test.ts",
+    "test:vehicles": "node --import tsx server/vehicles/store.test.ts",
     "test:payslips": "node --import tsx src/lib/payslipCheck.test.ts && node --import tsx server/payslips/store.test.ts",
     "test:paye-page": "node --import tsx src/lib/payeView.test.ts",
     "test:pay-sources": "node --import tsx server/paySources/store.test.ts",
