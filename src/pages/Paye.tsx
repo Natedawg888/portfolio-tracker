@@ -18,8 +18,6 @@ import {
 import {
   investingCreditsFromPortfolioIncome,
   mergePortfolioInvestingCredits,
-  PAYE_TAX_YEAR_END,
-  PAYE_TAX_YEAR_START,
   type PortfolioIncomeLike,
 } from '../lib/payeInvestingFromPortfolio';
 import {
@@ -34,28 +32,14 @@ import { OutputPayInputs, OutputPayResults, SavedPaySources } from '../component
 import { calculatePieceRate, type OutputPayType, type PieceRatePayeOptions } from '../lib/outputPayCalc';
 import { loadOutputPayPrefs, pieceUnitsPerWeek, saveOutputPayPrefs, type OutputPayPrefs } from '../lib/outputPayPrefs';
 import {
-  ACC_MAX_EARNINGS,
-  ACC_MAX_LEVY,
-  ACC_RATE,
+  CURRENT_PAY_TAX_YEAR,
   DONATION_TAX_CREDIT_RATE,
-  IETC_ABATE_END,
-  IETC_ABATE_RATE,
-  IETC_FULL_ANNUAL,
-  IETC_FULL_MAX_INCOME,
-  IETC_MIN_INCOME,
-  INCOME_TAX_BRACKETS,
-  KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE,
-  KIWISAVER_DEFAULT_EMPLOYEE_RATE,
-  KIWISAVER_EMPLOYEE_RATE_CHOICES,
-  KIWISAVER_EMPLOYEE_RATES,
-  KIWISAVER_EMPLOYER_MIN_RATE,
+  PAY_TAX_YEAR_OPTIONS,
   PAYE_DEFAULT_HOURS_PER_WEEK,
   PAYROLL_GIVING_CREDIT_RATE,
   INVESTING_CREDIT_KIND_OPTIONS,
   RATE_SOURCES,
-  STUDENT_LOAN_ANNUAL_THRESHOLD,
   SCHEDULAR_SOURCES,
-  STUDENT_LOAN_RATE,
   payTaxYearRates,
   type InvestingCreditKind,
   type PayTaxYearRates,
@@ -233,7 +217,7 @@ function CharityLinksFromBudget() {
 }
 
 function WhatsIncluded({ open, rates }: { open: boolean; rates: PayTaxYearRates }) {
-  const brackets = incomeBracketRows(INCOME_TAX_BRACKETS);
+  const brackets = incomeBracketRows(rates.incomeTaxBrackets);
   const sources = payeSourceLinks(RATE_SOURCES, SCHEDULAR_SOURCES);
   return (
     <div id="paye-included" className="paye-included" hidden={!open}>
@@ -274,12 +258,12 @@ function WhatsIncluded({ open, rates }: { open: boolean; rates: PayTaxYearRates 
       <p>
         {ratesInUseNote(
           {
-            accRate: ACC_RATE,
-            accMaxEarnings: ACC_MAX_EARNINGS,
-            accMaxLevy: ACC_MAX_LEVY,
-            accountDefaultEmployeeRate: KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE,
-            statutoryEmployeeRates: KIWISAVER_EMPLOYEE_RATES,
-            statutoryMinimumEmployeeRate: KIWISAVER_DEFAULT_EMPLOYEE_RATE,
+            accRate: rates.accRate,
+            accMaxEarnings: rates.accMaxEarnings,
+            accMaxLevy: rates.accMaxLevy,
+            accountDefaultEmployeeRate: rates.kiwiSaverDefaultEmployeeRate,
+            statutoryEmployeeRates: rates.kiwiSaverEmployeeRates,
+            statutoryMinimumEmployeeRate: rates.kiwiSaverDefaultEmployeeRate,
             statutoryFrom: formatPayeTaxDay(rates.start),
             minimumWageAdultHourly: rates.minimumWageAdultHourly,
             holidayPayPaygRate: rates.holidayPayPaygRate,
@@ -307,7 +291,9 @@ function WhatsIncluded({ open, rates }: { open: boolean; rates: PayTaxYearRates 
 export function Paye() {
 
   const initial = useMemo(() => loadPayePrefs(), []);
-  const rates = payTaxYearRates();
+  // Tax year (KAN-79): every rate on the page comes from this year's entry in payeRates.ts.
+  const [taxYear, setTaxYear] = useState(CURRENT_PAY_TAX_YEAR);
+  const rates = payTaxYearRates(taxYear);
 
   const [payType, setPayType] = useState<PayePayType>(initial.payType);
   const [outputPrefs, setOutputPrefs] = useState<OutputPayPrefs>(() => loadOutputPayPrefs());
@@ -333,7 +319,7 @@ export function Paye() {
   const [ksCustom, setKsCustom] = useState(() => {
     const cached = readPageCache<{ employeeRatePct: number }>('paye:ks-rate');
     if (!cached) return initial.ksCustom;
-    return !KIWISAVER_EMPLOYEE_RATE_CHOICES.some((choice) => choice === cached.employeeRatePct);
+    return !payTaxYearRates().kiwiSaverEmployeeRates.some((choice) => choice === cached.employeeRatePct);
   });
   const [ksRateReady, setKsRateReady] = useState(
     () => readPageCache<{ employeeRatePct: number }>('paye:ks-rate') != null,
@@ -418,7 +404,7 @@ export function Paye() {
         if (cancelled) return;
         const rate = row.employeeRatePct;
         if (!commitPageRead(stamp, { employeeRatePct: rate })) return;
-        const offered = KIWISAVER_EMPLOYEE_RATE_CHOICES.some((choice) => choice === rate);
+        const offered = payTaxYearRates().kiwiSaverEmployeeRates.some((choice) => choice === rate);
         setKsRate(String(rate));
         setKsCustom(!offered);
         setKsRateReady(true);
@@ -432,7 +418,8 @@ export function Paye() {
   }, []);
 
   useEffect(() => {
-    if (!ksRateReady) return;
+    // Only the current year's rate is the account's KiwiSaver setting; past years are what-ifs.
+    if (!ksRateReady || taxYear !== CURRENT_PAY_TAX_YEAR) return;
     const rate = Number(ksRate);
     if (!Number.isFinite(rate) || rate <= 0 || rate > 100) return;
     const handle = window.setTimeout(() => {
@@ -441,7 +428,7 @@ export function Paye() {
       });
     }, 300);
     return () => window.clearTimeout(handle);
-  }, [ksRate, ksRateReady]);
+  }, [ksRate, ksRateReady, taxYear]);
 
   // Auto-fill only from real savings-interest/dividend income records or transactions.
   // Plain income without explicit credit wording → add nothing (never invent RWT).
@@ -449,7 +436,7 @@ export function Paye() {
     let cancelled = false;
     const stamp = beginPageRead('paye:income');
     api.income
-      .list({ from: PAYE_TAX_YEAR_START, to: PAYE_TAX_YEAR_END })
+      .list({ from: rates.start, to: rates.end })
       .then((rows) => {
         if (cancelled) return;
         if (!commitPageRead(stamp, rows)) return;
@@ -462,7 +449,7 @@ export function Paye() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [rates.start, rates.end]);
 
   const hours = Number(hoursPerWeek) || PAYE_DEFAULT_HOURS_PER_WEEK;
   const amountNum = Number(amount);
@@ -470,7 +457,7 @@ export function Paye() {
 
   const employeeRatePct = ksCustom
     ? Number(ksRate) || 0
-    : Number(ksRate) || KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE;
+    : Number(ksRate) || rates.kiwiSaverDefaultEmployeeRate;
 
   const effectiveFrequency: PayFrequency =
     payType === 'hourly' ? 'hour' : frequency === 'hour' ? 'year' : frequency;
@@ -483,7 +470,7 @@ export function Paye() {
       otherAnnualGross: Number(otherAnnual) || 0,
       kiwiSaverOptIn,
       kiwiSaverEmployeeRatePct: employeeRatePct,
-      kiwiSaverEmployerRatePct: Number(ksEmployerRate) || KIWISAVER_EMPLOYER_MIN_RATE,
+      kiwiSaverEmployerRatePct: Number(ksEmployerRate) || rates.kiwiSaverEmployerMinRate,
       salarySacrifice: kiwiSaverOptIn && salarySacrifice,
       studentLoan,
       ietc,
@@ -506,6 +493,7 @@ export function Paye() {
       charityDonationsOn,
       charityDonationsAnnual,
       extraCreditDrafts,
+      rates,
     ],
   );
 
@@ -513,11 +501,12 @@ export function Paye() {
     if (!hasIncome || outputType) return null;
     return calculatePaye({
       ...payeOptions,
+      taxYear: rates.startYear,
       amount: amountNum,
       frequency: effectiveFrequency,
       hoursPerWeek: hours,
     });
-  }, [hasIncome, outputType, amountNum, effectiveFrequency, hours, payeOptions]);
+  }, [hasIncome, outputType, amountNum, effectiveFrequency, hours, payeOptions, rates]);
 
   const periods = result ? periodiseBreakdown(result, hours) : null;
 
@@ -543,15 +532,15 @@ export function Paye() {
       studentLoan,
       ietcApplied: employment === 'primary' && ietc,
       secondaryCode:
-        employment === 'secondary' ? pickSecondaryCode(Number(secondaryTotal) || 0).code : null,
+        employment === 'secondary' ? pickSecondaryCode(Number(secondaryTotal) || 0, rates).code : null,
     });
   }, [payType, outputPrefs, payeOptions, rates, result, employment, studentLoan, ietc, secondaryTotal]);
 
   const ksRateOptions = [
-    ...kiwiSaverEmployeeRateOptions(KIWISAVER_EMPLOYEE_RATE_CHOICES),
+    ...kiwiSaverEmployeeRateOptions(rates.kiwiSaverEmployeeRates),
     { value: KIWISAVER_CUSTOM_RATE_VALUE, label: 'Custom' },
   ];
-  const ksListed = kiwiSaverRateSelection(ksRate, KIWISAVER_EMPLOYEE_RATE_CHOICES);
+  const ksListed = kiwiSaverRateSelection(ksRate, rates.kiwiSaverEmployeeRates);
   const ksRateValue = ksCustom ? KIWISAVER_CUSTOM_RATE_VALUE : ksListed.value;
 
   function selectEmployeeRate(next: string) {
@@ -596,6 +585,17 @@ export function Paye() {
       <header className="paye-intro">
         <h2 className="page-title">Take-home pay</h2>
         <p className="paye-subtitle">{payePageSubtitle(rates.start, rates.end)}</p>
+        <label className="paye-year">
+          <span>Tax year</span>
+          <select value={taxYear} onChange={(e) => setTaxYear(Number(e.target.value))}>
+            {PAY_TAX_YEAR_OPTIONS.map((y) => (
+              <option key={y.startYear} value={y.startYear}>
+                {y.label}
+                {y.startYear === CURRENT_PAY_TAX_YEAR ? ' (this year)' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
         <button
           type="button"
           className="paye-included-toggle"
@@ -745,7 +745,7 @@ export function Paye() {
                 onChange={(e) => setOtherAnnual(e.target.value)}
               />
               <span className="muted small">
-                Used for ACC headroom (max liable earnings {money(ACC_MAX_EARNINGS)}).
+                Used for ACC headroom (max liable earnings {money(rates.accMaxEarnings)}).
               </span>
             </label>
           </div>
@@ -763,7 +763,7 @@ export function Paye() {
             onChange={setKiwiSaverOptIn}
             controls="paye-kiwisaver"
             tipLabel="About KiwiSaver"
-            tip={kiwiSaverOptInTip(KIWISAVER_ACCOUNT_DEFAULT_EMPLOYEE_RATE)}
+            tip={kiwiSaverOptInTip(rates.kiwiSaverDefaultEmployeeRate)}
           />
         </div>
         <div id="paye-kiwisaver" className="paye-reveal" hidden={!kiwiSaverOptIn}>
@@ -796,7 +796,7 @@ export function Paye() {
                 <label htmlFor="paye-ks-employer">Employer %</label>
                 <InfoTip label="About the employer KiwiSaver rate">
                   {kiwiSaverEmployerTip({
-                    minimumRate: KIWISAVER_EMPLOYER_MIN_RATE,
+                    minimumRate: rates.kiwiSaverEmployerMinRate,
                     statutoryFrom: formatPayeTaxDay(rates.start),
                   })}
                 </InfoTip>
@@ -833,7 +833,7 @@ export function Paye() {
             onChange={setStudentLoan}
             tipLabel="About the student loan deduction"
             tip={studentLoanTip(
-              { rate: STUDENT_LOAN_RATE, annualThreshold: STUDENT_LOAN_ANNUAL_THRESHOLD },
+              { rate: rates.studentLoanRate, annualThreshold: rates.studentLoanAnnualThreshold },
               bandMoney,
             )}
           />
@@ -875,11 +875,11 @@ export function Paye() {
             tipLabel="About the independent earner tax credit"
             tip={ietcCreditTip(
               {
-                minIncome: IETC_MIN_INCOME,
-                fullMaxIncome: IETC_FULL_MAX_INCOME,
-                abateEnd: IETC_ABATE_END,
-                fullAnnual: IETC_FULL_ANNUAL,
-                abateRate: IETC_ABATE_RATE,
+                minIncome: rates.ietc.minIncome,
+                fullMaxIncome: rates.ietc.fullMaxIncome,
+                abateEnd: rates.ietc.abateEnd,
+                fullAnnual: rates.ietc.fullAnnual,
+                abateRate: rates.ietc.abateRate,
               },
               bandMoney,
             )}

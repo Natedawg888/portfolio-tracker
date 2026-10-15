@@ -5,6 +5,7 @@
  */
 import { calcAcc, calcIetc, calculatePaye } from './payeCalc.ts';
 import { defaultPayePrefs } from './payePrefs.ts';
+import { PAY_TAX_YEAR_OPTIONS, payTaxYearRates, taxYearForDate } from './payeRates.ts';
 
 function eq(actual: unknown, expected: unknown, msg: string): void {
   if (actual !== expected) {
@@ -50,5 +51,19 @@ if (ietcNote.includes('69,999')) throw new Error('FAIL: IETC note must not use a
 if (off.notes.some((n) => n.includes('69,999'))) throw new Error('FAIL: the $55,000 case must not mention a $69,999 ceiling');
 eq(calcAcc(200000), 2741.22, 'ACC at $200,000 is the published maximum levy');
 eq(defaultPayePrefs().amount, '75000', 'default salary stays 75000');
+
+// Tax years (KAN-79): 2025/26 uses that year's published ACC and KiwiSaver minimum; brackets are the same.
+const y25 = calculatePaye({ ...base, taxYear: 2025, kiwiSaverEmployeeRatePct: 3, kiwiSaverEmployerRatePct: 0, studentLoan: false });
+eq(y25.incomeTax, 8720.5, '2025/26 income tax at $55,000');
+eq(y25.acc, 918.5, '2025/26 ACC at 1.67%');
+eq(y25.kiwiSaverEmployee, 1650, '2025/26 employee KiwiSaver 3%');
+eq(y25.kiwiSaverEmployer, 1650, '2025/26 employer minimum 3%');
+eq(y25.takeHome, 44231, '2025/26 take-home at $55,000');
+eq(calcAcc(200000, payTaxYearRates(2025)), 2551.59, '2025/26 maximum ACC levy');
+eq(calculatePaye({ ...base, taxYear: 2026, studentLoan: false }).takeHome, off.takeHome, 'taxYear 2026 matches the default');
+eq(calculatePaye({ ...base, taxYear: 2031, studentLoan: false }).takeHome, off.takeHome, 'a year with no rates falls back to the current year');
+eq(PAY_TAX_YEAR_OPTIONS.map((y) => y.startYear).join(), '2026,2025', 'years offered, newest first');
+eq(taxYearForDate('2026-03-31'), 2025, '31 March is the end of the previous tax year');
+eq(taxYearForDate('2026-04-01'), 2026, '1 April starts a new tax year');
 
 console.log('payeCalc.test.ts ok');
