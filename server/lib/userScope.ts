@@ -9,6 +9,7 @@ import { getDb, queryAll, queryOne, run } from '../db/index.ts';
 import { deleteCharityReceipt, deletePropertyPhoto, deleteWarrantyReceipt } from './uploads.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { priceContributor } from '../shopping/prices.ts';
+import { removeUserFromHouseholds } from '../households/store.ts';
 
 export const SCOPED_TABLES = [
   'holdings',
@@ -185,6 +186,9 @@ export function deleteScopedDataForUser(
     'budget_categories',
     'wallets',
   ];
+
+  // Household (KAN-77): leave it, or hand an owned household on (or delete it).
+  removeUserFromHouseholds(db, userId);
 
   // Supermarket prices this person shared (KAN-74): the shared table holds a pseudonym, not the id.
   run(db, `DELETE FROM price_observations WHERE contributor = ?`, [priceContributor(userId)]);

@@ -121,6 +121,11 @@ export function Privacy() {
             which receive the public wallet addresses you add so balances can be read.
           </li>
           <li>
+            <strong>Members of your household</strong>, if you create or join one: your name, email address and role, and the
+            household activity log (who joined, left or changed what). Your own finances stay private unless you share them.
+            An invite is sent to the email address the owner enters.
+          </li>
+          <li>
             <strong>Other KoruLedger users</strong>, only if you turn on price sharing for shopping lists: the item names,
             stores, prices and dates you record, so everyone can compare supermarkets. Shared prices are stored without your
             name, email or account id, other users never see who recorded them, and an item name is only suggested to others

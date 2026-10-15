@@ -56,9 +56,9 @@ function escapeHtml(s: string): string {
 }
 
 /** Plain message → simple HTML (escaped, line breaks kept, share link clickable). */
-export function messageHtml(message: string, link: string | null): string {
+export function messageHtml(message: string, link: string | null, linkText = 'View the invoice online'): string {
   const body = escapeHtml(message).replace(/\n/g, '<br>');
-  const linkHtml = link ? `<p><a href="${escapeHtml(link)}">View the invoice online</a></p>` : '';
+  const linkHtml = link ? `<p><a href="${escapeHtml(link)}">${escapeHtml(linkText)}</a></p>` : '';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#1f1f1f">${body}${linkHtml}</div>`;
 }
 

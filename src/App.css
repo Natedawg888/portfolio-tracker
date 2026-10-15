@@ -12973,3 +12973,28 @@ html:not([data-theme]) .brand-wordmark--light { display: none; }
 .shop-compare-table tfoot th[scope="row"] { text-transform: none; letter-spacing: normal; font-size: 0.9rem; color: var(--text); }
 .shopping-page .link-btn { color: var(--accent-2); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 .shop-store-chips .link-btn { text-decoration: none; padding: 0 0.3rem; font-size: 1rem; }
+
+/* Household (KAN-77) */
+.household-page h3 { margin: 0 0 0.5rem; }
+.hh-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.hh-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.hh-row > input { flex: 1 1 14rem; min-width: 0; }
+.hh-members, .hh-invites, .hh-activity { margin: 0.5rem 0 0; padding: 0; list-style: none; }
+.hh-members li, .hh-invites li, .hh-activity li {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.35rem 1rem;
+  padding: 0.6rem 0;
+}
+.hh-members li + li, .hh-invites li + li, .hh-activity li + li { border-top: 1px solid var(--border-soft); }
+.hh-member-who { display: grid; min-width: 0; overflow-wrap: anywhere; }
+.hh-member-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.9rem; }
+.hh-role { font-size: 0.85rem; font-weight: 600; color: var(--muted); }
+.hh-link { margin-top: 0.75rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.hh-link p { margin: 0 0 0.5rem; }
+.household-page .link-btn { color: var(--accent-2); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+/* A destructive action reads differently from the page's filled buttons. */
+html .bills-page.household-page .btn.danger {
+  background: transparent;
+  color: var(--btn-danger-text);
+  border: 1px solid var(--btn-danger-border);
+  font-weight: 600;
+}

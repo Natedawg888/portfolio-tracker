@@ -32,6 +32,7 @@ import recurringRouter from './routes/recurring.ts';
 import warrantiesRouter from './routes/warranties.ts';
 import rentalsRouter from './routes/rentals.ts';
 import shoppingRouter from './routes/shopping.ts';
+import householdRouter from './routes/household.ts';
 import adsRouter from './routes/ads.ts';
 import healthScoreRouter from './routes/healthScore.ts';
 import projectionsRouter from './routes/projections.ts';
@@ -153,6 +154,7 @@ async function main() {
   app.use('/api/warranties', warrantiesRouter);
   app.use('/api/rentals', rentalsRouter);
   app.use('/api/shopping', shoppingRouter);
+  app.use('/api/household', householdRouter);
   app.use('/api/ads', adsRouter);
   app.use('/api/health-score', healthScoreRouter);
   app.use('/api/projections', projectionsRouter);
