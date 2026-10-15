@@ -112,6 +112,7 @@ export function calculatePieceRate(
   const gross = pieceRateGross(input, rates);
   const paye = calculatePaye({
     ...payeOptions,
+    taxYear: rates.startYear,
     amount: gross.weeklyGross,
     frequency: 'week',
     hoursPerWeek: nonNeg(input.hoursPerWeek),

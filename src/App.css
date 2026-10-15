@@ -13250,3 +13250,6 @@ html .bills-page.shopping-page .btn.shop-remove {
 .hh-owes { color: var(--btn-danger-text); }
 .hh-settle-end { display: inline-flex; align-items: center; gap: 0.75rem; }
 .hh-settle-end .link-btn, .household-page .hh-rows .btn { min-height: 2.75rem; }
+/* PAYE tax year picker (KAN-79) */
+.paye-page .paye-year { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; font-size: 0.9rem; color: var(--muted); }
+.paye-page .paye-year select { min-height: 2.75rem; max-width: 100%; }

@@ -1,33 +1,22 @@
 /**
  * NZ PAYE take-home calculator (annual progressive model).
  *
- * Uses rates from payeRates.ts only. Splits income tax and ACC (like paye.net.nz
+ * Uses rates from payeRates.ts only, for the tax year chosen (input.taxYear; default the current year). Splits income tax and ACC (like paye.net.nz
  * feature set). IRD official weekly tables combine PAYE+ACC and use pay-period
  * rounding, so results can differ by a few dollars from IRD’s calculator.
  */
 
 import {
-  ACC_MAX_EARNINGS,
-  ACC_MAX_LEVY,
-  ACC_RATE,
-  IETC_ABATE_END,
-  IETC_ABATE_RATE,
-  IETC_FULL_ANNUAL,
-  IETC_FULL_MAX_INCOME,
-  IETC_MIN_INCOME,
-  INCOME_TAX_BRACKETS,
   INVESTING_CREDIT_KIND_OPTIONS,
-  KIWISAVER_EMPLOYER_MIN_RATE,
   PAYE_DEFAULT_HOURS_PER_WEEK,
   PAYE_FORTNIGHTS_PER_YEAR,
   PAYE_MONTHS_PER_YEAR,
   PAYE_WEEKS_PER_YEAR,
   DONATION_TAX_CREDIT_RATE,
   PAYROLL_GIVING_CREDIT_RATE,
-  SECONDARY_TAX_CODES,
-  STUDENT_LOAN_ANNUAL_THRESHOLD,
-  STUDENT_LOAN_RATE,
+  payTaxYearRates,
   type InvestingCreditKind,
+  type PayTaxYearRates,
 } from './payeRates';
 
 export type PayFrequency = 'hour' | 'week' | 'fortnight' | 'month' | 'year';
@@ -58,6 +47,8 @@ export type ExtraTaxCreditResult = {
 };
 
 export type PayeInput = {
+  /** Tax year by start year (2026 = 1 Apr 2026 – 31 Mar 2027). Omitted: the current year. */
+  taxYear?: number;
   amount: number;
   frequency: PayFrequency;
   hoursPerWeek: number;
@@ -166,11 +157,11 @@ export function toPeriods(annual: number, hoursPerWeek: number): PeriodAmounts {
 }
 
 /** Progressive income tax on annual taxable income. */
-export function calcIncomeTax(annualIncome: number): number {
+export function calcIncomeTax(annualIncome: number, rates: PayTaxYearRates = payTaxYearRates()): number {
   if (!(annualIncome > 0)) return 0;
   let tax = 0;
   let prev = 0;
-  for (const b of INCOME_TAX_BRACKETS) {
+  for (const b of rates.incomeTaxBrackets) {
     const slice = Math.min(annualIncome, b.upTo) - prev;
     if (slice > 0) tax += slice * b.rate;
     if (annualIncome <= b.upTo) break;
@@ -179,23 +170,25 @@ export function calcIncomeTax(annualIncome: number): number {
   return tax;
 }
 
-export function calcAcc(liableEarnings: number): number {
+export function calcAcc(liableEarnings: number, rates: PayTaxYearRates = payTaxYearRates()): number {
   if (!(liableEarnings > 0)) return 0;
-  if (liableEarnings >= ACC_MAX_EARNINGS) return ACC_MAX_LEVY;
-  return liableEarnings * ACC_RATE;
+  if (liableEarnings >= rates.accMaxEarnings) return rates.accMaxLevy;
+  return liableEarnings * rates.accRate;
 }
 
-export function calcIetc(annualIncome: number): number {
-  if (annualIncome < IETC_MIN_INCOME || annualIncome >= IETC_ABATE_END) return 0;
-  if (annualIncome <= IETC_FULL_MAX_INCOME) return IETC_FULL_ANNUAL;
-  return Math.max(0, IETC_FULL_ANNUAL - (annualIncome - IETC_FULL_MAX_INCOME) * IETC_ABATE_RATE);
+export function calcIetc(annualIncome: number, rates: PayTaxYearRates = payTaxYearRates()): number {
+  const i = rates.ietc;
+  if (annualIncome < i.minIncome || annualIncome >= i.abateEnd) return 0;
+  if (annualIncome <= i.fullMaxIncome) return i.fullAnnual;
+  return Math.max(0, i.fullAnnual - (annualIncome - i.fullMaxIncome) * i.abateRate);
 }
 
-export function pickSecondaryCode(totalAnnualIncome: number): (typeof SECONDARY_TAX_CODES)[number] {
-  for (const row of SECONDARY_TAX_CODES) {
+export function pickSecondaryCode(totalAnnualIncome: number, rates: PayTaxYearRates = payTaxYearRates()): PayTaxYearRates['secondaryTaxCodes'][number] {
+  const codes = rates.secondaryTaxCodes;
+  for (const row of codes) {
     if (totalAnnualIncome <= row.upTo) return row;
   }
-  return SECONDARY_TAX_CODES[SECONDARY_TAX_CODES.length - 1];
+  return codes[codes.length - 1];
 }
 
 export function buildTaxCode(opts: {
@@ -232,6 +225,9 @@ export function resolveExtraCredit(row: ExtraTaxCreditInput): ExtraTaxCreditResu
 }
 
 export function calculatePaye(input: PayeInput): PayeBreakdown {
+  const rates = payTaxYearRates(input.taxYear);
+  const { accMaxEarnings, kiwiSaverEmployerMinRate, studentLoanRate, studentLoanAnnualThreshold } = rates;
+  const ietcRates = rates.ietc;
   const notes: string[] = [];
   const hours = input.hoursPerWeek > 0 ? input.hoursPerWeek : PAYE_DEFAULT_HOURS_PER_WEEK;
   const packageAnnual = Math.max(0, annualise(input.amount, input.frequency, hours));
@@ -262,40 +258,40 @@ export function calculatePaye(input: PayeInput): PayeBreakdown {
       input.secondaryTotalAnnualIncome > 0
         ? input.secondaryTotalAnnualIncome
         : annualGross + Math.max(0, input.otherAnnualGross);
-    const row = pickSecondaryCode(total);
+    const row = pickSecondaryCode(total, rates);
     secondaryCode = row.code;
     incomeTax = annualGross * row.rate;
     notes.push(
       `Secondary tax at ${row.code} (${(row.rate * 100).toFixed(1)}%) based on estimated total annual income $${Math.round(total).toLocaleString('en-NZ')}.`,
     );
   } else {
-    incomeTax = calcIncomeTax(annualGross);
+    incomeTax = calcIncomeTax(annualGross, rates);
   }
 
   // ACC: primary uses this job’s gross; secondary uses remaining headroom after other jobs.
   let accLiable = annualGross;
   if (input.employment === 'secondary') {
     const other = Math.max(0, input.otherAnnualGross);
-    const remaining = Math.max(0, ACC_MAX_EARNINGS - other);
+    const remaining = Math.max(0, accMaxEarnings - other);
     accLiable = Math.min(annualGross, remaining);
-    if (other >= ACC_MAX_EARNINGS) {
+    if (other >= accMaxEarnings) {
       notes.push('Other income already at ACC maximum — no further ACC on this secondary job.');
     }
   }
-  const acc = calcAcc(accLiable);
+  const acc = calcAcc(accLiable, rates);
 
   const ietcEligible =
     input.employment === 'primary' &&
     input.ietc &&
-    annualGross >= IETC_MIN_INCOME &&
-    annualGross < IETC_ABATE_END;
-  const ietcCredit = ietcEligible ? calcIetc(annualGross) : 0;
+    annualGross >= ietcRates.minIncome &&
+    annualGross < ietcRates.abateEnd;
+  const ietcCredit = ietcEligible ? calcIetc(annualGross, rates) : 0;
   const ietcApplied = ietcCredit > 0;
   if (input.ietc && input.employment === 'primary' && !ietcApplied) {
-    const abateCents = Math.round(IETC_ABATE_RATE * 10000) / 100;
+    const abateCents = Math.round(ietcRates.abateRate * 10000) / 100;
     notes.push(
-      `IETC not applied — full credit from $${IETC_MIN_INCOME.toLocaleString('en-NZ')} to $${IETC_FULL_MAX_INCOME.toLocaleString('en-NZ')}, ` +
-        `then it abates to $${IETC_ABATE_END.toLocaleString('en-NZ')} at ${abateCents}c per dollar above $${IETC_FULL_MAX_INCOME.toLocaleString('en-NZ')}.`,
+      `IETC not applied — full credit from $${ietcRates.minIncome.toLocaleString('en-NZ')} to $${ietcRates.fullMaxIncome.toLocaleString('en-NZ')}, ` +
+        `then it abates to $${ietcRates.abateEnd.toLocaleString('en-NZ')} at ${abateCents}c per dollar above $${ietcRates.fullMaxIncome.toLocaleString('en-NZ')}.`,
     );
   }
   if (input.ietc && input.employment === 'secondary') {
@@ -339,21 +335,21 @@ export function calculatePaye(input: PayeInput): PayeBreakdown {
   let studentLoan = 0;
   if (input.studentLoan) {
     if (input.employment === 'secondary') {
-      studentLoan = annualGross * STUDENT_LOAN_RATE;
-      notes.push('Secondary student loan: 12% of all secondary gross (no threshold).');
+      studentLoan = annualGross * studentLoanRate;
+      notes.push(`Secondary student loan: ${Math.round(studentLoanRate * 100)}% of all secondary gross (no threshold).`);
     } else {
-      studentLoan = Math.max(0, annualGross - STUDENT_LOAN_ANNUAL_THRESHOLD) * STUDENT_LOAN_RATE;
+      studentLoan = Math.max(0, annualGross - studentLoanAnnualThreshold) * studentLoanRate;
     }
   }
 
   const kiwiSaverEmployee = annualGross * employeeRate;
   const kiwiSaverEmployer =
     input.kiwiSaverOptIn
-      ? annualGross * (employerRate > 0 ? employerRate : KIWISAVER_EMPLOYER_MIN_RATE / 100)
+      ? annualGross * (employerRate > 0 ? employerRate : kiwiSaverEmployerMinRate / 100)
       : 0;
   if (input.kiwiSaverOptIn && employerRate <= 0) {
     notes.push(
-      `Employer KiwiSaver shown at statutory minimum ${KIWISAVER_EMPLOYER_MIN_RATE}% (not deducted from take-home).`,
+      `Employer KiwiSaver shown at statutory minimum ${kiwiSaverEmployerMinRate}% (not deducted from take-home).`,
     );
   }
 

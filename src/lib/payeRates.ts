@@ -100,6 +100,13 @@ export const IETC_FULL_MAX_INCOME = 66_000;
 export const IETC_ABATE_END = 70_000;
 export const IETC_FULL_ANNUAL = 520;
 export const IETC_ABATE_RATE = 0.13;
+const IETC_2024 = {
+  minIncome: IETC_MIN_INCOME,
+  fullMaxIncome: IETC_FULL_MAX_INCOME,
+  abateEnd: IETC_ABATE_END,
+  fullAnnual: IETC_FULL_ANNUAL,
+  abateRate: IETC_ABATE_RATE,
+} as const;
 
 /**
  * Payroll giving donation tax credit = 33.33 cents per dollar donated.
@@ -330,8 +337,17 @@ export type PayTaxYearRates = {
   holidayPayPaygRate: number;
   gstRate: number;
   incomeTaxBrackets: readonly TaxBracket[];
+  secondaryTaxCodes: readonly { code: string; upTo: number; rate: number }[];
   accRate: number;
   accMaxEarnings: number;
+  accMaxLevy: number;
+  /** KiwiSaver employee rates offered for this year; the default is the statutory minimum. */
+  kiwiSaverEmployeeRates: readonly number[];
+  kiwiSaverDefaultEmployeeRate: number;
+  kiwiSaverEmployerMinRate: number;
+  studentLoanRate: number;
+  studentLoanAnnualThreshold: number;
+  ietc: { minIncome: number; fullMaxIncome: number; abateEnd: number; fullAnnual: number; abateRate: number };
   schedularActivities: readonly SchedularActivity[];
   schedularElectedMinRate: number;
   schedularNoNotificationRate: number;
@@ -348,13 +364,63 @@ export const PAY_TAX_YEARS: Readonly<Record<number, PayTaxYearRates>> = {
     holidayPayPaygRate: HOLIDAY_PAY_PAYG_RATE,
     gstRate: GST_RATE,
     incomeTaxBrackets: INCOME_TAX_BRACKETS,
+    secondaryTaxCodes: SECONDARY_TAX_CODES,
     accRate: ACC_RATE,
     accMaxEarnings: ACC_MAX_EARNINGS,
+    accMaxLevy: ACC_MAX_LEVY,
+    kiwiSaverEmployeeRates: KIWISAVER_EMPLOYEE_RATES,
+    kiwiSaverDefaultEmployeeRate: KIWISAVER_DEFAULT_EMPLOYEE_RATE,
+    kiwiSaverEmployerMinRate: KIWISAVER_EMPLOYER_MIN_RATE,
+    studentLoanRate: STUDENT_LOAN_RATE,
+    studentLoanAnnualThreshold: STUDENT_LOAN_ANNUAL_THRESHOLD,
+    ietc: IETC_2024,
+    schedularActivities: SCHEDULAR_ACTIVITIES,
+    schedularElectedMinRate: SCHEDULAR_ELECTED_MIN_RATE,
+    schedularNoNotificationRate: SCHEDULAR_NO_NOTIFICATION_RATE,
+  },
+  /**
+   * 1 April 2025 – 31 March 2026 (KAN-79). Sources (checked 15 Oct 2026), also in docs/PAYE_RATES.md:
+   * - Income tax and secondary codes: IRD tax rates for individuals, "From 1 April 2025" (same bands as 2026/27).
+   * - ACC earners' levy: IRD ACC earners' levy rates, 1 Apr 2025 – 31 Mar 2026: 1.67%, max earnings $152,790, max levy $2,551.59.
+   * - KiwiSaver: default / employer minimum 3% until the 3.5% change on pay days from 1 April 2026 (IRD "KiwiSaver changes", 2025).
+   * - Student loan: "2026 tax year" threshold $24,128 at 12% (IRD student loan repayments page).
+   * - IETC: thresholds from 31 July 2024 (IRD IETC page).
+   * - Minimum wage from 1 April 2025: adult $23.50, starting-out $18.80 (Employment NZ previous minimum wage rates).
+   */
+  2025: {
+    startYear: 2025,
+    label: '1 April 2025 – 31 March 2026',
+    start: '2025-04-01',
+    end: '2026-03-31',
+    minimumWageAdultHourly: 23.5,
+    minimumWageStartingOutHourly: 18.8,
+    holidayPayPaygRate: HOLIDAY_PAY_PAYG_RATE,
+    gstRate: GST_RATE,
+    incomeTaxBrackets: INCOME_TAX_BRACKETS,
+    secondaryTaxCodes: SECONDARY_TAX_CODES,
+    accRate: 0.0167,
+    accMaxEarnings: 152_790,
+    accMaxLevy: 2_551.59,
+    kiwiSaverEmployeeRates: [3, 4, 6, 8, 10],
+    kiwiSaverDefaultEmployeeRate: 3,
+    kiwiSaverEmployerMinRate: 3,
+    studentLoanRate: STUDENT_LOAN_RATE,
+    studentLoanAnnualThreshold: STUDENT_LOAN_ANNUAL_THRESHOLD,
+    ietc: IETC_2024,
     schedularActivities: SCHEDULAR_ACTIVITIES,
     schedularElectedMinRate: SCHEDULAR_ELECTED_MIN_RATE,
     schedularNoNotificationRate: SCHEDULAR_NO_NOTIFICATION_RATE,
   },
 };
+
+/** Tax years with published rates, newest first (for year pickers). */
+export const PAY_TAX_YEAR_OPTIONS: readonly PayTaxYearRates[] = Object.values(PAY_TAX_YEARS).sort((a, b) => b.startYear - a.startYear);
+
+/** The tax year (by start year) a date falls in; NZ tax years run 1 April – 31 March. */
+export function taxYearForDate(ymd: string): number {
+  const [y, m] = ymd.split('-').map(Number);
+  return m >= 4 ? y : y - 1;
+}
 
 export const CURRENT_PAY_TAX_YEAR = 2026;
 

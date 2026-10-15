@@ -2,7 +2,7 @@
 
 This app's PAYE calculator (`src/lib/payeRates.ts`, `src/lib/payeCalc.ts`, `/paye` page) uses **only** published IRD (and ACC-via-IRD) figures. When IRD publishes a new tax year, update `payeRates.ts` and this document together.
 
-**Applied period:** pay dates **1 April 2026 – 31 March 2027** (current as of October 2026, Pacific/Auckland).
+**Tax years (KAN-79):** the calculator reads every rate from the selected year's entry in `PAY_TAX_YEARS` (`payeRates.ts`). The current year is **1 April 2026 – 31 March 2027** (as of October 2026, Pacific/Auckland); **1 April 2025 – 31 March 2026** is also available (see [2025/26 rates](#202526-rates-1-april-2025--31-march-2026)). The PAYE page has a tax-year picker. Add a year only once IRD has published **all** its figures. ACC for 2027/28 is already published (1.83%, max earnings $160,244, max levy $2,932.47), but income tax, student loan and minimum wage for that year are not, so 2027/28 is not offered yet.
 
 **Method note:** Take-home is estimated with an **annual progressive** income-tax model, ACC levied separately, then periodised (÷52 / ÷26 / ÷12). IRD's official weekly/fortnightly **tables** (IR340/IR341) combine PAYE+ACC and use pay-period truncation/rounding, so results can differ by a few dollars from IRD's calculator or payroll software. Feature set is inspired by https://www.paye.net.nz/calculator/; visuals use Portfolio Tracker panels/theme only.
 
@@ -197,6 +197,27 @@ Catch value (per trip × trips per week, or per week) × share %, minus optional
 ### Saved pay sources
 
 "Save as income source" stores the calculator inputs in `pay_sources` (per user). The server recomputes weekly gross / net from those inputs with the same calculator (`src/lib/outputPayCalc.ts`). Weekly net (piece-rate take-home; contract net received excl. GST; share of catch after expenses) × 52 ÷ 12 is shown as expected income on Budget and Home (beside received income, never added to it). Projections use it for monthly saving only when the saving window has no recorded income.
+
+## 2025/26 rates (1 April 2025 – 31 March 2026)
+
+Checked against the sources below on 15 October 2026. Anything not listed is the same as 2026/27.
+
+| Item | 2025/26 | 2026/27 |
+| --- | --- | --- |
+| Income tax brackets and secondary codes | Same bands ("From 1 April 2025" table) | Same |
+| ACC earners' levy | **1.67%**, max earnings **$152,790**, max levy **$2,551.59** | 1.75%, $156,641, $2,741.22 |
+| KiwiSaver employee rates | **3, 4, 6, 8, 10%**; default and employer minimum **3%** | 3.5, 4, 6, 8, 10%; 3.5% |
+| Student loan | 12% over **$24,128** ("2026 tax year") | Same (threshold frozen) |
+| IETC | $520; $24,000–$66,000, abates 13c to $70,000 (from 31 July 2024) | Same |
+| Minimum wage (adult / starting-out) | **$23.50 / $18.80** from 1 April 2025 | $23.95 / $19.16 |
+
+Sources:
+- IRD — Tax rates for individuals: https://www.ird.govt.nz/income-tax/income-tax-for-individuals/tax-codes-and-tax-rates-for-individuals/tax-rates-for-individuals
+- IRD — ACC earners' levy rates: https://www.ird.govt.nz/income-tax/income-tax-for-individuals/acc-clients-and-carers/acc-earners-levy-rates
+- IRD — KiwiSaver changes (2025): https://www.ird.govt.nz/updates/news-folder/2025/kiwisaver-changes (3% → 3.5% on pay days from 1 April 2026)
+- IRD — Student loan repayments (salary/wages): https://www.ird.govt.nz/student-loans/living-in-new-zealand-with-a-student-loan/repaying-my-student-loan-when-i-earn-salary-or-wages
+- IRD — IETC: https://www.ird.govt.nz/income-tax/income-tax-for-individuals/individual-tax-credits/independent-earner-tax-credit-ietc
+- Employment NZ — Previous minimum wage rates: https://www.employment.govt.nz/pay-and-hours/pay-and-wages/minimum-wage/previous-min-wage-rates
 
 ## Files
 
