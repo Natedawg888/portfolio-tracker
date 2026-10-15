@@ -1,13 +1,16 @@
 /**
- * Household (KAN-77, phase 1): create a household, invite people by link, manage roles,
- * leave, transfer ownership, and see the activity log. Nothing is shared yet; choosing
- * items to share comes in the next phase. Households are part of Plus (checked on the server).
+ * Household (KAN-77): create a household, invite people by link, manage roles, leave,
+ * transfer ownership, see the activity log, and share items (HouseholdShared).
+ * Households are part of Plus (checked on the server).
  */
 import { useCallback, useEffect, useId, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import type { HouseholdView } from '../types';
 import { LEGAL_CONTACT_EMAIL } from '../components/legal/LegalLayout';
+import { HouseholdShared } from '../components/household/HouseholdShared';
+import { showQuietToast } from '../lib/quietToast';
+import { useMoneyHidden } from '../lib/privacy';
 
 const ROLE_LABEL = { owner: 'Owner', adult: 'Adult', viewer: 'Viewer' } as const;
 const ROLE_HELP = {
@@ -19,6 +22,8 @@ const errText = (e: unknown, fallback: string) => (e instanceof Error ? e.messag
 const when = (iso: string) => new Date(iso).toLocaleString('en-NZ', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 
 export function Household() {
+  // Re-render when Hide amounts changes; formatNzd then masks every figure.
+  useMoneyHidden();
   const [view, setView] = useState<HouseholdView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -126,8 +131,7 @@ export function Household() {
               ) : null}
             </div>
             <p className="muted small">
-              You’re {hh.myRole === 'owner' ? 'the owner' : `${hh.myRole === 'adult' ? 'an adult' : 'a viewer'}`}: {ROLE_HELP[hh.myRole].toLowerCase()} Nothing is
-              shared yet. Choosing budgets, bills and goals to share is coming next.
+              You’re {hh.myRole === 'owner' ? 'the owner' : `${hh.myRole === 'adult' ? 'an adult' : 'a viewer'}`}: {ROLE_HELP[hh.myRole].toLowerCase()}
             </p>
             <ul className="hh-members">
               {hh.members.map((m) => (
@@ -176,6 +180,8 @@ export function Household() {
               ))}
             </ul>
           </section>
+
+          <HouseholdShared key={hh.id} active={hh.active} onNote={(m) => showQuietToast(m, { kind: 'info', ttlMs: 4000 })} />
 
           {owner ? (
             <section className="panel" aria-labelledby="hh-invite-title">

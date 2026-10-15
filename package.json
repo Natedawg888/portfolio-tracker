@@ -39,7 +39,7 @@
     "test:warranties": "node --import tsx src/lib/warranty.test.ts && node --import tsx src/pages/warrantiesView.test.ts && node --import tsx server/warranties/store.test.ts",
     "test:rentals": "node --import tsx src/lib/rental.test.ts && node --import tsx server/rentals/store.test.ts",
     "test:shopping": "node --import tsx server/shopping/store.test.ts && node --import tsx src/lib/shoppingView.test.ts",
-    "test:household": "node --import tsx server/households/store.test.ts",
+    "test:household": "node --import tsx server/households/store.test.ts && node --import tsx server/households/sharing.test.ts",
     "test:portfolio": "node --import tsx src/lib/portfolioView.test.ts",
     "test:value-search": "node --import tsx src/lib/valueSearchDetect.test.ts && node --import tsx src/lib/valueSearchView.test.ts && node --import tsx src/lib/portfolioAddParams.test.ts && node --import tsx server/quotes/stocks.native.test.ts",
     "test:kiwisaver": "node --import tsx src/pages/kiwisaverView.test.ts && node --import tsx server/kiwisaver/history.test.ts",

@@ -34,6 +34,9 @@ import type {
   WarrantyListResponse,
   RentalEntry,
   HouseholdView,
+  HouseholdDashboard,
+  HouseholdShareable,
+  HouseholdShareKind,
   HouseholdRole,
   ShoppingCompareResponse,
   ShoppingListDetail,
@@ -713,6 +716,16 @@ export const api = {
     removeMember: (userId: string) => req<HouseholdView>(`/household/members/${encodeURIComponent(userId)}`, { method: 'DELETE' }),
     transfer: (userId: string) => req<HouseholdView>('/household/transfer', { method: 'POST', body: JSON.stringify({ userId }) }),
     leave: () => req<{ ok: boolean }>('/household/leave', { method: 'POST' }),
+    shareable: () => req<HouseholdShareable>('/household/shareable'),
+    setShared: (kind: HouseholdShareKind, itemId: string, shared: boolean) =>
+      req<HouseholdShareable>('/household/shares', { method: 'PUT', body: JSON.stringify({ kind, itemId, shared }) }),
+    dashboard: () => req<HouseholdDashboard>('/household/dashboard'),
+    setBudgetPlan: (categoryId: string, amountNzd: number) =>
+      req<{ ok: boolean }>(`/household/shared/budget/${encodeURIComponent(categoryId)}`, { method: 'PATCH', body: JSON.stringify({ amountNzd }) }),
+    updateGoal: (id: string, body: { targetNzd?: number; currentAmountNzd?: number }) =>
+      req<{ ok: boolean }>(`/household/shared/goal/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    updateBill: (id: string, body: { amountNzd?: number; nextDue?: string }) =>
+      req<{ ok: boolean }>(`/household/shared/bill/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
   },
   shopping: {
     lists: () => req<ShoppingListSummary[]>('/shopping/lists'),
