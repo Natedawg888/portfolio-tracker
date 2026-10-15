@@ -66,6 +66,17 @@ export function logActivity(db: Database, householdId: string, actorId: string |
 function dropShares(db: Database, householdId: string, userId: string): void {
   run(db, `DELETE FROM household_shares WHERE household_id = ? AND owner_id = ?`, [householdId, userId]);
   run(db, `DELETE FROM household_pay WHERE household_id = ? AND user_id = ?`, [householdId, userId]);
+  // Working for Families: no longer a partner, and no longer linked to a child entry.
+  const fam = queryOne<{ partner_ids_json: string; children_json: string }>(db, `SELECT partner_ids_json, children_json FROM household_family WHERE household_id = ?`, [householdId]);
+  if (fam) {
+    try {
+      const partners = (JSON.parse(fam.partner_ids_json) as string[]).filter((id) => id !== userId);
+      const children = (JSON.parse(fam.children_json) as { memberId?: string | null }[]).map((c) => (c.memberId === userId ? { ...c, memberId: null } : c));
+      run(db, `UPDATE household_family SET partner_ids_json = ?, children_json = ? WHERE household_id = ?`, [JSON.stringify(partners), JSON.stringify(children), householdId]);
+    } catch {
+      run(db, `DELETE FROM household_family WHERE household_id = ?`, [householdId]);
+    }
+  }
 }
 
 function hashToken(token: string): string {
@@ -166,6 +177,7 @@ export function deleteHousehold(db: Database, userId: string): Result<{ ok: true
   run(db, `DELETE FROM household_settlements WHERE household_id = ?`, [m.householdId]);
   run(db, `DELETE FROM household_pay WHERE household_id = ?`, [m.householdId]);
   run(db, `DELETE FROM household_pay_settings WHERE household_id = ?`, [m.householdId]);
+  run(db, `DELETE FROM household_family WHERE household_id = ?`, [m.householdId]);
   run(db, `DELETE FROM household_activity WHERE household_id = ?`, [m.householdId]);
   run(db, `DELETE FROM household_invites WHERE household_id = ?`, [m.householdId]);
   run(db, `DELETE FROM household_members WHERE household_id = ?`, [m.householdId]);

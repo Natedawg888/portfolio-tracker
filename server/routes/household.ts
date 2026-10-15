@@ -33,6 +33,8 @@
  *   DELETE /paye/mine                                                           opt out (always allowed)
  *   PUT    /paye/settings                { feedBudget }                         adults
  *   POST   /paye/what-if                 { memberId, taxYear, change }          adults
+ *   GET    /family?year=2026             Working for Families estimate and family details   adults
+ *   PUT    /family                       { partnerIds, children, mainBenefit, taxYear? }   adults
  */
 import { Router, type Request, type Response } from 'express';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
@@ -56,6 +58,7 @@ import {
 } from '../households/store.ts';
 import { createSplit, deleteSettlement, deleteSplit, listSplits, recordSettlement, updateSplit } from '../households/splits.ts';
 import { clearMyPay, householdPaye, setFeedBudget, setMyPay, whatIf } from '../households/paye.ts';
+import { familyEstimate, setFamily } from '../households/family.ts';
 import { dashboard, setShared, setSharedBudgetPlan, shareable, updateSharedBill, updateSharedGoal } from '../households/sharing.ts';
 
 const router = Router();
@@ -134,5 +137,7 @@ router.put('/paye/mine', async (req, res) => send(res, setMyPay(await getDb(), u
 router.delete('/paye/mine', async (req, res) => send(res, clearMyPay(await getDb(), uid(req))));
 router.put('/paye/settings', async (req, res) => send(res, setFeedBudget(await getDb(), uid(req), req.body)));
 router.post('/paye/what-if', async (req, res) => send(res, whatIf(await getDb(), uid(req), req.body)));
+router.get('/family', async (req, res) => send(res, familyEstimate(await getDb(), uid(req), req.query.year)));
+router.put('/family', async (req, res) => send(res, setFamily(await getDb(), uid(req), req.body)));
 
 export default router;

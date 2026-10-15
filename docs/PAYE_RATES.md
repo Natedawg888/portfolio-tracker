@@ -219,6 +219,33 @@ Sources:
 - IRD — IETC: https://www.ird.govt.nz/income-tax/income-tax-for-individuals/individual-tax-credits/independent-earner-tax-credit-ietc
 - Employment NZ — Previous minimum wage rates: https://www.employment.govt.nz/pay-and-hours/pay-and-wages/minimum-wage/previous-min-wage-rates
 
+## Household take-home pay (KAN-79)
+
+The Household page adds up members who opt in to sharing their pay. Each member is worked out on their own with `calculatePaye` for the tax year being viewed (NZ has no joint filing), and saved piece-rate sources go through the same engine. Contract and share-of-catch sources aren't taxed through payroll, so only their gross and amount received are counted. Payroll giving and investing credits aren't part of the household inputs. Code: `server/households/paye.ts`; tests: `server/households/paye.test.ts`.
+
+## Working for Families (KAN-79)
+
+Household estimate only (Household page → Household take-home pay). Each person's PAYE stays individual; these credits use **family income**: the parents' or caregivers' combined pay before tax, from the pay they share. Code: `src/lib/wffCalc.ts` (rates in `WffRates` on each `PAY_TAX_YEARS` entry), `server/households/family.ts`.
+
+### 1 April 2026 – 31 March 2027 (checked 16 October 2026)
+
+| Item | Value |
+| --- | --- |
+| Family tax credit | $7,921 eldest child, $6,454 each other child |
+| Abatement | 27.5% of family income over $44,900; off the family tax credit first, then the in-work tax credit |
+| In-work tax credit | $7,670 for 1–3 children ($147 a week, **temporary**), + $780 per child after the 3rd. Back to $97 a week ($5,070) after 31 March 2027, or sooner if 91 petrol is under $3/L for 4 weeks |
+| Minimum family tax credit | Tops income after income tax up to $36,604 ($703 a week); 20 hours a week (sole parent) or 30 between a couple |
+| Best Start | $4,041 a child a year ($77 a week) to age 3; 21% over $79,000. Children born on or after 1 April 2026 are income-tested from birth; earlier births aren't in their first year |
+| Instalments | Yearly amount ÷ 52, rounded down |
+
+Sources: IRD [family tax credit](https://www.ird.govt.nz/working-for-families/types/family-tax-credit), [in-work tax credit](https://www.ird.govt.nz/working-for-families/types/in-work-tax-credit), [minimum family tax credit](https://www.ird.govt.nz/working-for-families/types/minimum-family-tax-credit), [Best Start](https://www.ird.govt.nz/working-for-families/types/best-start), and the [IR271 weekly payments chart 2027](https://www.ird.govt.nz/-/media/project/ir/home/documents/forms-and-guides/ir200---ir299/ir271/ir271-2027.pdf). `src/lib/wffCalc.test.ts` checks rows of that chart and IRD's worked examples.
+
+### 1 April 2025 – 31 March 2026: not loaded
+
+IRD's chart for that year (IR271, July 2025) shows weekly amounts but not the yearly family tax credit rates, and IRD's pages now show only 2026/27. Third-party figures (e.g. $7,524 eldest) don't reproduce IRD's chart, so nothing is loaded and the estimate shows a dash. Known from the chart: threshold $42,700, IWTC $97 a week, MFTC $35,316 after tax, Best Start $73 a week ($3,838).
+
+Not modelled: shared care, foster care / orphan's / unsupported child's benefits, and changes part-way through the year.
+
 ## Files
 
 | Path | Role |

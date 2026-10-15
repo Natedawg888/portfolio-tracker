@@ -40,6 +40,7 @@ import type {
   HouseholdSplitMethod,
   HouseholdSplitsView,
   HouseholdPayeView,
+  HouseholdFamilyView,
   HouseholdPayInputs,
   HouseholdWhatIfChange,
   HouseholdWhatIfResult,
@@ -742,6 +743,9 @@ export const api = {
     setPayFeedBudget: (feedBudget: boolean) => req<HouseholdPayeView>('/household/paye/settings', { method: 'PUT', body: JSON.stringify({ feedBudget }) }),
     payWhatIf: (memberId: string, taxYear: number, change: HouseholdWhatIfChange) =>
       req<HouseholdWhatIfResult>('/household/paye/what-if', { method: 'POST', body: JSON.stringify({ memberId, taxYear, change }) }),
+    family: (year?: number) => req<HouseholdFamilyView>(`/household/family${year ? `?year=${year}` : ''}`),
+    setFamily: (body: { partnerIds: string[]; children: { id?: string; birthMonth: string; memberId?: string | null }[]; mainBenefit: boolean; taxYear?: number }) =>
+      req<HouseholdFamilyView>('/household/family', { method: 'PUT', body: JSON.stringify(body) }),
     setBudgetPlan: (categoryId: string, amountNzd: number) =>
       req<{ ok: boolean }>(`/household/shared/budget/${encodeURIComponent(categoryId)}`, { method: 'PATCH', body: JSON.stringify({ amountNzd }) }),
     updateGoal: (id: string, body: { targetNzd?: number; currentAmountNzd?: number }) =>

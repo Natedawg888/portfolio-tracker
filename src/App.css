@@ -13253,3 +13253,43 @@ html .bills-page.shopping-page .btn.shop-remove {
 /* PAYE tax year picker (KAN-79) */
 .paye-page .paye-year { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; font-size: 0.9rem; color: var(--muted); }
 .paye-page .paye-year select { min-height: 2.75rem; max-width: 100%; }
+
+/* Household take-home pay (KAN-79) */
+.hh-pay-year { margin: 0.5rem 0 0.75rem; }
+.hh-pay-field { display: grid; gap: 0.25rem; min-width: 0; }
+.hh-pay-field label { font-size: 0.85rem; color: var(--muted); }
+.hh-pay-field input, .hh-pay-field select { min-height: 2.75rem; width: 100%; min-width: 0; max-width: 100%; }
+.hh-pay-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(9.5rem, 100%), 1fr)); gap: 0.6rem; }
+.hh-pay-fields { display: grid; gap: 0.6rem; margin: 0; padding: 0 0 0 0.25rem; border: 0; }
+.hh-pay-form { display: grid; gap: 0.6rem; }
+.hh-pay-form h4 { margin-bottom: 0; }
+.hh-pay-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.25rem; }
+.hh-pay-actions .btn { min-height: 2.75rem; }
+.hh-pay-figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(10rem, 100%), 1fr)); gap: 0.35rem 0.75rem; margin: 0.35rem 0 0; }
+.hh-pay-figures > div { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.35rem 0; border-bottom: 1px solid var(--border-soft); min-width: 0; }
+.hh-pay-figures dt { color: var(--muted); font-size: 0.85rem; }
+.hh-pay-figures dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.hh-pay-figures .hh-pay-net dt, .hh-pay-figures .hh-pay-net dd { color: var(--text); font-weight: 700; }
+.hh-pay-periods { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.4rem; margin: 0.6rem 0 0; padding: 0; list-style: none; }
+.hh-pay-periods li { display: grid; min-width: 0; gap: 0.1rem; padding: 0.5rem 0.65rem; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: var(--surface-2); }
+.hh-pay-periods li > span:first-child { font-size: 0.8rem; color: var(--muted); }
+.hh-pay-periods .money { font-weight: 700; font-variant-numeric: tabular-nums; }
+.hh-pay-member + .hh-pay-member { margin-top: 0.9rem; }
+.hh-pay-member h5 { margin: 0 0 0.15rem; font-size: 0.95rem; }
+.hh-pay-member p { margin: 0; }
+.hh-pay-whatif { padding: 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.hh-pay-whatif p { margin: 0 0 0.25rem; }
+@media (min-width: 640px) { .hh-pay-periods { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.hh-pay-year { max-width: 26rem; }
+.hh-pay-links { margin: 0.25rem 0 0; padding-left: 1.1rem; display: grid; gap: 0.35rem; }
+/* Working for Families estimate (KAN-79) */
+.hh-wff-table { width: 100%; margin: 0.35rem 0; border-collapse: collapse; font-size: 0.9rem; }
+.hh-wff-table th, .hh-wff-table td { padding: 0.45rem 0.25rem; border-bottom: 1px solid var(--border-soft); text-align: right; font-variant-numeric: tabular-nums; }
+.hh-wff-table th[scope='row'], .hh-wff-table thead th:first-child { text-align: left; font-weight: 500; }
+.hh-wff-table thead th { font-size: 0.8rem; color: var(--muted); font-weight: 600; }
+.hh-wff-table tfoot th, .hh-wff-table tfoot td { font-weight: 700; border-bottom: 0; }
+.hh-wff-dash { font-weight: 700; font-size: 1.1rem; margin-right: 0.25rem; }
+.hh-child-row { align-items: end; }
+.hh-child-row .hh-edit { justify-self: start; }
+.hh-pay-fields legend { padding: 0; margin-bottom: 0.25rem; font-size: 0.85rem; color: var(--muted); }
+.hh-wff-sources { margin: 0.25rem 0 0.75rem; }

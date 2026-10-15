@@ -9,6 +9,7 @@ import { api, formatNzd } from '../../api/client';
 import type { HouseholdPayFigures, HouseholdPayInputs, HouseholdPayeView, HouseholdWhatIfChange, HouseholdWhatIfResult } from '../../types';
 import { PAYE_PREFS_STORAGE_KEY, loadPayePrefs } from '../../lib/payePrefs';
 import { payTaxYearRates } from '../../lib/payeRates';
+import { HouseholdFamily } from './HouseholdFamily';
 
 const errText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
@@ -460,6 +461,8 @@ export function HouseholdPaye({ onNote, onBudgetFeedChange }: { onNote: (msg: st
             </label>
           </div>
         ) : null}
+
+        {view.canSeeMembers ? <HouseholdFamily taxYear={view.taxYear} onNote={onNote} /> : null}
 
         <div className="hh-block">
           <h4>Tax credits worth checking</h4>

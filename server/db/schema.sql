@@ -1035,6 +1035,16 @@ CREATE TABLE IF NOT EXISTS household_pay (
   PRIMARY KEY (household_id, user_id)
 );
 -- Household-wide PAYE settings: feed_budget = show combined take-home as the shared budgets' money in.
+-- Working for Families details (KAN-79): which members are the partners (family income is
+-- theirs), dependent children by birth month (optionally a household member), and whether the
+-- family gets a main benefit. Owners and adults only; no names or amounts in the activity log.
+CREATE TABLE IF NOT EXISTS household_family (
+  household_id      TEXT PRIMARY KEY REFERENCES households(id) ON DELETE CASCADE,
+  partner_ids_json  TEXT NOT NULL DEFAULT '[]',
+  children_json     TEXT NOT NULL DEFAULT '[]',
+  main_benefit      INTEGER NOT NULL DEFAULT 0,
+  updated_at        TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS household_pay_settings (
   household_id  TEXT PRIMARY KEY REFERENCES households(id) ON DELETE CASCADE,
   feed_budget   INTEGER NOT NULL DEFAULT 0,
