@@ -1,6 +1,6 @@
 /**
  * Income rows that mirror money recorded elsewhere in the app — invoice payments
- * (KAN-71), rental income (KAN-66) and payslip net pay (KAN-78) — are linked to the bank deposit for the same
+ * (KAN-71), rental income (KAN-66), payslip net pay (KAN-78) and bond coupons (KAN-80) — are linked to the bank deposit for the same
  * money, so the deposit (bank sync or import) isn't counted as income a second time.
  */
 import type { Database } from 'sql.js';
@@ -25,7 +25,7 @@ export function linkMirroredIncomeToBankCredits(db: Database, userId: string): n
   const open = queryAll<{ id: string; date: string; amount_nzd: number }>(
     db,
     `SELECT id, date, amount_nzd FROM income_records
-     WHERE user_id = ? AND (invoice_payment_id IS NOT NULL OR rental_entry_id IS NOT NULL OR payslip_id IS NOT NULL) AND transaction_id IS NULL
+     WHERE user_id = ? AND (invoice_payment_id IS NOT NULL OR rental_entry_id IS NOT NULL OR payslip_id IS NOT NULL OR bond_coupon_ref IS NOT NULL) AND transaction_id IS NULL
      ORDER BY date, id`,
     [userId],
   );

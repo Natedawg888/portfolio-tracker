@@ -319,7 +319,9 @@ CREATE TABLE IF NOT EXISTS income_records (
   -- Set when this row mirrors one rental income entry (KAN-66).
   rental_entry_id TEXT,
   -- Set when this row mirrors one payslip's net pay (KAN-78).
-  payslip_id TEXT
+  payslip_id TEXT,
+  -- Set when this row mirrors one bond coupon / interest payment: '<bondId>:<YYYY-MM-DD>' (KAN-80).
+  bond_coupon_ref TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_income_records_date ON income_records(date);
@@ -1184,6 +1186,46 @@ CREATE TABLE IF NOT EXISTS defi_positions (
   updated_at          TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_defi_positions_user ON defi_positions(user_id);
+
+-- Bonds and term deposits (KAN-80). Amounts are in `currency`.
+-- value_amount / value_on: a value the user recorded (else cost = purchase_price). Never a market
+-- estimate. linked_account_id: a synced term-deposit bank account this TD is, so its value isn't
+-- counted again (Cash already has it). status: active | repaid | rolled.
+CREATE TABLE IF NOT EXISTS bonds (
+  id                 TEXT PRIMARY KEY,
+  user_id            TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name               TEXT NOT NULL,
+  kind               TEXT NOT NULL,
+  face_value         REAL NOT NULL,
+  purchase_price     REAL NOT NULL,
+  purchase_date      TEXT NOT NULL,
+  rate_pct           REAL NOT NULL,
+  frequency          TEXT NOT NULL,
+  maturity_date      TEXT NOT NULL,
+  currency           TEXT NOT NULL DEFAULT 'NZD',
+  code               TEXT NOT NULL DEFAULT '',
+  rwt_pct            REAL,
+  value_amount       REAL,
+  value_on           TEXT,
+  linked_account_id  TEXT,
+  status             TEXT NOT NULL DEFAULT 'active',
+  closed_on          TEXT,
+  rolled_from_id     TEXT,
+  notes              TEXT NOT NULL DEFAULT '',
+  created_at         TEXT NOT NULL,
+  updated_at         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_bonds_user ON bonds(user_id);
+-- Coupons the user changed: skipped, or a different amount received (after RWT).
+CREATE TABLE IF NOT EXISTS bond_coupons (
+  bond_id      TEXT NOT NULL REFERENCES bonds(id) ON DELETE CASCADE,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  due_date     TEXT NOT NULL,
+  skipped      INTEGER NOT NULL DEFAULT 0,
+  net_amount   REAL,
+  updated_at   TEXT NOT NULL,
+  PRIMARY KEY (bond_id, due_date)
+);
 
 -- Read-only crypto wallets: public address only. Never store seed phrases / private keys.
 -- No balance column on purpose: balances come from chain providers at sync time

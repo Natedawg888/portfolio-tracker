@@ -12,7 +12,7 @@ import { queryOne, run } from '../db/index.ts';
 
 export const PLANS = ['free', 'plus', 'pro'] as const;
 export type Plan = (typeof PLANS)[number];
-export type Feature = 'household' | 'payslips' | 'crypto_pro';
+export type Feature = 'household' | 'payslips' | 'crypto_pro' | 'bonds_plus';
 
 const FEATURES: Record<Feature, readonly Plan[]> = {
   household: ['plus', 'pro'],
@@ -20,6 +20,8 @@ const FEATURES: Record<Feature, readonly Plan[]> = {
   payslips: ['plus', 'pro'],
   /** Advanced crypto (KAN-47): ledger, cost basis and gains, staking income, DeFi positions, wallet import. */
   crypto_pro: ['pro'],
+  /** Bonds (KAN-80): coupon calendar, coupons into Income, projections and maturity alerts. */
+  bonds_plus: ['plus', 'pro'],
 };
 
 export function isPlan(v: unknown): v is Plan {

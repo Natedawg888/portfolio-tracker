@@ -84,6 +84,7 @@ const CLASS_COLOURS: Record<ProjectionClassKey, string> = {
   mining: '#b5651d',
   metals: '#a0a6ad',
   property: '#5c7cfa',
+  bonds: '#4a9a8a',
   other: '#c06c84',
 };
 

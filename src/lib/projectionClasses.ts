@@ -13,6 +13,7 @@ export const PROJECTION_CLASS_KEYS = [
   'mining',
   'metals',
   'property',
+  'bonds',
   'other',
 ] as const;
 
@@ -26,6 +27,7 @@ export const PROJECTION_CLASS_LABELS: Record<ProjectionClassKey, string> = {
   mining: 'Mining (GoMining)',
   metals: 'Metals',
   property: 'Property',
+  bonds: 'Bonds & term deposits',
   other: 'Other (art, stones, collectables, forex)',
 };
 
