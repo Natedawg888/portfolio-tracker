@@ -113,9 +113,9 @@ export function userFilter(column = 'user_id'): string {
 
 /**
  * Delete this user's scoped finance rows only (never other users' data).
- * Child tables (debt_repayments, kiwisaver_balance_history, kiwisaver_activity)
- * cascade from parents when foreign_keys are on; we still delete in a safe order
- * and remove holding photo files under data/uploads/.
+ * Child tables (debt_repayments, kiwisaver_balance_history, kiwisaver_activity) are
+ * deleted explicitly (foreign_keys is off, so ON DELETE CASCADE never fires), then
+ * parents in a safe order; holding photo and receipt files under data/uploads/ go too.
  *
  * Shared (not deleted here):
  *   app_settings, price_quotes, meta
@@ -207,6 +207,12 @@ export function deleteScopedDataForUser(
     'budget_categories',
     'wallets',
   ];
+
+  // Child rows without a user_id. SQLite only cascades with PRAGMA foreign_keys on, which this
+  // database doesn't use, so remove them explicitly before their parents.
+  run(db, `DELETE FROM debt_repayments WHERE person_id IN (SELECT id FROM debt_people WHERE user_id = ?)`, [userId]);
+  run(db, `DELETE FROM kiwisaver_activity WHERE account_id IN (SELECT id FROM kiwisaver_accounts WHERE user_id = ?)`, [userId]);
+  run(db, `DELETE FROM kiwisaver_balance_history WHERE account_id IN (SELECT id FROM kiwisaver_accounts WHERE user_id = ?)`, [userId]);
 
   // Household (KAN-77): leave it, or hand an owned household on (or delete it).
   removeUserFromHouseholds(db, userId);

@@ -341,11 +341,36 @@ export function acceptInvite(db: Database, userId: string, token: unknown, now =
  * Account delete. A member just leaves. An owner's household passes to the longest-standing
  * adult who has Plus; with no such adult it is deleted (members keep everything of their own).
  */
+/**
+ * Account deletion in a household that carries on: the other members keep the shared money
+ * records (splits and payments still affect what they owe, and show as "Former member"), but
+ * the person's name, the item names and notes they wrote into the activity log, and invites
+ * they sent that haven't been accepted (other people's email addresses) are removed.
+ */
+function forgetMember(db: Database, householdId: string, userId: string): void {
+  const name = displayName(db, userId);
+  run(
+    db,
+    `UPDATE household_activity SET actor_id = NULL, actor_name = 'Former member', detail = '' WHERE household_id = ? AND actor_id = ?`,
+    [householdId, userId],
+  );
+  // Other members' entries that name them ("made Ana an adult", "removed Ana").
+  if (name && name !== 'Someone') {
+    run(
+      db,
+      `UPDATE household_activity SET action = REPLACE(action, ?, 'a former member') WHERE household_id = ? AND instr(action, ?) > 0`,
+      [name, householdId, name],
+    );
+  }
+  run(db, `DELETE FROM household_invites WHERE household_id = ? AND invited_by = ? AND accepted_at IS NULL`, [householdId, userId]);
+}
+
 export function removeUserFromHouseholds(db: Database, userId: string): void {
   const m = membershipOf(db, userId);
   if (!m) return;
   if (m.role !== 'owner') {
-    logActivity(db, m.householdId, null, `${displayName(db, userId)} deleted their account and left`);
+    forgetMember(db, m.householdId, userId);
+    logActivity(db, m.householdId, null, 'A member deleted their account and left');
     dropShares(db, m.householdId, userId);
     run(db, `DELETE FROM household_members WHERE user_id = ?`, [userId]);
     return;
@@ -358,7 +383,8 @@ export function removeUserFromHouseholds(db: Database, userId: string): void {
   if (heir) {
     run(db, `UPDATE household_members SET role = 'owner' WHERE household_id = ? AND user_id = ?`, [m.householdId, heir.user_id]);
     run(db, `UPDATE households SET owner_id = ?, updated_at = ? WHERE id = ?`, [heir.user_id, new Date().toISOString(), m.householdId]);
-    logActivity(db, m.householdId, null, `${displayName(db, userId)} deleted their account; ${displayName(db, heir.user_id)} is now the owner`);
+    forgetMember(db, m.householdId, userId);
+    logActivity(db, m.householdId, null, `The owner deleted their account; ${displayName(db, heir.user_id)} is now the owner`);
     dropShares(db, m.householdId, userId);
     run(db, `DELETE FROM household_members WHERE user_id = ?`, [userId]);
     return;

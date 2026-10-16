@@ -2911,8 +2911,123 @@ html[data-theme="light"] .modal-overlay {
 .account-danger-zone {
   border-color: var(--btn-danger-border, #6a3030);
 }
+.account-danger-zone h2,
 .account-danger-zone h3 {
   color: var(--danger, #c44);
+}
+
+/* Settings → Account (redesign): Profile, Email and password, Delete account cards. */
+.account-card-head h2 { margin: 0 0 0.15rem; }
+.account-card-head p { margin: 0; }
+.account-photo {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  margin: 1rem 0 0.25rem;
+}
+.account-avatar-preview.is-pending {
+  outline: 2px dashed var(--accent);
+  outline-offset: 3px;
+}
+.account-photo-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.account-photo-body p { margin: 0; }
+.account-photo-note { font-weight: 600; font-size: 0.85rem; }
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+.account-card .account-actions .btn.small { min-height: 44px; padding-inline: 0.9rem; }
+.account-name-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+.account-name-form p { margin: 0; }
+.account-name-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+.account-card .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.account-card .field input { min-height: 44px; width: 100%; color: var(--text); }
+.account-rows { list-style: none; margin: 0.75rem 0 0; padding: 0; }
+.account-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--border);
+}
+.account-row-main { min-width: 0; flex: 1 1 12rem; }
+.account-row-label { margin: 0; font-size: 0.8rem; color: var(--muted); }
+.account-row-value { margin: 0.1rem 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.account-row-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 0.9rem;
+}
+.account-row-extra { flex: 1 1 100%; }
+.account-row-sub { margin: 0.25rem 0 0; font-size: 0.82rem; color: var(--muted); overflow-wrap: anywhere; }
+.account-row-sub .link-btn { font-size: inherit; }
+.account-data-actions { margin-top: 0.75rem; }
+.account-card .account-actions a.btn { display: inline-flex; align-items: center; text-decoration: none; }
+.account-inline-form {
+  display: grid;
+  gap: 0.6rem;
+  max-width: 28rem;
+}
+.account-inline-form p { margin: 0; }
+.account-delete-confirm {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--danger, #c44);
+  border-radius: 10px;
+}
+.account-delete-confirm > p { margin: 0; }
+.account-delete-title { font-weight: 650; }
+.account-delete-lists {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+.account-delete-list-title { margin: 0 0 0.3rem; font-size: 0.9rem; }
+.account-danger-zone .account-delete-list-title { color: var(--text); }
+.account-delete-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+@media (max-width: 560px) {
+  .account-delete-lists { grid-template-columns: 1fr; }
+}
+@media (max-width: 460px) {
+  .account-name-fields { grid-template-columns: 1fr; }
+  .account-photo { align-items: flex-start; }
 }
 
 
@@ -9291,6 +9406,7 @@ html[data-theme="light"] .settings-page .asset-toggle.on .asset-toggle-knob {
 html[data-theme="light"] .settings-page .account-danger-zone {
   border-color: #8f4d4d;
 }
+html[data-theme="light"] .settings-page .account-danger-zone h2,
 html[data-theme="light"] .settings-page .account-danger-zone h3 {
   color: #6e1b1b;
 }
@@ -9431,7 +9547,9 @@ html[data-theme="dark"] .settings-page .account-danger-zone,
 html:not([data-theme]) .settings-page .account-danger-zone {
   border-color: #e89284;
 }
+html[data-theme="dark"] .settings-page .account-danger-zone h2,
 html[data-theme="dark"] .settings-page .account-danger-zone h3,
+html:not([data-theme]) .settings-page .account-danger-zone h2,
 html:not([data-theme]) .settings-page .account-danger-zone h3 {
   color: #f6d0c8;
 }

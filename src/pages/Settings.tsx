@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ChangeEvent, FormEvent } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useState } from 'react';
+import type { FormEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { AssetClassToggles } from '../components/AssetClassToggles';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
-import { useAuth } from '../auth/AuthContext';
-import { ApiError, api } from '../api/client';
+import { ApiError, api, type AccountSecurity } from '../api/client';
 import {
   defaultAssetClassPrefs,
   type AssetClassPrefs,
@@ -27,6 +26,10 @@ import { CategoryManager } from '../components/CategoryManager';
 import { SecurityPanel } from '../components/SecurityPanel';
 import { BusinessDetailsPanel } from '../components/BusinessDetailsPanel';
 import { AdPrefsPanel } from '../components/AdPrefsPanel';
+import { AccountProfileCard } from '../components/settings/AccountProfileCard';
+import { AccountSignInCard } from '../components/settings/AccountSignInCard';
+import { AccountDataCard } from '../components/settings/AccountDataCard';
+import { AccountDeleteCard } from '../components/settings/AccountDeleteCard';
 import {
   beginPageRead,
   commitPageRead,
@@ -38,15 +41,6 @@ import {
 } from '../lib/pageDataCache';
 
 type SettingsTab = 'account' | 'security' | 'business' | 'categories';
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ''));
-    reader.onerror = () => reject(new Error('Could not read file'));
-    reader.readAsDataURL(file);
-  });
-}
 
 export function Settings() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -108,10 +102,7 @@ export function Settings() {
       </aside>
       <div className="settings-main stack">
         {tab === 'account' ? (
-          <>
-            <AccountPanel />
-            <AdPrefsPanel />
-          </>
+          <AccountPanel />
         ) : tab === 'security' ? (
           <SecurityPanel />
         ) : tab === 'business' ? (
@@ -125,431 +116,30 @@ export function Settings() {
 }
 
 function AccountPanel() {
-  const { user, setUser, refresh } = useAuth();
-  const navigate = useNavigate();
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  const [firstName, setFirstName] = useState(user?.firstName ?? '');
-  const [lastName, setLastName] = useState(user?.lastName ?? '');
-  const [profileBusy, setProfileBusy] = useState(false);
-  const [profileMsg, setProfileMsg] = useState<string | null>(null);
-  const [profileError, setProfileError] = useState<string | null>(null);
-
-  const [email, setEmail] = useState(user?.email ?? '');
-  const [emailPassword, setEmailPassword] = useState('');
-  const [emailBusy, setEmailBusy] = useState(false);
-  const [emailMsg, setEmailMsg] = useState<string | null>(null);
-  const [emailError, setEmailError] = useState<string | null>(null);
-
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [passBusy, setPassBusy] = useState(false);
-  const [passMsg, setPassMsg] = useState<string | null>(null);
-  const [passError, setPassError] = useState<string | null>(null);
-
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deletePassword, setDeletePassword] = useState('');
-  const [deleteConfirm, setDeleteConfirm] = useState('');
-  const [deleteBusy, setDeleteBusy] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-
+  // Password and connected sign-ins decide how the email and delete forms confirm it's you.
+  const [security, setSecurity] = useState<AccountSecurity | null>(null);
   useEffect(() => {
-    setFirstName(user?.firstName ?? '');
-    setLastName(user?.lastName ?? '');
-    setEmail(user?.email ?? '');
-  }, [user?.firstName, user?.lastName, user?.email]);
-
-  const onSaveProfile = async (e: FormEvent) => {
-    e.preventDefault();
-    setProfileBusy(true);
-    setProfileMsg(null);
-    setProfileError(null);
-    try {
-      const res = await api.auth.updateProfile({
-        firstName: firstName.trim() || null,
-        lastName: lastName.trim() || null,
+    let live = true;
+    api.auth
+      .security()
+      .then((s) => {
+        if (live) setSecurity(s);
+      })
+      .catch(() => {
+        // Rows fall back to asking for the password, which the server requires anyway.
       });
-      setUser(res.user);
-      setProfileMsg('Name saved.');
-    } catch (err) {
-      setProfileError(err instanceof ApiError ? err.message : 'Could not save profile');
-    } finally {
-      setProfileBusy(false);
-    }
-  };
-
-  const onAvatarPick = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      setProfileError('Choose an image file (JPEG, PNG, WebP, or GIF).');
-      return;
-    }
-    if (file.size > 8 * 1024 * 1024) {
-      setProfileError('Image must be under 8 MB.');
-      return;
-    }
-    setProfileBusy(true);
-    setProfileMsg(null);
-    setProfileError(null);
-    try {
-      const dataUrl = await readFileAsDataUrl(file);
-      const res = await api.auth.uploadAvatar(dataUrl);
-      setUser(res.user);
-      setProfileMsg('Profile picture updated.');
-    } catch (err) {
-      setProfileError(err instanceof ApiError ? err.message : 'Could not upload picture');
-    } finally {
-      setProfileBusy(false);
-    }
-  };
-
-  const onRemoveAvatar = async () => {
-    setProfileBusy(true);
-    setProfileMsg(null);
-    setProfileError(null);
-    try {
-      const res = await api.auth.removeAvatar();
-      setUser(res.user);
-      setProfileMsg('Profile picture removed.');
-    } catch (err) {
-      setProfileError(err instanceof ApiError ? err.message : 'Could not remove picture');
-    } finally {
-      setProfileBusy(false);
-    }
-  };
-
-  const onChangeEmail = async (e: FormEvent) => {
-    e.preventDefault();
-    setEmailBusy(true);
-    setEmailMsg(null);
-    setEmailError(null);
-    try {
-      const res = await api.auth.changeEmail({
-        currentPassword: emailPassword,
-        email: email.trim(),
-      });
-      setUser(res.user);
-      setEmailPassword('');
-      setEmailMsg(res.message || 'Email updated.');
-      await refresh();
-    } catch (err) {
-      setEmailError(err instanceof ApiError ? err.message : 'Could not change email');
-    } finally {
-      setEmailBusy(false);
-    }
-  };
-
-  const onChangePassword = async (e: FormEvent) => {
-    e.preventDefault();
-    setPassBusy(true);
-    setPassMsg(null);
-    setPassError(null);
-    if (newPassword !== confirmPassword) {
-      setPassError('New password and confirmation do not match.');
-      setPassBusy(false);
-      return;
-    }
-    try {
-      const res = await api.auth.changePassword({
-        currentPassword,
-        newPassword,
-      });
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-      setPassMsg(res.message || 'Password updated.');
-    } catch (err) {
-      setPassError(err instanceof ApiError ? err.message : 'Could not change password');
-    } finally {
-      setPassBusy(false);
-    }
-  };
-
-  const onDeleteAccount = async (e: FormEvent) => {
-    e.preventDefault();
-    setDeleteBusy(true);
-    setDeleteError(null);
-    if (deleteConfirm.trim() !== 'DELETE') {
-      setDeleteError('Type DELETE in capitals to confirm.');
-      setDeleteBusy(false);
-      return;
-    }
-    try {
-      await api.auth.deleteAccount({
-        password: deletePassword,
-        confirm: 'DELETE',
-      });
-      setUser(null);
-      setDeletePassword('');
-      setDeleteConfirm('');
-      navigate('/login', { replace: true });
-    } catch (err) {
-      setDeleteError(err instanceof ApiError ? err.message : 'Could not delete account');
-    } finally {
-      setDeleteBusy(false);
-    }
-  };
-
-  const initials = (() => {
-    const f = (user?.firstName || '').trim();
-    const l = (user?.lastName || '').trim();
-    if (f && l) return (f[0] + l[0]).toUpperCase();
-    const name = (user?.displayName || '').trim() || [f, l].filter(Boolean).join(' ');
-    if (name) {
-      const parts = name.split(/\s+/).filter(Boolean);
-      if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-      return name.slice(0, 2).toUpperCase();
-    }
-    return (user?.email || '?').slice(0, 2).toUpperCase();
-  })();
+    return () => {
+      live = false;
+    };
+  }, []);
 
   return (
     <>
-      <section className="panel">
-        <h2>Account</h2>
-        <p className="page-lead">
-          Profile picture, name, email, and password for this local account. Changes require
-          your current password where noted.
-        </p>
-
-        <div className="account-avatar-row">
-          <div className="account-avatar-preview" aria-hidden>
-            {user?.avatarUrl ? (
-              <img src={user.avatarUrl} alt="" className="account-avatar-img" />
-            ) : (
-              <span className="account-avatar-fallback">{initials}</span>
-            )}
-          </div>
-          <div className="account-avatar-actions">
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              className="sr-only"
-              onChange={(ev) => void onAvatarPick(ev)}
-            />
-            <button
-              type="button"
-              className="btn small"
-              disabled={profileBusy}
-              onClick={() => fileRef.current?.click()}
-            >
-              Upload picture
-            </button>
-            {user?.avatarUrl ? (
-              <button
-                type="button"
-                className="btn small ghost"
-                disabled={profileBusy}
-                onClick={() => void onRemoveAvatar()}
-              >
-                Remove
-              </button>
-            ) : null}
-            <p className="muted small">JPEG, PNG, WebP, or GIF · max 8 MB</p>
-          </div>
-        </div>
-
-        <form className="auth-form account-form" onSubmit={onSaveProfile}>
-          <div className="row gap wrap-row">
-            <label className="field grow">
-              <span>First name</span>
-              <input
-                type="text"
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                maxLength={40}
-                placeholder="First name"
-                disabled={profileBusy}
-                autoComplete="given-name"
-              />
-            </label>
-            <label className="field grow">
-              <span>Last name</span>
-              <input
-                type="text"
-                value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
-                maxLength={40}
-                placeholder="Last name"
-                disabled={profileBusy}
-                autoComplete="family-name"
-              />
-            </label>
-          </div>
-          <label className="field">
-            <span>Email (read-only here)</span>
-            <input type="email" value={user?.email ?? ''} disabled readOnly />
-          </label>
-          {profileError ? <p className="auth-error" role="alert">{profileError}</p> : null}
-          {profileMsg ? <p className="auth-info" role="status">{profileMsg}</p> : null}
-          <button type="submit" className="btn primary" disabled={profileBusy}>
-            {profileBusy ? 'Saving…' : 'Save name'}
-          </button>
-        </form>
-      </section>
-
-      <section className="panel">
-        <h3>Change email</h3>
-        <p className="muted small">Requires your current password.</p>
-        <form className="auth-form account-form" onSubmit={onChangeEmail}>
-          <label className="field">
-            <span>New email</span>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              disabled={emailBusy}
-              autoComplete="email"
-            />
-          </label>
-          <label className="field">
-            <span>Current password</span>
-            <input
-              type="password"
-              value={emailPassword}
-              onChange={(e) => setEmailPassword(e.target.value)}
-              required
-              disabled={emailBusy}
-              autoComplete="current-password"
-            />
-          </label>
-          {emailError ? <p className="auth-error" role="alert">{emailError}</p> : null}
-          {emailMsg ? <p className="auth-info" role="status">{emailMsg}</p> : null}
-          <button type="submit" className="btn primary" disabled={emailBusy}>
-            {emailBusy ? 'Updating…' : 'Update email'}
-          </button>
-        </form>
-      </section>
-
-      <section className="panel">
-        <h3>Change password</h3>
-        <p className="muted small">Min 8 characters with a letter and a number.</p>
-        <form className="auth-form account-form" onSubmit={onChangePassword}>
-          <label className="field">
-            <span>Current password</span>
-            <input
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              required
-              disabled={passBusy}
-              autoComplete="current-password"
-            />
-          </label>
-          <label className="field">
-            <span>New password</span>
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              required
-              disabled={passBusy}
-              autoComplete="new-password"
-            />
-          </label>
-          <label className="field">
-            <span>Confirm new password</span>
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-              disabled={passBusy}
-              autoComplete="new-password"
-            />
-          </label>
-          {passError ? <p className="auth-error" role="alert">{passError}</p> : null}
-          {passMsg ? <p className="auth-info" role="status">{passMsg}</p> : null}
-          <button type="submit" className="btn primary" disabled={passBusy}>
-            {passBusy ? 'Updating…' : 'Update password'}
-          </button>
-        </form>
-      </section>
-
-      <section className="panel account-danger-zone">
-        <h3>Delete account</h3>
-        <p className="muted small">
-          Permanently removes this local account, your sessions, profile picture, preferences, and
-          finance data scoped to you. Other users&apos; data is not touched. Shared app data{' '}
-          (transaction categories, GoMining settings, quote cache) stays until per-user isolation
-          covers those tables — see docs/AUTH.md.
-        </p>
-        {!deleteOpen ? (
-          <button
-            type="button"
-            className="btn danger"
-            onClick={() => {
-              setDeleteOpen(true);
-              setDeleteError(null);
-            }}
-          >
-            Delete account…
-          </button>
-        ) : (
-          <form className="auth-form account-form" onSubmit={onDeleteAccount}>
-            <p className="auth-error" role="status">
-              This cannot be undone. Type <strong>DELETE</strong> and enter your password to
-              confirm.
-            </p>
-            <label className="field">
-              <span>Type DELETE to confirm</span>
-              <input
-                type="text"
-                value={deleteConfirm}
-                onChange={(e) => setDeleteConfirm(e.target.value)}
-                required
-                disabled={deleteBusy}
-                autoComplete="off"
-                placeholder="DELETE"
-                spellCheck={false}
-              />
-            </label>
-            <label className="field">
-              <span>Current password</span>
-              <input
-                type="password"
-                value={deletePassword}
-                onChange={(e) => setDeletePassword(e.target.value)}
-                required
-                disabled={deleteBusy}
-                autoComplete="current-password"
-              />
-            </label>
-            {deleteError ? (
-              <p className="auth-error" role="alert">
-                {deleteError}
-              </p>
-            ) : null}
-            <div className="row gap">
-              <button
-                type="submit"
-                className="btn danger"
-                disabled={deleteBusy || deleteConfirm.trim() !== 'DELETE' || !deletePassword}
-              >
-                {deleteBusy ? 'Deleting…' : 'Permanently delete account'}
-              </button>
-              <button
-                type="button"
-                className="btn ghost"
-                disabled={deleteBusy}
-                onClick={() => {
-                  setDeleteOpen(false);
-                  setDeletePassword('');
-                  setDeleteConfirm('');
-                  setDeleteError(null);
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        )}
-      </section>
+      <AccountProfileCard />
+      <AccountSignInCard security={security} />
+      <AccountDataCard />
+      <AdPrefsPanel />
+      <AccountDeleteCard hasPassword={security?.hasPassword ?? null} />
     </>
   );
 }

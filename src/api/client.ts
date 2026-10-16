@@ -207,6 +207,10 @@ export type AuthUser = {
     budgetCategoriesDone: boolean;
     akahuStepDone: boolean;
   };
+  /** New email waiting for its confirmation link to be opened. */
+  pendingEmail?: string | null;
+  /** True when changing email sends a confirmation link (email is set up on the server). */
+  emailChangeConfirms?: boolean;
 };
 
 /** An account signed in on this browser (account switcher). */
@@ -335,10 +339,16 @@ export const api = {
         body: JSON.stringify(body),
       }),
     changeEmail: (body: { currentPassword: string; email: string }) =>
-      req<{ user: AuthUser; message: string }>('/auth/change-email', {
+      req<{ user: AuthUser; message: string; pendingEmail?: string }>('/auth/change-email', {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+    cancelEmailChange: () => req<{ ok: true }>('/auth/change-email/cancel', { method: 'POST' }),
+    /** From the emailed link (/confirm-email#token=…); works signed out. */
+    confirmEmail: (token: string) =>
+      req<{ ok: true; email: string }>('/auth/confirm-email', { method: 'POST', body: JSON.stringify({ token }) }),
+    /** "Download a copy": a JSON file of everything stored for this account. */
+    exportUrl: () => `${BASE}/auth/export`,
     deleteAccount: (body: { password: string; confirm: 'DELETE' }) =>
       req<{
         ok: boolean;

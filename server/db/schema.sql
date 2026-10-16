@@ -448,6 +448,16 @@ CREATE TABLE IF NOT EXISTS auth_events (
 );
 CREATE INDEX IF NOT EXISTS idx_auth_events_user ON auth_events(user_id, created_at);
 
+-- Pending email change: the new address is used only after its owner opens the link sent to it.
+-- One per user; token stored as a SHA-256 hash, like sessions.
+CREATE TABLE IF NOT EXISTS email_changes (
+  user_id     TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  new_email   TEXT NOT NULL,
+  token_hash  TEXT NOT NULL UNIQUE,
+  created_at  TEXT NOT NULL,
+  expires_at  TEXT NOT NULL
+);
+
 -- Single sign-on links: one row per provider account (Google / Apple / Microsoft).
 -- subject = the provider's stable user id ("sub"), never the email (emails change).
 CREATE TABLE IF NOT EXISTS user_identities (

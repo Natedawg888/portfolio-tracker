@@ -114,7 +114,8 @@ export function Privacy() {
           <li><strong>Google, Apple or Microsoft</strong>, if you choose to sign in with them.</li>
           <li>
             <strong>Resend</strong>, when you email an invoice: the recipients’ addresses, the invoice and its PDF. Replies go
-            to your own email address.
+            to your own email address. Also when you change your account email: a confirmation link to the new address and a
+            notice to the old one.
           </li>
           <li>
             <strong>Public blockchain services</strong> (such as PublicNode, Blockstream and Solana’s public endpoint),
@@ -177,7 +178,10 @@ export function Privacy() {
         </ul>
         <p>
           When you delete your account (Settings → Account), we delete your profile, financial records, uploaded files,
-          connected-account tokens, sessions, security settings and any supermarket prices you shared. Deleting your account here does not end your consent
+          connected-account tokens, sessions, security settings and any supermarket prices you shared. If you share a
+          household with others, your name is removed from its activity log, but splits and payments you were part of stay
+          for the other members (shown as “Former member”) because they affect what they owe. Public prices and exchange
+          rates the app looked up are not linked to you and stay. Deleting your account here does not end your consent
           with Akahu; you can do that at <a href="https://my.akahu.nz" target="_blank" rel="noreferrer">my.akahu.nz</a>.
           If you signed up with Google, Apple or Microsoft and have no password, email us and we will delete your account.
         </p>
@@ -187,7 +191,10 @@ export function Privacy() {
         <h2 id="rights-h">7. Your rights</h2>
         <p>Under the Privacy Act 2020 you can:</p>
         <ul>
-          <li>ask for a copy of the personal information we hold about you (principle 6);</li>
+          <li>
+            ask for a copy of the personal information we hold about you (principle 6). You can download most of it
+            yourself under Settings → Account → Your data;
+          </li>
           <li>ask us to correct it (principle 7). You can change most of it yourself in the app;</li>
           <li>ask us to delete it.</li>
         </ul>

@@ -7,6 +7,7 @@ import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Privacy } from './pages/Privacy';
 import { Terms } from './pages/Terms';
+import { ConfirmEmail } from './pages/ConfirmEmail';
 import { HouseholdJoin } from './pages/HouseholdJoin';
 import { NotFoundRoute } from './pages/NotFound';
 import {
@@ -53,6 +54,8 @@ export default function App() {
             <Route path="/terms" element={<Terms />} />
             {/* Household invite links work before signing in (KAN-77). */}
             <Route path="/household/join" element={<HouseholdJoin />} />
+            {/* Email change link: works on any device, signed in or not. */}
+            <Route path="/confirm-email" element={<ConfirmEmail />} />
             <Route
               path="/i/:token"
               element={
