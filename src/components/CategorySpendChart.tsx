@@ -9,7 +9,7 @@
  */
 import { useMemo, useState } from 'react';
 import { formatNzd } from '../api/client';
-import { categoryColour, UNCATEGORISED_COLOUR } from '../lib/categoryColours';
+import { categoryColourFor, UNCATEGORISED_COLOUR } from '../lib/categoryColours';
 import {
   categoryTypeCountsAsSpend,
   normalizeCategoryType,
@@ -25,6 +25,8 @@ export type ChartCategory = {
   isIncome?: boolean;
   /** Saved colour (#rrggbb); falls back to the palette. */
   colour?: string | null;
+  /** Orders the automatic colours (categoryColourFor). */
+  sortOrder?: number;
 };
 
 function isDebtCategory(categoryId: string | null | undefined, categories: ChartCategory[]): boolean {
@@ -70,7 +72,6 @@ export function aggregateCategorySpend(
   repayments: ChartDebtRepayment[] = [],
 ): CategorySpendRow[] {
   const nameById = new Map(categories.map((c) => [c.id, c.name]));
-  const colourById = new Map(categories.map((c) => [c.id, c.colour ?? null]));
   const typeById = new Map(
     categories.map((c) => [c.id, normalizeCategoryType(c.type, c.isIncome)]),
   );
@@ -123,10 +124,10 @@ export function aggregateCategorySpend(
     .filter((r) => r.spend > 0)
     .sort((a, b) => b.spend - a.spend);
 
-  // Palette by spend rank so the largest gets the first colours; a saved colour wins.
-  return rows.map((r, i) => ({
+  // A saved colour wins; Auto is fixed by the category's place in the list, not by spend.
+  return rows.map((r) => ({
     ...r,
-    colour: r.categoryId == null ? UNCATEGORISED_COLOUR : categoryColour(colourById.get(r.categoryId), i),
+    colour: r.categoryId == null ? UNCATEGORISED_COLOUR : categoryColourFor(categories, r.categoryId),
   }));
 }
 

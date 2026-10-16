@@ -6,6 +6,7 @@
 import type { Database } from 'sql.js';
 import { queryOne, run } from '../db/index.ts';
 import { getDataOwnerUserId } from './userScope.ts';
+import { isBuiltInCategory } from '../../src/lib/categoryManagerView.ts';
 
 export type SeedCategory = {
   slug: string;
@@ -136,20 +137,29 @@ export function seedCategoriesForUser(db: Database, userId: string): void {
     );
   }
 
+  const deleted = deletedDefaultSlugs(db, userId);
   for (const seed of DEFAULT_CATEGORY_SEEDS) {
     const existing = resolveCategoryId(db, userId, seed.slug);
     if (existing) {
-      // Keep type/name in sync for well-known seeds
-      const isIncome = seed.type === 'income' ? 1 : 0;
-      run(
-        db,
-        `UPDATE budget_categories
-         SET name = ?, type = ?, is_income = ?, sort_order = ?, slug = ?
-         WHERE id = ? AND user_id = ?`,
-        [seed.name, seed.type, isIncome, seed.sortOrder, seed.slug, existing, userId],
-      );
+      // The user's name (and type, for categories the app doesn't look up by slug) stands.
+      if (isBuiltInCategory(seed.slug)) {
+        run(
+          db,
+          `UPDATE budget_categories SET type = ?, is_income = ?, sort_order = ?, slug = ? WHERE id = ? AND user_id = ?`,
+          [seed.type, seed.type === 'income' ? 1 : 0, seed.sortOrder, seed.slug, existing, userId],
+        );
+      } else {
+        run(db, `UPDATE budget_categories SET sort_order = ?, slug = ? WHERE id = ? AND user_id = ?`, [
+          seed.sortOrder,
+          seed.slug,
+          existing,
+          userId,
+        ]);
+      }
       continue;
     }
+    // A default the user deleted stays deleted.
+    if (deleted.has(seed.slug)) continue;
     const id = isOwner ? seed.slug : categoryIdForUser(userId, seed.slug);
     const isIncome = seed.type === 'income' ? 1 : 0;
     run(
@@ -160,6 +170,33 @@ export function seedCategoriesForUser(db: Database, userId: string): void {
       [id, userId, seed.slug, seed.name, seed.type, isIncome, seed.sortOrder],
     );
   }
+}
+
+function readPrefs(db: Database, userId: string): Record<string, unknown> {
+  const row = queryOne<{ preferences_json: string | null }>(db, `SELECT preferences_json FROM users WHERE id = ?`, [userId]);
+  try {
+    const parsed = JSON.parse(row?.preferences_json ?? '{}') as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Default category slugs this user deleted (users.preferences_json.deletedCategorySlugs). */
+export function deletedDefaultSlugs(db: Database, userId: string): Set<string> {
+  const list = readPrefs(db, userId).deletedCategorySlugs;
+  return new Set(Array.isArray(list) ? list.filter((v): v is string => typeof v === 'string') : []);
+}
+
+/** Remember a deleted default so seeding doesn't add it back. Other slugs are ignored. */
+export function rememberDeletedDefault(db: Database, userId: string, slug: string | null | undefined): void {
+  if (!slug || !DEFAULT_CATEGORY_SEEDS.some((seed) => seed.slug === slug)) return;
+  const prefs = readPrefs(db, userId);
+  const next = deletedDefaultSlugs(db, userId);
+  if (next.has(slug)) return;
+  next.add(slug);
+  prefs.deletedCategorySlugs = [...next];
+  run(db, `UPDATE users SET preferences_json = ?, updated_at = ? WHERE id = ?`, [JSON.stringify(prefs), new Date().toISOString(), userId]);
 }
 
 /** True when a category id/slug refers to Debt for charting (legacy or per-user). */

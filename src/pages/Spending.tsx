@@ -24,7 +24,7 @@ import type { DebtPerson, DebtRepayment, IncomeKind, IncomeMonthSummary, IncomeR
 import { aggregateCategorySpend } from '../components/CategorySpendChart';
 import { CategoryBudgetList, type PlannedRow, type UnplannedRow } from '../components/budget/CategoryBudgetList';
 import { CategoryManager } from '../components/CategoryManager';
-import { categoryColour, validColour } from '../lib/categoryColours';
+import { categoryColourFor, validColour } from '../lib/categoryColours';
 import {
   DEFAULT_MONTH,
   SPENDING_FLOOR,
@@ -783,13 +783,11 @@ export function Spending() {
     categorySpend.filter((r) => r.categoryId).map((r) => [r.categoryId as string, r.colour]),
   );
   const plannedIds = new Set(budgetCompareRows.map((r) => r.categoryId));
-  const plannedRows: PlannedRow[] = budgetCompareRows.map((r, i) => ({
+  const plannedRows: PlannedRow[] = budgetCompareRows.map((r) => ({
     budgetId: r.budget.id,
     categoryId: r.categoryId,
     name: r.name,
-    colour:
-      colourByCategory.get(r.categoryId) ??
-      categoryColour(categories.find((c) => c.id === r.categoryId)?.colour, categorySpend.length + i),
+    colour: colourByCategory.get(r.categoryId) ?? categoryColourFor(categories, r.categoryId),
     planned: r.planned,
     spent: r.spent,
   }));

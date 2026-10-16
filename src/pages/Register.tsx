@@ -7,6 +7,7 @@ import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import { ApiError, api, type SsoProvider } from '../api/client';
 import { ssoStartUrl } from '../lib/sso';
 import { AssetClassToggles } from '../components/AssetClassToggles';
+import { isBuiltInCategory } from '../lib/categoryManagerView';
 import { GoogleButton } from '../components/auth/AuthControls';
 import { AddWalletPanel } from '../components/AddWalletPanel';
 import {
@@ -643,14 +644,18 @@ export function Register() {
                       {rows.map((c) => (
                         <li key={c.id}>
                           <span>{c.name}</span>
-                          <button
-                            type="button"
-                            className="btn small ghost"
-                            disabled={catBusy || busy}
-                            onClick={() => void onDeleteCategory(c)}
-                          >
-                            Remove
-                          </button>
+                          {isBuiltInCategory(c.slug) ? (
+                            <span className="muted small">Built in</span>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn small ghost"
+                              disabled={catBusy || busy}
+                              onClick={() => void onDeleteCategory(c)}
+                            >
+                              Remove
+                            </button>
+                          )}
                         </li>
                       ))}
                       {rows.length === 0 ? (
@@ -682,7 +687,7 @@ export function Register() {
               Connect <em>your</em> NZ banks, Sharesies, Hatch, and KiwiSaver through{' '}
               <strong>Akahu</strong>. This checkpoint keeps setup explicit: you can connect and sync
               now, or choose <strong>Skip / do later</strong> to open an empty portfolio. You can
-              connect anytime in the account menu → <strong>Settings → Connect accounts</strong>.
+              connect anytime in the account menu → <strong>Settings → Connections</strong>.
             </p>
             {info ? <p className="auth-info" role="status">{info}</p> : null}
             {error ? <p className="auth-error" role="alert">{error}</p> : null}

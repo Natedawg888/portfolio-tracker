@@ -28,8 +28,10 @@ const LEGAL_ONLY_FOOTER_PATHS = new Set(['/shopping']);
 
 function legalOnlyFooter(pathname: string, search: string): boolean {
   if (LEGAL_ONLY_FOOTER_PATHS.has(pathname)) return true;
-  // Settings → Business is about invoices; the metals / sync note doesn't belong there.
-  return pathname === '/settings' && new URLSearchParams(search).get('tab') === 'business';
+  // Settings → Business is about invoices, and Categories & assets about what is shown;
+  // the metals / sync note belongs on neither.
+  const tab = new URLSearchParams(search).get('tab');
+  return pathname === '/settings' && (tab === 'business' || tab === 'categories');
 }
 
 const links: Array<{

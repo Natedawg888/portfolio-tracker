@@ -1,21 +1,26 @@
 /**
- * Transaction categories: create, rename, recolour, change type, remove.
+ * Transaction categories: one tab per type, a row per category with its colour, this month's
+ * total, Rename and a ⋯ menu (Move to another type, Delete). Colours save on pick. Deleting a
+ * category that is in use asks which category of the same type gets its transactions and plans;
+ * nothing is lost, and a clash with that category's plans is refused rather than merged.
  * Used in Settings and in the Budget page's "Manage categories" dialog.
  */
-import { useCallback, useEffect, useId, useState, type FormEvent } from 'react';
-import { ApiError, api } from '../api/client';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
+import { ApiError, api, formatNzd } from '../api/client';
 import { beginPageRead, commitPageRead, invalidateFinancial, readPageCache } from '../lib/pageDataCache';
-import {
-  CATEGORY_TYPES,
-  CATEGORY_TYPE_LABELS,
-  normalizeCategoryType,
-  type CategoryType,
-} from '../lib/categoryTypes';
-import { categoryColour, validColour } from '../lib/categoryColours';
-import { CategoryTypeToggle } from './CategoryTypeToggle';
+import { CATEGORY_TYPES, CATEGORY_TYPE_LABELS, normalizeCategoryType, type CategoryType } from '../lib/categoryTypes';
+import { CATEGORY_PALETTE, CATEGORY_PALETTE_NAMES, categoryColourFor, paletteName, validColour } from '../lib/categoryColours';
+import { aggregateCategorySpend, type ChartDebtRepayment, type ChartTransaction } from './CategorySpendChart';
+import { monthEnd, monthStart, todayAucklandYmd } from '../lib/period';
+import { BUILT_IN_CATEGORIES, isBuiltInCategory, monthTotalText, TYPE_EXPLAINER, usageText, type UsageCounts } from '../lib/categoryManagerView';
+import { showQuietToast } from '../lib/quietToast';
+import { InfoTip } from './InfoTip';
+import { MoreMenu } from './MoreMenu';
 
 export type ManagedCategory = {
   id: string;
+  /** Well-known key (cat-income, cat-debt, …); built-in ones can't be moved or deleted. */
+  slug?: string;
   name: string;
   parentId: string | null;
   colour: string | null;
@@ -29,18 +34,31 @@ const CACHE_KEY = 'categories';
 function errorText(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback;
 }
+const toast = (message: string, kind: 'info' | 'warn' = 'info') => showQuietToast(message, { kind, ttlMs: kind === 'warn' ? 6000 : 4000 });
+
+type MonthData = { txns: ChartTransaction[]; repayments: ChartDebtRepayment[]; income: Map<string, number> };
+
+function useThisMonth() {
+  const [month] = useState(() => {
+    const [y, m] = todayAucklandYmd().split('-').map(Number);
+    const ym = { year: y, month: m };
+    const short = new Intl.DateTimeFormat('en-NZ', { month: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(y, m - 1, 1)));
+    return { from: monthStart(ym), to: monthEnd(ym), key: `${y}-${String(m).padStart(2, '0')}`, short };
+  });
+  return month;
+}
 
 export function CategoryManager({ onChanged }: { onChanged?: () => void | Promise<void> }) {
-  const [categories, setCategories] = useState<ManagedCategory[]>(
-    () => readPageCache<ManagedCategory[]>(CACHE_KEY) ?? [],
-  );
+  const [categories, setCategories] = useState<ManagedCategory[]>(() => readPageCache<ManagedCategory[]>(CACHE_KEY) ?? []);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [newName, setNewName] = useState('');
-  const [newType, setNewType] = useState<CategoryType>('spending');
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const newNameId = useId();
+  const [tab, setTab] = useState<CategoryType>('spending');
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [paletteId, setPaletteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<{ cat: ManagedCategory; usage: UsageCounts; target: string; error?: string } | null>(null);
+  const [monthData, setMonthData] = useState<MonthData | null>(null);
+  const month = useThisMonth();
+  const tabsRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     const stamp = beginPageRead(CACHE_KEY);
@@ -48,247 +66,472 @@ export function CategoryManager({ onChanged }: { onChanged?: () => void | Promis
       const rows = await api.budgets.categories();
       if (!commitPageRead(stamp, rows)) return;
       setCategories(rows);
+      setLoadError(null);
     } catch (err) {
-      setError(errorText(err, 'Could not load categories'));
+      setLoadError(errorText(err, 'Could not load categories'));
     }
   }, []);
 
+  const loadMonth = useCallback(async () => {
+    try {
+      const [txns, repayments, income] = await Promise.all([
+        api.accounts.transactions(month.from, month.to),
+        api.debts.repayments({ from: month.from, to: month.to }).catch(() => []),
+        api.income.summary(month.key).catch(() => null),
+      ]);
+      setMonthData({
+        txns: txns as ChartTransaction[],
+        repayments: repayments as ChartDebtRepayment[],
+        income: new Map((income?.categories ?? []).map((c) => [c.categoryId, c.actualNzd])),
+      });
+    } catch {
+      // Rows still work; the month totals just stay out.
+    }
+  }, [month]);
+
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadMonth();
+  }, [load, loadMonth]);
 
-  const afterChange = async (message: string) => {
-    setMsg(message);
-    invalidateFinancial('categories', 'spending', 'dashboard');
-    await load();
-    await onChanged?.();
-  };
+  /** This month's spend per category, counted the way the Budget page counts it. */
+  const spend = useMemo(() => {
+    const out = new Map<string, number>();
+    if (!monthData) return out;
+    for (const r of aggregateCategorySpend(monthData.txns, categories, month.from, month.to, monthData.repayments)) {
+      if (r.categoryId) out.set(r.categoryId, r.spend);
+    }
+    return out;
+  }, [monthData, categories, month]);
 
   async function run(action: () => Promise<string>, fallback: string): Promise<boolean> {
     setBusy(true);
-    setMsg(null);
-    setError(null);
     try {
-      await afterChange(await action());
+      const note = await action();
+      invalidateFinancial('categories', 'spending', 'dashboard');
+      await load();
+      await onChanged?.();
+      toast(note);
       return true;
     } catch (err) {
-      setError(errorText(err, fallback));
+      toast(errorText(err, fallback), 'warn');
       return false;
     } finally {
       setBusy(false);
     }
   }
 
-  async function onAdd(event: FormEvent) {
-    event.preventDefault();
-    const name = newName.trim();
-    if (!name) return;
-    const type = newType;
-    const ok = await run(async () => {
-      await api.budgets.createCategory({ name, type });
-      return `Added “${name}” (${CATEGORY_TYPE_LABELS[type].toLowerCase()}).`;
-    }, 'Could not add category');
-    if (ok) {
-      setNewName('');
-      setNewType('spending');
-    }
+  const typeOf = (c: ManagedCategory) => normalizeCategoryType(c.type, c.isIncome);
+  const byType = (t: CategoryType) => categories.filter((c) => typeOf(c) === t);
+  const rows = byType(tab);
+
+  const patch = (c: ManagedCategory, body: { name?: string; type?: CategoryType; colour?: string | null }) =>
+    api.budgets.updateCategory(c.id, { name: body.name ?? c.name, type: body.type ?? typeOf(c), colour: body.colour !== undefined ? body.colour : c.colour });
+
+  /** Close the palette and put focus back on the category's swatch (once it is enabled again). */
+  const refocus = useRef<string | null>(null);
+  function closePalette(id: string) {
+    refocus.current = id;
+    setPaletteId(null);
+  }
+  useEffect(() => {
+    if (!refocus.current || busy || paletteId) return;
+    document.getElementById(`cat-swatch-${refocus.current}`)?.focus();
+    refocus.current = null;
+  }, [busy, paletteId]);
+
+
+  async function pickColour(c: ManagedCategory, colour: string | null) {
+    closePalette(c.id);
+    await run(async () => {
+      await patch(c, { colour });
+      return colour ? `${c.name} is now ${paletteName(colour) ?? 'that colour'}` : `${c.name} uses the automatic colour`;
+    }, 'Could not save the colour');
   }
 
-  async function onRemove(cat: ManagedCategory) {
-    if (
-      !window.confirm(
-        `Remove category “${cat.name}”? Transactions keep their history but lose this category tag; related budget plans are deleted.`,
-      )
-    ) {
+  async function moveType(c: ManagedCategory, type: CategoryType) {
+    const budget =
+      type === 'spending' ? ' It will start counting toward your budget.' : typeOf(c) === 'spending' ? ' It will stop counting toward your budget.' : '';
+    const message = `Move “${c.name}” to ${CATEGORY_TYPE_LABELS[type]}? Its transactions and plans stay with it and count as ${CATEGORY_TYPE_LABELS[type].toLowerCase()} from now on.${budget}`;
+    if (!window.confirm(message)) return;
+    await run(async () => {
+      await patch(c, { type });
+      return `Moved “${c.name}” to ${CATEGORY_TYPE_LABELS[type]}`;
+    }, 'Could not move the category');
+  }
+
+  async function startDelete(c: ManagedCategory) {
+    setPaletteId(null);
+    setRenamingId(null);
+    let usage: UsageCounts & { total: number };
+    try {
+      usage = await api.budgets.categoryUsage(c.id);
+    } catch (err) {
+      toast(errorText(err, 'Could not check what uses this category'), 'warn');
       return;
     }
-    await run(async () => {
-      await api.budgets.deleteCategory(cat.id);
-      return `Removed “${cat.name}”.`;
-    }, 'Could not remove category');
-    setEditingId(null);
+    if (usage.total === 0) {
+      if (!window.confirm(`Delete “${c.name}”? Nothing uses it.`)) return;
+      await run(async () => {
+        await api.budgets.deleteCategory(c.id);
+        return `Deleted “${c.name}”`;
+      }, 'Could not delete the category');
+      return;
+    }
+    const fallback = categories.find((x) => x.id !== c.id && typeOf(x) === typeOf(c));
+    if (!fallback) {
+      toast(`Add another ${CATEGORY_TYPE_LABELS[typeOf(c)].toLowerCase()} category first, so what uses “${c.name}” has somewhere to go.`, 'warn');
+      return;
+    }
+    setDeleting({ cat: c, usage, target: fallback.id });
   }
 
-  const byType = (t: CategoryType) => categories.filter((c) => normalizeCategoryType(c.type, c.isIncome) === t);
+  async function confirmDelete() {
+    if (!deleting) return;
+    const { cat, target } = deleting;
+    const into = categories.find((x) => x.id === target);
+    setBusy(true);
+    try {
+      await api.budgets.deleteCategory(cat.id, target);
+    } catch (err) {
+      // A plan clash (or anything else) stays in the panel, next to the choice that caused it.
+      setDeleting({ ...deleting, error: errorText(err, 'Could not delete the category') });
+      setBusy(false);
+      return;
+    }
+    setBusy(false);
+    setDeleting(null);
+    await run(async () => `Deleted “${cat.name}”. Everything moved to “${into?.name ?? 'the other category'}”`, 'Could not refresh the categories');
+    void loadMonth();
+  }
+
+  function selectTab(t: CategoryType, focus = false) {
+    setTab(t);
+    setPaletteId(null);
+    setRenamingId(null);
+    setDeleting(null);
+    if (focus) window.requestAnimationFrame(() => tabsRef.current?.querySelector<HTMLButtonElement>(`[data-type="${t}"]`)?.focus());
+  }
 
   return (
     <div className="category-manager">
-      <form className="category-manager-add" onSubmit={onAdd}>
-        <CategoryTypeToggle value={newType} onChange={setNewType} disabled={busy} label="Type for a new category" />
-        <div className="row gap wrap-row category-manager-add-row">
-          <label className="field grow" htmlFor={newNameId}>
-            <span>New category name</span>
-            <input
-              id={newNameId}
-              type="text"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              maxLength={80}
-              placeholder="e.g. Pets"
-              disabled={busy}
-              required
-            />
-          </label>
-          <button type="submit" className="btn primary" disabled={busy || !newName.trim()}>
-            {busy ? 'Saving…' : `Add ${CATEGORY_TYPE_LABELS[newType].toLowerCase()} category`}
+      <div
+        ref={tabsRef}
+        className="portfolio-tabs cat-tabs"
+        role="tablist"
+        aria-label="Category types"
+        onKeyDown={(e) => {
+          const i = CATEGORY_TYPES.indexOf(tab);
+          const n = CATEGORY_TYPES.length;
+          const next =
+            e.key === 'ArrowRight' ? CATEGORY_TYPES[(i + 1) % n] : e.key === 'ArrowLeft' ? CATEGORY_TYPES[(i - 1 + n) % n] : e.key === 'Home' ? CATEGORY_TYPES[0] : e.key === 'End' ? CATEGORY_TYPES[n - 1] : null;
+          if (!next) return;
+          e.preventDefault();
+          selectTab(next, true);
+        }}
+      >
+        {CATEGORY_TYPES.map((t) => (
+          <button
+            key={t}
+            id={`cat-tab-${t}`}
+            data-type={t}
+            type="button"
+            role="tab"
+            aria-selected={t === tab}
+            aria-controls="cat-tab-panel"
+            tabIndex={t === tab ? 0 : -1}
+            className={'portfolio-tab' + (t === tab ? ' active' : '')}
+            onClick={() => selectTab(t)}
+          >
+            {CATEGORY_TYPE_LABELS[t]} <span className="cat-tab-count">{byType(t).length}</span>
           </button>
-        </div>
-      </form>
+        ))}
+      </div>
 
-      {error ? (
-        <p className="auth-error" role="alert">{error}</p>
-      ) : null}
-      {msg ? (
-        <p className="auth-info" role="status">{msg}</p>
-      ) : null}
+      <div id="cat-tab-panel" role="tabpanel" aria-labelledby={`cat-tab-${tab}`}>
+        <p className="muted small cat-explainer">{TYPE_EXPLAINER[tab]}</p>
+        {loadError ? <p className="auth-error" role="alert">{loadError}</p> : null}
 
-      <div className="txn-cat-columns txn-cat-columns-4">
-        {CATEGORY_TYPES.map((t) => {
-          const rows = byType(t);
-          return (
-            <div key={t}>
-              <h3>{CATEGORY_TYPE_LABELS[t]}</h3>
-              <ul className="txn-cat-list category-manager-list">
-                {rows.map((c) =>
-                  editingId === c.id ? (
-                    <li key={c.id} className="category-manager-editing">
-                      <CategoryEditForm
-                        category={c}
-                        fallbackColour={categoryColour(null, 0)}
-                        busy={busy}
-                        onCancel={() => setEditingId(null)}
-                        onRemove={() => void onRemove(c)}
-                        onSave={async (patch) => {
-                          const ok = await run(async () => {
-                            await api.budgets.updateCategory(c.id, patch);
-                            return `Saved “${patch.name}”.`;
-                          }, 'Could not save category');
-                          if (ok) setEditingId(null);
-                        }}
-                      />
-                    </li>
+        <ul className="cat-rows">
+          {rows.map((c) => {
+            const saved = validColour(c.colour);
+            const shown = categoryColourFor(categories, c.id);
+            const auto = categoryColourFor(categories.map((x) => (x.id === c.id ? { ...x, colour: null } : x)), c.id);
+            const total = tab === 'spending' ? spend.get(c.id) : tab === 'income' ? monthData?.income.get(c.id) : undefined;
+            const colourName = saved ? (paletteName(saved) ?? 'custom') : `Auto, ${paletteName(auto) ?? 'automatic'}`;
+            return (
+              <li key={c.id} className="cat-row-wrap">
+                <div className="cat-row">
+                  <button
+                    type="button"
+                    id={`cat-swatch-${c.id}`}
+                    className="cat-swatch"
+                    style={{ '--swatch': shown } as CSSProperties}
+                    aria-label={`Colour for ${c.name}: ${colourName}`}
+                    title={`Colour: ${colourName}`}
+                    aria-expanded={paletteId === c.id}
+                    disabled={busy}
+                    onClick={() => {
+                      setRenamingId(null);
+                      setPaletteId((p) => (p === c.id ? null : c.id));
+                    }}
+                  />
+
+                  {renamingId === c.id ? (
+                    <RenameForm
+                      category={c}
+                      busy={busy}
+                      onCancel={() => setRenamingId(null)}
+                      onSave={async (name) => {
+                        const ok = await run(async () => {
+                          await patch(c, { name });
+                          return `Renamed to “${name}”`;
+                        }, 'Could not rename the category');
+                        if (ok) setRenamingId(null);
+                      }}
+                    />
                   ) : (
-                    <li key={c.id}>
-                      <span className="category-manager-name">
-                        {validColour(c.colour) ? (
-                          <span className="category-dot" style={{ background: validColour(c.colour)! }} aria-hidden="true" />
-                        ) : (
-                          <span className="category-dot category-dot--auto" aria-hidden="true" />
-                        )}
-                        {c.name}
-                        {validColour(c.colour) ? null : <span className="muted small"> · auto colour</span>}
-                      </span>
+                    <>
+                      <div className="cat-row-main">
+                        <span className="cat-row-name">{c.name}</span>
+                        {tab === 'spending' || tab === 'income' ? (
+                          <span className="cat-row-sub">{monthData ? monthTotalText(total, month.short, formatNzd) : '…'}</span>
+                        ) : null}
+                      </div>
                       <button
                         type="button"
-                        className="btn small ghost"
+                        className="btn small ghost cat-rename"
                         disabled={busy}
-                        onClick={() => setEditingId(c.id)}
-                        aria-label={`Edit ${c.name}`}
+                        aria-label={`Rename ${c.name}`}
+                        onClick={() => {
+                          setPaletteId(null);
+                          setDeleting(null);
+                          setRenamingId(c.id);
+                        }}
                       >
-                        Edit
+                        Rename
                       </button>
-                    </li>
-                  ),
-                )}
-                {rows.length === 0 ? (
-                  <li className="muted">No {CATEGORY_TYPE_LABELS[t].toLowerCase()} categories.</li>
+                      {isBuiltInCategory(c.slug) ? (
+                        <span className="cat-builtin">
+                          <span className="muted small">Built in</span>
+                          <InfoTip label={`Why ${c.name} is built in`}>
+                            Koru uses “{c.name}” for {BUILT_IN_CATEGORIES[c.slug ?? '']}, so it can’t be moved or deleted. You can rename
+                            it and change its colour.
+                          </InfoTip>
+                        </span>
+                      ) : (
+                      <MoreMenu menu label={`More actions for ${c.name}`}>
+                        {(close) => (
+                          <>
+                            {CATEGORY_TYPES.filter((t) => t !== tab).map((t) => (
+                              <button
+                                key={t}
+                                type="button"
+                                role="menuitem"
+                                tabIndex={-1}
+                                className="btn small"
+                                disabled={busy}
+                                onClick={() => {
+                                  close();
+                                  void moveType(c, t);
+                                }}
+                              >
+                                Move to {CATEGORY_TYPE_LABELS[t]}
+                              </button>
+                            ))}
+                            <button
+                              type="button"
+                              role="menuitem"
+                              tabIndex={-1}
+                              className="btn small danger"
+                              disabled={busy}
+                              onClick={() => {
+                                close();
+                                void startDelete(c);
+                              }}
+                            >
+                              Delete…
+                            </button>
+                          </>
+                        )}
+                      </MoreMenu>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {paletteId === c.id ? (
+                  <div
+                    className="cat-palette"
+                    role="radiogroup"
+                    aria-label={`Colour for ${c.name}`}
+                    ref={(el) => {
+                      // Opening the palette puts focus on the current choice.
+                      if (el && !el.contains(document.activeElement)) el.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]')?.focus();
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        // Close just the palette, not the Budget page's dialog around it.
+                        e.preventDefault();
+                        e.stopPropagation();
+                        closePalette(c.id);
+                        return;
+                      }
+                      const radios = [...e.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]:not([disabled])')];
+                      const i = radios.indexOf(document.activeElement as HTMLElement);
+                      const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+                      const next = step ? radios[(i + step + radios.length) % radios.length] : e.key === 'Home' ? radios[0] : e.key === 'End' ? radios.at(-1) : null;
+                      if (!next) return;
+                      e.preventDefault();
+                      next.focus();
+                    }}
+                  >
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={!saved}
+                      tabIndex={!saved ? 0 : -1}
+                      className={'cat-palette-swatch is-auto' + (!saved ? ' is-on' : '')}
+                      disabled={busy}
+                      onClick={() => void pickColour(c, null)}
+                    >
+                      <span className="cat-palette-chip" style={{ background: auto }} aria-hidden />
+                      Auto ({paletteName(auto) ?? 'automatic'})
+                    </button>
+                    {CATEGORY_PALETTE.map((hex) => {
+                      const on = saved?.toLowerCase() === hex;
+                      return (
+                        <button
+                          key={hex}
+                          type="button"
+                          role="radio"
+                          aria-checked={on}
+                          tabIndex={on ? 0 : -1}
+                          className={'cat-palette-swatch' + (on ? ' is-on' : '')}
+                          disabled={busy}
+                          onClick={() => void pickColour(c, hex)}
+                        >
+                          <span className="cat-palette-chip" style={{ background: hex }} aria-hidden />
+                          {CATEGORY_PALETTE_NAMES[hex]}
+                        </button>
+                      );
+                    })}
+                    {saved && !paletteName(saved) ? (
+                      <button type="button" role="radio" aria-checked tabIndex={0} className="cat-palette-swatch is-on" disabled={busy} onClick={() => closePalette(c.id)}>
+                        <span className="cat-palette-chip" style={{ background: saved }} aria-hidden />
+                        Custom
+                      </button>
+                    ) : null}
+                    <p className="muted small cat-palette-note">
+                      Auto gives each category its own colour by its place in the list, the same on every chart.
+                    </p>
+                  </div>
                 ) : null}
-              </ul>
-            </div>
-          );
-        })}
+
+                {deleting?.cat.id === c.id ? (
+                  <div className="cat-delete" role="group" aria-label={`Delete ${c.name}`}>
+                    <p>
+                      “{c.name}” is used by {usageText(deleting.usage)}. Choose another {CATEGORY_TYPE_LABELS[typeOf(c)].toLowerCase()} category
+                      to move them to, then delete it. Nothing else changes.
+                    </p>
+                    <label className="field">
+                      <span>Move them to</span>
+                      <select
+                        value={deleting.target}
+                        disabled={busy}
+                        onChange={(e) => setDeleting({ cat: deleting.cat, usage: deleting.usage, target: e.target.value })}
+                      >
+                        {byType(typeOf(c))
+                          .filter((x) => x.id !== c.id)
+                          .map((x) => (
+                            <option key={x.id} value={x.id}>
+                              {x.name}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    {deleting.error ? (
+                      <p className="auth-error" role="alert">
+                        {deleting.error}
+                      </p>
+                    ) : null}
+                    <div className="row gap">
+                      <button type="button" className="btn small danger" disabled={busy} onClick={() => void confirmDelete()}>
+                        Move and delete
+                      </button>
+                      <button type="button" className="btn small ghost" disabled={busy} onClick={() => setDeleting(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
+          {rows.length === 0 ? <li className="muted small cat-empty">No {CATEGORY_TYPE_LABELS[tab].toLowerCase()} categories yet.</li> : null}
+        </ul>
+
+        <AddForm
+          key={tab}
+          type={tab}
+          busy={busy}
+          onAdd={(name) =>
+            run(async () => {
+              await api.budgets.createCategory({ name, type: tab });
+              return `Added “${name}”`;
+            }, 'Could not add the category')
+          }
+        />
       </div>
     </div>
   );
 }
 
-function CategoryEditForm({
-  category,
-  fallbackColour,
-  busy,
-  onSave,
-  onCancel,
-  onRemove,
-}: {
-  category: ManagedCategory;
-  fallbackColour: string;
-  busy: boolean;
-  onSave: (patch: { name: string; type: CategoryType; colour: string | null }) => Promise<void>;
-  onCancel: () => void;
-  onRemove: () => void;
-}) {
-  const ids = { name: useId(), type: useId(), colour: useId(), auto: useId() };
+function RenameForm({ category, busy, onSave, onCancel }: { category: ManagedCategory; busy: boolean; onSave: (name: string) => Promise<void>; onCancel: () => void }) {
   const [name, setName] = useState(category.name);
-  const [type, setType] = useState<CategoryType>(normalizeCategoryType(category.type, category.isIncome));
-  const [colour, setColour] = useState(validColour(category.colour) ?? fallbackColour);
-  const [auto, setAuto] = useState(validColour(category.colour) == null);
-  const typeChanged = type !== normalizeCategoryType(category.type, category.isIncome);
-
   return (
     <form
-      className="category-edit-form"
+      className="cat-rename-form"
       onSubmit={(e) => {
         e.preventDefault();
-        if (!name.trim()) return;
-        void onSave({ name: name.trim(), type, colour: auto ? null : colour });
+        const next = name.trim();
+        if (!next) return;
+        if (next === category.name) onCancel();
+        else void onSave(next);
       }}
       onKeyDown={(e) => {
-        if (e.key === 'Escape') onCancel();
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          onCancel();
+        }
       }}
     >
-      <label htmlFor={ids.name}>Name</label>
-      <input
-        id={ids.name}
-        type="text"
-        value={name}
-        maxLength={80}
-        onChange={(e) => setName(e.target.value)}
-        disabled={busy}
-        required
-        autoFocus
-      />
-      <label htmlFor={ids.type}>Type</label>
-      <select id={ids.type} value={type} onChange={(e) => setType(e.target.value as CategoryType)} disabled={busy}>
-        {CATEGORY_TYPES.map((t) => (
-          <option key={t} value={t}>
-            {CATEGORY_TYPE_LABELS[t]}
-          </option>
-        ))}
-      </select>
-      {typeChanged ? (
-        <p className="muted small" role="note">
-          Existing transactions in this category will count as {CATEGORY_TYPE_LABELS[type].toLowerCase()} from now on.
-          Only Spending counts toward budgets.
-        </p>
-      ) : null}
-      <label htmlFor={ids.colour}>Colour</label>
-      <div className="category-edit-colour">
-        <input
-          id={ids.colour}
-          type="color"
-          value={colour}
-          onChange={(e) => {
-            setColour(e.target.value);
-            setAuto(false);
-          }}
-          disabled={busy}
-        />
-        <label className="inline-check" htmlFor={ids.auto}>
-          <input id={ids.auto} type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} disabled={busy} />
-          Automatic
-        </label>
-      </div>
-      <div className="row gap category-edit-actions">
-        <button type="submit" className="btn small primary" disabled={busy || !name.trim()}>
-          Save
-        </button>
-        <button type="button" className="btn small ghost" disabled={busy} onClick={onCancel}>
-          Cancel
-        </button>
-        <button type="button" className="btn small danger" disabled={busy} onClick={onRemove}>
-          Remove
-        </button>
-      </div>
+      <input aria-label={`New name for ${category.name}`} value={name} maxLength={80} disabled={busy} autoFocus onChange={(e) => setName(e.target.value)} />
+      <button type="submit" className="btn small primary" disabled={busy || !name.trim()}>
+        Save
+      </button>
+      <button type="button" className="btn small ghost" disabled={busy} onClick={onCancel}>
+        Cancel
+      </button>
+    </form>
+  );
+}
+
+function AddForm({ type, busy, onAdd }: { type: CategoryType; busy: boolean; onAdd: (name: string) => Promise<boolean> }) {
+  const [name, setName] = useState('');
+  const label = `Add ${CATEGORY_TYPE_LABELS[type].toLowerCase()} category`;
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    const n = name.trim();
+    if (!n) return;
+    if (await onAdd(n)) setName('');
+  }
+  return (
+    <form className="cat-add" onSubmit={(e) => void submit(e)}>
+      <input aria-label={label} placeholder={label} value={name} maxLength={80} disabled={busy} onChange={(e) => setName(e.target.value)} />
+      <button type="submit" className="btn small" disabled={busy || !name.trim()}>
+        Add
+      </button>
     </form>
   );
 }
