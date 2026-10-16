@@ -644,9 +644,7 @@ export function Register() {
                       {rows.map((c) => (
                         <li key={c.id}>
                           <span>{c.name}</span>
-                          {isBuiltInCategory(c.slug) ? (
-                            <span className="muted small">Built in</span>
-                          ) : (
+                          {isBuiltInCategory(c.slug) ? null : (
                             <button
                               type="button"
                               className="btn small ghost"

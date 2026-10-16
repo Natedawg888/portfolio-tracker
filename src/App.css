@@ -14163,6 +14163,5 @@ html:not([data-theme]) .settings-page {
 .cat-empty { padding: 0.75rem 0; }
 .cat-add { display: flex; gap: 0.4rem; margin-top: 0.75rem; }
 .cat-add input { flex: 1; min-width: 0; }
-.cat-builtin { display: inline-flex; align-items: center; gap: 0.25rem; flex-shrink: 0; min-height: 44px; }
-/* Built-in tip sits at the row end, so open it leftwards (as on Dashboard tiles). */
-.cat-builtin .info-tip-body { left: auto; right: 0; transform: none; }
+/* Built-in categories have no ⋯ menu; keep its width so Rename lines up. */
+.cat-menu-spacer { width: 1.9rem; flex-shrink: 0; }
