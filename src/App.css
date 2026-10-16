@@ -2320,6 +2320,216 @@ html[data-theme="light"] .modal-overlay {
   outline-offset: 2px;
 }
 
+/* Settings → Business details: grouped cards, two even columns (one on phones) */
+.biz-page {
+  min-width: 0;
+}
+.biz-head h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.15rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+.biz-head .page-lead {
+  margin: 0;
+}
+.biz-card > h3 {
+  margin: 0 0 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.biz-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem 1rem;
+}
+.biz-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+.biz-field--wide {
+  grid-column: 1 / -1;
+}
+.biz-field > label {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.biz-field input:not([type="checkbox"]),
+.biz-field textarea {
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+}
+.biz-optional {
+  font-weight: 400;
+  opacity: 0.85;
+}
+.biz-hint {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+/* Email gets the wider column so a typical address isn't cut off. */
+.biz-card:first-child .biz-grid {
+  grid-template-columns: minmax(0, 2fr) minmax(9rem, 1fr);
+}
+.biz-grid {
+  align-items: start;
+}
+.biz-input--short {
+  max-width: 12rem;
+}
+.biz-field .asset-toggle {
+  min-height: 44px;
+}
+.biz-msg {
+  font-size: 0.78rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.biz-msg--ok {
+  color: var(--amt-in);
+}
+.biz-msg--error {
+  color: var(--danger);
+  font-weight: 550;
+}
+.biz-field input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+/* Form beside the preview on wide screens, preview below on narrow ones. */
+.biz-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem 1.25rem;
+  align-items: start;
+}
+@media (min-width: 1180px) {
+  .biz-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 22rem);
+  }
+  .biz-aside {
+    position: sticky;
+    top: 0.75rem;
+  }
+}
+.biz-aside {
+  min-width: 0;
+}
+.biz-ready > h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.biz-ready p {
+  margin: 0 0 0.5rem;
+}
+.biz-ready-ok {
+  color: var(--amt-in);
+  font-weight: 600;
+}
+.biz-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.88rem;
+}
+.biz-checklist .done > span:first-child {
+  color: var(--amt-in);
+}
+.biz-checklist .todo {
+  color: var(--muted);
+}
+.biz-preview-label {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+.biz-preview-paper {
+  padding: 1.1rem 1.15rem;
+  font-size: 0.8rem;
+}
+/* Paper stays white in both themes; theme heading colours mustn't reach the title. */
+.biz-preview .biz-preview-paper .invoice-paper-title {
+  font-size: 1.25rem;
+  color: #1f1f1f;
+}
+.biz-preview-paper .invoice-paper-section {
+  margin-top: 0.85rem;
+}
+/* Placeholders for missing details: dashed and labelled, never just grey text. */
+.biz-preview-missing {
+  display: inline-block;
+  padding: 0 0.35rem;
+  border: 1px dashed #b3261e;
+  border-radius: 4px;
+  color: #b3261e;
+  font-style: italic;
+  font-weight: 400;
+}
+
+/* Save bar: appears only with unsaved changes and stays in view while scrolling. */
+.biz-savebar {
+  position: sticky;
+  bottom: 0.75rem;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: var(--surface-2);
+  box-shadow: var(--shadow-card);
+}
+.biz-savebar-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.biz-savebar-why {
+  font-size: 0.8rem;
+  color: var(--danger);
+}
+.biz-savebar-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+.biz-savebar-actions .btn {
+  min-height: 44px;
+}
+
+@media (max-width: 560px) {
+  .biz-grid,
+  .biz-card:first-child .biz-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .biz-savebar-actions {
+    width: 100%;
+  }
+  .biz-savebar-actions .btn {
+    flex: 1;
+  }
+  .biz-input--short {
+    max-width: none;
+  }
+}
+
 /* Settings — Akahu connect */
 .settings-dl {
   display: grid;

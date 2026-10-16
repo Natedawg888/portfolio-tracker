@@ -26,6 +26,12 @@ const FOOTERLESS_PATHS = new Set(['/', '/portfolio', '/debts', '/warranties', '/
 /** Pages whose footer keeps only the legal links (no metals / sync note). */
 const LEGAL_ONLY_FOOTER_PATHS = new Set(['/shopping']);
 
+function legalOnlyFooter(pathname: string, search: string): boolean {
+  if (LEGAL_ONLY_FOOTER_PATHS.has(pathname)) return true;
+  // Settings → Business is about invoices; the metals / sync note doesn't belong there.
+  return pathname === '/settings' && new URLSearchParams(search).get('tab') === 'business';
+}
+
 const links: Array<{
   to: string;
   label: string;
@@ -334,7 +340,7 @@ export function Layout({ children }: { children?: ReactNode }) {
       {/* Dashboard carries this note behind its net worth ⓘ; Portfolio, Debts, Warranties and Rentals drop it. */}
       {FOOTERLESS_PATHS.has(location.pathname) ? null : (
         <footer className="app-footer">
-          {LEGAL_ONLY_FOOTER_PATHS.has(location.pathname) ? null : <>{metalProviderFooter(metalProvider)} · sync failures stay quiet ·{' '}</>}
+          {legalOnlyFooter(location.pathname, location.search) ? null : <>{metalProviderFooter(metalProvider)} · sync failures stay quiet ·{' '}</>}
           <Link to="/privacy">Privacy policy</Link> · <Link to="/terms">Terms of use</Link>
         </footer>
       )}
