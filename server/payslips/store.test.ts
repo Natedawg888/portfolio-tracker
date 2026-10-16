@@ -120,6 +120,17 @@ try {
   assert(r.json.history[0].payDate === '2026-10-08', 'history oldest first');
   assert((await call('GET', '/api/payslips?year=2025', A)).json.ytd.count === 0, 'other tax years are separate');
 
+  // Employers are saved as payslips are added; the list can show one at a time.
+  const emps = r.json.employers;
+  assert(emps.length === 2 && emps[0].name === 'Acme Ltd' && emps[0].count === 3 && emps[1].name === 'Second job', `saved employers ${JSON.stringify(emps.map((e: Json) => e.name))}`);
+  assert(emps[0].usual.taxCode === 'M SL' && emps[0].usual.frequency === 'weekly' && emps[0].usual.hourlyRate === 37.5 && emps[0].usual.accInPaye === false, 'latest details kept for the next payslip');
+  assert(r.json.employer === null && r.json.payslips.every((x: Json) => typeof x.employerKey === 'string'), 'all employers by default');
+  const second = await call('GET', `/api/payslips?year=2026&employer=${encodeURIComponent(emps[1].key)}`, A);
+  assert(second.json.employer === emps[1].key && second.json.payslips.length === 1 && second.json.ytd.count === 1 && second.json.payslips[0].employer === 'Second job', 'one employer at a time');
+  assert(second.json.employers.length === 2, 'the switcher still lists them all');
+  assert((await call('GET', '/api/payslips?year=2026&employer=nope', A)).json.payslips.length === 4, 'unknown employer shows all');
+  assert((await call('GET', '/api/payslips', B)).json.employers.length === 0, 'employers are per user');
+
   // Editing the date or amount relinks; moving it far away unlinks.
   r = await call('PUT', `/api/payslips/${p.id}`, A, { ...slip, payDate: '2026-11-28' });
   assert(r.json.income.bankMatch?.transactionId === 't_other', 'relinked to the deposit near the new date');

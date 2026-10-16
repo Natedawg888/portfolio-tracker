@@ -739,7 +739,13 @@ export const api = {
     remove: (id: string) => req<{ ok: boolean }>(`/vehicles/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
   payslips: {
-    list: (year?: number) => req<PayslipsView>(`/payslips${year ? `?year=${year}` : ''}`),
+    list: (year?: number, employer?: string | null) => {
+      const q = new URLSearchParams();
+      if (year) q.set('year', String(year));
+      if (employer) q.set('employer', employer);
+      const qs = q.toString();
+      return req<PayslipsView>(`/payslips${qs ? `?${qs}` : ''}`);
+    },
     create: (body: PayslipWriteBody) => req<Payslip>('/payslips', { method: 'POST', body: JSON.stringify(body) }),
     update: (id: string, body: PayslipWriteBody) => req<Payslip>(`/payslips/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
     remove: (id: string) => req<{ ok: boolean }>(`/payslips/${encodeURIComponent(id)}`, { method: 'DELETE' }),
