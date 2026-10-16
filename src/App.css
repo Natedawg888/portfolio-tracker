@@ -13388,7 +13388,6 @@ html .bills-page.shopping-page .btn.shop-remove {
 .crypto-import-ignored { opacity: 0.55; }
 .crypto-ledger .payslip-actions { flex-basis: 100%; margin-top: 0; }
 .crypto-import-bulk { flex-wrap: wrap; margin: 0.25rem 0; } .crypto-import-bulk .btn { min-height: 2.75rem; }
-/* Payslips: saved employers switcher */
-.payslip-employers { overflow-x: auto; max-width: 100%; padding-bottom: 0.15rem; }
-.payslip-employers .segmented { flex-wrap: wrap; border-radius: var(--radius); }
-.payslip-employers .segmented-btn { min-height: 2.75rem; font-size: 0.85rem; overflow-wrap: anywhere; }
+/* Vehicles link beside "Refresh all prices" on Portfolio. */
+.portfolio-header-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.4rem; }
+.portfolio-header-actions .btn { min-height: 2.75rem; display: inline-flex; align-items: center; }
