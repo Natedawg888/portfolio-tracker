@@ -11,6 +11,7 @@ import type { MiningProjection } from '../lib/miningProjection';
 import type { Cadence, PossiblePayment, RecurringKind, RecurringStatus, RecurringSuggestion } from '../lib/recurring';
 import type { WarrantyStatus } from '../lib/warranty';
 import type { RentalCategory, RentalEntryKind } from '../lib/rental';
+import type { CommodityCategory, CommodityUnit, PriceBasis } from '../lib/commodities';
 
 export type CurrencyCode = 'NZD' | 'USD' | 'AUD' | 'EUR' | 'GBP';
 
@@ -941,6 +942,9 @@ export interface NetWorthSummary {
   /** Bonds and term deposits (KAN-80), and the term-deposit part. */
   bondsNzd?: number | null;
   bondsTermDepositsNzd?: number | null;
+  /** Commodities (KAN-81): values the user set; and whether Plus shows them in the asset mix. */
+  commoditiesNzd?: number | null;
+  commoditiesExposure?: boolean;
   /** Collectables (cards) market NZD when quotes ok */
   collectablesNzd: number | null;
   /** Sharesies KiwiSaver (read-only) */
@@ -1986,4 +1990,35 @@ export interface BondsView {
   recent: BondPayment[] | null;
   alerts: { bondId: string; name: string; maturityDate: string; level: 'matured' | '30' | '90'; days: number }[] | null;
   termDepositAccounts: { id: string; name: string; balanceNzd: number }[];
+}
+
+/** Commodities (KAN-81). All amounts NZD. priceNzd is per unit or a total (priceBasis). */
+export interface CommodityWriteBody {
+  name: string;
+  preset: string | null;
+  category: CommodityCategory;
+  quantity: number;
+  unit: CommodityUnit;
+  costNzd: number | null;
+  priceNzd: number | null;
+  priceBasis: PriceBasis;
+  valueOn: string | null;
+  notes: string;
+}
+
+export interface Commodity extends CommodityWriteBody {
+  id: string;
+  updatedAt: string;
+  valueNzd: number | null;
+  unitPriceNzd: number | null;
+  returnNzd: number | null;
+  returnPct: number | null;
+  ageDays: number | null;
+  stale: boolean;
+}
+
+export interface CommoditiesView {
+  plus: boolean;
+  commodities: Commodity[];
+  totals: { valueNzd: number; costNzd: number; returnNzd: number; unvalued: number; stale: number };
 }

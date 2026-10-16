@@ -44,6 +44,8 @@ import type {
   Vehicle,
   BondWriteBody,
   BondsView,
+  CommoditiesView,
+  CommodityWriteBody,
   CryptoImportCandidate,
   CryptoSummary,
   CryptoTxn,
@@ -776,6 +778,12 @@ export const api = {
       req<BondsView>(`/bonds/${encodeURIComponent(id)}/coupons/${encodeURIComponent(date)}`, { method: 'PUT', body: JSON.stringify(body) }),
     repaid: (id: string, on?: string) => req<BondsView>(`/bonds/${encodeURIComponent(id)}/repaid`, { method: 'POST', body: JSON.stringify({ on }) }),
     rollOver: (id: string, body: BondWriteBody) => req<BondsView>(`/bonds/${encodeURIComponent(id)}/rollover`, { method: 'POST', body: JSON.stringify(body) }),
+  },
+  commodities: {
+    list: () => req<CommoditiesView>('/commodities'),
+    create: (body: CommodityWriteBody) => req<CommoditiesView>('/commodities', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: CommodityWriteBody) => req<CommoditiesView>(`/commodities/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    remove: (id: string) => req<CommoditiesView>(`/commodities/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
   vehicles: {
     list: () => req<VehiclesView>('/vehicles'),

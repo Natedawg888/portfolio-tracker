@@ -72,6 +72,7 @@ export const CLASS_LABELS: Record<string, string> = {
   vehicleLoans: 'Vehicle loans',
   defi: 'DeFi positions',
   bonds: 'Bonds & term deposits',
+  commodities: 'Commodities',
   debt: 'Debt',
 };
 
@@ -90,6 +91,7 @@ export const ASSET_CLASS_TO_CLASS_KEY: Record<string, string> = {
   vehicle: 'vehicles',
   defi: 'defi',
   bond: 'bonds',
+  commodity: 'commodities',
 };
 
 export function classLabel(classKey: string): string {

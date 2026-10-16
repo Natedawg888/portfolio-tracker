@@ -40,7 +40,7 @@ eq(tabFromHash('', tabs), 'overview', 'no hash');
 eq(nextTab(tabs, 'forex', 'ArrowRight'), 'overview', 'right wraps');
 eq(nextTab(tabs, 'overview', 'ArrowLeft'), 'forex', 'left wraps');
 const all = visibleTabs(() => true);
-eq(all.join(), 'overview,stocks,dividends,crypto,mining,metals,forex,property,art,stones,collectables,vehicles,bonds', 'one tab per class, in Settings order');
+eq(all.join(), 'overview,stocks,dividends,crypto,mining,metals,forex,property,art,stones,collectables,vehicles,bonds,commodities', 'one tab per class, in Settings order');
 eq(visibleTabs((p) => p !== 'vehicles').includes('vehicles'), false, 'Vehicles tab hidden when the class is off');
 eq(normalizeAssetClassPrefs({ stock: true, crypto: false }).vehicles, true, 'settings saved before Vehicles existed turn it on');
 eq(normalizeAssetClassPrefs({ vehicles: false }).vehicles, false, 'and it can be turned off');

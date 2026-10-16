@@ -28,7 +28,7 @@ export const PROJECTION_CLASS_LABELS: Record<ProjectionClassKey, string> = {
   metals: 'Metals',
   property: 'Property',
   bonds: 'Bonds & term deposits',
-  other: 'Other (art, stones, collectables, forex)',
+  other: 'Other (art, stones, collectables, forex, commodities)',
 };
 
 /** Query parameter names, e.g. returnShares=7&addShares=500. */

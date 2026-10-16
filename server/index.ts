@@ -34,6 +34,7 @@ import payslipsRouter from './routes/payslips.ts';
 import vehiclesRouter from './routes/vehicles.ts';
 import cryptoRouter from './routes/crypto.ts';
 import bondsRouter from './routes/bonds.ts';
+import commoditiesRouter from './routes/commodities.ts';
 import rentalsRouter from './routes/rentals.ts';
 import shoppingRouter from './routes/shopping.ts';
 import householdRouter from './routes/household.ts';
@@ -160,6 +161,7 @@ async function main() {
   app.use('/api/vehicles', vehiclesRouter);
   app.use('/api/crypto', cryptoRouter);
   app.use('/api/bonds', bondsRouter);
+  app.use('/api/commodities', commoditiesRouter);
   app.use('/api/rentals', rentalsRouter);
   app.use('/api/shopping', shoppingRouter);
   app.use('/api/household', householdRouter);

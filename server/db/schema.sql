@@ -1244,6 +1244,28 @@ CREATE TABLE IF NOT EXISTS bond_coupons (
   PRIMARY KEY (bond_id, due_date)
 );
 
+-- Commodities (KAN-81): physical goods other than precious metals (those stay in metal holdings).
+-- price_nzd is what the user set: per unit (price_basis 'unit', × quantity) or a total ('total'),
+-- with value_on the date of that price. Never a fetched or estimated price. cost_nzd blank = $0.
+-- preset: key from COMMODITY_PRESETS (src/lib/commodities.ts), or NULL for free text.
+CREATE TABLE IF NOT EXISTS commodities (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name         TEXT NOT NULL,
+  preset       TEXT,
+  category     TEXT NOT NULL,
+  quantity     REAL NOT NULL,
+  unit         TEXT NOT NULL,
+  cost_nzd     REAL,
+  price_nzd    REAL,
+  price_basis  TEXT NOT NULL DEFAULT 'unit',
+  value_on     TEXT,
+  notes        TEXT NOT NULL DEFAULT '',
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_commodities_user ON commodities(user_id);
+
 -- Read-only crypto wallets: public address only. Never store seed phrases / private keys.
 -- No balance column on purpose: balances come from chain providers at sync time
 -- (balance is never stored as the source of truth here).

@@ -23,7 +23,7 @@ const GROUP_OF: Partial<Record<string, AssetClassGroupId>> = {
   stone: 'owned',
 };
 
-/** Classes not listed above (stocks, crypto, GoMining, metals, forex, bonds) are investments. */
+/** Classes not listed above (stocks, crypto, GoMining, metals, forex, bonds, commodities) are investments. */
 export function assetClassGroup(key: string): AssetClassGroupId {
   return GROUP_OF[key] ?? 'investments';
 }
@@ -56,6 +56,7 @@ type NetWorthLike = {
   collectablesNzd?: number | null;
   vehiclesEquityNzd?: number | null;
   bondsNzd?: number | null;
+  commoditiesNzd?: number | null;
   kiwiSaverNzd?: number | null;
   counts?: { accounts?: number; cashAccounts?: number };
   holdings?: { assetClass: string }[];
@@ -63,7 +64,7 @@ type NetWorthLike = {
 };
 
 /** Holding-point classes (net worth breakdown) behind each preference key. */
-export const POINT_CLASSES: Partial<Record<AssetClassPrefKey | 'bonds', string[]>> = {
+export const POINT_CLASSES: Partial<Record<AssetClassPrefKey, string[]>> = {
   stock: ['stock'],
   crypto: ['crypto', 'defi'],
   gomining: ['gomining_miner'],
@@ -75,6 +76,7 @@ export const POINT_CLASSES: Partial<Record<AssetClassPrefKey | 'bonds', string[]
   collectable: ['collectable'],
   vehicles: ['vehicle'],
   bonds: ['bond'],
+  commodities: ['commodity'],
   kiwisaver: ['kiwisaver'],
 };
 
@@ -108,6 +110,7 @@ export function classContents(raw: unknown, key: string): ClassContents | null {
     collectable: s.collectablesNzd,
     vehicles: s.vehiclesEquityNzd,
     bonds: s.bondsNzd,
+    commodities: s.commoditiesNzd,
     kiwisaver: s.kiwiSaverNzd,
   };
   const noun: [string, string] =
