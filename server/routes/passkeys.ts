@@ -5,13 +5,13 @@
  *   POST   /passkeys/login/options      public, rate limited; { remember? }
  *   POST   /passkeys/login/verify       public, rate limited; { response } → { user }
  *   PATCH  /passkeys/:id                signed in; { name }
- *   DELETE /passkeys/:id                signed in; also ends the sessions that passkey opened
+ *   DELETE /passkeys/:id                signed in; needs a sign-in in the last 15 min or { password };
+ *                                       refused for the last way to sign in; also ends the sessions that passkey opened
  * The list of passkeys and recent sign-ins is part of GET /api/auth/security.
  */
 import { Router, type Request, type Response } from 'express';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
-import { getDb, queryOne } from '../db/index.ts';
-import { verifyPassword } from '../auth/passwords.ts';
+import { getDb } from '../db/index.ts';
 import { deviceLabel } from '../auth/deviceLabel.ts';
 import { clearLoginFailures, loginBlockedSec, recordLoginFailure } from '../auth/loginRateLimit.ts';
 import { clientKey, parseRemember, startSession } from '../auth/signIn.ts';
@@ -19,18 +19,21 @@ import {
   authenticationOptions,
   finishAuthentication,
   finishRegistration,
+  listPasskeys,
   registrationOptions,
   relyingParty,
   removePasskey,
   renamePasskey,
   type PasskeyError,
 } from '../auth/passkeys.ts';
+import { REAUTH_REQUIRED, recentlyConfirmed } from '../auth/reauth.ts';
+import { signInMethodCount } from '../auth/users.ts';
 import { publicUserById } from './auth.ts';
 
 const router = Router();
 
 /** Adding a passkey needs a sign-in this recent (or the password). */
-export const RECENT_SIGN_IN_MS = 15 * 60 * 1000;
+export { RECENT_SIGN_IN_MS } from '../auth/reauth.ts';
 
 const MESSAGES: Record<PasskeyError, string> = {
   no_relying_party: 'Passkeys aren’t available on this address.',
@@ -57,28 +60,15 @@ function rpFor(req: Request) {
   return relyingParty(origin);
 }
 
-/** Session created within RECENT_SIGN_IN_MS, or the account password supplied. */
-async function recentlyConfirmed(req: AuthedRequest & { user: NonNullable<AuthedRequest['user']> }): Promise<boolean> {
-  const db = await getDb();
-  const session = req.user.sessionId
-    ? queryOne<{ created_at: string }>(db, `SELECT created_at FROM sessions WHERE id = ? AND user_id = ?`, [req.user.sessionId, req.user.id])
-    : null;
-  if (session && Date.now() - Date.parse(session.created_at) < RECENT_SIGN_IN_MS) return true;
-  const password = (req.body ?? {}).password;
-  if (typeof password !== 'string' || !password) return false;
-  const row = queryOne<{ password_hash: string }>(db, `SELECT password_hash FROM users WHERE id = ?`, [req.user.id]);
-  return row ? verifyPassword(password, row.password_hash) : false;
-}
-
 router.post('/passkeys/register/options', async (req: AuthedRequest, res) => {
   if (!signedIn(req, res)) return;
   const rp = rpFor(req);
   if (!rp) return fail(res, 400, 'no_relying_party');
-  if (!(await recentlyConfirmed(req))) {
+  const db = await getDb();
+  if (!(await recentlyConfirmed(db, req.user, (req.body ?? {}).password))) {
     res.status(403).json({ error: 'Confirm your password to add a passkey.', code: 'REAUTH_REQUIRED' });
     return;
   }
-  const db = await getDb();
   const result = await registrationOptions(db, rp, {
     id: req.user.id,
     email: req.user.email,
@@ -155,7 +145,17 @@ router.patch('/passkeys/:id', async (req: AuthedRequest, res) => {
 router.delete('/passkeys/:id', async (req: AuthedRequest, res) => {
   if (!signedIn(req, res)) return;
   const db = await getDb();
-  const removed = removePasskey(db, req.user.id, String(req.params.id), {
+  const id = String(req.params.id);
+  const owned = listPasskeys(db, req.user.id).some((p) => p.id === id);
+  if (owned && signInMethodCount(db, req.user.id) <= 1) {
+    res.status(409).json({ error: 'This is your only way to sign in. Add a password or another passkey first.', code: 'LAST_SIGN_IN_METHOD' });
+    return;
+  }
+  if (owned && !(await recentlyConfirmed(db, req.user, (req.body ?? {}).password))) {
+    res.status(403).json(REAUTH_REQUIRED);
+    return;
+  }
+  const removed = removePasskey(db, req.user.id, id, {
     keepSessionId: req.user.sessionId ?? null,
     deviceLabel: deviceLabel(req.headers['user-agent']),
   });

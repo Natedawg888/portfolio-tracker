@@ -27,6 +27,7 @@ import {
   revokeOtherSessions,
 } from '../auth/sessions.ts';
 import { clientKey, parseRemember, startSession } from '../auth/signIn.ts';
+import { recentlyConfirmed } from '../auth/reauth.ts';
 import { clearLoginFailures, loginBlockedSec, recordLoginFailure } from '../auth/loginRateLimit.ts';
 import { deviceLabel } from '../auth/deviceLabel.ts';
 import { accountsCookieHeader, allBrowserTokens, promoteNextAccount } from '../auth/accounts.ts';
@@ -417,12 +418,15 @@ router.post('/login/2fa', async (req, res) => {
   deleteChallenge(db, c.id);
   clearLoginFailures(row.email);
 
-  await startSession(req, res, row.id, c.persistent, { method: 'two_factor' });
+  // Trust the browser first, so the new session is linked to it (one device in Settings → Security).
+  let trustedDeviceId: string | undefined;
   if (req.body?.trustDevice === true) {
     const existing = parseTrustedCookie(parseCookieHeader(req.headers.cookie, TRUSTED_DEVICE_COOKIE));
-    const token = createTrustedDevice(db, row.id, deviceLabel(req.headers['user-agent']));
-    res.append('Set-Cookie', trustedCookieHeader([...existing, token]));
+    const trusted = createTrustedDevice(db, row.id, deviceLabel(req.headers['user-agent']));
+    trustedDeviceId = trusted.id;
+    res.append('Set-Cookie', trustedCookieHeader([...existing, trusted.token]));
   }
+  await startSession(req, res, row.id, c.persistent, { method: 'two_factor', provider: c.provider, trustedDeviceId });
   res.json({
     user: toPublicUser(db, {
       id: row.id,
@@ -669,6 +673,10 @@ router.post('/change-password', async (req: AuthedRequest, res) => {
       res.status(403).json({ error: 'Current password is incorrect', code: 'WRONG_PASSWORD' });
       return;
     }
+  } else if (!(await recentlyConfirmed(db, req.user, null))) {
+    // No password to check: setting the first one needs a sign-in in the last 15 minutes.
+    res.status(403).json({ error: 'For your security, sign out and back in, then set your password within 15 minutes.', code: 'REAUTH_REQUIRED' });
+    return;
   }
 
   const passwordHash = await hashPassword(newPassword);

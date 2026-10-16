@@ -12,7 +12,8 @@ import { listSessions, parseCookieHeader, revokeOtherSessions, revokeSession } f
 import { listAccounts, switchAccount } from '../auth/accounts.ts';
 import { hasPassword } from '../auth/users.ts';
 import { configuredSsoProviders } from '../auth/sso.ts';
-import { listAuthEvents } from '../auth/authEvents.ts';
+import { lastPasswordSignInAt, listAuthEvents, markSignInsReviewed, unreviewedNewSignIns } from '../auth/authEvents.ts';
+import { recentSignInUntil } from '../auth/reauth.ts';
 import { listPasskeys } from '../auth/passkeys.ts';
 import { listIdentities } from './sso.ts';
 import {
@@ -55,14 +56,44 @@ router.get('/security', async (req: AuthedRequest, res) => {
   const pw = queryOne<{ password_hash: string }>(db, `SELECT password_hash FROM users WHERE id = ?`, [req.user.id]);
   res.json({
     hasPassword: hasPassword(pw?.password_hash),
+    passwordLastUsedAt: lastPasswordSignInAt(db, req.user.id),
+    /** Sensitive changes skip the password prompt until then. */
+    recentSignInUntil: recentSignInUntil(db, req.user.id, req.user.sessionId),
     identities: await listIdentities(req.user.id),
     ssoProviders: configuredSsoProviders(),
     twoFactor: twoFactorState(db, req.user.id),
     sessions: listSessions(db, req.user.id, req.user.sessionId),
     trustedDevices: listTrustedDevices(db, req.user.id, browserTrustedTokens(req)),
     passkeys: listPasskeys(db, req.user.id),
-    recentSignIns: listAuthEvents(db, req.user.id, 10),
+    recentSignIns: listAuthEvents(db, req.user.id, 10, req.user.sessionId),
+    /** Recent sign-ins from a new device to ask "Was this you?" about. */
+    newSignIns: unreviewedNewSignIns(db, req.user.id, req.user.sessionId),
   });
+});
+
+/** "Yes, it was me" for one sign-in. */
+router.post('/sign-ins/:id/reviewed', async (req: AuthedRequest, res) => {
+  if (!signedIn(req, res)) return;
+  const db = await getDb();
+  if (markSignInsReviewed(db, req.user.id, String(req.params.id)) === 0) {
+    res.status(404).json({ error: 'Sign-in not found', code: 'NOT_FOUND' });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+/**
+ * "No, secure my account": sign out every other session and remove every trusted device
+ * (so the next sign-in elsewhere asks for the code). The page then asks for a new password.
+ * Like signing out other sessions, this only takes access away, so it needs no password.
+ */
+router.post('/secure-account', async (req: AuthedRequest, res) => {
+  if (!signedIn(req, res)) return;
+  const db = await getDb();
+  const signedOut = req.user.sessionId ? revokeOtherSessions(db, req.user.id, req.user.sessionId) : 0;
+  const untrusted = revokeTrustedDevices(db, req.user.id, null);
+  markSignInsReviewed(db, req.user.id, null);
+  res.json({ ok: true, signedOut, untrusted });
 });
 
 /** Step 1: password → new pending secret + QR. Body: { password }. */

@@ -394,7 +394,8 @@ CREATE TABLE IF NOT EXISTS login_challenges (
   persistent  INTEGER NOT NULL DEFAULT 1,
   attempts    INTEGER NOT NULL DEFAULT 0,
   created_at  TEXT NOT NULL,
-  expires_at  TEXT NOT NULL
+  expires_at  TEXT NOT NULL,
+  provider    TEXT -- first step was Google / Apple / Microsoft (NULL: the password)
 );
 
 -- "Trust this device": skips the second factor on this browser until expiry.
@@ -438,13 +439,19 @@ CREATE TABLE IF NOT EXISTS webauthn_challenges (
 );
 
 -- Sign-in audit log (KAN-75): sign-ins and passkey changes. Device label only, no IP.
+-- provider: which single sign-on provider; passkey_id: which passkey; session_id: the
+-- session the sign-in opened; acknowledged_at: the user said "Yes, it was me".
 CREATE TABLE IF NOT EXISTS auth_events (
-  id           TEXT PRIMARY KEY,
-  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  kind         TEXT NOT NULL,
-  method       TEXT,
-  device_label TEXT,
-  created_at   TEXT NOT NULL
+  id              TEXT PRIMARY KEY,
+  user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind            TEXT NOT NULL,
+  method          TEXT,
+  device_label    TEXT,
+  created_at      TEXT NOT NULL,
+  provider        TEXT,
+  passkey_id      TEXT,
+  session_id      TEXT,
+  acknowledged_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_auth_events_user ON auth_events(user_id, created_at);
 

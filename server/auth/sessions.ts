@@ -35,7 +35,7 @@ export type NewSession = { id: string; rawToken: string; expiresAt: string; pers
 
 export async function createSession(
   userId: string,
-  opts: { persistent?: boolean; deviceLabel?: string | null; passkeyId?: string | null } = {},
+  opts: { persistent?: boolean; deviceLabel?: string | null; passkeyId?: string | null; trustedDeviceId?: string | null } = {},
 ): Promise<NewSession> {
   const db = await getDb();
   const persistent = opts.persistent ?? true;
@@ -47,9 +47,20 @@ export async function createSession(
   const expiresAt = new Date(now.getTime() + ttl).toISOString();
   run(
     db,
-    `INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at, device_label, last_seen_at, persistent, passkey_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, userId, tokenHash, expiresAt, now.toISOString(), opts.deviceLabel ?? null, now.toISOString(), persistent ? 1 : 0, opts.passkeyId ?? null],
+    `INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at, device_label, last_seen_at, persistent, passkey_id, trusted_device_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      userId,
+      tokenHash,
+      expiresAt,
+      now.toISOString(),
+      opts.deviceLabel ?? null,
+      now.toISOString(),
+      persistent ? 1 : 0,
+      opts.passkeyId ?? null,
+      opts.trustedDeviceId ?? null,
+    ],
   );
   return { id, rawToken, expiresAt, persistent };
 }
@@ -76,6 +87,8 @@ export type SessionInfo = {
   expiresAt: string;
   persistent: boolean;
   current: boolean;
+  /** The trusted device on the same browser, when the sign-in knew it (null otherwise). */
+  trustedDeviceId: string | null;
 };
 
 /** A user's live sessions, most recently used first. */
@@ -88,9 +101,10 @@ export function listSessions(database: Database, userId: string, currentId?: str
     last_seen_at: string | null;
     expires_at: string;
     persistent: number;
+    trusted_device_id: string | null;
   }>(
     database,
-    `SELECT id, device_label, created_at, last_seen_at, expires_at, persistent FROM sessions
+    `SELECT id, device_label, created_at, last_seen_at, expires_at, persistent, trusted_device_id FROM sessions
      WHERE user_id = ? AND expires_at > ? ORDER BY COALESCE(last_seen_at, created_at) DESC`,
     [userId, now],
   ).map((r) => ({
@@ -101,6 +115,7 @@ export function listSessions(database: Database, userId: string, currentId?: str
     expiresAt: r.expires_at,
     persistent: Number(r.persistent) !== 0,
     current: r.id === currentId,
+    trustedDeviceId: r.trusted_device_id ?? null,
   }));
 }
 

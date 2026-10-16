@@ -13731,3 +13731,178 @@ html .bills-page.shopping-page .btn.shop-remove {
 .bond-alerts li.bond-alert-soon { border-color: var(--btn-danger-border); }
 .bond-alerts .btn { min-height: 2.75rem; }
 .bond-sub { margin: 1rem 0 0.25rem; font-size: 0.95rem; }
+
+/* ── Settings → Security redesign ─────────────────────────────────────────── */
+html[data-theme="light"] .settings-page {
+  --sec-ok: #0b7a55;
+  --sec-warn: #9a5712;
+}
+html[data-theme="dark"] .settings-page,
+html:not([data-theme]) .settings-page {
+  --sec-ok: #8fd4b0;
+  --sec-warn: #f0b25c;
+}
+
+.security-summary { display: grid; gap: 0.75rem; }
+.security-summary-head { display: flex; align-items: center; gap: 0.65rem; }
+.security-summary-head h3 { margin: 0; font-size: 1.12rem; font-weight: 650; letter-spacing: -0.01em; }
+.security-summary-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 999px;
+  border: 1.5px solid currentColor;
+}
+.security-summary--good .security-summary-icon,
+.security-summary--ok .security-summary-icon { color: var(--sec-ok); }
+.security-summary--action { border-color: var(--sec-warn); }
+.security-summary--action .security-summary-icon { color: var(--sec-warn); }
+.security-summary-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.45rem 1.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+}
+.security-summary-list li { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; overflow-wrap: anywhere; }
+.security-summary-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 999px;
+  border: 1.5px solid currentColor;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  transform: translateY(0.15rem);
+}
+.security-summary-list .is-ok .security-summary-mark { color: var(--sec-ok); }
+.security-summary-list .is-warn .security-summary-mark { color: var(--sec-warn); }
+.security-summary-list .is-info .security-summary-mark { color: var(--muted); }
+.security-summary-list a { color: var(--accent-2); }
+
+.security-section > h3 { margin-bottom: 0.25rem; }
+.security-rows { display: grid; gap: 0.5rem; margin: 0.65rem 0 0; padding: 0; list-style: none; }
+.security-row {
+  display: grid;
+  grid-template-columns: 2.1rem minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.25rem 0.75rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.security-icon {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text);
+}
+.security-row-main { min-width: 0; align-self: center; }
+.security-row-name { margin: 0; font-weight: 600; display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; overflow-wrap: anywhere; }
+.security-row-sub { margin: 0.1rem 0 0; font-size: 0.82rem; color: var(--muted); overflow-wrap: anywhere; }
+.security-row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.4rem; align-self: center; }
+.security-row-extra { grid-column: 1 / -1; padding-top: 0.5rem; }
+.security-rename { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.5rem; }
+.security-rename .field { flex: 1 1 14rem; display: grid; gap: 0.3rem; font-size: 0.85rem; color: var(--muted); }
+.security-chip {
+  padding: 0.05rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.security-section-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.85rem; }
+
+.security-confirm {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--btn-danger-border);
+  border-left-width: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.security-confirm--warn { border-color: var(--sec-warn); }
+.security-confirm--primary { border-color: var(--border); border-left-color: var(--accent-2); }
+.security-confirm-title { margin: 0; font-weight: 650; }
+.security-confirm-body p { margin: 0; font-size: 0.88rem; }
+.security-confirm-body p + p { margin-top: 0.35rem; }
+.security-confirm-note { margin: 0; font-size: 0.85rem; color: var(--muted); }
+.security-confirm-field { display: grid; gap: 0.3rem; max-width: 22rem; font-size: 0.85rem; color: var(--muted); }
+.security-confirm-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+.security-password-form { display: grid; gap: 0.7rem; max-width: 28rem; }
+.security-password-form .field { display: grid; gap: 0.3rem; font-size: 0.85rem; color: var(--muted); }
+.security-password-form .field input { color: var(--text); }
+.security-password-input { display: flex; gap: 0.4rem; align-items: center; }
+.security-password-input input { flex: 1 1 auto; min-width: 0; }
+.security-checklist { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; margin: 0.2rem 0 0; padding: 0; list-style: none; font-size: 0.8rem; color: var(--muted); }
+.security-checklist li { display: flex; align-items: center; gap: 0.3rem; }
+.security-checklist li.is-ok { color: var(--sec-ok); }
+.security-check-mark { width: 0.9rem; text-align: center; font-weight: 700; }
+.security-mismatch { margin: -0.3rem 0 0; font-size: 0.8rem; color: var(--sec-warn); }
+
+@media (max-width: 560px) {
+  .security-row { grid-template-columns: 2.1rem minmax(0, 1fr); }
+  .security-row-actions { grid-column: 2 / -1; justify-content: flex-start; }
+  .security-rename { grid-column: 1 / -1; }
+  .security-password-input { flex-wrap: wrap; }
+}
+
+/* Security: section heading with a status chip, two-factor card, new backup codes */
+.security-section-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
+.security-section-head h3 { margin: 0; }
+.security-lead { margin: 0.35rem 0 0; font-size: 0.9rem; color: var(--muted); max-width: 46rem; }
+.security-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.6rem;
+  border: 1.5px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+.security-status--on { color: var(--sec-ok); }
+.security-status--off { color: var(--sec-warn); }
+.security-row-warn { color: var(--sec-warn); }
+.security-link-warn {
+  min-height: 44px;
+  padding: 0 0.15rem;
+  border: 0;
+  background: none;
+  color: var(--sec-warn);
+  font: inherit;
+  font-size: 0.88rem;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+.security-link-warn:hover { text-decoration-thickness: 2px; }
+.security-link-warn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.security-section-foot > .security-confirm { flex: 1 1 100%; }
+.security-codes { display: grid; gap: 0.6rem; margin-top: 0.75rem; padding: 0.8rem 0.9rem; border: 1px solid var(--border); border-left: 3px solid var(--accent-2); border-radius: var(--radius-sm); background: var(--surface-2); }
+.security-codes-title { margin: 0; font-weight: 650; }
+.security-codes-title:focus { outline: none; }
+.security-codes-note { margin: 0; font-size: 0.88rem; }
+.security-codes .backup-codes { margin: 0; }
+
+/* Security: "Was this you?" card and the "This device" badge */
+.security-alert { display: grid; gap: 0.6rem; border-color: var(--sec-warn); border-left-width: 4px; }
+.security-alert h3 { margin: 0; font-size: 1.08rem; }
+.security-alert p { margin: 0; }
+.security-chip--here { color: var(--text); border-color: var(--accent-2); }

@@ -587,9 +587,18 @@ function migrateSchema(database: Database) {
     ['last_seen_at', 'TEXT'],
     ['persistent', 'INTEGER NOT NULL DEFAULT 1'],
     ['passkey_id', 'TEXT'],
+    // The trusted device this browser holds, so Settings → Security shows them as one device.
+    ['trusted_device_id', 'TEXT'],
   ] as const) {
     if (sessionCols.size > 0 && !sessionCols.has(col)) database.run(`ALTER TABLE sessions ADD COLUMN ${col} ${type}`);
   }
+  // Sign-in log detail (security page redesign): provider, passkey, session, "it was me".
+  const authEventCols = tableColumns(database, 'auth_events');
+  for (const col of ['provider', 'passkey_id', 'session_id', 'acknowledged_at'] as const) {
+    if (authEventCols.size > 0 && !authEventCols.has(col)) database.run(`ALTER TABLE auth_events ADD COLUMN ${col} TEXT`);
+  }
+  const challengeCols = tableColumns(database, 'login_challenges');
+  if (challengeCols.size > 0 && !challengeCols.has('provider')) database.run('ALTER TABLE login_challenges ADD COLUMN provider TEXT');
 
   // Per-user finance isolation: user_id on scoped tables.
   // First user (data_owner_user_id) keeps existing rows; later users start empty.

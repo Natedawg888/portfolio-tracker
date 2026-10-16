@@ -36,7 +36,7 @@ const check = (cond: unknown, msg: string) => {
   passed++;
 };
 
-const { getDb, queryOne } = await import('../db/index.ts');
+const { getDb, queryOne, run } = await import('../db/index.ts');
 const { attachUser, requireAuth, isPublicApiPath } = await import('../middleware/requireAuth.ts');
 const { default: authRouter } = await import('../routes/auth.ts');
 const { default: securityRouter } = await import('../routes/security.ts');
@@ -258,7 +258,12 @@ try {
   check(onlySso.hasPassword === false, 'SSO-only account has no password');
   check((await call(a2, 'DELETE', `/api/auth/identities/${onlySso.identities[0].id}`)).status === 409, 'last sign-in method protected');
   check((await call(a2, 'POST', '/api/auth/change-password', { newPassword: 'First-password-1' })).status === 200, 'SSO-only account sets a first password');
-  check((await call(a2, 'DELETE', `/api/auth/identities/${onlySso.identities[0].id}`)).status === 200, 'then it can disconnect');
+  // Disconnecting needs a recent sign-in or the password.
+  const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  run(await getDb(), `UPDATE sessions SET created_at = ? WHERE user_id = (SELECT id FROM users WHERE email = 'new@example.test')`, [hourAgo]);
+  const stale = await call(a2, 'DELETE', `/api/auth/identities/${onlySso.identities[0].id}`, {});
+  check(stale.status === 403 && stale.json!.code === 'REAUTH_REQUIRED', 'an hour-old session must confirm the password to disconnect');
+  check((await call(a2, 'DELETE', `/api/auth/identities/${onlySso.identities[0].id}`, { password: 'First-password-1' })).status === 200, 'then it can disconnect');
   check((await call(new Map(), 'POST', '/api/auth/login', { email: 'new@example.test', password: 'First-password-1' })).json!.user, 'and sign in with the password');
 
   // Apple: form_post → 303 GET; client secret is an ES256 JWT; name arrives outside the token.

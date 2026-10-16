@@ -4,7 +4,7 @@
  *   GET  /sso/providers                    configured providers (buttons to show)
  *   GET  /sso/:provider/start?remember&mode   → 302 to the provider
  *   GET  /sso/:provider/callback           ← provider (Apple POSTs; we 303 it to GET)
- *   DELETE /identities/:id                 disconnect a provider (Settings → Security)
+ *   DELETE /identities/:id                 disconnect a provider (Settings → Security); needs a recent sign-in or { password }
  *
  * Which account a provider sign-in opens:
  *   1. one already linked to that provider account (provider + subject);
@@ -19,6 +19,7 @@ import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { getDb, newId, queryAll, queryOne, run } from '../db/index.ts';
 import { parseCookieHeader } from '../auth/sessions.ts';
 import { startSession } from '../auth/signIn.ts';
+import { REAUTH_REQUIRED, recentlyConfirmed } from '../auth/reauth.ts';
 import { NO_PASSWORD, createUserAccount, hasPassword } from '../auth/users.ts';
 import { parseOnboardingFromPreferencesJson } from '../../src/lib/onboardingPrefs.ts';
 import {
@@ -167,12 +168,12 @@ router.get('/sso/:provider/callback', async (req: AuthedRequest, res) => {
     if (isTwoFactorEnabled(db, userId)) {
       const trusted = parseTrustedCookie(parseCookieHeader(req.headers.cookie, TRUSTED_DEVICE_COOKIE));
       if (!isTrustedDevice(db, userId, trusted)) {
-        const challenge = createLoginChallenge(db, userId, state.remember);
+        const challenge = createLoginChallenge(db, userId, state.remember, identity.provider);
         res.redirect(303, `${back}#sso2fa=${encodeURIComponent(challenge.token)}`);
         return;
       }
     }
-    await startSession(req as Request, res, userId, state.remember, { method: 'sso' });
+    await startSession(req as Request, res, userId, state.remember, { method: 'sso', provider: identity.provider });
     const prefs = queryOne<{ preferences_json: string | null }>(db, `SELECT preferences_json FROM users WHERE id = ?`, [userId]);
     const onboarded = parseOnboardingFromPreferencesJson(prefs?.preferences_json ?? null).complete;
     res.redirect(303, onboarded ? '/' : '/register');
@@ -215,6 +216,10 @@ router.delete('/identities/:id', async (req: AuthedRequest, res) => {
   const count = Number(queryOne<{ c: number }>(db, `SELECT COUNT(*) AS c FROM user_identities WHERE user_id = ?`, [req.user.id])?.c ?? 0);
   if (!hasPassword(pw?.password_hash) && count <= 1) {
     res.status(409).json({ error: 'Set a password first, or you won’t be able to sign in.', code: 'LAST_SIGN_IN_METHOD' });
+    return;
+  }
+  if (!(await recentlyConfirmed(db, req.user, (req.body ?? {}).password))) {
+    res.status(403).json(REAUTH_REQUIRED);
     return;
   }
   run(db, `DELETE FROM user_identities WHERE id = ? AND user_id = ?`, [row.id, req.user.id]);
