@@ -8,6 +8,9 @@ import assert from 'node:assert/strict';
 import type { NewsHoldingRow } from './sections.ts';
 import {
   HOLDINGS_FOR_NEWS_SQL,
+  RENTALS_FOR_NEWS_SQL,
+  VEHICLES_FOR_NEWS_SQL,
+  extraNewsRows,
   planNewsSections,
 } from './sections.ts';
 import { ageRssCacheForTest, clearRssCache, fetchRss, parseRssFeed, settleRssRefreshes } from './rss.ts';
@@ -83,6 +86,37 @@ function feedQuery(url: string | undefined): string {
   if (!url) return '';
   return new URL(url).searchParams.get('q') ?? '';
 }
+
+await check('vehicles get their own section from make and model only', () => {
+  const plans = planNewsSections(extraNewsRows([{ name: 'Mum’s car ABC123', make: 'Toyota', model: 'Corolla' }, { name: 'Bike', make: 'Honda', model: null }], []));
+  const v = plans.find((p) => p.id === 'vehicle');
+  assert.ok(v, 'vehicle section');
+  assert.equal(v!.title, 'Vehicles');
+  assert.deepEqual(v!.matched, ['Toyota Corolla', 'Honda']);
+  const q = new URL(v!.feeds[0].url).searchParams.get('q') ?? '';
+  assert.match(q, /road user charges/);
+  assert.match(q, /"Toyota recall"/);
+  assert.match(q, /"Honda recall"/);
+  assert.doesNotMatch(q, /\)\s*OR\s*\(/, 'one flat OR list (Google News drops nested OR groups)');
+  assert.doesNotMatch(q, /Mum|ABC123|Bike/, 'vehicle names and plates never searched');
+});
+
+await check('rentals properties open Real estate news, with rental-market terms', () => {
+  const only = planNewsSections(extraNewsRows([], [{ name: '12 Smith St' }]));
+  const re = only.find((p) => p.id === 'real_estate');
+  assert.ok(re, 'real estate section from Rentals alone');
+  const q = new URL(re!.feeds[0].url).searchParams.get('q') ?? '';
+  assert.match(q, /rental market/);
+  assert.doesNotMatch(q, /Smith/, 'addresses never searched');
+  const plain = planNewsSections([row({ asset_class: 'real_estate', name: 'Home' })]);
+  assert.doesNotMatch(new URL(plain.find((p) => p.id === 'real_estate')!.feeds[0].url).searchParams.get('q') ?? '', /rental market/, 'no rental terms without a rental');
+  const both = planNewsSections([row({ asset_class: 'real_estate', name: 'Home' }), ...extraNewsRows([], [{ name: 'Flat' }])]);
+  assert.equal(both.filter((p) => p.id === 'real_estate').length, 1, 'one Real estate section');
+});
+
+await check('vehicle and rental SQL is scoped to the session user', () => {
+  for (const sql of [VEHICLES_FOR_NEWS_SQL, RENTALS_FOR_NEWS_SQL]) assert.match(sql, /WHERE user_id = \?/);
+});
 
 await check('sql is scoped to the session user', () => {
   assert.match(HOLDINGS_FOR_NEWS_SQL, /WHERE user_id = \?/);

@@ -17,6 +17,7 @@ const CLASS_TABS: Array<{ id: string; label: string; assetClass: string; chip: s
   { id: 'collectable', label: 'Collectables', assetClass: 'collectable', chip: 'Collectables' },
   { id: 'forex', label: 'Currencies', assetClass: 'forex', chip: 'Currencies' },
   { id: 'real_estate', label: 'Real estate', assetClass: 'real_estate', chip: 'Property' },
+  { id: 'vehicle', label: 'Vehicles', assetClass: 'vehicle', chip: 'Vehicles' },
   { id: 'art', label: 'Art', assetClass: 'art', chip: 'Art' },
   { id: 'stone', label: 'Precious stones', assetClass: 'stone', chip: 'Stones' },
 ];
