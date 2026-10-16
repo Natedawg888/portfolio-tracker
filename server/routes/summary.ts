@@ -8,6 +8,10 @@ import { getDb, queryAll, queryOne, run, newId } from '../db/index.ts';
 import { computeNetWorth } from '../lib/netWorth.ts';
 import { recordDailySnapshot, snapshotBreakdown } from '../lib/dailySnapshot.ts';
 import { logger } from '../lib/logger.ts';
+import { readAssetClassPrefs } from '../lib/userAssetClassPrefs.ts';
+import { hiddenTotals, visibleSnapshot } from '../../src/lib/visibleNetWorth.ts';
+
+const roundCents = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 const router = Router();
 
@@ -22,9 +26,23 @@ router.get('/net-worth', async (req: AuthedRequest, res) => {
     // The sparkline can miss a day; the net worth itself must still load.
     logger.warn('daily snapshot failed', { error: err instanceof Error ? err.message : String(err) });
   }
+  // Snapshots keep every class; the total shown leaves out classes hidden in Settings.
+  // Class figures and holdings stay, so Settings can say what a hidden class holds.
+  const prefs = readAssetClassPrefs(db, userId);
+  const hidden = hiddenTotals(result.breakdown.byClass, prefs);
+  const totalKnownNzd = roundCents(result.totalKnownNzd - hidden.netNzd);
   // Holdings feed the Dashboard drill-downs; byClass stays internal.
   const { breakdown, ...publicShape } = result;
-  res.json({ ...publicShape, holdings: breakdown.holdings });
+  res.json({
+    ...publicShape,
+    totalKnownNzd,
+    assetsKnownNzd: roundCents(result.assetsKnownNzd - hidden.grossNzd),
+    cryptoPctOfNetWorth:
+      result.cryptoPctOfNetWorth != null && prefs.crypto && totalKnownNzd > 0 ? Math.round((result.cryptoNzd / totalKnownNzd) * 1000) / 10 : null,
+    hiddenClasses: hidden.classes,
+    hiddenNzd: hidden.netNzd,
+    holdings: breakdown.holdings,
+  });
 });
 
 const processStartedAt = new Date().toISOString();
@@ -72,7 +90,8 @@ router.get('/snapshots', async (req: AuthedRequest, res) => {
     [userId],
   );
 
-  const mapped = rows.map(mapSnapshot);
+  const prefs = readAssetClassPrefs(db, userId);
+  const mapped = rows.map((r) => visibleSnapshot(mapSnapshot(r), prefs));
   if (year == null) {
     return res.json(mapped);
   }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { api, coerceBalance, formatAuckland, formatNzd } from '../api/client';
+import { hiddenClassesSentence } from '../lib/visibleNetWorth';
 import { maybeAutoSyncBankTransactions, maybeAutoSyncPortfolio } from '../lib/akahuTxnAutoSync';
 import {
   beginPageRead,
@@ -34,6 +35,8 @@ import {
 import type { HomeMonthSnapshot, SpendingBreakdown } from '../types';
 
 type Summary = {
+  /** Classes hidden in Settings that hold something; already left out of totalKnownNzd. */
+  hiddenClasses?: { key: string; label: string; nzd: number }[];
   cashNzd: number;
   cashLiabilitiesNzd?: number;
   stocksNzd: number | null;
@@ -391,13 +394,14 @@ export function Dashboard() {
     <div className="stack dashboard-page">
       <NetWorthHero
         totalNzd={summary.totalKnownNzd}
-        kiwiSaverNzd={summary.kiwiSaverNzd}
+        kiwiSaverNzd={assetEnabled('kiwisaver') ? summary.kiwiSaverNzd : null}
+        hiddenNote={summary.hiddenClasses?.length ? hiddenClassesSentence(summary.hiddenClasses, formatNzd) : null}
         assetsNzd={summary.assetsKnownNzd ?? null}
         debtNzd={summary.debtOutstandingNzd ?? 0}
         snapshots={history}
         info={
           <>
-            Total is assets minus debt outstanding. Accessible also leaves out KiwiSaver, which you generally
+            Total is assets minus debt outstanding, leaving out asset classes you have hidden in Settings. Accessible also leaves out KiwiSaver, which you generally
             can&apos;t withdraw until 65. The trend uses one snapshot a day, saved when you open the dashboard.{' '}
             {quoteNote ? `${quoteNote} ` : ''}
             {metalProviderFooter(summary.metalsSpotSource ?? null)}. Sync failures stay quiet and the last

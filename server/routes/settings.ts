@@ -8,12 +8,12 @@
  *   - networkHashrate: mempool.space / blockchain.info EH/s — Academy fallback only
  */
 import { Router } from 'express';
+import { readAssetClassPrefs } from '../lib/userAssetClassPrefs.ts';
 import { getDb, queryAll, queryOne, run } from '../db/index.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { isDataOwner } from '../lib/userScope.ts';
 import {
   ASSET_CLASS_PREF_OPTIONS,
-  defaultAssetClassPrefs,
   normalizeAssetClassPrefs,
   type AssetClassPrefs,
 } from '../../src/lib/assetClassPrefs.ts';
@@ -522,19 +522,7 @@ router.put('/collectable-types', async (req: AuthedRequest, res) => {
 
 
 async function loadUserAssetClassPrefs(userId: string): Promise<AssetClassPrefs> {
-  const db = await getDb();
-  const row = queryOne<{ preferences_json: string | null }>(
-    db,
-    `SELECT preferences_json FROM users WHERE id = ?`,
-    [userId],
-  );
-  if (!row?.preferences_json) return defaultAssetClassPrefs();
-  try {
-    const parsed = JSON.parse(row.preferences_json) as { assetClasses?: unknown };
-    return normalizeAssetClassPrefs(parsed?.assetClasses ?? parsed);
-  } catch {
-    return defaultAssetClassPrefs();
-  }
+  return readAssetClassPrefs(await getDb(), userId);
 }
 
 async function loadUserValueSearchPrefs(userId: string): Promise<ValueSearchPrefs> {

@@ -32,6 +32,7 @@ export function NetWorthHero({
   debtNzd,
   snapshots,
   info,
+  hiddenNote = null,
 }: {
   totalNzd: number;
   kiwiSaverNzd: number | null;
@@ -40,6 +41,8 @@ export function NetWorthHero({
   /** Null while history is loading or could not be read. */
   snapshots: SnapshotLike[] | null;
   info: ReactNode;
+  /** "Leaves out Property ($240,000.00), hidden in Settings …" when classes are hidden. */
+  hiddenNote?: string | null;
 }) {
   const [view, setView] = useState<NetWorthView>(() => readNetWorthView());
   const [range, setRange] = useState<HistoryRange>('1M');
@@ -83,11 +86,12 @@ export function NetWorthHero({
         {view === 'accessible'
           ? kiwiSaverNzd != null
             ? `Excludes KiwiSaver ${formatNzd(kiwiSaverNzd)}`
-            : 'No KiwiSaver held, so this matches your total'
+            : 'No KiwiSaver in your total, so this matches it'
           : assetsNzd != null
             ? `Assets ${formatNzd(assetsNzd)}${debtNzd > 0 ? ` − Debt ${formatNzd(debtNzd)}` : ''}`
             : null}
       </p>
+      {hiddenNote ? <p className="muted small hero-sub net-worth-hidden">{hiddenNote}</p> : null}
 
       <div className="net-worth-history">
         {snapshots == null ? null : points.length < 2 ? (

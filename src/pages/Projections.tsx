@@ -13,6 +13,7 @@ import { CompoundInterestCalculator } from '../components/CompoundInterestCalcul
 import { RetirementCalculator } from '../components/RetirementCalculator';
 import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import { showQuietToast } from '../lib/quietToast';
+import { hiddenClassesSentence } from '../lib/visibleNetWorth';
 import type { ProjectionAssetClass, ProjectionAssumption, ProjectionMining, ProjectionResponse } from '../types';
 import {
   PROJECTION_CLASS_KEYS,
@@ -528,6 +529,9 @@ export function Projections() {
         <div>
           <h2 className="page-title">Projections</h2>
           <p className="muted small proj-tagline">Your own assumptions played forward. Not a forecast or financial advice.</p>
+          {mode === 'worth' && data?.hiddenClasses?.length ? (
+            <p className="muted small proj-hidden">{hiddenClassesSentence(data.hiddenClasses, formatNzd)}</p>
+          ) : null}
         </div>
         <div className="segmented" role="group" aria-label="Projection mode">
           <button
