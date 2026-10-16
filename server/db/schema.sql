@@ -1117,6 +1117,13 @@ CREATE TABLE IF NOT EXISTS vehicles (
   loan_repayment_nzd     REAL,
   loan_repayment_freq    TEXT,
   running_costs_json     TEXT NOT NULL DEFAULT '[]',
+  -- Odometer: latest reading, its unit (km | mi) and date, and the reading when bought.
+  odometer               REAL,
+  odometer_unit          TEXT NOT NULL DEFAULT 'km',
+  odometer_on            TEXT,
+  odometer_at_purchase   REAL,
+  -- Optional depreciation rate (% a year, diminishing value) for an estimated value.
+  depreciation_pct       REAL,
   notes                  TEXT NOT NULL DEFAULT '',
   created_at             TEXT NOT NULL,
   updated_at             TEXT NOT NULL

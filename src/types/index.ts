@@ -1836,11 +1836,16 @@ export interface VehicleWriteBody {
     repaymentFrequency: VehicleCostFrequency | null;
   };
   runningCosts: { kind: VehicleCostKind; amountNzd: number; frequency: VehicleCostFrequency; label?: string }[];
+  odometer: { reading: number | null; unit: 'km' | 'mi'; readOn: string | null; atPurchase: number | null };
+  /** % a year, diminishing value, for an estimated value. */
+  depreciationPct: number | null;
   notes: string;
 }
 type VehiclePerPeriod = { week: number; month: number; year: number };
 export interface Vehicle extends VehicleWriteBody {
   id: string;
+  estimate: { valueNzd: number; years: number; ratePct: number } | null;
+  distance: { perYear: number; unit: 'km' | 'mi'; runningCostPerUnit: number | null } | null;
   loanOwedNzd: number | null;
   loanAccountName: string | null;
   equityNzd: number | null;

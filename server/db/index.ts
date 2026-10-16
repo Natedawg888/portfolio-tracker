@@ -542,6 +542,19 @@ function migrateSchema(database: Database) {
   if (incomeCols.size > 0 && !incomeCols.has('rental_entry_id')) {
     database.run('ALTER TABLE income_records ADD COLUMN rental_entry_id TEXT');
   }
+  // Vehicle odometer and depreciation (KAN-65 follow-up).
+  const vehicleCols = tableColumns(database, 'vehicles');
+  if (vehicleCols.size > 0) {
+    for (const [col, type] of [
+      ['odometer', 'REAL'],
+      ['odometer_unit', "TEXT NOT NULL DEFAULT 'km'"],
+      ['odometer_on', 'TEXT'],
+      ['odometer_at_purchase', 'REAL'],
+      ['depreciation_pct', 'REAL'],
+    ] as const) {
+      if (!vehicleCols.has(col)) database.run(`ALTER TABLE vehicles ADD COLUMN ${col} ${type}`);
+    }
+  }
   // Payslip net pay mirrored into income (KAN-78).
   if (incomeCols.size > 0 && !incomeCols.has('payslip_id')) {
     database.run('ALTER TABLE income_records ADD COLUMN payslip_id TEXT');

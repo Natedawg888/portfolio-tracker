@@ -10,6 +10,7 @@ import type { Vehicle, VehicleWriteBody, VehiclesView } from '../types';
 import { useMoneyHidden } from '../lib/privacy';
 import { longDate } from './warrantiesView';
 import { VehicleForm } from '../components/vehicles/VehicleForm';
+import { DISTANCE_LABEL } from '../lib/vehicles';
 
 const errText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
@@ -52,6 +53,19 @@ function VehicleCard({ v, onEdit, onDelete }: { v: Vehicle; onEdit: () => void; 
       </dl>
       {v.valuedOn ? <p className="small muted">Valued {longDate(v.valuedOn)}{v.purchasePriceNzd != null ? ` · paid ${formatNzd(v.purchasePriceNzd)}${v.purchaseDate ? ` on ${longDate(v.purchaseDate)}` : ''}` : ''}.</p> : null}
       {stale ? <p className="small hh-over">{stale}</p> : null}
+      {v.estimate ? (
+        <p className="small muted">
+          Estimated {formatNzd(v.estimate.valueNzd)} at {v.estimate.ratePct}% a year from the price paid ({v.estimate.years} years).
+        </p>
+      ) : null}
+      {v.odometer.reading != null ? (
+        <p className="small muted">
+          {v.odometer.reading.toLocaleString('en-NZ')} {DISTANCE_LABEL[v.odometer.unit]}
+          {v.odometer.readOn ? ` on ${longDate(v.odometer.readOn)}` : ''}
+          {v.distance ? ` · about ${v.distance.perYear.toLocaleString('en-NZ')} ${DISTANCE_LABEL[v.distance.unit]} a year` : ''}
+          {v.distance?.runningCostPerUnit != null ? ` · ${formatNzd(v.distance.runningCostPerUnit)} a ${v.distance.unit === 'km' ? 'km' : 'mile'} to run` : ''}
+        </p>
+      ) : null}
       {v.loan.kind === 'account' && v.loanAccountName ? <p className="small muted">Loan: your {v.loanAccountName} account, already counted in net worth.</p> : null}
       {v.loan.kind !== 'none' && (v.loan.lender || v.loan.ratePct != null) ? (
         <p className="small muted">
