@@ -24,6 +24,7 @@ import {
   RentalsPage,
   PayslipsPage,
   VehiclesPage,
+  CryptoPage,
   ShoppingListsPage,
   HouseholdPage,
   PortfolioPage,
@@ -73,6 +74,7 @@ export default function App() {
                   <Route path="rentals" element={<RentalsPage />} />
                   <Route path="payslips" element={<PayslipsPage />} />
                   <Route path="vehicles" element={<VehiclesPage />} />
+                  <Route path="crypto" element={<CryptoPage />} />
                   <Route path="shopping" element={<ShoppingListsPage />} />
                   <Route path="household" element={<HouseholdPage />} />
                   <Route path="debts" element={<DebtsPage />} />

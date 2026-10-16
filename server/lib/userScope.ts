@@ -45,6 +45,10 @@ export const SCOPED_TABLES = [
   'shopping_prefs',
   'payslips',
   'vehicles',
+  'crypto_txns',
+  'crypto_import_refs',
+  'crypto_settings',
+  'defi_positions',
 ] as const;
 
 export type ScopedTable = (typeof SCOPED_TABLES)[number];
@@ -161,6 +165,10 @@ export function deleteScopedDataForUser(
   // Dependents first, then parents. debt_people cascades repayments;
   // kiwisaver_accounts cascades history + activity.
   const deleteOrder: ScopedTable[] = [
+    'crypto_txns',
+    'crypto_import_refs',
+    'crypto_settings',
+    'defi_positions',
     'vehicles',
     'payslips',
     'shopping_items',

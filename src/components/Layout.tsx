@@ -22,7 +22,7 @@ import type { ValueSearchPrefs } from '../lib/valueSearchPrefs';
 import { prefetchNavTarget, schedulePrefetchAppRoutes } from '../lib/routePrefetch';
 
 /** Pages that don't show the metals / sync / legal links footer. */
-const FOOTERLESS_PATHS = new Set(['/', '/portfolio', '/debts', '/warranties', '/rentals', '/payslips', '/vehicles']);
+const FOOTERLESS_PATHS = new Set(['/', '/portfolio', '/debts', '/warranties', '/rentals', '/payslips', '/vehicles', '/crypto']);
 /** Pages whose footer keeps only the legal links (no metals / sync note). */
 const LEGAL_ONLY_FOOTER_PATHS = new Set(['/shopping']);
 

@@ -1123,6 +1123,61 @@ CREATE TABLE IF NOT EXISTS vehicles (
 );
 CREATE INDEX IF NOT EXISTS idx_vehicles_user ON vehicles(user_id);
 
+-- Advanced crypto (KAN-47, Pro). A ledger of crypto transactions for cost basis and gains:
+-- nzd_value = the NZD value of `amount` at the time (for a swap, of what was given); NULL until
+-- known (never guessed). price_source says where it came from (manual | yahoo+frankfurter).
+-- external_ref = imported on-chain transfer (network:hash[:log]); crypto_import_refs remembers
+-- every imported or ignored transfer so it isn't offered again.
+CREATE TABLE IF NOT EXISTS crypto_txns (
+  id            TEXT PRIMARY KEY,
+  user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  date          TEXT NOT NULL,
+  kind          TEXT NOT NULL,
+  asset         TEXT NOT NULL,
+  amount        REAL NOT NULL,
+  nzd_value     REAL,
+  price_source  TEXT NOT NULL DEFAULT 'manual',
+  fee_nzd       REAL NOT NULL DEFAULT 0,
+  to_asset      TEXT,
+  to_amount     REAL,
+  wallet_id     TEXT,
+  external_ref  TEXT,
+  counterparty  TEXT,
+  notes         TEXT NOT NULL DEFAULT '',
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_crypto_txns_user_date ON crypto_txns(user_id, date);
+CREATE TABLE IF NOT EXISTS crypto_import_refs (
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  ref         TEXT NOT NULL,
+  ignored     INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL,
+  PRIMARY KEY (user_id, ref)
+);
+CREATE TABLE IF NOT EXISTS crypto_settings (
+  user_id      TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  cost_method  TEXT NOT NULL DEFAULT 'fifo',
+  updated_at   TEXT NOT NULL
+);
+-- DeFi positions (KAN-47): what you have in a protocol (lending, liquidity, staking, vault) or
+-- owe (borrow), at the value you record. Counted in net worth when count_in_net_worth = 1.
+CREATE TABLE IF NOT EXISTS defi_positions (
+  id                  TEXT PRIMARY KEY,
+  user_id             TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  protocol            TEXT NOT NULL,
+  kind                TEXT NOT NULL,
+  network             TEXT NOT NULL DEFAULT '',
+  assets              TEXT NOT NULL DEFAULT '',
+  value_nzd           REAL NOT NULL,
+  valued_on           TEXT,
+  count_in_net_worth  INTEGER NOT NULL DEFAULT 1,
+  notes               TEXT NOT NULL DEFAULT '',
+  created_at          TEXT NOT NULL,
+  updated_at          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_defi_positions_user ON defi_positions(user_id);
+
 -- Read-only crypto wallets: public address only. Never store seed phrases / private keys.
 -- No balance column on purpose: balances come from chain providers at sync time
 -- (balance is never stored as the source of truth here).

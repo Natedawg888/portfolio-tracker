@@ -36,6 +36,7 @@ jobs:
       - run: npm run test:payslips
       - run: npm run test:vehicles
       - run: npm run test:kiwisaver-calc
+      - run: npm run test:crypto
       - run: npm run test:mortgage
       - run: npm run test:retirement
       - run: npm run test:home

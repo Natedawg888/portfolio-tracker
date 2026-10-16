@@ -13364,3 +13364,27 @@ html .bills-page.shopping-page .btn.shop-remove {
 .ks-calc-rules { margin-top: 0.75rem; }
 .ks-calc-rules summary { cursor: pointer; min-height: 2.75rem; display: flex; align-items: center; }
 .ks-calc-rules ul { margin: 0.25rem 0 0.5rem; padding-left: 1.1rem; display: grid; gap: 0.3rem; }
+
+/* Advanced crypto (KAN-47) */
+.crypto-form { grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); max-height: 70vh; overflow-y: auto; overflow-x: hidden; }
+.crypto-form > * { min-width: 0; }
+.crypto-form input:not([type='checkbox']), .crypto-form select { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; min-height: 2.75rem; }
+.crypto-value-row { display: flex; gap: 0.4rem; align-items: center; }
+.crypto-value-row input { flex: 1 1 auto; }
+.crypto-value-row .btn { min-height: 2.75rem; flex: none; }
+.crypto-method { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.75rem; }
+.crypto-method .segmented { flex-wrap: wrap; }
+.crypto-method .segmented-btn { min-height: 2.75rem; font-size: 0.85rem; }
+.crypto-upsell { margin: 0.25rem 0 0; padding-left: 1.1rem; display: grid; gap: 0.3rem; }
+.crypto-import-pick { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.5rem; }
+.crypto-import-pick label { display: grid; gap: 0.25rem; font-size: 0.85rem; color: var(--muted); min-width: 0; flex: 1 1 14rem; }
+.crypto-import-pick select, .crypto-import-pick .btn { min-height: 2.75rem; max-width: 100%; }
+.crypto-import-list { margin: 0.5rem 0; padding: 0; list-style: none; display: grid; gap: 0.5rem; }
+.crypto-import-list li { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.4rem; padding: 0.6rem; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); }
+@media (min-width: 640px) { .crypto-import-list li { grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) minmax(0, 1fr); align-items: center; } }
+.crypto-import-list select, .crypto-import-list input { width: 100%; min-height: 2.75rem; box-sizing: border-box; }
+.crypto-import-list label { display: grid; gap: 0.2rem; min-width: 0; }
+.crypto-import-what { display: grid; gap: 0.1rem; min-width: 0; overflow-wrap: anywhere; }
+.crypto-import-ignored { opacity: 0.55; }
+.crypto-ledger .payslip-actions { flex-basis: 100%; margin-top: 0; }
+.crypto-import-bulk { flex-wrap: wrap; margin: 0.25rem 0; } .crypto-import-bulk .btn { min-height: 2.75rem; }
