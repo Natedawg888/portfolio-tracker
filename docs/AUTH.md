@@ -96,7 +96,7 @@ New accounts start with `preferences_json.onboarding = { assetClassesDone: false
 
 `AuthUser.onboardingComplete` is returned from `/api/auth/me` (and login/register). The UI gate (`RequireAuth`) sends incomplete users back to `/register`, which resumes at the unfinished step. Hard-refresh (Ctrl+Shift+R / Cmd+Shift+R) after pulling so the new Register UI loads.
 
-Asset class choices can still be changed later under **Settings → Categories / assets**. Disabled classes are hidden in Portfolio, Dashboard buckets/charts, and related nav (data remains in `data/`).
+Asset class choices can still be changed later under **Settings → Categories & assets**. Disabled classes are hidden in Portfolio, Dashboard tiles/charts, and related nav (data remains in `data/`), but still count in net worth, Projections and History.
 
 ## Akahu connections
 
@@ -106,7 +106,8 @@ Bank / investment linking is separate from local email/password auth. See [AKAHU
 
 - **Header avatar** — click the profile picture (or initials) for account owner name/email, **Settings**, and **Sign out**.
 - **Settings → Account** — *Profile* (photo with preview before saving, stored under `data/uploads/avatars/` or as a data URL on `users.avatar_url`; first/last name saved as typed), *Email and password* (email row with an inline Change form, current password required, confirmed by email link when email is set up; password row links to Settings → Security), *Your data* (Download a copy), the ad preferences, and a collapsed **Delete account** with *Deleted* / *Kept* lists from `src/lib/accountView.ts` — keep those lists in step with the delete route below.
-- **Settings → Categories / assets** — asset-class toggles (`users.preferences_json`), add/remove **your** transaction categories (`budget_categories.user_id`), plus Akahu connect.
+- **Settings → Categories & assets** — asset-class switches (`users.preferences_json`, saved on change) and **your** transaction categories (`budget_categories.user_id`); deleting one in use moves everything to another category of the same type.
+- **Settings → Connections** — Akahu connect, Sync now, Refresh.
 
 ## Change email, download a copy
 

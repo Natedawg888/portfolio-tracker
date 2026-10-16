@@ -2,6 +2,8 @@ import { Router } from 'express';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { requireUserId } from '../lib/userScope.ts';
 import { seedCategoriesForUser } from '../lib/categories.ts';
+import { categoryUsage, deleteCategory } from '../lib/categoryDelete.ts';
+import { isBuiltInCategory } from '../../src/lib/categoryManagerView.ts';
 import { getDb, queryAll, queryOne, run, newId } from '../db/index.ts';
 import {
   categoryTypeIsIncome,
@@ -172,6 +174,11 @@ router.patch('/categories/:id', async (req, res) => {
     b.type !== undefined || b.isIncome !== undefined
       ? resolveCategoryType(b as Record<string, unknown>, existing.is_income)
       : normalizeCategoryType(existing.type, existing.is_income as number | boolean | null);
+  const currentType = normalizeCategoryType(existing.type, existing.is_income as number | boolean | null);
+  if (type !== currentType && isBuiltInCategory(existing.slug as string | null)) {
+    res.status(400).json({ error: `“${String(existing.name)}” is built in, so it can't be moved to another type` });
+    return;
+  }
   const isIncome = categoryTypeIsIncome(type) ? 1 : 0;
   const colour =
     b.colour !== undefined
@@ -190,24 +197,33 @@ router.patch('/categories/:id', async (req, res) => {
   res.json(mapCategory(row));
 });
 
-/** Remove a category. Nulls txn/income refs and deletes related budget/income plans (this user only). */
-router.delete('/categories/:id', async (req, res) => {
+/** What uses a category (transactions, income, plans, payee rules, recurring, shopping). */
+router.get('/categories/:id/usage', async (req, res) => {
   const db = await getDb();
   const id = String(req.params.id ?? '');
   const userId = uid(req);
-  const existing = queryOne(db, 'SELECT * FROM budget_categories WHERE id=? AND user_id=?', [id, userId]);
-  if (!existing) {
+  if (!queryOne(db, 'SELECT id FROM budget_categories WHERE id=? AND user_id=?', [id, userId])) {
     res.status(404).json({ error: 'Category not found' });
     return;
   }
-  // Re-parent children to null (same user)
-  run(db, `UPDATE budget_categories SET parent_id = NULL WHERE parent_id = ? AND user_id = ?`, [id, userId]);
-  run(db, `UPDATE transactions SET category_id = NULL WHERE category_id = ? AND user_id = ?`, [id, userId]);
-  run(db, `UPDATE income_records SET category_id = NULL WHERE category_id = ? AND user_id = ?`, [id, userId]);
-  run(db, `DELETE FROM budgets WHERE category_id = ? AND user_id = ?`, [id, userId]);
-  run(db, `DELETE FROM income_plans WHERE category_id = ? AND user_id = ?`, [id, userId]);
-  run(db, `DELETE FROM budget_categories WHERE id = ? AND user_id = ?`, [id, userId]);
-  res.json({ ok: true, id });
+  res.json(categoryUsage(db, userId, id));
+});
+
+/**
+ * Delete a category. If anything uses it, ?moveTo=<category id of the same type> is required and
+ * everything moves there; refused if the target already has a plan for the same period.
+ * Nothing is deleted but the category.
+ */
+router.delete('/categories/:id', async (req, res) => {
+  const db = await getDb();
+  const id = String(req.params.id ?? '');
+  const moveTo = typeof req.query.moveTo === 'string' && req.query.moveTo.trim() ? req.query.moveTo.trim() : null;
+  const r = deleteCategory(db, uid(req), id, moveTo);
+  if (!r.ok) {
+    res.status(r.status).json({ error: r.error, usage: r.usage, clashMonths: r.clashMonths });
+    return;
+  }
+  res.json({ ok: true, id, moveTo, moved: r.moved });
 });
 
 

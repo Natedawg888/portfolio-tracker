@@ -1042,10 +1042,23 @@ export const api = {
         method: 'PATCH',
         body: JSON.stringify(body),
       }),
-    deleteCategory: (id: string) =>
-      req<{ ok: boolean; id: string }>(`/budgets/categories/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-      }),
+    /** Deleting a category in use needs moveTo: everything that uses it moves there. */
+    deleteCategory: (id: string, moveTo?: string) =>
+      req<{ ok: boolean; id: string }>(
+        `/budgets/categories/${encodeURIComponent(id)}${moveTo ? `?moveTo=${encodeURIComponent(moveTo)}` : ''}`,
+        { method: 'DELETE' },
+      ),
+    categoryUsage: (id: string) =>
+      req<{
+        transactions: number;
+        incomeRecords: number;
+        budgetPlans: number;
+        incomePlans: number;
+        payeeRules: number;
+        recurring: number;
+        shopping: number;
+        total: number;
+      }>(`/budgets/categories/${encodeURIComponent(id)}/usage`),
     list: (month?: string) =>
       req<unknown[]>(month ? `/budgets?month=${encodeURIComponent(month)}` : '/budgets'),
     /** Upsert monthly plan: { categoryId, yearMonth: "YYYY-MM", amountNzd } */

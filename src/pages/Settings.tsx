@@ -1,17 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { AssetClassToggles } from '../components/AssetClassToggles';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import { ApiError, api, type AccountSecurity } from '../api/client';
-import {
-  defaultAssetClassPrefs,
-  type AssetClassPrefs,
-} from '../lib/assetClassPrefs';
-import {
-  defaultValueSearchPrefs,
-  type ValueSearchPrefs,
-} from '../lib/valueSearchPrefs';
 import {
   akahuConnect,
   akahuDisconnect,
@@ -30,6 +20,7 @@ import { AccountProfileCard } from '../components/settings/AccountProfileCard';
 import { AccountSignInCard } from '../components/settings/AccountSignInCard';
 import { AccountDataCard } from '../components/settings/AccountDataCard';
 import { AccountDeleteCard } from '../components/settings/AccountDeleteCard';
+import { AssetClassSettings } from '../components/settings/AssetClassSettings';
 import {
   beginPageRead,
   commitPageRead,
@@ -40,16 +31,18 @@ import {
   txnSyncChanged,
 } from '../lib/pageDataCache';
 
-type SettingsTab = 'account' | 'security' | 'business' | 'categories';
+type SettingsTab = 'account' | 'security' | 'business' | 'categories' | 'connections';
 
 export function Settings() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
-  // Akahu OAuth returns to /settings?akahu=… — open Categories tab so the handler mounts
+  // Akahu OAuth returns to /settings?akahu=… — open Connections so the handler mounts
   const tab: SettingsTab =
-    searchParams.get('akahu') || tabParam === 'categories'
-      ? 'categories'
-      : tabParam === 'security'
+    searchParams.get('akahu') || tabParam === 'connections'
+      ? 'connections'
+      : tabParam === 'categories'
+        ? 'categories'
+        : tabParam === 'security'
         ? 'security'
         : tabParam === 'business'
           ? 'business'
@@ -96,7 +89,15 @@ export function Settings() {
             onClick={() => setTab('categories')}
             aria-current={tab === 'categories' ? 'page' : undefined}
           >
-            Categories / assets
+            Categories &amp; assets
+          </button>
+          <button
+            type="button"
+            className={tab === 'connections' ? 'settings-side-link active' : 'settings-side-link'}
+            onClick={() => setTab('connections')}
+            aria-current={tab === 'connections' ? 'page' : undefined}
+          >
+            Connections
           </button>
         </nav>
       </aside>
@@ -107,8 +108,10 @@ export function Settings() {
           <SecurityPanel />
         ) : tab === 'business' ? (
           <BusinessDetailsPanel />
+        ) : tab === 'categories' ? (
+          <CategoriesPanel />
         ) : (
-          <CategoriesPanel searchParams={searchParams} setSearchParams={setSearchParams} />
+          <ConnectionsPanel searchParams={searchParams} setSearchParams={setSearchParams} />
         )}
       </div>
     </div>
@@ -144,20 +147,36 @@ function AccountPanel() {
   );
 }
 
-function CategoriesPanel({
+function CategoriesPanel() {
+  const { refresh } = useAssetClassPrefs();
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  return (
+    <>
+      <AssetClassSettings />
+
+      <section className="panel">
+        <h2>Transaction categories</h2>
+        <p className="page-lead">
+          The categories used on the Budget page and in budget plans.
+        </p>
+
+        <CategoryManager />
+      </section>
+    </>
+  );
+}
+
+function ConnectionsPanel({
   searchParams,
   setSearchParams,
 }: {
   searchParams: URLSearchParams;
   setSearchParams: ReturnType<typeof useSearchParams>[1];
 }) {
-  const { prefs, valueSearch, loading, save, refresh } = useAssetClassPrefs();
-  const [draft, setDraft] = useState<AssetClassPrefs>(prefs);
-  const [vsDraft, setVsDraft] = useState<ValueSearchPrefs>(valueSearch);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
   const [akahu, setAkahu] = useState<AkahuConnectionStatus | null>(
     () => readPageCache<AkahuConnectionStatus>('settings:akahu') ?? null,
   );
@@ -168,18 +187,6 @@ function CategoriesPanel({
     () => readPageCache<AkahuConnectionStatus>('settings:akahu')?.institutions ?? [],
   );
 
-
-  useEffect(() => {
-    setDraft(prefs);
-  }, [prefs]);
-
-  useEffect(() => {
-    setVsDraft(valueSearch);
-  }, [valueSearch]);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
 
   const loadAkahu = useCallback(async () => {
     const stamp = beginPageRead('settings:akahu');
@@ -225,31 +232,9 @@ function CategoriesPanel({
     const next = new URLSearchParams(searchParams);
     next.delete('akahu');
     next.delete('message');
-    if (!next.get('tab')) next.set('tab', 'categories');
+    if (!next.get('tab')) next.set('tab', 'connections');
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams, loadAkahu]);
-
-  const onSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setMsg(null);
-    setError(null);
-    try {
-      await save(draft, vsDraft);
-      setMsg('Asset class & Value Search preferences saved.');
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not save preferences');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const resetDefaults = () => {
-    setDraft(defaultAssetClassPrefs());
-    setVsDraft(defaultValueSearchPrefs());
-    setMsg(null);
-    setError(null);
-  };
 
   const onConnect = async () => {
     setAkahuBusy(true);
@@ -335,72 +320,6 @@ function CategoriesPanel({
 
   return (
     <>
-      <section className="panel">
-        <h2>Asset categories</h2>
-        <p className="page-lead">
-          Choose which asset classes appear in Portfolio, Dashboard, and nav. Turning a class off
-          hides it in the UI; holdings and balances stay in the local database.
-        </p>
-        {loading ? <p className="muted">Loading preferences…</p> : null}
-        <form className="auth-form" onSubmit={onSubmit}>
-          <AssetClassToggles value={draft} onChange={setDraft} disabled={busy || loading} />
-          <div className="asset-toggles" style={{ marginTop: '1.25rem' }}>
-            <h3 style={{ margin: '0 0 0.35rem', fontSize: '1rem' }}>Value Search tools</h3>
-            <p className="muted small" style={{ marginTop: 0 }}>
-              Extra tools on Value Search — independent of asset-class holdings toggles.
-            </p>
-            <ul className="asset-toggle-list" role="list">
-              <li>
-                <button
-                  type="button"
-                  className={
-                    vsDraft.showCurrencyExchanger ? 'asset-toggle on' : 'asset-toggle off'
-                  }
-                  role="switch"
-                  aria-checked={vsDraft.showCurrencyExchanger}
-                  disabled={busy || loading}
-                  onClick={() =>
-                    setVsDraft((prev) => ({
-                      ...prev,
-                      showCurrencyExchanger: !prev.showCurrencyExchanger,
-                    }))
-                  }
-                >
-                  <span className="asset-toggle-text">
-                    <span className="asset-toggle-label">Currency exchanger</span>
-                    <span className="asset-toggle-blurb">
-                      Frankfurter → NZD on Value Search (not gated by Forex holdings)
-                    </span>
-                  </span>
-                  <span className="asset-toggle-track" aria-hidden>
-                    <span className="asset-toggle-knob" />
-                  </span>
-                </button>
-              </li>
-            </ul>
-          </div>
-          {error ? <p className="auth-error" role="alert">{error}</p> : null}
-          {msg ? <p className="auth-info" role="status">{msg}</p> : null}
-          <div className="row gap">
-            <button type="submit" className="btn primary" disabled={busy || loading}>
-              {busy ? 'Saving…' : 'Save preferences'}
-            </button>
-            <button type="button" className="btn ghost" disabled={busy || loading} onClick={resetDefaults}>
-              Reset to all on
-            </button>
-          </div>
-        </form>
-      </section>
-
-      <section className="panel">
-        <h2>Transaction categories</h2>
-        <p className="page-lead">
-          Add, rename, recolour, retype or remove the categories used on the Budget page and in budget plans.
-        </p>
-
-        <CategoryManager />
-      </section>
-
       <section className="panel" id="connect-accounts">
         <div className="panel-heading">
           <h2>Connect accounts</h2>
