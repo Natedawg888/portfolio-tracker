@@ -34,6 +34,7 @@ import type {
   KiwiSaverHistoryResponse,
 } from '../types';
 import { HoldingIcon } from '../components/HoldingIcon';
+import { KiwiSaverCalculator } from '../components/KiwiSaverCalculator';
 import {
   KIWISAVER_READONLY_NOTE,
   kiwiSaverActiveRange,
@@ -1077,6 +1078,8 @@ export function KiwiSaver() {
         </div>
         <SideColumn key={selected?.id ?? 'none'} cards={sideCards} onAdd={focusManualField} />
       </div>
+
+      <KiwiSaverCalculator balanceNzd={loading ? null : accounts.reduce((sum, a) => sum + (Number(a.balanceNzd) || 0), 0)} />
 
       {showManualEntry ? (
         <section className="panel">
