@@ -420,7 +420,7 @@ try {
   const perClass = await call('/api/projections?months=1', cookieA);
   assert(perClass.status === 200, 'per-class projection is 200');
   const pc = byClass(perClass.json);
-  assert(Object.keys(pc).join(',') === 'cash,shares,kiwiSaver,crypto,mining,metals,property,other', 'all classes listed in order');
+  assert(Object.keys(pc).join(',') === 'cash,shares,kiwiSaver,crypto,mining,metals,property,bonds,other', 'all classes listed in order');
   eq(pc.shares.startNzd, 5000, 'shares start at the holding value');
   eq(pc.kiwiSaver.startNzd, 4000, 'KiwiSaver starts at its balance');
   eq(pc.property.startNzd, 200000, 'property starts at its value');

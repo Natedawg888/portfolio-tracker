@@ -29,6 +29,7 @@ const { default: incomeRouter } = await import('../routes/income.ts');
 const { default: settingsRouter } = await import('../routes/settings.ts');
 const { default: householdRouter } = await import('../routes/household.ts');
 const { default: payslipsRouter } = await import('../routes/payslips.ts');
+const { default: bondsRouter } = await import('../routes/bonds.ts');
 const { setPlan } = await import('../lib/entitlements.ts');
 const { uploadsGate, UPLOADS_DIR } = await import('../lib/uploads.ts');
 const { applyBtcLink, reverseBtcDelta } = await import('../lib/txnBtcLink.ts');
@@ -48,6 +49,7 @@ app.use('/api/income', incomeRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/household', householdRouter);
 app.use('/api/payslips', payslipsRouter);
+app.use('/api/bonds', bondsRouter);
 
 const server: Server = await new Promise((resolve) => {
   const s = app.listen(0, '127.0.0.1', () => resolve(s));
@@ -404,7 +406,19 @@ try {
   const ownSlipFile = await req('GET', `/api/uploads/payslips/${slipId}.pdf`, { cookie: a.cookie, raw: true });
   assert(ownSlipFile.status === 200 && ownSlipFile.text.includes(fileBody), 'A can');
 
-  console.log('OK: cross-user BTC, income, uploads, settings, households, and payslips');
+  // Bonds (KAN-80): another user can't list, change or delete A's bond.
+  const bond = await req('POST', '/api/bonds', {
+    cookie: a.cookie,
+    body: { name: 'Alpha Secret Bond', kind: 'govt', faceValue: 1000, purchasePrice: 1000, purchaseDate: '2026-10-01', ratePct: 4, frequency: 'yearly', maturityDate: '2030-10-01' },
+  });
+  assert(bond.status === 201, 'A adds a bond');
+  const bondId = String((bond.json as { bonds: { id: string }[] }).bonds[0].id);
+  assert(!JSON.stringify((await req('GET', '/api/bonds', { cookie: b.cookie })).json).includes('Alpha Secret Bond'), 'B can’t list A’s bonds');
+  assert((await req('PUT', `/api/bonds/${bondId}`, { cookie: b.cookie, body: { name: 'x', kind: 'govt', faceValue: 1, purchasePrice: 1, purchaseDate: '2026-10-01', ratePct: 1, frequency: 'yearly', maturityDate: '2027-10-01' } })).status === 404, 'B can’t edit it');
+  assert((await req('DELETE', `/api/bonds/${bondId}`, { cookie: b.cookie })).status === 404, 'B can’t delete it');
+  assert((await req('POST', `/api/bonds/${bondId}/repaid`, { cookie: b.cookie, body: {} })).status === 404, 'B can’t close it');
+
+  console.log('OK: cross-user BTC, income, uploads, settings, households, payslips, and bonds');
 } finally {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 }

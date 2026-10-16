@@ -19,6 +19,7 @@
 import { Router } from 'express';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { requireUserId } from '../lib/userScope.ts';
+import { syncBondIncome } from '../bonds/store.ts';
 import {
   INCOME_MINING_SLUG,
   INCOME_SLUG,
@@ -341,6 +342,8 @@ function mergeOrCreateCrypto(
 /** List income records + unlinked Income-category inflows. Optional ?from=&to= or ?month=YYYY-MM. */
 router.get('/', async (req, res) => {
   const db = await getDb();
+  // Bond coupons that came due since the last look (KAN-80).
+  syncBondIncome(db, uid(req));
   let from = typeof req.query.from === 'string' ? req.query.from : SPENDING_FLOOR;
   let to = typeof req.query.to === 'string' ? req.query.to : undefined;
   const month = parseYearMonth(req.query.month);
@@ -386,6 +389,7 @@ router.get('/', async (req, res) => {
  */
 router.get('/summary', async (req, res) => {
   const db = await getDb();
+  syncBondIncome(db, uid(req));
   const month = parseYearMonth(req.query.month);
   if (!month) {
     res.status(400).json({ error: 'month=YYYY-MM is required' });

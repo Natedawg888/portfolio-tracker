@@ -6,9 +6,9 @@
  * Mapping to the cycle's asset notes:
  *   Equities    stocks + KiwiSaver
  *   Property    full property value (before the mortgage)
- *   Cash        bank and wallet balances (cash / term deposits)
+ *   Cash        bank and wallet balances, plus term deposits held in Bonds (KAN-80)
  *   Commodities metals
- *   Bonds       nothing held directly
+ *   Bonds       government and corporate bonds (KAN-80)
  * Crypto, GoMining, collectables, art, precious stones and forex have no cycle
  * notes; they are listed as not covered.
  */
@@ -31,6 +31,11 @@ export type NetWorthTotals = {
   artNzd?: number | null;
   stonesNzd?: number | null;
   forexNzd?: number | null;
+  /** Bonds and term deposits together (KAN-80), and the term-deposit part of it. */
+  bondsNzd?: number | null;
+  bondsTermDepositsNzd?: number | null;
+  /** Derived here: bondsNzd − bondsTermDepositsNzd. */
+  bondsOnlyNzd?: number | null;
 };
 
 const LABELS: Record<CycleClassId, string> = {
@@ -48,6 +53,8 @@ const PARTS: Array<{ field: keyof NetWorthTotals; pref: string; to: CycleClassId
   { field: 'realEstateNzd', pref: 'real_estate', to: 'property' },
   { field: 'cashNzd', pref: 'cash', to: 'cash' },
   { field: 'metalsNzd', pref: 'metal', to: 'commodities' },
+  { field: 'bondsOnlyNzd', pref: 'bonds', to: 'bonds' },
+  { field: 'bondsTermDepositsNzd', pref: 'bonds', to: 'cash' },
   { field: 'cryptoNzd', pref: 'crypto', to: { notCovered: 'Crypto' } },
   { field: 'gominingMinersNzd', pref: 'gomining', to: { notCovered: 'GoMining' } },
   { field: 'collectablesNzd', pref: 'collectable', to: { notCovered: 'Collectables' } },
@@ -61,7 +68,8 @@ function positive(v: number | null | undefined): number {
 }
 
 /** The user's mix, or null when nothing enabled has a value. Rows are largest first; zero rows are left out. */
-export function cycleMix(nw: NetWorthTotals, enabled: (pref: string) => boolean): CycleMix | null {
+export function cycleMix(nwIn: NetWorthTotals, enabled: (pref: string) => boolean): CycleMix | null {
+  const nw: NetWorthTotals = { ...nwIn, bondsOnlyNzd: (nwIn.bondsNzd ?? 0) - (nwIn.bondsTermDepositsNzd ?? 0) };
   const covered = new Map<CycleClassId, number>();
   const notCovered = new Map<string, number>();
   for (const part of PARTS) {

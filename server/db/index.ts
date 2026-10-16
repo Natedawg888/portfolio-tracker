@@ -559,6 +559,10 @@ function migrateSchema(database: Database) {
   if (incomeCols.size > 0 && !incomeCols.has('payslip_id')) {
     database.run('ALTER TABLE income_records ADD COLUMN payslip_id TEXT');
   }
+  // Bond coupons mirrored into income (KAN-80).
+  if (incomeCols.size > 0 && !incomeCols.has('bond_coupon_ref')) {
+    database.run('ALTER TABLE income_records ADD COLUMN bond_coupon_ref TEXT');
+  }
 
   // Savings goal → savings account link (KAN-20).
   const goalCols = tableColumns(database, 'savings_goals');

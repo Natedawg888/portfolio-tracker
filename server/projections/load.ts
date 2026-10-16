@@ -3,6 +3,7 @@
  * Every read is filtered by user_id. Prices are whatever computeNetWorth
  * already uses; this module does not look up a new quote.
  */
+import { bondProjectionFlows } from '../bonds/store.ts';
 import type { Database } from 'sql.js';
 import { queryAll } from '../db/index.ts';
 import { computeNetWorth } from '../lib/netWorth.ts';
@@ -205,6 +206,7 @@ export function classStartValues(nw: Awaited<ReturnType<typeof computeNetWorth>>
     mining: roundMoney(nw.gominingMinersNzd ?? 0),
     metals: roundMoney(nw.metalsNzd ?? 0),
     property: roundMoney(nw.realEstateNzd ?? 0),
+    bonds: roundMoney(nw.bondsNzd ?? 0),
     other: roundMoney((nw.artNzd ?? 0) + (nw.stonesNzd ?? 0) + (nw.collectablesNzd ?? 0) + (nw.forexNzd ?? 0)),
   };
 }
@@ -225,6 +227,8 @@ export function buildClassInputs(opts: {
   investmentsReason: string;
   kiwiSaverMonthlyNzd: number | null;
   mining?: MiningFlows | null;
+  /** Bond coupons and maturities (KAN-80, Plus), month by month. */
+  bonds?: { couponsNzd: number[]; maturedValueNzd: number[]; principalNzd: number[] } | null;
 }): ProjectionClassInput[] {
   const { start, query, saved } = opts;
   const defaultReturn = query.annualReturnPercent ?? 0;
@@ -241,7 +245,7 @@ export function buildClassInputs(opts: {
   additions.set('kiwiSaver', pick('kiwiSaver', opts.kiwiSaverMonthlyNzd, opts.kiwiSaverMonthlyNzd == null
     ? 'No KiwiSaver contributions are recorded in the window.'
     : 'Average KiwiSaver contributions in the window. These come out of pay, so they are not taken from cash.'));
-  for (const key of ['crypto', 'mining', 'metals', 'property', 'other'] as const) {
+  for (const key of ['crypto', 'mining', 'metals', 'property', 'bonds', 'other'] as const) {
     additions.set(key, pick(key, null, key === 'mining'
       ? 'Nothing added. Mining rewards recorded as Mining income are already in your budget saving (cash).'
       : 'Nothing added unless you set a monthly amount.'));
@@ -301,10 +305,46 @@ export function buildClassInputs(opts: {
     }
   }
 
+  // Bonds (KAN-80): coupons and principal come back into cash on their dates; the holding's value
+  // leaves the bond class at maturity. Coupons are paid out, so the class doesn't also grow by default.
+  const bondFlows = opts.bonds;
+  if (bondFlows) {
+    const bonds = additions.get('bonds')!;
+    schedules.set('bonds', bondFlows.maturedValueNzd.map((n) => roundMoney((bonds.value ?? 0) - n)));
+    additions.set('bonds', { value: bonds.value, source: bonds.source === 'default' ? 'user_data' : bonds.source, reason: 'Each holding leaves at maturity; its coupons and principal go to cash.' });
+    const cashSet = query.classAdditions.cash != null || saved.contributions.cash != null;
+    if (!cashSet) {
+      const cash = additions.get('cash')!;
+      const base = schedules.get('cash') ?? new Array(bondFlows.couponsNzd.length).fill(cash.value ?? 0);
+      schedules.set('cash', base.map((n, i) => roundMoney(n + (bondFlows.couponsNzd[i] ?? 0) + (bondFlows.principalNzd[i] ?? 0))));
+      additions.set('cash', {
+        ...cash,
+        reason:
+          cash.value == null
+            ? 'No budget saving is known, so only bond coupons (after RWT) and principal at maturity are added to cash.'
+            : `${cash.reason ?? 'Your monthly budget saving.'} Plus bond coupons (after RWT) and principal at maturity.`,
+      });
+    }
+  }
+
   return PROJECTION_CLASS_KEYS.map((key) => {
     const ownReturn = query.classReturns[key] ?? saved.returns[key] ?? null;
     const returnSource: AssumptionClassSource =
       query.classReturns[key] != null ? 'query' : saved.returns[key] != null ? 'saved' : defaultSource;
+    // Coupons are already cash flows; don't grow bonds by the default return as well.
+    if (key === 'bonds' && ownReturn == null) {
+      const add = additions.get(key)!;
+      return {
+        key,
+        startNzd: start[key],
+        annualReturnPercent: 0,
+        returnSource: 'default' as const,
+        monthlyAdditionNzd: add.value,
+        ...(schedules.has(key) ? { monthlyAdditionsNzd: schedules.get(key) } : {}),
+        additionSource: add.source,
+        additionReason: add.reason,
+      };
+    }
     const add = additions.get(key)!;
     return {
       key,
@@ -402,6 +442,7 @@ export async function loadUserProjection(
     query,
     saved,
     mining: miningFlows(mining),
+    bonds: bondProjectionFlows(db, userId, asOf, query.months),
     monthlySavingNzd,
     investmentsMonthlyNzd,
     investmentsReason:

@@ -936,6 +936,9 @@ export interface NetWorthSummary {
   vehiclesEquityNzd?: number | null;
   /** DeFi positions counted in net worth (KAN-47). */
   defiNzd?: number | null;
+  /** Bonds and term deposits (KAN-80), and the term-deposit part. */
+  bondsNzd?: number | null;
+  bondsTermDepositsNzd?: number | null;
   /** Collectables (cards) market NZD when quotes ok */
   collectablesNzd: number | null;
   /** Sharesies KiwiSaver (read-only) */
@@ -1925,4 +1928,60 @@ export interface CryptoImportCandidate {
   nzdValue: number | null;
   priceSource: string | null;
   priceNote: string | null;
+}
+
+/** Bonds and term deposits (KAN-80). Amounts are in the holding's currency unless named …Nzd. */
+export type BondKind = 'govt' | 'corporate' | 'td';
+export type CouponFrequency = 'monthly' | 'quarterly' | 'half_yearly' | 'yearly' | 'maturity';
+export interface BondWriteBody {
+  name: string;
+  kind: BondKind;
+  faceValue: number;
+  purchasePrice: number;
+  purchaseDate: string;
+  ratePct: number;
+  frequency: CouponFrequency;
+  maturityDate: string;
+  currency: string;
+  code: string;
+  rwtPct: number | null;
+  valueAmount: number | null;
+  valueOn: string | null;
+  linkedAccountId: string | null;
+  notes: string;
+}
+export interface Bond extends BondWriteBody {
+  id: string;
+  status: 'active' | 'repaid' | 'rolled';
+  closedOn: string | null;
+  rolledFromId: string | null;
+  value: number;
+  valueSource: 'recorded' | 'cost';
+  valueNzd: number | null;
+  countedInCash: boolean;
+  linkedAccountName: string | null;
+  nextCoupon: { date: string; net: number } | null;
+  yearlyIncome: number;
+  alert: { level: 'matured' | '30' | '90'; days: number } | null;
+}
+export interface BondPayment {
+  date: string;
+  kind: 'coupon' | 'principal';
+  gross: number;
+  net: number;
+  bondId: string;
+  bondName: string;
+  currency: string;
+  skipped: boolean;
+  recorded: number | null;
+  inIncome: boolean;
+}
+export interface BondsView {
+  plus: boolean;
+  bonds: Bond[];
+  totals: { valueNzd: number; bondsNzd: number; termDepositsNzd: number; unvalued: number; yearlyIncomeNzd: number };
+  calendar: BondPayment[] | null;
+  recent: BondPayment[] | null;
+  alerts: { bondId: string; name: string; maturityDate: string; level: 'matured' | '30' | '90'; days: number }[] | null;
+  termDepositAccounts: { id: string; name: string; balanceNzd: number }[];
 }

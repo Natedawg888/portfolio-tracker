@@ -61,6 +61,8 @@ type Summary = {
   vehiclesNzd?: number | null;
   vehicleLoansNzd?: number | null;
   vehiclesEquityNzd?: number | null;
+  bondsNzd?: number | null;
+  bondsTermDepositsNzd?: number | null;
   kiwiSaverNzd: number | null;
   debtOutstandingNzd?: number;
   debtPersonCount?: number;
@@ -318,6 +320,7 @@ export function Dashboard() {
     realEstate: 'real_estate',
     collectables: 'collectable',
     vehicles: 'vehicles',
+    bonds: 'bonds',
     kiwiSaver: 'kiwisaver',
   };
 
@@ -338,6 +341,7 @@ export function Dashboard() {
     },
     { key: 'collectables', name: 'Collectables', value: summary.collectablesNzd ?? 0, colour: '#c45a9a' },
     { key: 'vehicles', name: 'Vehicles', value: summary.vehiclesEquityNzd ?? 0, colour: '#8a7a5a' },
+    { key: 'bonds', name: 'Bonds', value: summary.bondsNzd ?? 0, colour: '#4a9a8a' },
     { key: 'kiwiSaver', name: 'KiwiSaver', value: summary.kiwiSaverNzd ?? 0, colour: '#6a8fd4' },
   ]
     .filter((row) => {
@@ -379,6 +383,7 @@ export function Dashboard() {
     real_estate: 'Real estate',
     collectable: 'Collectables',
     vehicles: 'Vehicles',
+    bonds: 'Bonds',
     kiwisaver: 'KiwiSaver',
   };
 
@@ -486,6 +491,17 @@ export function Dashboard() {
                     ? `Value ${formatNzd(summary.vehiclesNzd)} minus loans ${formatNzd(summary.vehicleLoansNzd)} · Open`
                     : 'Value you recorded · Open'}{' '}
                 <span aria-hidden="true">›</span>
+              </span>
+            </span>
+          </Link>
+        ) : null}
+        {assetEnabled('bonds') ? (
+          <Link className="card dashboard-tile dashboard-tile-link" to="/portfolio#bonds">
+            <span className="dashboard-tile-hit">
+              <span className="dashboard-tile-title">Bonds &amp; term deposits</span>
+              <span className="card-value">{summary.bondsNzd != null ? formatNzd(summary.bondsNzd) : '—'}</span>
+              <span className="dashboard-tile-cue">
+                {summary.bondsNzd == null ? 'Add a bond or term deposit' : 'Value you recorded, or cost · Open'} <span aria-hidden="true">›</span>
               </span>
             </span>
           </Link>

@@ -13396,3 +13396,10 @@ html .bills-page.shopping-page .btn.shop-remove {
 .vehicle-estimate { display: grid; gap: 0.35rem; padding: 0.6rem 0.75rem; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: var(--surface-2); }
 .vehicle-estimate p { margin: 0; }
 .vehicle-estimate .btn { justify-self: start; min-height: 2.75rem; }
+
+/* Bonds and term deposits (KAN-80) */
+.bond-alerts { margin: 0.5rem 0; padding: 0; list-style: none; display: grid; gap: 0.4rem; }
+.bond-alerts li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.4rem 0.75rem; padding: 0.6rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.bond-alerts li.bond-alert-soon { border-color: var(--btn-danger-border); }
+.bond-alerts .btn { min-height: 2.75rem; }
+.bond-sub { margin: 1rem 0 0.25rem; font-size: 0.95rem; }

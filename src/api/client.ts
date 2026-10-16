@@ -42,6 +42,8 @@ import type {
   HouseholdPayeView,
   Payslip,
   Vehicle,
+  BondWriteBody,
+  BondsView,
   CryptoImportCandidate,
   CryptoSummary,
   CryptoTxn,
@@ -731,6 +733,16 @@ export const api = {
     saveDefi: (id: string | null, body: Omit<DefiPosition, 'id'>) =>
       req<DefiView>(id ? `/crypto/defi/${encodeURIComponent(id)}` : '/crypto/defi', { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) }),
     removeDefi: (id: string) => req<DefiView>(`/crypto/defi/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  },
+  bonds: {
+    list: () => req<BondsView>('/bonds'),
+    create: (body: BondWriteBody) => req<BondsView>('/bonds', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: BondWriteBody) => req<BondsView>(`/bonds/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    remove: (id: string) => req<BondsView>(`/bonds/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    setCoupon: (id: string, date: string, body: { skipped?: boolean; netAmount?: number | null }) =>
+      req<BondsView>(`/bonds/${encodeURIComponent(id)}/coupons/${encodeURIComponent(date)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    repaid: (id: string, on?: string) => req<BondsView>(`/bonds/${encodeURIComponent(id)}/repaid`, { method: 'POST', body: JSON.stringify({ on }) }),
+    rollOver: (id: string, body: BondWriteBody) => req<BondsView>(`/bonds/${encodeURIComponent(id)}/rollover`, { method: 'POST', body: JSON.stringify(body) }),
   },
   vehicles: {
     list: () => req<VehiclesView>('/vehicles'),
