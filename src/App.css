@@ -13855,8 +13855,6 @@ html:not([data-theme]) .settings-page {
 .security-checklist li.is-ok { color: var(--sec-ok); }
 .security-check-mark { width: 0.9rem; text-align: center; font-weight: 700; }
 .security-mismatch { margin: -0.3rem 0 0; font-size: 0.8rem; color: var(--sec-warn); }
-.security-moved { display: flex; flex-wrap: wrap; gap: 0.25rem 0.5rem; margin: 0; }
-.security-moved a { color: var(--accent-2); font-weight: 600; }
 
 @media (max-width: 560px) {
   .security-row { grid-template-columns: 2.1rem minmax(0, 1fr); }
