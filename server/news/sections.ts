@@ -14,6 +14,22 @@ WHERE user_id = ?
 ORDER BY updated_at DESC
 `.trim();
 
+/** Vehicles and Rentals properties for one user (KAN-65 / KAN-66); only these columns are read. */
+export const VEHICLES_FOR_NEWS_SQL = `SELECT name, make, model FROM vehicles WHERE user_id = ? ORDER BY created_at`;
+export const RENTALS_FOR_NEWS_SQL = `SELECT name FROM rental_properties WHERE user_id = ? ORDER BY created_at`;
+
+/** Vehicles and rental properties as news rows (vehicles get their own section; rentals join Real estate). */
+export function extraNewsRows(
+  vehicles: { name: string | null; make: string | null; model: string | null }[],
+  rentals: { name: string | null }[],
+): NewsHoldingRow[] {
+  const blank = { symbol: null, asset: null, exchange: null, metal: null, miner_name: null, artist: null, artwork_title: null, stone_type: null, card_game: null };
+  return [
+    ...vehicles.map((v) => ({ ...blank, asset_class: 'vehicle', name: v.name, source: 'vehicle' as const, make: v.make, model: v.model })),
+    ...rentals.map((r) => ({ ...blank, asset_class: 'real_estate', name: r.name, source: 'rental' as const })),
+  ];
+}
+
 export type NewsHoldingRow = {
   asset_class: string;
   name: string | null;
@@ -30,6 +46,11 @@ export type NewsHoldingRow = {
   shares?: number | null;
   amount?: number | null;
   metal_amount?: number | null;
+  /** Rows that aren't holdings: vehicles (KAN-65) and Rentals properties (KAN-66). */
+  source?: 'vehicle' | 'rental';
+  /** Vehicles: make and model, the only vehicle details used in a search. */
+  make?: string | null;
+  model?: string | null;
 };
 
 export type NewsFeedSpec = {
@@ -57,6 +78,7 @@ const CLASS_ORDER = [
   'forex',
   'metal',
   'real_estate',
+  'vehicle',
   'art',
   'stone',
   'collectable',
@@ -71,6 +93,7 @@ const CLASS_TITLES: Record<string, string> = {
   forex: 'Currencies',
   metal: 'Metals',
   real_estate: 'Real estate',
+  vehicle: 'Vehicles',
   art: 'Art',
   stone: 'Precious stones',
   collectable: 'Collectables',
@@ -407,9 +430,28 @@ function stoneQuery(rows: NewsHoldingRow[]): { labels: string[]; query: string }
 function realEstateQuery(rows: NewsHoldingRow[]): { labels: string[]; query: string } {
   const labels = unique(rows.map((row) => searchPhrase(row.name) || 'Property'));
   // Property names can be home addresses. Keep them on-screen only.
+  const rental = rows.some((row) => row.source === 'rental');
+  // One flat OR list: Google News returns nothing for nested OR groups.
+  const terms = ['housing', '"property market"', ...(rental ? ['"rental market"', 'rents', 'landlords', 'tenancy', '"healthy homes"'] : [])];
   return {
     labels,
-    query: orQuery(['"New Zealand" (housing OR "property market")'], ''),
+    query: orQuery([`"New Zealand" (${terms.join(' OR ')})`], ''),
+  };
+}
+
+/**
+ * Vehicles: NZ motoring costs everyone pays (fuel, road user charges, registration, used car
+ * prices), plus recalls for the makes owned. Only make and model are searched; vehicle names
+ * and plates stay on-screen.
+ */
+function vehicleQuery(rows: NewsHoldingRow[]): { labels: string[]; query: string } {
+  const labels = unique(rows.map((row) => searchPhrase([row.make, row.model].filter(Boolean).join(' ')) || 'Vehicle'));
+  const makes = unique(rows.map((row) => searchPhrase(row.make))).slice(0, QUERY_LIMIT - 1);
+  // One flat OR list: Google News returns nothing for nested OR groups.
+  const terms = ['"petrol prices"', '"fuel prices"', '"road user charges"', '"vehicle registration"', '"car prices"', '"electric vehicles"', ...makes.map((m) => `"${m.replace(/"/g, '')} recall"`)];
+  return {
+    labels,
+    query: orQuery([`"New Zealand" (${terms.join(' OR ')})`], ''),
   };
 }
 
@@ -454,6 +496,8 @@ function queryForClass(assetClass: string, rows: NewsHoldingRow[]): { labels: st
       return artQuery(rows);
     case 'stone':
       return stoneQuery(rows);
+    case 'vehicle':
+      return vehicleQuery(rows);
     case 'real_estate':
       return realEstateQuery(rows);
     case 'collectable':

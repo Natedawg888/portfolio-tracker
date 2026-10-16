@@ -11,6 +11,9 @@ import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { loadNewsSections } from '../news/load.ts';
 import {
   HOLDINGS_FOR_NEWS_SQL,
+  RENTALS_FOR_NEWS_SQL,
+  VEHICLES_FOR_NEWS_SQL,
+  extraNewsRows,
   normalizeHoldingRow,
   planNewsSections,
 } from '../news/sections.ts';
@@ -63,9 +66,14 @@ router.get('/', async (req, res) => {
     const prefs = await readNewsState(uid(req));
     const includeClosed = includeClosedQuery(req.query.includeClosed, prefs.includeClosedPositions);
     const rows = queryAll<Record<string, unknown>>(db, HOLDINGS_FOR_NEWS_SQL, [uid(req)]);
+    // Vehicles and Rentals properties count too, so news isn't only for Portfolio holdings.
+    const extra = extraNewsRows(
+      queryAll<{ name: string | null; make: string | null; model: string | null }>(db, VEHICLES_FOR_NEWS_SQL, [uid(req)]),
+      queryAll<{ name: string | null }>(db, RENTALS_FOR_NEWS_SQL, [uid(req)]),
+    );
     const sections = await loadNewsSections(
       planNewsSections(
-        rows.map((row) => normalizeHoldingRow(row)),
+        [...rows.map((row) => normalizeHoldingRow(row)), ...extra],
         { includeClosed },
       ),
       { refresh },
