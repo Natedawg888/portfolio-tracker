@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { prefetchNavTarget } from '../lib/routePrefetch';
+import { VehiclesPanel } from '../components/portfolio/VehiclesPanel';
 import type { FormEvent, ReactNode } from 'react';
 import { api, formatNzd, formatAuckland } from '../api/client';
 import { maybeAutoSyncBankTransactions, maybeAutoSyncPortfolio } from '../lib/akahuTxnAutoSync';
@@ -1528,6 +1529,9 @@ type PortfolioNetWorth = {
   realEstateNzd: number | null;
   realEstateEquityNzd?: number | null;
   collectablesNzd: number | null;
+  vehiclesNzd?: number | null;
+  vehicleLoansNzd?: number | null;
+  vehiclesEquityNzd?: number | null;
   kiwiSaverNzd: number | null;
   assetsKnownNzd?: number;
   totalKnownNzd: number;
@@ -1563,6 +1567,7 @@ const OVERVIEW_ROW_META: Record<string, { description: string; tab?: PortfolioTa
   collectables: { description: 'Trading cards and other collectables', tab: 'collectables' },
   forex: { description: 'Foreign cash held outside your bank', tab: 'forex' },
   realEstate: { description: 'Property equity: your value minus the mortgage', tab: 'property' },
+  vehicles: { description: 'Vehicle equity: your value minus loans on them', tab: 'vehicles' },
   art: { description: 'Art at your recorded valuation', tab: 'art' },
   stones: { description: 'Precious stones at a quote or your valuation', tab: 'stones' },
   kiwiSaver: { description: 'Sharesies KiwiSaver and bank-held KiwiSaver', href: '/kiwisaver' },
@@ -2591,6 +2596,7 @@ export function Portfolio() {
     forex: 'forex',
     realEstate: 'real_estate',
     collectables: 'collectable',
+    vehicles: 'vehicles',
     kiwiSaver: 'kiwisaver',
   };
 
@@ -2611,6 +2617,7 @@ export function Portfolio() {
           colour: '#7a9e5a',
         },
         { key: 'collectables', name: 'Collectables', value: summary.collectablesNzd ?? 0, colour: '#c45a9a' },
+        { key: 'vehicles', name: 'Vehicles', value: summary.vehiclesEquityNzd ?? 0, colour: '#8a7a5a' },
         { key: 'kiwiSaver', name: 'KiwiSaver', value: summary.kiwiSaverNzd ?? 0, colour: '#6a8fd4' },
       ]
         .filter((row) => {
@@ -2691,6 +2698,7 @@ export function Portfolio() {
         }
         progress={refreshProgress}
         onRefreshAll={() => void refreshAllPrices()}
+        showVehicles={assetEnabled('vehicles')}
       />
       <PortfolioTabs tabs={tabs} active={tab} onSelect={selectTab} />
       {msg && (
@@ -3296,6 +3304,8 @@ export function Portfolio() {
         )}
       />
       ) : null}
+
+{tab === 'vehicles' && assetEnabled('vehicles') ? <VehiclesPanel total={classTotal('vehicles')} /> : null}
 
 {tab === 'art' && assetEnabled('art') ? (
       <Section

@@ -13,6 +13,7 @@ export const ASSET_CLASS_PREF_KEYS = [
   'art',
   'stone',
   'collectable',
+  'vehicles',
   'kiwisaver',
   'cash',
 ] as const;
@@ -38,6 +39,7 @@ export const ASSET_CLASS_PREF_OPTIONS: AssetClassPrefMeta[] = [
   { key: 'art', label: 'Art', blurb: 'Fractional or physical' },
   { key: 'stone', label: 'Precious stones', blurb: 'Diamonds & gems' },
   { key: 'collectable', label: 'Collectables', blurb: 'MTG, Pokémon, figurines' },
+  { key: 'vehicles', label: 'Vehicles', blurb: 'Cars, bikes, boats − loans' },
   { key: 'kiwisaver', label: 'KiwiSaver', blurb: 'Sharesies KiwiSaver (read-only)' },
   { key: 'cash', label: 'Cash / Banks', blurb: 'NZD bank & wallet balances' },
 ];
