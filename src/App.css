@@ -13391,3 +13391,8 @@ html .bills-page.shopping-page .btn.shop-remove {
 /* Vehicles link beside "Refresh all prices" on Portfolio. */
 .portfolio-header-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.4rem; }
 .portfolio-header-actions .btn { min-height: 2.75rem; display: inline-flex; align-items: center; }
+/* Vehicle depreciation estimate and odometer (KAN-65 follow-up) */
+.vehicle-ird-rate { align-self: flex-start; min-height: 2.75rem; text-align: left; }
+.vehicle-estimate { display: grid; gap: 0.35rem; padding: 0.6rem 0.75rem; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: var(--surface-2); }
+.vehicle-estimate p { margin: 0; }
+.vehicle-estimate .btn { justify-self: start; min-height: 2.75rem; }

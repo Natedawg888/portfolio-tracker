@@ -24,7 +24,7 @@ const { createSession, SESSION_COOKIE } = await import('../auth/sessions.ts');
 const { attachUser, requireAuth, isPublicApiPath } = await import('../middleware/requireAuth.ts');
 const { computeNetWorth } = await import('../lib/netWorth.ts');
 const { deleteScopedDataForUser } = await import('../lib/userScope.ts');
-const { costToOwn } = await import('../../src/lib/vehicles.ts');
+const { costToOwn, depreciatedValue, distancePerYear, IRD_CAR_DEPRECIATION } = await import('../../src/lib/vehicles.ts');
 const { default: vehiclesRouter } = await import('../routes/vehicles.ts');
 
 // Cost maths: $60 fuel a week, $90 insurance a month, $120 rego a year, $250 loan a fortnight.
@@ -37,6 +37,18 @@ const c = costToOwn(
   { amountNzd: 250, frequency: 'fortnight' },
 );
 assert(c.running.year === 4320 && c.running.month === 360 && c.loan.year === 6500 && c.total.year === 10820 && c.total.week === 208.08, `cost to own ${JSON.stringify(c)}`);
+
+// Depreciation: $24,000 at 30% a year diminishing value over exactly 4 years (1,461 days) = 24,000 × 0.7⁴.
+const dep = depreciatedValue(24000, '2021-01-01', 30, '2025-01-01');
+assert(dep && dep.valueNzd === 5762.4 && dep.years === 4, `depreciation ${JSON.stringify(dep)}`);
+assert(depreciatedValue(24000, '2025-01-01', 30, '2025-01-01')?.valueNzd === 24000, 'no time, no depreciation');
+assert(depreciatedValue(24000, '2026-01-01', 30, '2025-01-01') === null, 'bought after the date: no estimate');
+assert(depreciatedValue(0, '2021-01-01', 30, '2025-01-01') === null, 'no price: no estimate');
+assert(IRD_CAR_DEPRECIATION.ratePct === 30, 'IRD car rate (s EE 25D)');
+// Distance: 50,000 when bought, 98,000 four years later = 12,000 a year.
+assert(distancePerYear(98000, '2025-01-01', 50000, '2021-01-01') === 12000, 'distance a year');
+assert(distancePerYear(98000, '2021-02-01', 50000, '2021-01-01') === null, 'too soon to tell');
+assert(distancePerYear(null, '2025-01-01', 50000, '2021-01-01') === null, 'no reading');
 
 const now = '2026-10-05T00:00:00.000Z';
 const db = await getDb();
@@ -107,6 +119,18 @@ try {
   const full = await computeNetWorth(db, 'val');
   assert(full.vehiclesNzd === 20000 && full.vehicleLoansNzd === 8000 && full.vehiclesEquityNzd === 12000, 'net worth vehicle lines');
   assert(full.breakdown.byClass.vehicles === 20000 && full.breakdown.holdings.some((h) => h.assetClass === 'vehicle' && h.valueNzd === 12000), 'history breakdown');
+
+  // Odometer and depreciation.
+  assert((await call('PUT', `/${v.id}`, V, { ...car, odometer: { reading: 50000, atPurchase: 60000 } })).status === 400, 'reading when bought can’t be more than now');
+  assert((await call('PUT', `/${v.id}`, V, { ...car, depreciationPct: 120 })).status === 400, 'rate checked');
+  r = await call('PUT', `/${v.id}`, V, { ...car, purchaseDate: '2021-01-01', odometer: { reading: 98000, unit: 'mi', readOn: '2025-01-01', atPurchase: 50000 }, depreciationPct: 30 });
+  assert(r.status === 200 && r.json.odometer.unit === 'mi' && r.json.odometer.reading === 98000, 'odometer saved in miles');
+  assert(r.json.distance.perYear === 12000 && r.json.distance.unit === 'mi', 'distance a year');
+  assert(r.json.distance.runningCostPerUnit === 0.36, `running cost per mile: 4,320 ÷ 12,000 (${r.json.distance.runningCostPerUnit})`);
+  assert(r.json.estimate.ratePct === 30 && r.json.estimate.valueNzd > 0 && r.json.estimate.valueNzd < 24000, 'estimate from price and age');
+  assert(r.json.valueNzd === 20000, 'the estimate never replaces the recorded value');
+  r = await call('PUT', `/${v.id}`, V, car);
+  assert(r.json.estimate === null && r.json.distance === null && r.json.odometer.unit === 'km', 'all optional');
 
   // Not counted.
   await call('PUT', `/${v.id}`, V, { ...car, countInNetWorth: false });

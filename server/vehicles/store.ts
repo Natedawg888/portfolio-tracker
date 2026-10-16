@@ -9,9 +9,9 @@
  */
 import type { Database } from 'sql.js';
 import { newId, queryAll, queryOne, run } from '../db/index.ts';
-import { roundMoney } from '../debts/model.ts';
+import { aucklandToday, roundMoney } from '../debts/model.ts';
 import { isYmd } from '../../src/lib/invoiceCalc.ts';
-import { COST_FREQUENCIES, COST_KINDS, costToOwn, type CostFrequency, type RunningCost } from '../../src/lib/vehicles.ts';
+import { COST_FREQUENCIES, COST_KINDS, costToOwn, depreciatedValue, distancePerYear, type CostFrequency, type DistanceUnit, type RunningCost } from '../../src/lib/vehicles.ts';
 
 export const MAX_RUNNING_COSTS = 20;
 const VEHICLE_KINDS = ['car', 'ute', 'van', 'motorbike', 'campervan', 'truck', 'boat', 'trailer', 'other'] as const;
@@ -44,10 +44,17 @@ export type VehicleDraft = {
     repaymentFrequency: CostFrequency | null;
   };
   runningCosts: RunningCost[];
+  odometer: { reading: number | null; unit: DistanceUnit; readOn: string | null; atPurchase: number | null };
+  /** % a year, diminishing value, for an estimated value (null = no estimate). */
+  depreciationPct: number | null;
   notes: string;
 };
 
 export type Vehicle = VehicleDraft & {
+  /** Price paid less the depreciation rate since purchase; null without a rate, price and date. */
+  estimate: { valueNzd: number; years: number; ratePct: number } | null;
+  /** From the reading when bought to the latest one. */
+  distance: { perYear: number; unit: DistanceUnit; runningCostPerUnit: number | null } | null;
   id: string;
   /** The loan balance used: the linked account's (as a positive amount owed) or the one entered. */
   loanOwedNzd: number | null;
@@ -94,6 +101,11 @@ type Row = {
   loan_repayment_nzd: number | null;
   loan_repayment_freq: CostFrequency | null;
   running_costs_json: string;
+  odometer: number | null;
+  odometer_unit: string | null;
+  odometer_on: string | null;
+  odometer_at_purchase: number | null;
+  depreciation_pct: number | null;
   notes: string;
   created_at: string;
   updated_at: string;
@@ -167,9 +179,25 @@ export function parseVehicle(db: Database, userId: string, raw: unknown): { ok: 
     runningCosts.push({ kind: c.kind as RunningCost['kind'], amountNzd: a, frequency: c.frequency, ...(text(c.label, 40) ? { label: text(c.label, 40) } : {}) });
   }
 
+  // Odometer and depreciation.
+  const od = (o.odometer && typeof o.odometer === 'object' ? o.odometer : {}) as Record<string, unknown>;
+  const reading = amount(od.reading, 'Odometer reading', 10_000_000);
+  const atPurchase = amount(od.atPurchase, 'Odometer when bought', 10_000_000);
+  const dep = amount(o.depreciationPct, 'Depreciation rate', 99);
+  for (const v of [reading, atPurchase, dep]) if (typeof v === 'string') return { ok: false, error: v };
+  if (od.readOn != null && od.readOn !== '' && !isYmd(od.readOn)) return { ok: false, error: 'Odometer date must be a date' };
+  if (reading != null && atPurchase != null && (atPurchase as number) > (reading as number)) return { ok: false, error: 'The reading when bought is more than the latest reading' };
+
   return {
     ok: true,
     value: {
+      odometer: {
+        reading: reading as number | null,
+        unit: od.unit === 'mi' ? 'mi' : 'km',
+        readOn: isYmd(od.readOn) ? (od.readOn as string) : null,
+        atPurchase: atPurchase as number | null,
+      },
+      depreciationPct: dep as number | null,
       name,
       kind,
       make: text(o.make, 40),
@@ -233,10 +261,20 @@ function present(db: Database, userId: string, r: Row): Vehicle {
       repaymentFrequency: r.loan_repayment_freq,
     },
     runningCosts,
+    odometer: { reading: r.odometer, unit: r.odometer_unit === 'mi' ? 'mi' : 'km', readOn: r.odometer_on, atPurchase: r.odometer_at_purchase },
+    depreciationPct: r.depreciation_pct,
     notes: r.notes,
   };
+  const est =
+    r.depreciation_pct != null && r.purchase_price_nzd != null && r.purchase_date
+      ? depreciatedValue(Number(r.purchase_price_nzd), r.purchase_date, Number(r.depreciation_pct), aucklandToday())
+      : null;
+  const perYear = distancePerYear(r.odometer, r.odometer_on, r.odometer_at_purchase, r.purchase_date);
+  const cost = costToOwn(runningCosts, null);
   return {
     ...draft,
+    estimate: est ? { ...est, ratePct: Number(r.depreciation_pct) } : null,
+    distance: perYear != null ? { perYear, unit: draft.odometer.unit, runningCostPerUnit: perYear > 0 && cost.running.year > 0 ? roundMoney(cost.running.year / perYear) : null } : null,
     id: r.id,
     loanOwedNzd,
     loanAccountName: account?.name ?? null,
@@ -292,10 +330,12 @@ export function vehicleTotals(db: Database, userId: string): { valueNzd: number;
 // ---------------------------------------------------------------- writes
 
 const COLS = `name=?, kind=?, make=?, model=?, year=?, plate=?, purchase_date=?, purchase_price_nzd=?, value_nzd=?, valued_on=?, count_in_net_worth=?,
-  loan_kind=?, loan_account_id=?, loan_balance_nzd=?, loan_lender=?, loan_rate_pct=?, loan_repayment_nzd=?, loan_repayment_freq=?, running_costs_json=?, notes=?`;
+  loan_kind=?, loan_account_id=?, loan_balance_nzd=?, loan_lender=?, loan_rate_pct=?, loan_repayment_nzd=?, loan_repayment_freq=?, running_costs_json=?,
+  odometer=?, odometer_unit=?, odometer_on=?, odometer_at_purchase=?, depreciation_pct=?, notes=?`;
 const values = (d: VehicleDraft) => [
   d.name, d.kind, d.make, d.model, d.year, d.plate, d.purchaseDate, d.purchasePriceNzd, d.valueNzd, d.valuedOn, d.countInNetWorth ? 1 : 0,
-  d.loan.kind, d.loan.accountId, d.loan.balanceNzd, d.loan.lender, d.loan.ratePct, d.loan.repaymentNzd, d.loan.repaymentFrequency, JSON.stringify(d.runningCosts), d.notes,
+  d.loan.kind, d.loan.accountId, d.loan.balanceNzd, d.loan.lender, d.loan.ratePct, d.loan.repaymentNzd, d.loan.repaymentFrequency, JSON.stringify(d.runningCosts),
+  d.odometer.reading, d.odometer.unit, d.odometer.readOn, d.odometer.atPurchase, d.depreciationPct, d.notes,
 ];
 
 export function createVehicle(db: Database, userId: string, body: unknown): Result<Vehicle> {
@@ -306,8 +346,9 @@ export function createVehicle(db: Database, userId: string, body: unknown): Resu
   run(
     db,
     `INSERT INTO vehicles (id, user_id, name, kind, make, model, year, plate, purchase_date, purchase_price_nzd, value_nzd, valued_on, count_in_net_worth,
-       loan_kind, loan_account_id, loan_balance_nzd, loan_lender, loan_rate_pct, loan_repayment_nzd, loan_repayment_freq, running_costs_json, notes, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       loan_kind, loan_account_id, loan_balance_nzd, loan_lender, loan_rate_pct, loan_repayment_nzd, loan_repayment_freq, running_costs_json,
+       odometer, odometer_unit, odometer_on, odometer_at_purchase, depreciation_pct, notes, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [id, userId, ...values(p.value), now, now],
   );
   return { ok: true, value: present(db, userId, queryOne<Row>(db, `SELECT * FROM vehicles WHERE id = ?`, [id])!) };

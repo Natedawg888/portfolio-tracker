@@ -6,7 +6,7 @@
 import { useState, type ReactNode } from 'react';
 import { formatNzd } from '../../api/client';
 import type { Vehicle, VehicleCostFrequency, VehicleCostKind, VehicleWriteBody, VehiclesView } from '../../types';
-import { COST_FREQUENCIES, COST_KINDS, costToOwn } from '../../lib/vehicles';
+import { COST_FREQUENCIES, COST_KINDS, DISTANCE_LABEL, IRD_CAR_DEPRECIATION, costToOwn, depreciatedValue, type DistanceUnit } from '../../lib/vehicles';
 
 function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return (
@@ -73,6 +73,12 @@ export function VehicleForm({
   const [costs, setCosts] = useState<CostRow[]>(() =>
     (v?.runningCosts ?? []).map((c, i) => ({ key: `c${i}`, kind: c.kind, amount: String(c.amountNzd), frequency: c.frequency, label: c.label ?? '' })),
   );
+  const [odo, setOdo] = useState(s(v?.odometer.reading));
+  const [odoUnit, setOdoUnit] = useState<DistanceUnit>(v?.odometer.unit ?? 'km');
+  const [odoOn, setOdoOn] = useState(v?.odometer.readOn ?? '');
+  const [odoBought, setOdoBought] = useState(s(v?.odometer.atPurchase));
+  const [depPct, setDepPct] = useState(s(v?.depreciationPct));
+  const [today] = useState(() => new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState(v?.notes ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +88,9 @@ export function VehicleForm({
     costs.filter((c) => Number(c.amount) > 0).map((c) => ({ kind: c.kind, amountNzd: Number(c.amount), frequency: c.frequency })),
     loanKind !== 'none' && Number(repay) > 0 ? { amountNzd: Number(repay), frequency: repayFreq } : null,
   );
-  const blocker = !name.trim() ? 'Give it a name' : loanKind === 'manual' && loanBalance.trim() === '' ? 'Enter how much is owed' : loanKind === 'account' && !loanAccount ? 'Choose the loan account' : null;
+  const estimate =
+    num(depPct) != null && num(purchasePrice) != null && purchaseDate ? depreciatedValue(Number(purchasePrice), purchaseDate, Number(depPct), today) : null;
+  const blocker = num(odo) != null && num(odoBought) != null && Number(odoBought) > Number(odo) ? 'The reading when bought is more than the latest' : !name.trim() ? 'Give it a name' : loanKind === 'manual' && loanBalance.trim() === '' ? 'Enter how much is owed' : loanKind === 'account' && !loanAccount ? 'Choose the loan account' : null;
 
   async function save() {
     setError(null);
@@ -109,6 +117,8 @@ export function VehicleForm({
           repaymentNzd: num(repay),
           repaymentFrequency: num(repay) != null ? repayFreq : null,
         },
+        odometer: { reading: num(odo), unit: odoUnit, readOn: odoOn || null, atPurchase: num(odoBought) },
+        depreciationPct: num(depPct),
         runningCosts: costs
           .filter((c) => c.amount.trim() !== '')
           .map((c) => ({ kind: c.kind, amountNzd: Number(c.amount), frequency: c.frequency, ...(c.label.trim() ? { label: c.label.trim() } : {}) })),
@@ -171,9 +181,56 @@ export function VehicleForm({
           Valued on
           <input type="date" value={valuedOn} onChange={(e) => setValuedOn(e.target.value)} />
         </label>
+        <label>
+          Depreciation (% a year, optional)
+          <input type="number" min={0} max={99} step="0.5" inputMode="decimal" value={depPct} onChange={(e) => setDepPct(e.target.value)} />
+          {kind !== 'boat' && kind !== 'trailer' && depPct !== String(IRD_CAR_DEPRECIATION.ratePct) ? (
+            <button type="button" className="link-btn vehicle-ird-rate" onClick={() => setDepPct(String(IRD_CAR_DEPRECIATION.ratePct))}>
+              Use IRD’s rate for cars ({IRD_CAR_DEPRECIATION.ratePct}%)
+            </button>
+          ) : null}
+        </label>
+        {estimate ? (
+          <div className="span-2 vehicle-estimate" aria-live="polite">
+            <p className="small">
+              Estimated value now: <strong className="money">{formatNzd(estimate.valueNzd)}</strong> ({depPct}% a year from {formatNzd(Number(purchasePrice))} over {estimate.years} years).
+            </p>
+            <button type="button" className="btn small ghost" onClick={() => { setValue(String(Math.round(estimate.valueNzd))); setValuedOn(today); }}>
+              Use as value now
+            </button>
+            <p className="muted small">
+              An estimate only. {IRD_CAR_DEPRECIATION.ratePct}% is IRD’s tax depreciation rate for cars (
+              <a href={IRD_CAR_DEPRECIATION.url} target="_blank" rel="noreferrer">s EE 25D</a>), not what it would sell for; a listing site gives a better idea.
+            </p>
+          </div>
+        ) : depPct.trim() !== '' ? (
+          <p className="span-2 muted small">Add the date bought and the price paid to see an estimate.</p>
+        ) : null}
         <label className="span-2 payslip-check">
           <input type="checkbox" checked={count} onChange={(e) => setCount(e.target.checked)} />
           <span>Count it in my net worth</span>
+        </label>
+
+        <h4 className="span-2 payslip-form-group">Odometer (optional)</h4>
+        <label>
+          Reading
+          <input type="number" min={0} step="1" inputMode="numeric" value={odo} onChange={(e) => setOdo(e.target.value)} />
+        </label>
+        <label>
+          Unit
+          <select value={odoUnit} onChange={(e) => setOdoUnit(e.target.value as DistanceUnit)}>
+            <option value="km">Kilometres</option>
+            <option value="mi">Miles</option>
+          </select>
+        </label>
+        <label>
+          Read on
+          <input type="date" value={odoOn} onChange={(e) => setOdoOn(e.target.value)} />
+        </label>
+        <label>
+          Reading when bought
+          <input type="number" min={0} step="1" inputMode="numeric" value={odoBought} onChange={(e) => setOdoBought(e.target.value)} />
+          <span className="muted small">With the date bought, shows {DISTANCE_LABEL[odoUnit]} a year and cost per {odoUnit === 'km' ? 'km' : 'mile'}.</span>
         </label>
 
         <h4 className="span-2 payslip-form-group">Loan</h4>
