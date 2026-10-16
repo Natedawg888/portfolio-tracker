@@ -1,7 +1,9 @@
 /**
  * Portfolio header: small label, total, "Updated … · prices from …", an ⓘ for
- * the metal-spot note, and one "Refresh all prices" button with progress.
+ * the metal-spot note, a "Refresh all prices" button with progress, and a link to Vehicles.
  */
+import { Link } from 'react-router-dom';
+import { prefetchNavTarget } from '../../lib/routePrefetch';
 import type { ReactNode } from 'react';
 import { formatAuckland, formatNzd } from '../../api/client';
 import { InfoTip } from '../InfoTip';
@@ -37,9 +39,14 @@ export function PortfolioHeader({
         </p>
       </div>
       <div className="portfolio-header-refresh">
-        <button type="button" className="btn small" onClick={onRefreshAll} disabled={progress != null}>
-          {progress ? 'Refreshing…' : 'Refresh all prices'}
-        </button>
+        <div className="portfolio-header-actions">
+          <button type="button" className="btn small" onClick={onRefreshAll} disabled={progress != null}>
+            {progress ? 'Refreshing…' : 'Refresh all prices'}
+          </button>
+          <Link className="btn small ghost" to="/vehicles" onMouseEnter={() => prefetchNavTarget('/vehicles')} onFocus={() => prefetchNavTarget('/vehicles')}>
+            Vehicles
+          </Link>
+        </div>
         <p className="muted small portfolio-refresh-status" role="status" aria-live="polite">
           {progress ? `${progress.label} (${progress.step} of ${progress.steps})` : ''}
         </p>

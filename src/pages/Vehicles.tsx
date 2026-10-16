@@ -1,5 +1,5 @@
 /**
- * Vehicles (KAN-65), under Budget. Each vehicle's recorded value, any loan, equity, and what it
+ * Vehicles (KAN-65), opened from Portfolio. Each vehicle's recorded value, any loan, equity, and what it
  * costs to run and own. Vehicles set to count add to net worth (value minus loans entered here;
  * loans linked to a bank loan account are already counted there). Amounts follow Hide amounts.
  */
@@ -130,8 +130,8 @@ export function Vehicles() {
     <div className="stack bills-page vehicles-page">
       <header className="warranties-header">
         <div>
-          <Link className="warranties-back" to="/spending">
-            ‹ Budget
+          <Link className="warranties-back" to="/portfolio">
+            ‹ Portfolio
           </Link>
           <h2 className="page-title">Vehicles</h2>
           <p className="muted small">What your vehicles are worth, what you owe on them, and what they cost to run.</p>
