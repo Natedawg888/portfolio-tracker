@@ -13351,3 +13351,16 @@ html .bills-page.shopping-page .btn.shop-remove {
 .vehicle-cost-list li { display: flex; justify-content: space-between; gap: 0.75rem; padding: 0.25rem 0; border-top: 1px solid var(--border-soft); }
 .vehicle-cost-list .money { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .form-grid label.payslip-check { flex-direction: row; align-items: center; justify-content: flex-start; text-align: left; }
+
+/* KiwiSaver calculator (KAN-59) */
+.ks-calc-result { margin-top: 0.5rem; }
+.ks-calc-sources { margin: 0.75rem 0 0.25rem; }
+.ks-calc-year1 { margin-top: 0.75rem; }
+.ks-calc-year1 h4 { margin: 0 0 0.25rem; font-size: 0.95rem; }
+.ks-calc-form { grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr)); }
+.ks-calc-form > label { min-width: 0; }
+.ks-calc-form input, .ks-calc-form select { width: 100%; min-width: 0; box-sizing: border-box; min-height: 2.75rem; }
+.ks-calc-use { align-self: flex-start; min-height: 2.75rem; text-align: left; }
+.ks-calc-rules { margin-top: 0.75rem; }
+.ks-calc-rules summary { cursor: pointer; min-height: 2.75rem; display: flex; align-items: center; }
+.ks-calc-rules ul { margin: 0.25rem 0 0.5rem; padding-left: 1.1rem; display: grid; gap: 0.3rem; }

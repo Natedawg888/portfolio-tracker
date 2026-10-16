@@ -250,6 +250,19 @@ Not modelled: shared care, foster care / orphan's / unsupported child's benefits
 
 Budget → Payslips compares each payslip with what the calculator expects for its pay period, tax code and the tax year of its pay date (`src/lib/payslipCheck.ts`): PAYE (income tax after IETC on ME), the ACC earners' levy (or PAYE including ACC, when the payslip shows them together), the KiwiSaver employee contribution (at the rate given, or whichever standard rate it matches) and student loan (per-period threshold on M/ME; every dollar on secondary codes). Pay is annualised (×52, ×26, ×13 or ×12) and divided back, as IRD's payroll specification does. A difference of up to $1, or 1% when that's more, counts as matching because IRD's period tables round. Covered tax codes: M, ME, SB, S, SH, ST, SA, each with or without SL. ESCT and other codes are recorded but not checked. A pay date in a tax year without loaded rates isn't checked.
 
+## KiwiSaver calculator (KAN-59)
+
+KiwiSaver page → KiwiSaver calculator (`src/lib/kiwiSaverCalc.ts`, rules in `src/lib/kiwiSaverRules.ts`, checked 16 October 2026):
+
+| Rule | Value | Source |
+| --- | --- | --- |
+| Government contribution (from 1 July 2025) | 25c per $1 you put in (1 July – 30 June), up to $260.72; put in $1,042.86 for the full amount; ages 16–65; taxable income $180,000 or less | [IRD — Getting the KiwiSaver government contribution](https://www.ird.govt.nz/kiwisaver/kiwisaver-individuals/growing-my-kiwisaver-account/getting-the-kiwisaver-government-contribution) |
+| ESCT on employer contributions (from 1 April 2025) | 10.5% to $18,720; 17.5% to $64,200; 30% to $93,720; 33% to $216,000; 39% above — on salary + employer contributions | IRD "Get ready for new ESCT and FBT changes"; IR340 April 2026 |
+| Employee rates, employer minimum | From the current year in `payeRates.ts` (3.5% minimum from 1 April 2026; 4% from 1 April 2028 is noted, not modelled) | see above |
+| Withdrawal age | 65 | IRD |
+
+Today's rules apply to every projected year, and dollar thresholds aren't inflation-adjusted. The return is the user's assumption (after fees and tax).
+
 ## Files
 
 | Path | Role |
