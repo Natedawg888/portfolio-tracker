@@ -25,6 +25,7 @@ import { aucklandToday } from '../debts/model.ts';
 import { isClosedQuantity, isTotalNotUnitQuote, parseNzdValueFromNotes } from '../../src/lib/holdingValue.ts';
 import { applyScheduledInterestForUser } from '../debts/store.ts';
 import { vehicleTotals } from '../vehicles/store.ts';
+import { defiTotals } from '../crypto/store.ts';
 import '../chain/index.ts'; // registers chain adapters for wallet balances
 import { combineValuations, valueWallet, type WalletValuation } from '../chain/valuation.ts';
 import type { WalletRef } from '../chain/service.ts';
@@ -80,6 +81,8 @@ export type NetWorthResult = {
   vehiclesNzd: number | null;
   vehicleLoansNzd: number | null;
   vehiclesEquityNzd: number | null;
+  /** DeFi positions counted in net worth (KAN-47): recorded values, borrowing taken off. */
+  defiNzd: number | null;
   kiwiSaverNzd: number | null;
   /** Sum of debt_people.outstanding_nzd (personal I-owe liabilities). */
   debtOutstandingNzd: number;
@@ -483,6 +486,10 @@ export async function computeNetWorth(
   const vehicles = vehicleTotals(db, userId);
   const vehiclesValue = vehicles?.valueNzd ?? 0;
   const vehicleLoans = vehicles?.manualLoansNzd ?? 0;
+  const defi = defiTotals(db, userId);
+  for (const d of defi?.perPosition ?? []) {
+    holdingPoints.push({ id: d.id, label: d.label, assetClass: 'defi', valueNzd: d.valueNzd });
+  }
   for (const v of vehicles?.perVehicle ?? []) {
     holdingPoints.push({ id: v.id, label: v.name, assetClass: 'vehicle', valueNzd: v.valueNzd - v.loanNzd });
   }
@@ -500,6 +507,7 @@ export async function computeNetWorth(
     (realEstateHas ? realEstateValue : 0) +
     (collectablesHas ? collectablesVal : 0) +
     vehiclesValue +
+    (defi?.netNzd ?? 0) +
     kiwiSaverNzd;
 
   // Net worth = known assets − personal debt − real-estate mortgages (never invent)
@@ -533,6 +541,7 @@ export async function computeNetWorth(
     vehicles: vehicles ? vehiclesValue : null,
     vehicleLoans: vehicles ? vehicleLoans : null,
     vehiclesEquity: vehicles ? vehiclesValue - vehicleLoans : null,
+    defi: defi ? defi.netNzd : null,
     kiwiSaver: ks.length ? kiwiSaverNzd : null,
     debt: debtOutstandingNzd,
     assets: assetsKnownNzd,
@@ -570,6 +579,7 @@ export async function computeNetWorth(
     vehiclesNzd: vehicles ? vehiclesValue : null,
     vehicleLoansNzd: vehicles ? vehicleLoans : null,
     vehiclesEquityNzd: vehicles ? vehiclesValue - vehicleLoans : null,
+    defiNzd: defi ? defi.netNzd : null,
     kiwiSaverNzd: ks.length ? kiwiSaverNzd : null,
     debtOutstandingNzd,
     debtPersonCount,

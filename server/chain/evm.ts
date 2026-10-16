@@ -323,6 +323,64 @@ export async function getEvmTransactions(
   return { transactions: out, nextCursor: encodeCursor({ p: params, skip: 0 }) };
 }
 
+type BlockscoutTokenTransfer = {
+  transaction_hash?: string;
+  tx_hash?: string;
+  log_index?: number | string;
+  timestamp?: string | null;
+  from?: { hash?: string } | null;
+  to?: { hash?: string } | null;
+  token?: BlockscoutToken | null;
+  total?: { value?: string | null; decimals?: string | null } | null;
+};
+
+/**
+ * One ERC-20 transfer → a transaction from the wallet's point of view (KAN-47), or null when it
+ * should be dropped (malformed, scam-flagged, or not involving this address). The hash carries
+ * the log index so two transfers in one transaction stay distinct.
+ */
+export function mapTokenTransfer(t: BlockscoutTokenTransfer, address: string): ChainTransaction | null {
+  const hash = t.transaction_hash ?? t.tx_hash;
+  if (!hash || !/^0x[0-9a-fA-F]{64}$/.test(hash)) return null;
+  const balance = mapTokenRow({ token: t.token ?? undefined, value: t.total?.value ?? null });
+  if (!balance) return null;
+  if (t.total?.decimals != null && Number(t.total.decimals) !== balance.asset.decimals) return null;
+  const me = address.toLowerCase();
+  const from = t.from?.hash?.toLowerCase() ?? null;
+  const to = t.to?.hash?.toLowerCase() ?? null;
+  if (from !== me && to !== me) return null;
+  const direction: ChainTransaction['direction'] = from === me && to === me ? 'self' : from === me ? 'out' : 'in';
+  return {
+    hash: `${hash}:${t.log_index ?? 0}`,
+    timestamp: t.timestamp ? new Date(t.timestamp).toISOString() : null,
+    status: 'confirmed',
+    direction,
+    asset: balance.asset,
+    amountRaw: direction === 'self' ? '0' : balance.amountRaw,
+    feeRaw: null,
+    counterparty: (direction === 'out' ? t.to?.hash : t.from?.hash) ?? null,
+  };
+}
+
+/** Newest-first ERC-20 transfers for an address, up to `limit` (Blockscout indexer required). */
+export async function getEvmTokenTransfers(ctx: ProviderContext, address: string, limit: number): Promise<ChainTransaction[]> {
+  const endpoint = indexer(ctx.network);
+  const out: ChainTransaction[] = [];
+  let params: PageParams | null = null;
+  for (let page = 0; page < MAX_HISTORY_PAGES && out.length < limit; page++) {
+    const res: Page<BlockscoutTokenTransfer> = await getJson(endpoint, withParams(addressPath(address, 'token-transfers'), params, { type: 'ERC-20' }));
+    if (!res || !Array.isArray(res.items)) throw new Error('Blockscout token transfer response has no items');
+    for (const item of res.items) {
+      const tx = mapTokenTransfer(item, address);
+      if (tx) out.push(tx);
+      if (out.length >= limit) break;
+    }
+    params = res.next_page_params ?? null;
+    if (!params) break;
+  }
+  return out;
+}
+
 export const evmProvider: ChainProvider = {
   id: 'evm-rpc-blockscout',
   label: 'EVM (JSON-RPC + Blockscout)',

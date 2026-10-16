@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { prefetchNavTarget } from '../lib/routePrefetch';
 import type { FormEvent, ReactNode } from 'react';
 import { api, formatNzd, formatAuckland } from '../api/client';
 import { maybeAutoSyncBankTransactions, maybeAutoSyncPortfolio } from '../lib/akahuTxnAutoSync';
@@ -2818,6 +2819,12 @@ export function Portfolio() {
         }
       >
         <WalletNotices state={cryptoWallets} />
+        <p className="small">
+          <Link to="/crypto" onMouseEnter={() => prefetchNavTarget('/crypto')}>
+            Crypto gains, staking income and DeFi ›
+          </Link>{' '}
+          <span className="muted">Pro</span>
+        </p>
         {grouped.crypto.length > 0 && cryptoWallets.entries.length > 0 ? (
           <p className="muted small">
             Wallets and manual crypto lines both count toward net worth. If a manual line tracks the same

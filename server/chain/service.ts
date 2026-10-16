@@ -6,10 +6,12 @@
 import { WALLET_NETWORKS, type WalletNetwork } from '../lib/walletAddress.ts';
 import { resolveChainEndpoint, redactChainSecrets } from './config.ts';
 import { getChainProvider } from './registry.ts';
+import { EVM_ADAPTER_NETWORKS, getEvmTokenTransfers } from './evm.ts';
 import {
   ChainProviderError,
   type ChainBalance,
   type ChainProvider,
+  type ChainTransaction,
   type ProviderContext,
   type TransactionPage,
 } from './types.ts';
@@ -94,6 +96,22 @@ export async function fetchWalletTransactions(
     };
   } catch (err) {
     throw normaliseError(err, wallet.network);
+  }
+}
+
+/**
+ * ERC-20 transfers for EVM wallets (KAN-47 import). Other networks have no token transfers here,
+ * and a missing indexer gives none rather than an error (native history still imports).
+ */
+export async function fetchWalletTokenTransfers(wallet: WalletRef, limit = 100): Promise<ChainTransaction[]> {
+  if (!EVM_ADAPTER_NETWORKS.includes(wallet.network)) return [];
+  const { ctx } = prepare(wallet);
+  try {
+    return await getEvmTokenTransfers(ctx, wallet.address, Math.min(Math.max(1, limit), MAX_TX_PAGE));
+  } catch (err) {
+    const e = normaliseError(err, wallet.network);
+    if (e.code === 'not_configured') return [];
+    throw e;
   }
 }
 

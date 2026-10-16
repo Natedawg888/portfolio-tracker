@@ -42,6 +42,12 @@ import type {
   HouseholdPayeView,
   Payslip,
   Vehicle,
+  CryptoImportCandidate,
+  CryptoSummary,
+  CryptoTxn,
+  CryptoTxnBody,
+  DefiPosition,
+  DefiView,
   VehicleWriteBody,
   VehiclesView,
   PayslipWriteBody,
@@ -709,6 +715,22 @@ export const api = {
     uploadReceipt: (id: string, receiptBase64: string) =>
       req<Warranty>(`/warranties/${encodeURIComponent(id)}/receipt`, { method: 'POST', body: JSON.stringify({ receiptBase64 }) }),
     removeReceipt: (id: string) => req<Warranty>(`/warranties/${encodeURIComponent(id)}/receipt`, { method: 'DELETE' }),
+  },
+  crypto: {
+    summary: (year?: number) => req<CryptoSummary>(`/crypto/summary${year ? `?year=${year}` : ''}`),
+    createTxn: (body: CryptoTxnBody) => req<CryptoTxn>('/crypto/txns', { method: 'POST', body: JSON.stringify(body) }),
+    updateTxn: (id: string, body: CryptoTxnBody) => req<CryptoTxn>(`/crypto/txns/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    removeTxn: (id: string) => req<{ ok: boolean }>(`/crypto/txns/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    price: (asset: string, date: string) =>
+      req<{ priceNzd: number | null; source: string | null; priceDate: string | null; reason: string | null }>(`/crypto/price?${new URLSearchParams({ asset, date })}`),
+    setCostMethod: (costMethod: 'fifo' | 'wac') => req<{ costMethod: string }>('/crypto/settings', { method: 'PUT', body: JSON.stringify({ costMethod }) }),
+    importPreview: (walletId: string) =>
+      req<{ wallet: { id: string; name: string; network: string }; candidates: CryptoImportCandidate[]; skipped: number }>(`/crypto/import/${encodeURIComponent(walletId)}`),
+    importCommit: (walletId: string, items: Record<string, unknown>[]) =>
+      req<{ added: number; ignored: number }>('/crypto/import', { method: 'POST', body: JSON.stringify({ walletId, items }) }),
+    saveDefi: (id: string | null, body: Omit<DefiPosition, 'id'>) =>
+      req<DefiView>(id ? `/crypto/defi/${encodeURIComponent(id)}` : '/crypto/defi', { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) }),
+    removeDefi: (id: string) => req<DefiView>(`/crypto/defi/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
   vehicles: {
     list: () => req<VehiclesView>('/vehicles'),

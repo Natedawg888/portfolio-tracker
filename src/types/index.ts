@@ -934,6 +934,8 @@ export interface NetWorthSummary {
   vehiclesNzd?: number | null;
   vehicleLoansNzd?: number | null;
   vehiclesEquityNzd?: number | null;
+  /** DeFi positions counted in net worth (KAN-47). */
+  defiNzd?: number | null;
   /** Collectables (cards) market NZD when quotes ok */
   collectablesNzd: number | null;
   /** Sharesies KiwiSaver (read-only) */
@@ -1840,4 +1842,72 @@ export interface VehiclesView {
   vehicles: Vehicle[];
   totals: { count: number; valueNzd: number; loansNzd: number; equityNzd: number; runningPerMonthNzd: number; costToOwnPerMonthNzd: number };
   loanAccounts: { id: string; name: string; balanceNzd: number }[];
+}
+
+/** Advanced crypto (KAN-47, Pro). */
+export type CryptoTxnKind = 'buy' | 'sell' | 'swap' | 'transfer_in' | 'transfer_out' | 'staking_reward' | 'airdrop' | 'income' | 'spend' | 'gift_out' | 'fee' | 'defi_deposit' | 'defi_withdraw';
+export interface CryptoTxnBody {
+  date: string;
+  kind: CryptoTxnKind;
+  asset: string;
+  amount: number;
+  nzdValue: number | null;
+  priceSource?: string;
+  feeNzd: number;
+  toAsset?: string | null;
+  toAmount?: number | null;
+  counterparty?: string | null;
+  notes: string;
+}
+export interface CryptoTxn extends CryptoTxnBody {
+  id: string;
+  priceSource: string;
+  walletId: string | null;
+  imported: boolean;
+  needsValue: boolean;
+}
+export type DefiKind = 'lending' | 'liquidity' | 'staking' | 'vault' | 'borrow' | 'other';
+export interface DefiPosition {
+  id: string;
+  protocol: string;
+  kind: DefiKind;
+  network: string;
+  assets: string;
+  valueNzd: number;
+  valuedOn: string | null;
+  countInNetWorth: boolean;
+  notes: string;
+}
+export interface DefiView {
+  positions: DefiPosition[];
+  netNzd: number;
+}
+export interface CryptoSummary {
+  costMethod: 'fifo' | 'wac';
+  taxYear: number;
+  years: { startYear: number; label: string }[];
+  year: { realisedNzd: number; proceedsNzd: number; costNzd: number; incomeNzd: number; disposals: number };
+  positions: { asset: string; quantity: number; costNzd: number; avgCostNzd: number | null; costIncomplete: boolean; priceNzd: number | null; valueNzd: number | null; unrealisedNzd: number | null; priceStatus: string }[];
+  unrealisedNzd: number;
+  disposals: { txnId: string; date: string; asset: string; amount: number; proceedsNzd: number; costNzd: number; gainNzd: number; shortfall: number }[];
+  income: { txnId: string; date: string; asset: string; kind: CryptoTxnKind; amount: number; nzdValue: number }[];
+  missingValue: number;
+  shortfalls: string[];
+  txns: CryptoTxn[];
+  defi: DefiView;
+  wallets: { id: string; name: string; network: string }[];
+}
+export interface CryptoImportCandidate {
+  ref: string;
+  hash: string;
+  date: string;
+  direction: 'in' | 'out' | 'self';
+  asset: string;
+  amount: number;
+  counterparty: string | null;
+  network: string;
+  suggestion: { kind: CryptoTxnKind; reason: string; confident: boolean; pairRef?: string };
+  nzdValue: number | null;
+  priceSource: string | null;
+  priceNote: string | null;
 }

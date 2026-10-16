@@ -15,7 +15,7 @@ if (!getChainProvider('bitcoin')) registerChainProvider(bitcoinProvider);
 if (!getChainProvider('ethereum')) registerChainProvider(evmProvider);
 
 export { registerChainProvider, getChainProvider, listChainProviders } from './registry.ts';
-export { fetchWalletBalances, fetchWalletTransactions, isNetworkSyncable } from './service.ts';
+export { fetchWalletBalances, fetchWalletTokenTransfers, fetchWalletTransactions, isNetworkSyncable } from './service.ts';
 export { describeChainConfig, redactChainSecrets } from './config.ts';
 export { startWalletSyncScheduler, stopWalletSyncScheduler } from './sync.ts';
 export { NETWORK_CHAIN_INFO, formatUnits } from './networks.ts';
