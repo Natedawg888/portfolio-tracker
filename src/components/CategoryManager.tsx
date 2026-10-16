@@ -12,9 +12,8 @@ import { CATEGORY_TYPES, CATEGORY_TYPE_LABELS, normalizeCategoryType, type Categ
 import { CATEGORY_PALETTE, CATEGORY_PALETTE_NAMES, categoryColourFor, paletteName, validColour } from '../lib/categoryColours';
 import { aggregateCategorySpend, type ChartDebtRepayment, type ChartTransaction } from './CategorySpendChart';
 import { monthEnd, monthStart, todayAucklandYmd } from '../lib/period';
-import { BUILT_IN_CATEGORIES, isBuiltInCategory, monthTotalText, TYPE_EXPLAINER, usageText, type UsageCounts } from '../lib/categoryManagerView';
+import { isBuiltInCategory, monthTotalText, TYPE_EXPLAINER, usageText, type UsageCounts } from '../lib/categoryManagerView';
 import { showQuietToast } from '../lib/quietToast';
-import { InfoTip } from './InfoTip';
 import { MoreMenu } from './MoreMenu';
 
 export type ManagedCategory = {
@@ -312,13 +311,9 @@ export function CategoryManager({ onChanged }: { onChanged?: () => void | Promis
                         Rename
                       </button>
                       {isBuiltInCategory(c.slug) ? (
-                        <span className="cat-builtin">
-                          <span className="muted small">Built in</span>
-                          <InfoTip label={`Why ${c.name} is built in`}>
-                            Koru uses “{c.name}” for {BUILT_IN_CATEGORIES[c.slug ?? '']}, so it can’t be moved or deleted. You can rename
-                            it and change its colour.
-                          </InfoTip>
-                        </span>
+                        // The app looks this one up, so it can't be moved or deleted: no ⋯ menu,
+                        // just the same space so Rename lines up with the other rows.
+                        <span className="cat-menu-spacer" aria-hidden />
                       ) : (
                       <MoreMenu menu label={`More actions for ${c.name}`}>
                         {(close) => (
