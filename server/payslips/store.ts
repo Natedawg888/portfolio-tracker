@@ -87,6 +87,8 @@ type Row = {
 
 export type Payslip = PayslipDraft & {
   id: string;
+  /** Which saved employer it belongs to. */
+  employerKey: string;
   taxYear: number;
   fileUrl: string | null;
   /** Net pay as calculated from the payslip's own lines, and whether it matches. */
@@ -114,6 +116,21 @@ export type PayslipsView = {
   };
   history: { payDate: string; employer: string; grossNzd: number; netNzd: number }[];
   paySources: { id: string; name: string }[];
+  /**
+   * Employers saved as payslips are added (one per pay source, or employer name), newest first,
+   * with their latest payslip's details so the next one can start from them.
+   */
+  employers: SavedEmployer[];
+  /** The employer the list is showing, or null for all. */
+  employer: string | null;
+};
+
+export type SavedEmployer = {
+  key: string;
+  name: string;
+  count: number;
+  lastPayDate: string;
+  usual: Pick<PayslipDraft, 'paySourceId' | 'frequency' | 'taxCode' | 'hours' | 'hourlyRate' | 'kiwiSaverRatePct' | 'accNzd'> & { accInPaye: boolean };
 };
 
 // ---------------------------------------------------------------- parsing
@@ -247,6 +264,7 @@ function present(db: Database, userId: string, r: Row, plus: boolean): Payslip {
   return {
     ...draft,
     id: r.id,
+    employerKey: r.source_key,
     taxYear: taxYearForDate(r.pay_date),
     fileUrl: r.file_path ? `/api/uploads/${r.file_path}` : null,
     netCheck: { expected: expectedNet, matches: Math.abs(expectedNet - draft.netNzd) < 0.015 },
@@ -263,13 +281,49 @@ function yearBounds(startYear: number) {
   return { from: `${startYear}-04-01`, to: `${startYear + 1}-03-31` };
 }
 
-export function listPayslips(db: Database, userId: string, yearRaw?: unknown): PayslipsView {
+/** Employers from every payslip, newest first, each with its latest payslip's details. */
+export function savedEmployers(db: Database, userId: string): SavedEmployer[] {
+  const rows = queryAll<Row>(db, `SELECT * FROM payslips WHERE user_id = ? ORDER BY pay_date DESC, created_at DESC`, [userId]);
+  const out = new Map<string, SavedEmployer>();
+  for (const r of rows) {
+    const e = out.get(r.source_key);
+    if (e) {
+      e.count += 1;
+      continue;
+    }
+    out.set(r.source_key, {
+      key: r.source_key,
+      name: r.employer,
+      count: 1,
+      lastPayDate: r.pay_date,
+      usual: {
+        paySourceId: r.pay_source_id,
+        frequency: r.frequency,
+        taxCode: r.tax_code,
+        hours: r.hours,
+        hourlyRate: r.hourly_rate,
+        kiwiSaverRatePct: r.ks_rate_pct,
+        accNzd: null,
+        accInPaye: r.acc_nzd == null,
+      },
+    });
+  }
+  return [...out.values()];
+}
+
+export function listPayslips(db: Database, userId: string, yearRaw?: unknown, employerRaw?: unknown): PayslipsView {
   const plus = hasFeature(db, userId, 'payslips');
   const current = taxYearForDate(aucklandToday());
   const n = Number(yearRaw);
   const taxYear = Number.isInteger(n) && n > 2000 && n < 2100 ? n : current;
   const { from, to } = yearBounds(taxYear);
-  const rows = queryAll<Row>(db, `SELECT * FROM payslips WHERE user_id = ? AND pay_date >= ? AND pay_date <= ? ORDER BY pay_date DESC, created_at DESC`, [userId, from, to]);
+  const employers = savedEmployers(db, userId);
+  const employer = typeof employerRaw === 'string' && employers.some((e) => e.key === employerRaw) ? employerRaw : null;
+  const rows = queryAll<Row>(
+    db,
+    `SELECT * FROM payslips WHERE user_id = ? AND pay_date >= ? AND pay_date <= ?${employer ? ' AND source_key = ?' : ''} ORDER BY pay_date DESC, created_at DESC`,
+    [userId, from, to, ...(employer ? [employer] : [])],
+  );
   const payslips = rows.map((r) => present(db, userId, r, plus));
   const sum = (f: (p: Payslip) => number) => roundMoney(payslips.reduce((s, p) => s + f(p), 0));
   const groups = new Map<string, Payslip[]>();
@@ -309,6 +363,8 @@ export function listPayslips(db: Database, userId: string, yearRaw?: unknown): P
     },
     history: [...payslips].reverse().map((p) => ({ payDate: p.payDate, employer: p.employer, grossNzd: p.grossNzd + p.allowancesNzd, netNzd: p.netNzd })),
     paySources: queryAll<{ id: string; name: string }>(db, `SELECT id, name FROM pay_sources WHERE user_id = ? ORDER BY name`, [userId]),
+    employers,
+    employer,
   };
 }
 

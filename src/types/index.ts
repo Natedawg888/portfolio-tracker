@@ -1776,6 +1776,7 @@ export type PayslipCheck =
   | { status: 'not_checked'; reason: string };
 export interface Payslip extends PayslipWriteBody {
   id: string;
+  employerKey: string;
   taxYear: number;
   fileUrl: string | null;
   netCheck: { expected: number; matches: boolean };
@@ -1799,6 +1800,15 @@ export interface PayslipsView {
   };
   history: { payDate: string; employer: string; grossNzd: number; netNzd: number }[];
   paySources: { id: string; name: string }[];
+  /** Saved as payslips are added, newest first, with their latest payslip's details. */
+  employers: {
+    key: string;
+    name: string;
+    count: number;
+    lastPayDate: string;
+    usual: { paySourceId: string | null; frequency: PayslipFrequency; taxCode: string; hours: number | null; hourlyRate: number | null; kiwiSaverRatePct: number | null; accInPaye: boolean };
+  }[];
+  employer: string | null;
 }
 
 /** Vehicles (KAN-65). */

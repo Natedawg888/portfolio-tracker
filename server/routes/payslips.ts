@@ -1,6 +1,6 @@
 /**
  * Payslips for the signed-in user (KAN-78).
- *   GET    /?year=2026        payslips for a tax year, checks, year-to-date, pay history, plan
+ *   GET    /?year=2026&employer=  payslips for a tax year (optionally one saved employer), checks, YTD, history, plan, saved employers
  *   POST   /                  payslip fields (see parsePayslip)
  *   PUT    /:id               payslip fields
  *   DELETE /:id               also removes its file and its Income row; the bank deposit stays
@@ -32,7 +32,7 @@ function send<T>(res: Response, r: { ok: true; value: T } | { ok: false; status:
 }
 
 router.get('/', async (req, res) => {
-  res.json(listPayslips(await getDb(), uid(req), req.query.year));
+  res.json(listPayslips(await getDb(), uid(req), req.query.year, req.query.employer));
 });
 router.post('/', async (req, res) => send(res, createPayslip(await getDb(), uid(req), req.body), true));
 router.put('/:id', async (req, res) => send(res, updatePayslip(await getDb(), uid(req), req.params.id, req.body)));

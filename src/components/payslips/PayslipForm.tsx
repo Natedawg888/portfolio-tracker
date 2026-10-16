@@ -32,6 +32,24 @@ type Draft = Record<
 > & { accInPaye: boolean; addToIncome: boolean };
 
 const str = (n: number | null | undefined) => (n == null || n === 0 ? '' : String(n));
+type Saved = PayslipsView['employers'][number];
+
+/** A new payslip starts from a saved employer's latest details. */
+function fromEmployer(e: Saved | null): Draft {
+  const d = toDraft(null, null);
+  if (!e) return d;
+  return {
+    ...d,
+    paySourceId: e.usual.paySourceId ?? '',
+    employer: e.name,
+    frequency: e.usual.frequency,
+    taxCode: e.usual.taxCode || 'M',
+    hourlyRate: str(e.usual.hourlyRate),
+    kiwiSaverRatePct: str(e.usual.kiwiSaverRatePct),
+    accInPaye: e.usual.accInPaye,
+  };
+}
+
 function toDraft(p: Payslip | null, last: Payslip | null): Draft {
   const src = p ?? last;
   return {
@@ -64,21 +82,36 @@ function toDraft(p: Payslip | null, last: Payslip | null): Draft {
 const n = (s: string) => (s.trim() === '' ? 0 : Number(s));
 const opt = (s: string) => (s.trim() === '' ? null : Number(s));
 
+const NEW = '__new__';
+
 export function PayslipForm({
   view,
   payslip,
-  last,
+  startEmployer,
   onClose,
   onSave,
 }: {
   view: PayslipsView;
   payslip: Payslip | null;
-  last: Payslip | null;
+  /** Saved employer to start a new payslip from (the one being viewed, else the latest). */
+  startEmployer: string | null;
   onClose: () => void;
   onSave: (body: PayslipWriteBody, file: string | null, removeFile: boolean) => Promise<void>;
 }) {
   const id = useId();
-  const [d, setD] = useState<Draft>(() => toDraft(payslip, last));
+  const savedByKey = new Map(view.employers.map((e) => [e.key, e]));
+  const [pick, setPick] = useState<string>(() => payslip?.employerKey ?? (startEmployer && savedByKey.has(startEmployer) ? startEmployer : view.employers[0]?.key) ?? NEW);
+  const [d, setD] = useState<Draft>(() => (payslip ? toDraft(payslip, null) : fromEmployer(savedByKey.get(pick) ?? null)));
+  const choose = (key: string) => {
+    setPick(key);
+    if (payslip) {
+      // Editing: move it to another employer, keep the figures.
+      const e = savedByKey.get(key);
+      setD((prev) => ({ ...prev, employer: e ? e.name : '', paySourceId: e?.usual.paySourceId ?? '' }));
+    } else {
+      setD((prev) => ({ ...fromEmployer(savedByKey.get(key) ?? null), periodStart: prev.periodStart, periodEnd: prev.periodEnd, payDate: prev.payDate }));
+    }
+  };
   const [file, setFile] = useState<{ name: string; data: string } | null>(null);
   const [removeFile, setRemoveFile] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -141,7 +174,21 @@ export function PayslipForm({
     <Dialog title={payslip ? 'Edit payslip' : 'Add a payslip'} onClose={onClose}>
       <div className="form-grid payslip-form">
         <h4 className="span-2 payslip-form-group">Who paid you, and when</h4>
-        {view.paySources.length ? (
+        {view.employers.length ? (
+          <label className="span-2">
+            Employer
+            <select value={pick} onChange={(e) => choose(e.target.value)}>
+              {view.employers.map((e) => (
+                <option key={e.key} value={e.key}>
+                  {e.name}
+                </option>
+              ))}
+              <option value={NEW}>New employer…</option>
+            </select>
+            {pick !== NEW ? <span className="muted small">Starts from your last payslip from them. Employers are saved as you add payslips.</span> : null}
+          </label>
+        ) : null}
+        {pick === NEW && view.paySources.length ? (
           <label>
             Pay source (optional)
             <select value={d.paySourceId} onChange={(e) => set('paySourceId', e.target.value)}>
@@ -152,10 +199,12 @@ export function PayslipForm({
             </select>
           </label>
         ) : null}
+        {pick === NEW ? (
         <label>
-          Employer
+          {view.employers.length ? 'New employer’s name' : 'Employer'}
           <input value={d.employer} maxLength={120} placeholder={d.paySourceId ? 'From the pay source' : 'e.g. Acme Ltd'} onChange={(e) => set('employer', e.target.value)} />
         </label>
+        ) : null}
         <label>
           Paid
           <select value={d.frequency} onChange={(e) => set('frequency', e.target.value)}>

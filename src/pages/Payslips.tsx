@@ -14,6 +14,7 @@ import { FREQUENCY_LABEL } from '../lib/payslipCheck';
 import { PayslipForm } from '../components/payslips/PayslipForm';
 
 const errText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
+const EMPLOYER_KEY = 'koru-payslips-employer';
 const short = (ymd: string) => new Date(`${ymd}T00:00:00`).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' });
 
 function HistoryChart({ history }: { history: PayslipsView['history'] }) {
@@ -141,21 +142,40 @@ export function Payslips() {
   useMoneyHidden();
   const [view, setView] = useState<PayslipsView | null>(null);
   const [year, setYear] = useState<number | undefined>(undefined);
+  // The employer being viewed (null = all), remembered on this device.
+  const [employer, setEmployer] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(EMPLOYER_KEY);
+    } catch {
+      return null;
+    }
+  });
+  const pickEmployer = (key: string | null) => {
+    setEmployer(key);
+    try {
+      if (key) localStorage.setItem(EMPLOYER_KEY, key);
+      else localStorage.removeItem(EMPLOYER_KEY);
+    } catch {
+      /* private mode */
+    }
+  };
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [dialog, setDialog] = useState<{ payslip: Payslip | null } | null>(null);
 
   const load = useCallback(() => {
     api.payslips
-      .list(year)
+      .list(year, employer)
       .then(setView)
       .catch((e: unknown) => setError(errText(e, 'Could not load payslips.')));
-  }, [year]);
+  }, [year, employer]);
   useEffect(load, [load]);
 
   async function save(body: PayslipWriteBody, file: string | null, removeFile: boolean) {
     const existing = dialog?.payslip ?? null;
     const saved = existing ? await api.payslips.update(existing.id, body) : await api.payslips.create(body);
+    // Show the employer it was saved under when viewing a different one.
+    if (employer && saved.employerKey !== employer) pickEmployer(saved.employerKey);
     let note = existing ? 'Payslip updated.' : 'Payslip added.';
     try {
       if (file) await api.payslips.uploadFile(saved.id, file);
@@ -208,11 +228,29 @@ export function Payslips() {
       {msg ? <p className="banner">{msg}</p> : null}
       {!view && !error ? <p className="muted">Loading payslips…</p> : null}
 
+      {view && view.employers.length > 1 ? (
+        <nav className="payslip-employers" aria-label="Employer">
+          <div className="segmented">
+            <button type="button" className={'segmented-btn' + (view.employer == null ? ' active' : '')} aria-pressed={view.employer == null} onClick={() => pickEmployer(null)}>
+              All employers
+            </button>
+            {view.employers.map((e) => (
+              <button key={e.key} type="button" className={'segmented-btn' + (view.employer === e.key ? ' active' : '')} aria-pressed={view.employer === e.key} onClick={() => pickEmployer(e.key)}>
+                {e.name}
+              </button>
+            ))}
+          </div>
+        </nav>
+      ) : null}
+
       {view ? (
         <>
           <section className="panel" aria-labelledby="payslips-ytd-title">
             <div className="payslips-ytd-head">
-              <h3 id="payslips-ytd-title">Tax year so far</h3>
+              <h3 id="payslips-ytd-title">
+                Tax year so far
+                {view.employer ? <span className="muted"> · {view.employers.find((e) => e.key === view.employer)?.name}</span> : null}
+              </h3>
               <label className="payslips-year">
                 <span className="sr-only">Tax year</span>
                 <select value={view.taxYear} onChange={(e) => setYear(Number(e.target.value))}>
@@ -287,7 +325,7 @@ export function Payslips() {
         </>
       ) : null}
 
-      {dialog && view ? <PayslipForm view={view} payslip={dialog.payslip} last={view.payslips[0] ?? null} onClose={() => setDialog(null)} onSave={save} /> : null}
+      {dialog && view ? <PayslipForm view={view} payslip={dialog.payslip} startEmployer={view.employer} onClose={() => setDialog(null)} onSave={save} /> : null}
     </div>
   );
 }
