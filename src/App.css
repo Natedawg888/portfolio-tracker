@@ -13388,3 +13388,6 @@ html .bills-page.shopping-page .btn.shop-remove {
 .crypto-import-ignored { opacity: 0.55; }
 .crypto-ledger .payslip-actions { flex-basis: 100%; margin-top: 0; }
 .crypto-import-bulk { flex-wrap: wrap; margin: 0.25rem 0; } .crypto-import-bulk .btn { min-height: 2.75rem; }
+/* Vehicles link beside "Refresh all prices" on Portfolio. */
+.portfolio-header-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.4rem; }
+.portfolio-header-actions .btn { min-height: 2.75rem; display: inline-flex; align-items: center; }
