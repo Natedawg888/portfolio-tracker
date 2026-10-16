@@ -227,6 +227,10 @@ export type SsoProvider = { id: 'google' | 'apple' | 'microsoft'; label: string 
 
 export type AccountSecurity = {
   hasPassword: boolean;
+  /** Last sign-in that used the password (from the sign-in log), if any. */
+  passwordLastUsedAt: string | null;
+  /** Sensitive changes skip the password prompt until then. */
+  recentSignInUntil: string | null;
   identities: Array<{ id: string; provider: string; label: string; email: string | null; createdAt: string; lastUsedAt: string | null }>;
   ssoProviders: SsoProvider[];
   twoFactor: { enabled: boolean; enabledAt: string | null; backupCodesRemaining: number };
@@ -238,6 +242,8 @@ export type AccountSecurity = {
     expiresAt: string;
     persistent: boolean;
     current: boolean;
+    /** The trusted device on the same browser, when known. */
+    trustedDeviceId: string | null;
   }>;
   trustedDevices: Array<{
     id: string;
@@ -248,13 +254,26 @@ export type AccountSecurity = {
     current: boolean;
   }>;
   passkeys: PasskeyInfo[];
-  recentSignIns: Array<{
-    id: string;
-    kind: 'sign_in' | 'passkey_added' | 'passkey_removed';
-    method: string | null;
-    deviceLabel: string | null;
-    createdAt: string;
-  }>;
+  recentSignIns: AuthEvent[];
+  /** Recent sign-ins from a device not seen before, not yet reviewed ("Was this you?"). */
+  newSignIns: AuthEvent[];
+};
+
+/** A sign-in or passkey change from the account's sign-in log. */
+export type AuthEvent = {
+  id: string;
+  kind: 'sign_in' | 'passkey_added' | 'passkey_removed';
+  method: string | null;
+  /** google / apple / microsoft (null for other methods and for older events). */
+  provider: string | null;
+  /** The passkey used, by its current name (null when removed or not a passkey). */
+  passkeyName: string | null;
+  deviceLabel: string | null;
+  createdAt: string;
+  signedIn: boolean;
+  current: boolean;
+  newDevice: boolean;
+  reviewed: boolean;
 };
 
 /** A passkey on the account (KAN-75). */
@@ -299,10 +318,11 @@ export const api = {
       req<{ user: AuthUser }>('/auth/passkeys/login/verify', { method: 'POST', body: JSON.stringify(body) }),
     renamePasskey: (id: string, name: string) =>
       req<PasskeyInfo>(`/auth/passkeys/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
-    removePasskey: (id: string) =>
-      req<{ ok: boolean; sessionsEnded: number }>(`/auth/passkeys/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    removePasskey: (id: string, password?: string) =>
+      req<{ ok: boolean; sessionsEnded: number }>(`/auth/passkeys/${encodeURIComponent(id)}`, { method: 'DELETE', body: JSON.stringify({ password }) }),
     ssoProviders: () => req<{ providers: SsoProvider[] }>('/auth/sso/providers'),
-    disconnectIdentity: (id: string) => req<{ ok: boolean }>(`/auth/identities/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    disconnectIdentity: (id: string, password?: string) =>
+      req<{ ok: boolean }>(`/auth/identities/${encodeURIComponent(id)}`, { method: 'DELETE', body: JSON.stringify({ password }) }),
     twoFactorSetup: (password: string) =>
       req<{ secret: string; otpauthUri: string; qrSvg: string }>('/auth/2fa/setup', {
         method: 'POST',
@@ -319,6 +339,9 @@ export const api = {
     revokeTrustedDevice: (id: string) =>
       req<{ ok: boolean }>(`/auth/trusted-devices/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     revokeAllTrustedDevices: () => req<{ ok: boolean; revoked: number }>('/auth/trusted-devices', { method: 'DELETE' }),
+    markSignInReviewed: (id: string) =>
+      req<{ ok: boolean }>(`/auth/sign-ins/${encodeURIComponent(id)}/reviewed`, { method: 'POST', body: '{}' }),
+    secureAccount: () => req<{ ok: boolean; signedOut: number; untrusted: number }>('/auth/secure-account', { method: 'POST', body: '{}' }),
     logout: () => req<{ ok: boolean; switchedToUserId: string | null }>('/auth/logout', { method: 'POST', body: '{}' }),
     logoutAll: () => req<{ ok: boolean; signedOut: number }>('/auth/logout-all', { method: 'POST', body: '{}' }),
     accounts: () => req<{ accounts: RememberedAccount[] }>('/auth/accounts'),

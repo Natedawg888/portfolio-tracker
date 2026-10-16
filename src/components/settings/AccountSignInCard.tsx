@@ -190,7 +190,7 @@ export function AccountSignInCard({ security }: { security: AccountSecurity | nu
             </p>
           </div>
           {hasPassword === null ? null : (
-            <Link className="account-row-link" to={SECURITY_TAB}>
+            <Link className="account-row-link" to={`${SECURITY_TAB}&change=password`}>
               {hasPassword ? 'Change in Security ›' : 'Set a password in Security ›'}
             </Link>
           )}

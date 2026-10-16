@@ -222,6 +222,23 @@ try {
   run(db, `UPDATE sessions SET created_at = ? WHERE id = ?`, [new Date(Date.now() - 60 * 60 * 1000).toISOString(), oldSession.id]);
   const old = await call('POST', '/api/auth/passkeys/register/options', cookieOf(oldSession.rawToken), {});
   assert(old.status === 403 && old.json.code === 'REAUTH_REQUIRED', 'an hour-old session must confirm the password');
+  const oldRemove = await call('DELETE', `/api/auth/passkeys/${passkeyId}`, cookieOf(oldSession.rawToken), {});
+  assert(oldRemove.status === 403 && oldRemove.json.code === 'REAUTH_REQUIRED', 'an hour-old session must confirm the password to remove a passkey');
+  const wrongPw = await call('DELETE', `/api/auth/passkeys/${passkeyId}`, cookieOf(oldSession.rawToken), { password: 'not-it' });
+  assert(wrongPw.status === 403 && wrongPw.json.code === 'REAUTH_REQUIRED', 'a wrong password does not count');
+  assert(queryOne(db, `SELECT id FROM user_passkeys WHERE id = ?`, [passkeyId]), 'and the passkey is still there');
+  const secFresh = (await call('GET', '/api/auth/security', A)).json;
+  assert(Date.parse(secFresh.recentSignInUntil) > Date.now(), 'a new session counts as a recent sign-in');
+  const secOld = (await call('GET', '/api/auth/security', cookieOf(oldSession.rawToken))).json;
+  assert(Date.parse(secOld.recentSignInUntil) < Date.now(), 'an hour-old one does not');
+
+  // ── The last way to sign in can't be removed ──
+  run(db, `INSERT INTO users (id, email, password_hash, created_at, updated_at) VALUES ('pk_user_c', 'c@example.com', '!sso-only', ?, ?)`, [now, now]);
+  run(db, `INSERT INTO user_passkeys (id, user_id, credential_id, public_key, counter, name, created_at) VALUES ('pk_only_c', 'pk_user_c', 'cred-c', 'key', 0, 'Only one', ?)`, [now]);
+  const C = cookieOf((await createSession('pk_user_c')).rawToken);
+  const lastOne = await call('DELETE', '/api/auth/passkeys/pk_only_c', C, {});
+  assert(lastOne.status === 409 && lastOne.json.code === 'LAST_SIGN_IN_METHOD', 'the only passkey of a passwordless account stays');
+  assert(queryOne(db, `SELECT id FROM user_passkeys WHERE id = 'pk_only_c'`), 'still saved');
 
   // ── Revocation ──
   const removed = await call('DELETE', `/api/auth/passkeys/${passkeyId}`, A);

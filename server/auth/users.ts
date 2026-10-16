@@ -22,6 +22,13 @@ export function hasPassword(passwordHash: string | null | undefined): boolean {
   return Boolean(passwordHash && passwordHash !== NO_PASSWORD);
 }
 
+/** Ways this account can sign in: its password, each connected provider, each passkey. */
+export function signInMethodCount(db: Database, userId: string): number {
+  const pw = queryOne<{ password_hash: string }>(db, `SELECT password_hash FROM users WHERE id = ?`, [userId]);
+  const count = (table: string) => Number(queryOne<{ c: number }>(db, `SELECT COUNT(*) AS c FROM ${table} WHERE user_id = ?`, [userId])?.c ?? 0);
+  return (hasPassword(pw?.password_hash) ? 1 : 0) + count('user_identities') + count('user_passkeys');
+}
+
 export function composeDisplayName(first: string | null, last: string | null): string | null {
   const parts = [first, last].filter((p): p is string => Boolean(p && p.trim()));
   if (parts.length === 0) return null;

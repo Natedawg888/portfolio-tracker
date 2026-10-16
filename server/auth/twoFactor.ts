@@ -192,29 +192,35 @@ export function verifySecondFactor(db: Database, userId: string, raw: unknown): 
 
 // --- sign-in challenge ---------------------------------------------------------------
 
-export function createLoginChallenge(db: Database, userId: string, persistent: boolean): { token: string; expiresAt: string } {
+/** `provider`: the first step was Google / Apple / Microsoft (null: the password). Kept for the sign-in log. */
+export function createLoginChallenge(
+  db: Database,
+  userId: string,
+  persistent: boolean,
+  provider: string | null = null,
+): { token: string; expiresAt: string } {
   const now = Date.now();
   run(db, `DELETE FROM login_challenges WHERE expires_at <= ?`, [new Date(now).toISOString()]);
   const token = createSessionToken();
   const expiresAt = new Date(now + CHALLENGE_TTL_MS).toISOString();
   run(
     db,
-    `INSERT INTO login_challenges (id, user_id, token_hash, persistent, attempts, created_at, expires_at) VALUES (?,?,?,?,0,?,?)`,
-    [newId('chal'), userId, hashToken(token), persistent ? 1 : 0, new Date(now).toISOString(), expiresAt],
+    `INSERT INTO login_challenges (id, user_id, token_hash, persistent, attempts, created_at, expires_at, provider) VALUES (?,?,?,?,0,?,?,?)`,
+    [newId('chal'), userId, hashToken(token), persistent ? 1 : 0, new Date(now).toISOString(), expiresAt, provider],
   );
   return { token, expiresAt };
 }
 
 export type ChallengeLookup =
-  | { ok: true; id: string; userId: string; persistent: boolean }
+  | { ok: true; id: string; userId: string; persistent: boolean; provider: string | null }
   | { ok: false; code: 'CHALLENGE_INVALID' | 'CHALLENGE_EXPIRED' | 'TOO_MANY_ATTEMPTS' };
 
 /** Look up a challenge and count this attempt against it. */
 export function useChallengeAttempt(db: Database, token: unknown): ChallengeLookup {
   if (typeof token !== 'string' || token.length < 20 || token.length > 100) return { ok: false, code: 'CHALLENGE_INVALID' };
-  const row = queryOne<{ id: string; user_id: string; persistent: number; attempts: number; expires_at: string }>(
+  const row = queryOne<{ id: string; user_id: string; persistent: number; attempts: number; expires_at: string; provider: string | null }>(
     db,
-    `SELECT id, user_id, persistent, attempts, expires_at FROM login_challenges WHERE token_hash = ?`,
+    `SELECT id, user_id, persistent, attempts, expires_at, provider FROM login_challenges WHERE token_hash = ?`,
     [hashToken(token)],
   );
   if (!row) return { ok: false, code: 'CHALLENGE_INVALID' };
@@ -227,7 +233,7 @@ export function useChallengeAttempt(db: Database, token: unknown): ChallengeLook
     return { ok: false, code: 'TOO_MANY_ATTEMPTS' };
   }
   run(db, `UPDATE login_challenges SET attempts = attempts + 1 WHERE id = ?`, [row.id]);
-  return { ok: true, id: row.id, userId: row.user_id, persistent: Number(row.persistent) !== 0 };
+  return { ok: true, id: row.id, userId: row.user_id, persistent: Number(row.persistent) !== 0, provider: row.provider ?? null };
 }
 
 export function deleteChallenge(db: Database, id: string): void {
@@ -258,8 +264,8 @@ export function trustedCookieHeader(tokens: string[]): string {
   return parts.join('; ');
 }
 
-/** True when one of this browser's tokens is a live trusted device of `userId` (touches it). */
-export function isTrustedDevice(db: Database, userId: string, tokens: string[]): boolean {
+/** The live trusted device of `userId` this browser holds a token for, or null. Read only. */
+export function trustedDeviceIdFor(db: Database, userId: string, tokens: string[]): string | null {
   const now = new Date().toISOString();
   for (const t of tokens) {
     const row = queryOne<{ id: string }>(
@@ -267,23 +273,34 @@ export function isTrustedDevice(db: Database, userId: string, tokens: string[]):
       `SELECT id FROM trusted_devices WHERE token_hash = ? AND user_id = ? AND expires_at > ?`,
       [hashToken(t), userId, now],
     );
-    if (row) {
-      run(db, `UPDATE trusted_devices SET last_used_at = ? WHERE id = ?`, [now, row.id]);
-      return true;
-    }
+    if (row) return row.id;
   }
-  return false;
+  return null;
 }
 
-export function createTrustedDevice(db: Database, userId: string, label: string): string {
+/** The trusted device that lets this browser skip the code (touches it), or null. */
+export function touchTrustedDevice(db: Database, userId: string, tokens: string[]): string | null {
+  const id = trustedDeviceIdFor(db, userId, tokens);
+  if (id) run(db, `UPDATE trusted_devices SET last_used_at = ? WHERE id = ?`, [new Date().toISOString(), id]);
+  return id;
+}
+
+/** True when one of this browser's tokens is a live trusted device of `userId` (touches it). */
+export function isTrustedDevice(db: Database, userId: string, tokens: string[]): boolean {
+  return touchTrustedDevice(db, userId, tokens) != null;
+}
+
+/** A new trusted device: the raw token for the cookie, and the row id. */
+export function createTrustedDevice(db: Database, userId: string, label: string): { token: string; id: string } {
   const token = createSessionToken();
+  const id = newId('tdev');
   const now = Date.now();
   run(db, `DELETE FROM trusted_devices WHERE expires_at <= ?`, [new Date(now).toISOString()]);
   run(
     db,
     `INSERT INTO trusted_devices (id, user_id, token_hash, label, created_at, last_used_at, expires_at) VALUES (?,?,?,?,?,?,?)`,
     [
-      newId('tdev'),
+      id,
       userId,
       hashToken(token),
       label,
@@ -292,7 +309,7 @@ export function createTrustedDevice(db: Database, userId: string, label: string)
       new Date(now + TRUSTED_DEVICE_TTL_MS).toISOString(),
     ],
   );
-  return token;
+  return { token, id };
 }
 
 export type TrustedDeviceInfo = {
