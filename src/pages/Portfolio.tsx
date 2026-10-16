@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { prefetchNavTarget } from '../lib/routePrefetch';
 import { VehiclesPanel } from '../components/portfolio/VehiclesPanel';
 import { BondsPanel } from '../components/portfolio/BondsPanel';
+import { CommoditiesPanel } from '../components/portfolio/CommoditiesPanel';
 import type { FormEvent, ReactNode } from 'react';
 import { api, formatNzd, formatAuckland } from '../api/client';
 import { maybeAutoSyncBankTransactions, maybeAutoSyncPortfolio } from '../lib/akahuTxnAutoSync';
@@ -1534,6 +1535,7 @@ type PortfolioNetWorth = {
   vehicleLoansNzd?: number | null;
   vehiclesEquityNzd?: number | null;
   bondsNzd?: number | null;
+  commoditiesNzd?: number | null;
   kiwiSaverNzd: number | null;
   assetsKnownNzd?: number;
   totalKnownNzd: number;
@@ -1571,6 +1573,7 @@ const OVERVIEW_ROW_META: Record<string, { description: string; tab?: PortfolioTa
   realEstate: { description: 'Property equity: your value minus the mortgage', tab: 'property' },
   vehicles: { description: 'Vehicle equity: your value minus loans on them', tab: 'vehicles' },
   bonds: { description: 'Bonds and term deposits at your value or cost', tab: 'bonds' },
+  commodities: { description: 'Scrap metal, farm produce, fuel and livestock at the values you set', tab: 'commodities' },
   art: { description: 'Art at your recorded valuation', tab: 'art' },
   stones: { description: 'Precious stones at a quote or your valuation', tab: 'stones' },
   kiwiSaver: { description: 'Sharesies KiwiSaver and bank-held KiwiSaver', href: '/kiwisaver' },
@@ -2601,6 +2604,7 @@ export function Portfolio() {
     collectables: 'collectable',
     vehicles: 'vehicles',
     bonds: 'bonds',
+    commodities: 'commodities',
     kiwiSaver: 'kiwisaver',
   };
 
@@ -2623,6 +2627,7 @@ export function Portfolio() {
         { key: 'collectables', name: 'Collectables', value: summary.collectablesNzd ?? 0, colour: '#c45a9a' },
         { key: 'vehicles', name: 'Vehicles', value: summary.vehiclesEquityNzd ?? 0, colour: '#8a7a5a' },
         { key: 'bonds', name: 'Bonds', value: summary.bondsNzd ?? 0, colour: '#4a9a8a' },
+        { key: 'commodities', name: 'Commodities', value: summary.commoditiesNzd ?? 0, colour: '#9a7a3a' },
         { key: 'kiwiSaver', name: 'KiwiSaver', value: summary.kiwiSaverNzd ?? 0, colour: '#6a8fd4' },
       ]
         .filter((row) => {
@@ -3313,6 +3318,8 @@ export function Portfolio() {
 {tab === 'vehicles' && assetEnabled('vehicles') ? <VehiclesPanel total={classTotal('vehicles')} /> : null}
 
 {tab === 'bonds' && assetEnabled('bonds') ? <BondsPanel total={classTotal('bonds')} onChanged={reloadAfterEdit} /> : null}
+
+{tab === 'commodities' && assetEnabled('commodities') ? <CommoditiesPanel total={classTotal('commodities')} onChanged={reloadAfterEdit} /> : null}
 
 {tab === 'art' && assetEnabled('art') ? (
       <Section

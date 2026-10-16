@@ -212,7 +212,7 @@ export const PROJECTION_CLASS_PREFS: Record<ProjectionClassKey, AssetClassPrefKe
   metals: ['metal'],
   property: ['real_estate'],
   bonds: ['bonds'],
-  other: ['art', 'stone', 'collectable', 'forex'],
+  other: ['art', 'stone', 'collectable', 'forex', 'commodities'],
 };
 
 /** Today's value of each class, from the same net-worth figures as the dashboard, without hidden classes. */
@@ -228,7 +228,7 @@ export function classStartValues(nw: Awaited<ReturnType<typeof computeNetWorth>>
     metals: roundMoney(v('metal', nw.metalsNzd)),
     property: roundMoney(v('real_estate', nw.realEstateNzd)),
     bonds: roundMoney(v('bonds', nw.bondsNzd)),
-    other: roundMoney(v('art', nw.artNzd) + v('stone', nw.stonesNzd) + v('collectable', nw.collectablesNzd) + v('forex', nw.forexNzd)),
+    other: roundMoney(v('art', nw.artNzd) + v('stone', nw.stonesNzd) + v('collectable', nw.collectablesNzd) + v('forex', nw.forexNzd) + v('commodities', nw.commoditiesNzd)),
   };
 }
 

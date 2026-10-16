@@ -42,6 +42,7 @@ export const PORTFOLIO_TABS = [
   'collectables',
   'vehicles',
   'bonds',
+  'commodities',
 ] as const;
 export type PortfolioTab = (typeof PORTFOLIO_TABS)[number];
 
@@ -56,6 +57,7 @@ export const TAB_LABELS: Record<PortfolioTab, string> = {
   property: 'Property',
   vehicles: 'Vehicles',
   bonds: 'Bonds',
+  commodities: 'Commodities',
   art: 'Art',
   stones: 'Precious stones',
   collectables: 'Collectables',
@@ -73,6 +75,7 @@ export const TAB_PREFS: Record<PortfolioTab, string[]> = {
   property: ['real_estate'],
   vehicles: ['vehicles'],
   bonds: ['bonds'],
+  commodities: ['commodities'],
   art: ['art'],
   stones: ['stone'],
   collectables: ['collectable'],

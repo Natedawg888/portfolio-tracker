@@ -15,6 +15,7 @@ export const ASSET_CLASS_PREF_KEYS = [
   'collectable',
   'vehicles',
   'bonds',
+  'commodities',
   'kiwisaver',
   'cash',
 ] as const;
@@ -42,6 +43,7 @@ export const ASSET_CLASS_PREF_OPTIONS: AssetClassPrefMeta[] = [
   { key: 'collectable', label: 'Collectables', blurb: 'MTG, Pokémon, figurines' },
   { key: 'vehicles', label: 'Vehicles', blurb: 'Cars, bikes, boats − loans' },
   { key: 'bonds', label: 'Bonds & fixed income', blurb: 'Govt & corporate bonds, term deposits' },
+  { key: 'commodities', label: 'Commodities', blurb: 'Scrap metal, honey, wool, oil, livestock' },
   { key: 'kiwisaver', label: 'KiwiSaver', blurb: 'Sharesies KiwiSaver (read-only)' },
   { key: 'cash', label: 'Cash / Banks', blurb: 'NZD bank & wallet balances' },
 ];

@@ -30,6 +30,7 @@ const { default: settingsRouter } = await import('../routes/settings.ts');
 const { default: householdRouter } = await import('../routes/household.ts');
 const { default: payslipsRouter } = await import('../routes/payslips.ts');
 const { default: bondsRouter } = await import('../routes/bonds.ts');
+const { default: commoditiesRouter } = await import('../routes/commodities.ts');
 const { setPlan } = await import('../lib/entitlements.ts');
 const { uploadsGate, UPLOADS_DIR } = await import('../lib/uploads.ts');
 const { applyBtcLink, reverseBtcDelta } = await import('../lib/txnBtcLink.ts');
@@ -50,6 +51,7 @@ app.use('/api/settings', settingsRouter);
 app.use('/api/household', householdRouter);
 app.use('/api/payslips', payslipsRouter);
 app.use('/api/bonds', bondsRouter);
+app.use('/api/commodities', commoditiesRouter);
 
 const server: Server = await new Promise((resolve) => {
   const s = app.listen(0, '127.0.0.1', () => resolve(s));
@@ -418,7 +420,16 @@ try {
   assert((await req('DELETE', `/api/bonds/${bondId}`, { cookie: b.cookie })).status === 404, 'B can’t delete it');
   assert((await req('POST', `/api/bonds/${bondId}/repaid`, { cookie: b.cookie, body: {} })).status === 404, 'B can’t close it');
 
-  console.log('OK: cross-user BTC, income, uploads, settings, households, payslips, and bonds');
+  // Commodities (KAN-81): another user can't list, change or delete A's commodity.
+  const cmdBody = { name: 'Alpha Secret Wool', preset: null, category: 'agriculture', quantity: 10, unit: 'bale', costNzd: null, priceNzd: null, priceBasis: 'unit', valueOn: null, notes: '' };
+  const cmd = await req('POST', '/api/commodities', { cookie: a.cookie, body: cmdBody });
+  assert(cmd.status === 201, 'A adds a commodity');
+  const cmdId = String((cmd.json as { commodities: { id: string }[] }).commodities[0].id);
+  assert(!JSON.stringify((await req('GET', '/api/commodities', { cookie: b.cookie })).json).includes('Alpha Secret Wool'), 'B can’t list A’s commodities');
+  assert((await req('PUT', `/api/commodities/${cmdId}`, { cookie: b.cookie, body: { ...cmdBody, name: 'x' } })).status === 404, 'B can’t edit it');
+  assert((await req('DELETE', `/api/commodities/${cmdId}`, { cookie: b.cookie })).status === 404, 'B can’t delete it');
+
+  console.log('OK: cross-user BTC, income, uploads, settings, households, payslips, bonds, and commodities');
 } finally {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 }
