@@ -317,6 +317,7 @@ export function Dashboard() {
     forex: 'forex',
     realEstate: 'real_estate',
     collectables: 'collectable',
+    vehicles: 'vehicles',
     kiwiSaver: 'kiwisaver',
   };
 
@@ -377,6 +378,7 @@ export function Dashboard() {
     forex: 'Forex',
     real_estate: 'Real estate',
     collectable: 'Collectables',
+    vehicles: 'Vehicles',
     kiwisaver: 'KiwiSaver',
   };
 
@@ -472,14 +474,18 @@ export function Dashboard() {
             Prices are never estimated.
           </Bucket>
         ) : null}
-        {summary.vehiclesNzd != null ? (
+        {assetEnabled('vehicles') ? (
           <Link className="card dashboard-tile dashboard-tile-link" to="/vehicles">
             <span className="dashboard-tile-hit">
               <span className="dashboard-tile-title">Vehicles (equity)</span>
-              <span className="card-value">{formatNzd(summary.vehiclesEquityNzd ?? summary.vehiclesNzd)}</span>
+              <span className="card-value">{summary.vehiclesNzd != null ? formatNzd(summary.vehiclesEquityNzd ?? summary.vehiclesNzd) : '—'}</span>
               <span className="dashboard-tile-cue">
-                {summary.vehicleLoansNzd ? `Value ${formatNzd(summary.vehiclesNzd)} minus loans ${formatNzd(summary.vehicleLoansNzd)}` : 'Value you recorded'} ·{' '}
-                Open <span aria-hidden="true">›</span>
+                {summary.vehiclesNzd == null
+                  ? 'Add a vehicle'
+                  : summary.vehicleLoansNzd
+                    ? `Value ${formatNzd(summary.vehiclesNzd)} minus loans ${formatNzd(summary.vehicleLoansNzd)} · Open`
+                    : 'Value you recorded · Open'}{' '}
+                <span aria-hidden="true">›</span>
               </span>
             </span>
           </Link>

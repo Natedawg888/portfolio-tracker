@@ -17,6 +17,7 @@ export function PortfolioHeader({
   info,
   progress,
   onRefreshAll,
+  showVehicles = true,
 }: {
   total: number | null;
   asOf: string | null;
@@ -24,6 +25,8 @@ export function PortfolioHeader({
   info: ReactNode;
   progress: RefreshProgress | null;
   onRefreshAll: () => void;
+  /** Vehicles asset class turned on (Settings → asset classes). */
+  showVehicles?: boolean;
 }) {
   return (
     <section className="hero-card portfolio-header" aria-labelledby="portfolio-title">
@@ -43,9 +46,11 @@ export function PortfolioHeader({
           <button type="button" className="btn small" onClick={onRefreshAll} disabled={progress != null}>
             {progress ? 'Refreshing…' : 'Refresh all prices'}
           </button>
+          {showVehicles ? (
           <Link className="btn small ghost" to="/vehicles" onMouseEnter={() => prefetchNavTarget('/vehicles')} onFocus={() => prefetchNavTarget('/vehicles')}>
             Vehicles
           </Link>
+          ) : null}
         </div>
         <p className="muted small portfolio-refresh-status" role="status" aria-live="polite">
           {progress ? `${progress.label} (${progress.step} of ${progress.steps})` : ''}
