@@ -37,7 +37,11 @@ const nw = {
 };
 eq(contentsText(classContents(nw, 'stock')!, money), '3 holdings · $115.61', 'stocks line');
 eq(contentsText(classContents(nw, 'real_estate')!, money), '1 property · $240000.00', 'property line');
-eq(contentsText(classContents(nw, 'cash')!, money), '$1200.50 NZD cash', 'cash line: NZD cash, no account count');
+eq(contentsText(classContents(nw, 'cash')!, money), '$1200.50 NZD cash', 'cash line from an older server: NZD cash, no account count');
+const withCash = { ...nw, counts: { accounts: 3, cashAccounts: 2 } };
+eq(contentsText(classContents(withCash, 'cash')!, money), '2 accounts · $1200.50', 'cash line counts only the accounts behind the cash figure');
+eq(hiddenText(classContents(withCash, 'cash')!, money), '2 accounts worth $1200.50', 'hidden note for cash with a count');
+eq(contentsText(classContents({ ...nw, counts: { accounts: 1, cashAccounts: 0 } }, 'cash')!, money), 'Nothing added', 'only a card: no cash accounts');
 eq(hiddenText(classContents(nw, 'stock')!, money), '3 holdings worth $115.61', 'hidden note');
 eq(hiddenText(classContents(nw, 'crypto')!, money), '2 holdings', 'hidden note without a quote');
 eq(hiddenText(classContents(nw, 'cash')!, money), '$1200.50 NZD cash', 'hidden note for cash');

@@ -651,6 +651,8 @@ export interface ProjectionDebtPath {
  * is named in `assumptions` with its source.
  */
 export interface ProjectionResponse {
+  /** Classes hidden in Settings → Categories & assets that hold something; left out of the projection. */
+  hiddenClasses?: { key: string; label: string; nzd: number }[];
   currency: 'NZD';
   timezone: 'Pacific/Auckland';
   asOf: string;

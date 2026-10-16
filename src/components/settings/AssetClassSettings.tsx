@@ -1,8 +1,9 @@
 /**
  * Settings → Categories & assets: asset classes. Each switch saves straight away (temporary
  * confirmation), grouped Accounts / Investments / Things you own, with what is in each class
- * from the net worth summary. Turning a class off only hides it: holdings stay, and its value
- * still counts in net worth, Projections and History (the server never reads these switches).
+ * from the net worth summary. Turning a class off hides it and leaves its value out of net worth,
+ * Projections and History (src/lib/visibleNetWorth.ts); holdings and stored snapshots stay, so
+ * turning it back on brings everything back.
  */
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, formatNzd } from '../../api/client';
@@ -117,7 +118,7 @@ export function AssetClassSettings() {
         </button>
       </div>
       <p className="muted small settings-assets-lead">
-        Hidden classes leave Portfolio, the Dashboard tiles and the menu. Nothing is deleted.
+        Hidden classes leave Portfolio, the Dashboard, the menu and your net worth. Nothing is deleted.
       </p>
 
       {ASSET_CLASS_GROUPS.map((g) => {
@@ -162,8 +163,8 @@ export function AssetClassSettings() {
                     {!on && contents && contents.count > 0 ? (
                       <div className="asset-hidden-note" role="note">
                         <p>
-                          {label(opt.key)} is hidden but you have {hiddenText(contents, formatNzd)}. It still counts in your net worth on the
-                          Dashboard, in Projections and in History.
+                          {label(opt.key)} is hidden but you have {hiddenText(contents, formatNzd)}. It&apos;s left out of your net
+                          worth, Projections and History until you turn it back on.
                         </p>
                         <button type="button" className="btn small" disabled={disabled} onClick={() => setClass(opt.key, true)}>
                           Turn back on

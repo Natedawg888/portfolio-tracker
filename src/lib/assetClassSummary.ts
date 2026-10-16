@@ -39,7 +39,7 @@ export function orderInGroup<T extends { key: string }>(group: AssetClassGroupId
   return [...mine].sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
 }
 
-/** cash: valueNzd is NZD cash only, so the account count (which includes cards and foreign accounts) is left out of the text. */
+/** cash: count is the NZD bank and wallet accounts behind valueNzd (cards and foreign accounts aren't counted). */
 export type ClassContents = { count: number; valueNzd: number | null; noun: [string, string]; cash?: true };
 
 type NetWorthLike = {
@@ -57,13 +57,13 @@ type NetWorthLike = {
   vehiclesEquityNzd?: number | null;
   bondsNzd?: number | null;
   kiwiSaverNzd?: number | null;
-  counts?: { accounts?: number };
+  counts?: { accounts?: number; cashAccounts?: number };
   holdings?: { assetClass: string }[];
   breakdown?: { holdings?: { assetClass: string }[] };
 };
 
 /** Holding-point classes (net worth breakdown) behind each preference key. */
-const POINT_CLASSES: Partial<Record<AssetClassPrefKey | 'bonds', string[]>> = {
+export const POINT_CLASSES: Partial<Record<AssetClassPrefKey | 'bonds', string[]>> = {
   stock: ['stock'],
   crypto: ['crypto', 'defi'],
   gomining: ['gomining_miner'],
@@ -84,8 +84,13 @@ export function classContents(raw: unknown, key: string): ClassContents | null {
   if (!raw || typeof raw !== 'object') return null;
   const s = raw as NetWorthLike;
   if (key === 'cash') {
-    const n = s.counts?.accounts ?? 0;
-    return { count: n, valueNzd: n > 0 ? num(s.cashNzd) : null, noun: ['account', 'accounts'], cash: true };
+    // Older servers sent only the total account count; fall back to the cash figure alone.
+    const n = s.counts?.cashAccounts ?? null;
+    if (n == null) {
+      const any = s.counts?.accounts ?? 0;
+      return { count: any, valueNzd: any > 0 ? num(s.cashNzd) : null, noun: ['account', 'accounts'], cash: true };
+    }
+    return { count: n, valueNzd: n > 0 ? num(s.cashNzd) : null, noun: ['account', 'accounts'] };
   }
   const points = s.holdings ?? s.breakdown?.holdings;
   const classes = POINT_CLASSES[key as AssetClassPrefKey];

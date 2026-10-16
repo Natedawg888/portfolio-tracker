@@ -96,7 +96,7 @@ New accounts start with `preferences_json.onboarding = { assetClassesDone: false
 
 `AuthUser.onboardingComplete` is returned from `/api/auth/me` (and login/register). The UI gate (`RequireAuth`) sends incomplete users back to `/register`, which resumes at the unfinished step. Hard-refresh (Ctrl+Shift+R / Cmd+Shift+R) after pulling so the new Register UI loads.
 
-Asset class choices can still be changed later under **Settings → Categories & assets**. Disabled classes are hidden in Portfolio, Dashboard tiles/charts, and related nav (data remains in `data/`), but still count in net worth, Projections and History.
+Asset class choices can still be changed later under **Settings → Categories & assets**. Disabled classes are hidden in Portfolio, Dashboard tiles/charts, and related nav (data remains in `data/`), and are left out of net worth, Projections and History (`src/lib/visibleNetWorth.ts`, applied when figures are read; snapshots keep every class).
 
 ## Akahu connections
 

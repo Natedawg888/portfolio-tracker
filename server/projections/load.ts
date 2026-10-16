@@ -33,6 +33,9 @@ import type { MiningPlan } from '../../src/lib/projectionClasses.ts';
 import { fetchGoMiningIncome } from '../quotes/gominingIncome.ts';
 import { fetchBtcFx } from '../quotes/btc.ts';
 import { goMiningSettingsForUser } from '../routes/settings.ts';
+import { readAssetClassPrefs } from '../lib/userAssetClassPrefs.ts';
+import { hiddenTotals, type HiddenClass } from '../../src/lib/visibleNetWorth.ts';
+import { isAssetClassEnabled, type AssetClassPrefKey, type AssetClassPrefs } from '../../src/lib/assetClassPrefs.ts';
 
 const MINING_INCOME_SLUG = 'cat-income-mining';
 
@@ -196,19 +199,53 @@ export function investmentsMoved(db: Database, userId: string, from: string, to:
 
 type ClassStart = Record<ProjectionClassKey, number>;
 
-/** Today's value of each class, from the same net-worth figures as the dashboard. */
-export function classStartValues(nw: Awaited<ReturnType<typeof computeNetWorth>>): ClassStart {
+/**
+ * Asset classes (Settings → Categories & assets) behind each projection class. A projection class
+ * is left out when every class behind it is hidden; "other" drops just its hidden parts.
+ */
+export const PROJECTION_CLASS_PREFS: Record<ProjectionClassKey, AssetClassPrefKey[]> = {
+  cash: ['cash'],
+  shares: ['stock'],
+  kiwiSaver: ['kiwisaver'],
+  crypto: ['crypto'],
+  mining: ['gomining'],
+  metals: ['metal'],
+  property: ['real_estate'],
+  bonds: ['bonds'],
+  other: ['art', 'stone', 'collectable', 'forex'],
+};
+
+/** Today's value of each class, from the same net-worth figures as the dashboard, without hidden classes. */
+export function classStartValues(nw: Awaited<ReturnType<typeof computeNetWorth>>, prefs?: AssetClassPrefs): ClassStart {
+  const on = (key: AssetClassPrefKey) => isAssetClassEnabled(prefs, key);
+  const v = (key: AssetClassPrefKey, value: number | null | undefined) => (on(key) ? (value ?? 0) : 0);
   return {
-    cash: roundMoney(nw.cashNzd),
-    shares: roundMoney(nw.stocksNzd),
-    kiwiSaver: roundMoney(nw.kiwiSaverNzd ?? 0),
-    crypto: roundMoney(nw.cryptoNzd),
-    mining: roundMoney(nw.gominingMinersNzd ?? 0),
-    metals: roundMoney(nw.metalsNzd ?? 0),
-    property: roundMoney(nw.realEstateNzd ?? 0),
-    bonds: roundMoney(nw.bondsNzd ?? 0),
-    other: roundMoney((nw.artNzd ?? 0) + (nw.stonesNzd ?? 0) + (nw.collectablesNzd ?? 0) + (nw.forexNzd ?? 0)),
+    cash: roundMoney(v('cash', nw.cashNzd)),
+    shares: roundMoney(v('stock', nw.stocksNzd)),
+    kiwiSaver: roundMoney(v('kiwisaver', nw.kiwiSaverNzd)),
+    crypto: roundMoney(v('crypto', nw.cryptoNzd)),
+    mining: roundMoney(v('gomining', nw.gominingMinersNzd)),
+    metals: roundMoney(v('metal', nw.metalsNzd)),
+    property: roundMoney(v('real_estate', nw.realEstateNzd)),
+    bonds: roundMoney(v('bonds', nw.bondsNzd)),
+    other: roundMoney(v('art', nw.artNzd) + v('stone', nw.stonesNzd) + v('collectable', nw.collectablesNzd) + v('forex', nw.forexNzd)),
   };
+}
+
+/** A projection class whose asset classes are all hidden: nothing at the start, nothing added. */
+export function withoutHiddenClasses(classes: ProjectionClassInput[], prefs?: AssetClassPrefs): ProjectionClassInput[] {
+  return classes.map((c) => {
+    const keys = PROJECTION_CLASS_PREFS[c.key];
+    if (!keys || keys.some((k) => isAssetClassEnabled(prefs, k))) return c;
+    return {
+      ...c,
+      startNzd: 0,
+      monthlyAdditionNzd: null,
+      monthlyAdditionsNzd: undefined,
+      additionSource: 'default',
+      additionReason: 'Hidden in Settings → Categories & assets, so it is left out.',
+    };
+  });
 }
 
 /**
@@ -386,8 +423,9 @@ export async function loadUserProjection(
   userId: string,
   query: ProjectionQuery,
   asOf: string,
-): Promise<ProjectionResult & { mining: ProjectionMining }> {
+): Promise<ProjectionResult & { mining: ProjectionMining; hiddenClasses: HiddenClass[] }> {
   const netWorth = await computeNetWorth(db, userId);
+  const prefs = readAssetClassPrefs(db, userId);
   const debts = listDebtsForUser(db, userId, asOf);
   const months = completeMonthsBefore(asOf, query.savingWindowMonths);
   const snapshots = months.map((yearMonth) => homeMonthSnapshot(db, userId, yearMonth));
@@ -437,20 +475,21 @@ export async function loadUserProjection(
         ? roundMoney(recordedMiningIncome(db, userId, startBounds.from, endBounds.to) / query.savingWindowMonths)
         : 0,
   });
-  const assetClasses = buildClassInputs({
-    start: classStartValues(netWorth),
+  const assetClasses = withoutHiddenClasses(buildClassInputs({
+    start: classStartValues(netWorth, prefs),
     query,
     saved,
-    mining: miningFlows(mining),
-    bonds: bondProjectionFlows(db, userId, asOf, query.months),
+    // Hidden classes bring no flows either (mining rewards, bond coupons and maturities).
+    mining: isAssetClassEnabled(prefs, 'gomining') ? miningFlows(mining) : null,
+    bonds: isAssetClassEnabled(prefs, 'bonds') ? bondProjectionFlows(db, userId, asOf, query.months) : null,
     monthlySavingNzd,
     investmentsMonthlyNzd,
     investmentsReason:
       investmentsMonthlyNzd == null
         ? 'No transfers to the Investments budget category in the window.'
         : `Average money moved to the Investments budget category over ${query.savingWindowMonths} month(s) (${invested.count} transaction${invested.count === 1 ? '' : 's'}).`,
-    kiwiSaverMonthlyNzd: ks.monthlyNzd,
-  });
+    kiwiSaverMonthlyNzd: isAssetClassEnabled(prefs, 'kiwisaver') ? ks.monthlyNzd : null,
+  }), prefs);
 
   const growth =
     query.additionGrowthPct != null
@@ -466,8 +505,9 @@ export async function loadUserProjection(
     horizonMonths: query.months,
     compoundingAssetsNzd: roundMoney(netWorth.assetsKnownNzd - netWorth.cashLiabilitiesNzd),
     bankLiabilitiesNzd: netWorth.cashLiabilitiesNzd,
-    propertyMortgageNzd: netWorth.realEstateMortgageNzd ?? 0,
-    kiwiSaverBalanceNzd: netWorth.kiwiSaverNzd,
+    // A hidden property takes its mortgage with it, as on the Dashboard.
+    propertyMortgageNzd: isAssetClassEnabled(prefs, 'real_estate') ? (netWorth.realEstateMortgageNzd ?? 0) : 0,
+    kiwiSaverBalanceNzd: isAssetClassEnabled(prefs, 'kiwisaver') ? netWorth.kiwiSaverNzd : null,
     debts: debts.map((debt) => ({
       id: debt.id,
       name: debt.name,
@@ -493,8 +533,9 @@ export async function loadUserProjection(
       expectedPayMonthlyNzd: expectedPay?.monthlyNetNzd ?? null,
       usedExpectedPay: query.monthlySavingNzd == null && fromPay != null,
     },
-    kiwiSaverContributionMonthlyNzd: ks.monthlyNzd,
+    kiwiSaverContributionMonthlyNzd: isAssetClassEnabled(prefs, 'kiwisaver') ? ks.monthlyNzd : null,
     kiwiSaverContributionReason: ks.reason,
   });
-  return { ...result, mining };
+  // Classes hidden in Settings that hold something, so the page can say what it leaves out.
+  return { ...result, mining, hiddenClasses: hiddenTotals(netWorth.breakdown.byClass, prefs).classes };
 }

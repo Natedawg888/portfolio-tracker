@@ -105,6 +105,8 @@ export type NetWorthResult = {
   };
   counts: {
     accounts: number;
+    /** NZD bank and wallet accounts behind cashNzd (not cards or foreign accounts). */
+    cashAccounts: number;
     holdings: number;
     gominingMiners: number;
     kiwisaver: number;
@@ -176,9 +178,8 @@ export async function computeNetWorth(
 
   const nzdAccounts = accounts.filter((a) => (a.currency ?? '').toUpperCase() === 'NZD');
 
-  const cashNzd = nzdAccounts
-    .filter((a) => isLiquidCashAccountType(a.account_type, a.notes))
-    .reduce((s, a) => s + balanceOf(a), 0);
+  const cashAccounts = nzdAccounts.filter((a) => isLiquidCashAccountType(a.account_type, a.notes));
+  const cashNzd = cashAccounts.reduce((s, a) => s + balanceOf(a), 0);
 
   const cashLiabilitiesNzd = nzdAccounts
     .filter((a) => LIABILITY_ACCOUNT_TYPES.has((a.account_type ?? '').toLowerCase()))
@@ -614,6 +615,7 @@ export async function computeNetWorth(
     },
     counts: {
       accounts: accounts.length,
+      cashAccounts: cashAccounts.length,
       holdings: holdings.length,
       gominingMiners: holdings.filter((h) => h.asset_class === 'gomining_miner').length,
       kiwisaver: ks.length,
