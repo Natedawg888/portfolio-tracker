@@ -50,6 +50,7 @@
     "test:value-search": "node --import tsx src/lib/valueSearchDetect.test.ts && node --import tsx src/lib/valueSearchView.test.ts && node --import tsx src/lib/portfolioAddParams.test.ts && node --import tsx server/quotes/stocks.native.test.ts",
     "test:kiwisaver": "node --import tsx src/pages/kiwisaverView.test.ts && node --import tsx server/kiwisaver/history.test.ts",
     "test:history": "node --import tsx src/lib/historyView.test.ts",
+    "test:account": "node --import tsx src/lib/accountView.test.ts && node --import tsx server/auth/accountData.test.ts",
     "test:budget": "node --import tsx src/lib/budgetView.test.ts && node --import tsx server/lib/categorySuggest.test.ts",
     "test:dashboard": "node --import tsx src/lib/accountMask.test.ts && node --import tsx src/lib/netWorthHistory.test.ts && node --import tsx server/lib/dailySnapshot.test.ts",
     "test:health-score": "node --import tsx src/lib/healthScore.test.ts && node --import tsx server/health/api.test.ts",

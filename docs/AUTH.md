@@ -105,31 +105,36 @@ Bank / investment linking is separate from local email/password auth. See [AKAHU
 ## Profile & account settings
 
 - **Header avatar** — click the profile picture (or initials) for account owner name/email, **Settings**, and **Sign out**.
-- **Settings → Account** — display name, upload/remove profile picture (stored under `data/uploads/avatars/` or as a data URL on `users.avatar_url`), change email / password (current password required), **delete account**.
+- **Settings → Account** — *Profile* (photo with preview before saving, stored under `data/uploads/avatars/` or as a data URL on `users.avatar_url`; first/last name saved as typed), *Email and password* (email row with an inline Change form, current password required, confirmed by email link when email is set up; password row links to Settings → Security), *Your data* (Download a copy), the ad preferences, and a collapsed **Delete account** with *Deleted* / *Kept* lists from `src/lib/accountView.ts` — keep those lists in step with the delete route below.
 - **Settings → Categories / assets** — asset-class toggles (`users.preferences_json`), add/remove **your** transaction categories (`budget_categories.user_id`), plus Akahu connect.
+
+## Change email, download a copy
+
+**Change email** (Settings → Account → Email → Change) needs the current password. When email sending is set up (`RESEND_API_KEY` + `INVOICE_EMAIL_FROM`, see INVOICES.md), the new address gets a link (`/confirm-email#token=…`, 24 h, one use, one pending change per account in `email_changes`, token stored hashed) and the current address gets a notice. Nothing changes until the link's page is opened and **Confirm** pressed (a POST, so mail scanners can't confirm). The current email keeps working meanwhile; **Cancel change** drops it. Without email sending the change applies at once and the form says so. Google / Apple / Microsoft sign-ins are matched by the provider's account id, so they stay linked.
+
+**Download a copy** (`GET /api/auth/export`, Settings → Account → Your data) returns JSON of every per-user table (`SCOPED_TABLES`) plus their child rows, profile, sign-in methods and history, household membership and shared prices. Password and token hashes, encrypted secrets, share-link tokens and Akahu tokens are left out (`server/lib/accountExport.ts`). Uploaded files are listed by name only.
 
 ## Delete account
 
-**Settings → Account → Delete account…** requires typing `DELETE` and the current password.
+**Settings → Account → Delete account…** requires typing `DELETE` and the current password. Accounts without a password set one in Security first (or email us).
 
 `POST /api/auth/delete-account` `{ password, confirm: "DELETE" }` then:
 
-1. Deletes **this user’s** scoped finance rows only (`holdings`, `bank_accounts`, `transactions`, `kiwisaver_accounts` + cascaded history/activity, `debt_people` + cascaded repayments, `income_records`, `income_plans`, `dividend_events`, `payee_settings`, `savings_goals`, `budgets`, `valuation_snapshots`) and their holding photos under `data/uploads/`. The user’s KiwiSaver employee rate is removed with `preferences_json`.
-2. Deletes avatar file, all `sessions` for the user, `akahu_connections` for the user, and the `users` row (including `preferences_json`).
-3. Clears the session cookie. Does **not** wipe other users’ `user_id` rows.
-4. If the deleted user was `data_owner_user_id`, ownership is reassigned to the oldest remaining user (or cleared if none left).
+1. Deletes **this user's** rows in every `SCOPED_TABLES` table and their child rows (`debt_repayments`, `kiwisaver_activity`, `kiwisaver_balance_history`, deleted explicitly: `PRAGMA foreign_keys` is off, so `ON DELETE CASCADE` never fires), plus holding photos, receipts and payslip files under `data/uploads/`, and supermarket prices they shared.
+2. Household: an owned household with no adult heir is deleted; otherwise they leave it. Their shares and shared pay go, their activity entries become "Former member" with details cleared, other entries naming them say "a former member", and invites they sent that weren't accepted are deleted. Splits and settlements stay for the others (amounts affect what they owe) and show "Former member".
+3. Deletes avatar file, sessions, Akahu connection, 2FA backup codes, trusted devices, pending sign-ins, provider links, passkeys, sign-in history, plan (`user_entitlements`), pending email change, and the `users` row (including `preferences_json`).
+4. If they were `data_owner_user_id`, the role is **cleared, not reassigned**: it unlocks the server's shared Akahu Personal App token (that owner's bank feed) and the owner's legacy GoMining / collectable values in `app_settings`, which are deleted too. Set a new owner by hand only if that's intended.
+5. Clears the session cookie. Other users' rows are untouched.
+
+The page's Deleted / Kept lists live in `src/lib/accountView.ts`; keep them, this section and the privacy policy in step. Tests: `npm run test:account`.
 
 ### Shared data that remains
 
-These stay **global** on this machine — account delete does not remove them:
-
 | Shared | Notes |
 |--------|--------|
-| `app_settings` | Locale, currency, timezone. Legacy GoMining / collectable values stay here only as a fallback for the data owner until they save their own. |
-| `price_quotes` | Shared quote cache |
-| `meta` | `schema_version` etc.; `data_owner_user_id` cleared/reassigned as above |
-| `.env` Akahu Personal App token | Server env — not stored per user |
-
-`budget_categories` are **per-user** (own seed copy + customs). Deleted with the account.
+| `app_settings` | Locale, currency, timezone defaults |
+| `price_quotes`, `economic_*` | Public prices, rates and economic figures; not linked to anyone |
+| `meta` | `schema_version` etc. |
+| `.env` Akahu Personal App token | Server env, not per user |
 
 Hard-refresh (Ctrl+Shift+R / Cmd+Shift+R) after pulling so the Delete account UI loads.

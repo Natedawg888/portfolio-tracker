@@ -43,12 +43,12 @@ import {
   verifySecondFactor,
 } from '../auth/twoFactor.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
+import { cancelEmailChange, confirmEmailChange, emailChangeTooSoon, pendingEmailFor, startEmailChange } from '../auth/emailChange.ts';
+import { emailEnabled, messageHtml, sendEmail } from '../invoices/email.ts';
+import { shareBase } from './invoices.ts';
+import { exportAccountData } from '../lib/accountExport.ts';
 import { composeDisplayName, createUserAccount, hasPassword } from '../auth/users.ts';
-import {
-  claimUnscopedRowsForOwner,
-  deleteScopedDataForUser,
-  getDataOwnerUserId,
-} from '../lib/userScope.ts';
+import { deleteScopedDataForUser, getDataOwnerUserId } from '../lib/userScope.ts';
 import { mayClaimExistingFinance } from '../lib/dataClaim.ts';
 import {
   deleteAvatarFile,
@@ -170,7 +170,13 @@ function toPublicUser(
     u.email,
     u.preferencesJson ?? u.preferences_json ?? null,
   );
-  return publicUser({ ...u, preferences_json });
+  return {
+    ...publicUser({ ...u, preferences_json }),
+    /** New address waiting for its link to be opened (null when none). */
+    pendingEmail: pendingEmailFor(db, u.id)?.newEmail ?? null,
+    /** True when changing email sends a confirmation link; false when it applies at once. */
+    emailChangeConfirms: emailEnabled(),
+  };
 }
 
 function loadUserRow(db: Awaited<ReturnType<typeof getDb>>, userId: string) {
@@ -734,7 +740,62 @@ router.post('/change-email', async (req: AuthedRequest, res) => {
     return;
   }
 
+  if (emailEnabled()) {
+    // Confirm the new address first; the current email keeps working until the link is opened.
+    if (emailChangeTooSoon(db, req.user.id)) {
+      res.status(429).json({ error: 'We just sent a link. Wait a minute before asking for another.', code: 'TOO_SOON' });
+      return;
+    }
+    const { token } = startEmailChange(db, req.user.id, email);
+    const link = `${shareBase(req)}/confirm-email#token=${token}`;
+    const text = `Someone asked to change the email on a KoruLedger account to this address.\n\nIf it was you, open this link within 24 hours to confirm. Until then your current email keeps working. If it wasn't you, ignore this email and nothing changes.`;
+    const sent = await sendEmail({
+      fromName: 'KoruLedger',
+      replyTo: null,
+      to: [email],
+      subject: 'Confirm your new KoruLedger email',
+      text: `${text}\n\n${link}`,
+      html: messageHtml(text, link, 'Confirm my new email'),
+      attachment: null,
+      idempotencyKey: `email-change-${token.slice(0, 24)}`,
+    });
+    if (!sent.ok) {
+      cancelEmailChange(db, req.user.id);
+      res.status(502).json({ error: 'Could not send the confirmation email. Try again shortly.', code: 'EMAIL_SEND_FAILED' });
+      return;
+    }
+    // Heads-up to the current address, so an unexpected change can be noticed. Best effort.
+    const notice = `Someone asked to change the email on your KoruLedger account to ${email}. It only changes once that address confirms it. If this wasn't you, sign in, cancel the change under Settings → Account, and change your password.`;
+    await sendEmail({
+      fromName: 'KoruLedger',
+      replyTo: null,
+      to: [row.email],
+      subject: 'Your KoruLedger email is being changed',
+      text: notice,
+      html: messageHtml(notice, null),
+      attachment: null,
+      idempotencyKey: `email-change-notice-${token.slice(0, 24)}`,
+    });
+    res.json({
+      user: toPublicUser(db, {
+        id: row.id,
+        email: row.email,
+        firstName: row.first_name,
+        lastName: row.last_name,
+        displayName: row.display_name,
+        avatarUrl: row.avatar_url,
+        createdAt: row.created_at,
+        preferences_json: row.preferences_json,
+      }),
+      pendingEmail: email,
+      message: `Check ${email} to confirm. Your current email works until then.`,
+    });
+    return;
+  }
+
+  // Email sending isn't set up on this server: the change applies at once (the form says so).
   const now = new Date().toISOString();
+  cancelEmailChange(db, req.user.id);
   run(db, `UPDATE users SET email = ?, updated_at = ? WHERE id = ?`, [email, now, req.user.id]);
   res.json({
     user: toPublicUser(db, {
@@ -752,15 +813,62 @@ router.post('/change-email', async (req: AuthedRequest, res) => {
 });
 
 
+/** Download a copy of everything stored for the signed-in account (JSON). Auth required. */
+router.get('/export', async (req: AuthedRequest, res) => {
+  if (!req.user) {
+    res.status(401).json({ error: 'Authentication required', code: 'UNAUTHORIZED' });
+    return;
+  }
+  const db = await getDb();
+  const data = exportAccountData(db, req.user.id);
+  if (!data) {
+    res.status(401).json({ error: 'Authentication required', code: 'UNAUTHORIZED' });
+    return;
+  }
+  const day = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="koruledger-account-${day}.json"`);
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(JSON.stringify(data, null, 2));
+});
+
+/** Cancel a pending email change. Auth required. */
+router.post('/change-email/cancel', async (req: AuthedRequest, res) => {
+  if (!req.user) {
+    res.status(401).json({ error: 'Authentication required', code: 'UNAUTHORIZED' });
+    return;
+  }
+  const db = await getDb();
+  cancelEmailChange(db, req.user.id);
+  res.json({ ok: true });
+});
+
+/**
+ * Confirm a new email from the emailed link (/confirm-email#token=…). Works signed out:
+ * holding the link proves the mailbox; the password was checked when the change was asked for.
+ * POST only, so mail scanners that open links don't confirm by accident.
+ */
+router.post('/confirm-email', async (req, res) => {
+  const db = await getDb();
+  const result = confirmEmailChange(db, typeof req.body?.token === 'string' ? req.body.token : '');
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error, code: result.code });
+    return;
+  }
+  res.json({ ok: true, email: result.email });
+});
+
+
 /**
  * Permanently delete the signed-in account.
  * Body: { password: string, confirm: "DELETE" }
  * Removes: user row, all sessions, preferences (on user), avatar file,
  * per-user akahu_connections, and this user's scoped finance rows.
  * Does NOT wipe other users' data. Shared globals left intact (see AUTH.md):
- * app_settings (locale/currency/timezone), price_quotes, meta keys other than data_owner.
- * GoMining inputs and collectable types live on the user and are deleted with them.
- * (budget_categories are per-user and deleted with scoped data.)
+ * app_settings defaults (locale/currency/timezone), price_quotes, meta keys other than data_owner.
+ * GoMining inputs and collectable types live on the user and are deleted with them; a data
+ * owner's legacy copies in app_settings go too, and the owner role is cleared, not passed on.
+ * Keep src/lib/accountView.ts (the Deleted / Kept lists on the page) in step with this.
  */
 router.post('/delete-account', async (req: AuthedRequest, res) => {
   if (!req.user) {
@@ -822,23 +930,16 @@ router.post('/delete-account', async (req: AuthedRequest, res) => {
   run(db, `DELETE FROM user_passkeys WHERE user_id = ?`, [userId]);
   run(db, `DELETE FROM webauthn_challenges WHERE user_id = ?`, [userId]);
   run(db, `DELETE FROM auth_events WHERE user_id = ?`, [userId]);
+  run(db, `DELETE FROM user_entitlements WHERE user_id = ?`, [userId]);
+  run(db, `DELETE FROM email_changes WHERE user_id = ?`, [userId]);
 
-  // 5) data_owner_user_id — reassign or clear; never leave a dangling owner id
+  // 5) data owner: cleared, never handed to another account. The owner role unlocks the
+  //    server's shared Akahu token (the owner's bank feed) and the owner's legacy GoMining /
+  //    collectable values in app_settings, so passing it on would expose them to someone else.
   if (wasOwner) {
-    const nextOwner = queryOne<{ id: string }>(
-      db,
-      `SELECT id FROM users WHERE id != ? ORDER BY created_at ASC LIMIT 1`,
-      [userId],
-    );
-    if (nextOwner?.id) {
-      run(db, `INSERT OR REPLACE INTO meta (key, value) VALUES ('data_owner_user_id', ?)`, [
-        nextOwner.id,
-      ]);
-      claimUnscopedRowsForOwner(db, nextOwner.id);
-    } else {
-      run(db, `DELETE FROM meta WHERE key = 'data_owner_user_id'`);
-      run(db, `DELETE FROM meta WHERE key = 'data_claimed_at'`);
-    }
+    run(db, `DELETE FROM meta WHERE key = 'data_owner_user_id'`);
+    run(db, `DELETE FROM meta WHERE key = 'data_claimed_at'`);
+    run(db, `DELETE FROM app_settings WHERE key LIKE 'gomining%' OR key = 'collectableTypes'`);
   }
 
   // 6) User row (preferences_json lives here)
@@ -858,11 +959,10 @@ router.post('/delete-account', async (req: AuthedRequest, res) => {
       wasDataOwner: wasOwner,
     },
     sharedDataRemaining: [
-      // budget_categories now per-user and removed with scoped delete
-      'app_settings (locale, currency, timezone)',
+      'app_settings (locale, currency, timezone defaults)',
       'price_quotes (shared quote cache)',
-      'meta (schema_version etc.; data_owner cleared or reassigned)',
-      '.env Akahu Personal App token (server env — not per-user)',
+      'meta (schema_version etc.; data_owner cleared)',
+      '.env Akahu Personal App token (server env — not per-user; no owner may use it until one is set)',
     ],
   });
 });
