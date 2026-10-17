@@ -1,7 +1,7 @@
 /**
  * Crypto cost basis and gains (KAN-47). Figures worked by hand. Run: npm run test:crypto
  */
-import { computeGains, cryptoTaxYear, suggestKinds, yearSummary, type LedgerTxn } from './cryptoGains.ts';
+import { computeGains, cryptoTaxYear, isIncomeOnReceipt, needsValue, suggestKinds, yearSummary, type LedgerTxn } from './cryptoGains.ts';
 
 function eq(actual: unknown, expected: unknown, msg: string): void {
   if (actual !== expected) throw new Error(`FAIL: ${msg} (got ${String(actual)}, expected ${String(expected)})`);
@@ -72,6 +72,28 @@ eq(computeGains([t('2025-04-10', 'buy', 'ADA', 100, 50)], 'fifo').positions[0].c
 // Network fee paid in ETH: a disposal with no proceeds.
 g = computeGains([t('2025-04-10', 'buy', 'ETH', 1, 4000), t('2025-04-11', 'fee', 'ETH', 0.01, 0)], 'fifo');
 eq(g.disposals[0].gainNzd, -40, 'fee: cost of the ETH used');
+
+// Airdrops (KAN-86, IRD Airdrops): by default not income and nil cost; taxable on receipt → like staking.
+g = computeGains([t('2025-06-01', 'airdrop', 'ARB', 100, 150), t('2026-05-01', 'sell', 'ARB', 100, 400, { feeNzd: 5 })], 'fifo');
+eq(g.income.length, 0, 'airdrop not income by default');
+eq(yearSummary(g, 2025).incomeNzd, 0, 'airdrop year income 0');
+eq(g.disposals[0].costNzd, 0, 'airdrop costs nil');
+eq(g.disposals[0].gainNzd, 395, 'sale gain = proceeds − fee − 0');
+eq(yearSummary(g, 2026).realisedNzd, 395, 'airdrop sale still in the gains');
+g = computeGains([t('2025-06-01', 'airdrop', 'ARB', 100, null)], 'fifo');
+eq(g.missingValue.length, 0, 'non-taxable airdrop needs no value');
+eq(g.positions[0].costIncomplete, false, 'its nil cost is known');
+eq(g.positions[0].costNzd, 0, 'held at nil cost');
+g = computeGains([t('2025-06-01', 'airdrop', 'ARB', 100, 150, { taxableOnReceipt: true }), t('2026-05-01', 'sell', 'ARB', 100, 400, { feeNzd: 5 })], 'wac');
+eq(g.income.length, 1, 'taxable airdrop is income');
+eq(yearSummary(g, 2025).incomeNzd, 150, 'income = NZD value at receipt');
+eq(g.disposals[0].costNzd, 150, 'cost = value at receipt');
+eq(g.disposals[0].gainNzd, 245, 'sale gain uses that cost');
+eq(computeGains([t('2025-06-01', 'airdrop', 'ARB', 100, null, { taxableOnReceipt: true })], 'fifo').missingValue.length, 1, 'taxable airdrop needs a value');
+eq(computeGains([t('2025-06-01', 'staking_reward', 'SOL', 1, 250, { taxableOnReceipt: false })], 'fifo').income[0]?.nzdValue, 250, 'the flag never affects staking');
+eq(isIncomeOnReceipt({ kind: 'airdrop' }), false, 'helper: airdrop');
+eq(isIncomeOnReceipt({ kind: 'airdrop', taxableOnReceipt: true }), true, 'helper: taxable airdrop');
+eq(needsValue({ kind: 'airdrop' }), false, 'helper: airdrop needs no value');
 
 // Tax years.
 eq(cryptoTaxYear('2026-03-31'), 2025, '31 March');

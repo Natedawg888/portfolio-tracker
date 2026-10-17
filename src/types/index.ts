@@ -2166,6 +2166,8 @@ export interface CryptoTxnBody {
   toAmount?: number | null;
   counterparty?: string | null;
   notes: string;
+  /** Airdrops only (KAN-86): taxable on receipt (business, scheme, services, regular airdrops). */
+  taxableOnReceipt?: boolean;
 }
 export interface CryptoTxn extends CryptoTxnBody {
   id: string;
