@@ -36,6 +36,7 @@
     "test:kiwisaver-calc": "node --import tsx src/lib/kiwiSaverCalc.test.ts",
     "test:crypto": "node --import tsx src/lib/cryptoGains.test.ts && node --import tsx server/crypto/store.test.ts",
     "test:bonds": "node --import tsx src/lib/bondSchedule.test.ts && node --import tsx server/bonds/store.test.ts",
+    "test:db-migrations": "node --import tsx server/db/holdingsCostRebuild.test.ts",
     "test:commodities": "node --import tsx src/lib/commodities.test.ts && node --import tsx server/commodities/store.test.ts",
     "test:vehicles": "node --import tsx server/vehicles/store.test.ts",
     "test:payslips": "node --import tsx src/lib/payslipCheck.test.ts && node --import tsx server/payslips/store.test.ts",
