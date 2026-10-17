@@ -25,8 +25,10 @@ import { aucklandToday } from '../debts/model.ts';
 import { isClosedQuantity, isTotalNotUnitQuote, parseNzdValueFromNotes } from '../../src/lib/holdingValue.ts';
 import { applyScheduledInterestForUser } from '../debts/store.ts';
 import { vehicleTotals } from '../vehicles/store.ts';
+import { businessAssetTotals } from '../business/store.ts';
 import { defiTotals } from '../crypto/store.ts';
 import { bondTotals } from '../bonds/store.ts';
+import { commodityTotals, isCommoditiesPlus } from '../commodities/store.ts';
 import '../chain/index.ts'; // registers chain adapters for wallet balances
 import { combineValuations, valueWallet, type WalletValuation } from '../chain/valuation.ts';
 import type { WalletRef } from '../chain/service.ts';
@@ -82,12 +84,18 @@ export type NetWorthResult = {
   vehiclesNzd: number | null;
   vehicleLoansNzd: number | null;
   vehiclesEquityNzd: number | null;
+  /** Business assets (KAN-84) as the user valued them, for businesses counted in net worth. */
+  businessAssetsNzd: number | null;
   /** DeFi positions counted in net worth (KAN-47): recorded values, borrowing taken off. */
   defiNzd: number | null;
   /** Bonds and term deposits (KAN-80): recorded value or cost; TDs linked to a synced account are in cash already. */
   bondsNzd: number | null;
   /** The term-deposit part of bondsNzd. */
   bondsTermDepositsNzd: number | null;
+  /** Commodities (KAN-81): values the user set; holdings with no value aren't counted. */
+  commoditiesNzd: number | null;
+  /** Plus: Commodities shows as its own class in the asset mix and on the Economic cycle page. */
+  commoditiesExposure: boolean;
   kiwiSaverNzd: number | null;
   /** Sum of debt_people.outstanding_nzd (personal I-owe liabilities). */
   debtOutstandingNzd: number;
@@ -498,11 +506,19 @@ export async function computeNetWorth(
   for (const b of bonds?.perBond ?? []) {
     holdingPoints.push({ id: b.id, label: b.label, assetClass: 'bond', valueNzd: b.valueNzd });
   }
+  const commodities = commodityTotals(db, userId);
+  for (const c of commodities?.perHolding ?? []) {
+    holdingPoints.push({ id: c.id, label: c.label, assetClass: 'commodity', valueNzd: c.valueNzd });
+  }
   for (const d of defi?.perPosition ?? []) {
     holdingPoints.push({ id: d.id, label: d.label, assetClass: 'defi', valueNzd: d.valueNzd });
   }
   for (const v of vehicles?.perVehicle ?? []) {
     holdingPoints.push({ id: v.id, label: v.name, assetClass: 'vehicle', valueNzd: v.valueNzd - v.loanNzd });
+  }
+  const business = businessAssetTotals(db, userId);
+  for (const b of business?.perBusiness ?? []) {
+    holdingPoints.push({ id: b.id, label: b.name, assetClass: 'business', valueNzd: b.valueNzd });
   }
   // Gross property value in assets; mortgage subtracted with personal debt below
   const assetsKnownNzd =
@@ -518,8 +534,10 @@ export async function computeNetWorth(
     (realEstateHas ? realEstateValue : 0) +
     (collectablesHas ? collectablesVal : 0) +
     vehiclesValue +
+    (business?.valueNzd ?? 0) +
     (defi?.netNzd ?? 0) +
     bondsValue +
+    (commodities?.valueNzd ?? 0) +
     kiwiSaverNzd;
 
   // Net worth = known assets − personal debt − real-estate mortgages (never invent)
@@ -553,8 +571,10 @@ export async function computeNetWorth(
     vehicles: vehicles ? vehiclesValue : null,
     vehicleLoans: vehicles ? vehicleLoans : null,
     vehiclesEquity: vehicles ? vehiclesValue - vehicleLoans : null,
+    business: business ? business.valueNzd : null,
     defi: defi ? defi.netNzd : null,
     bonds: bonds ? bondsValue : null,
+    commodities: commodities ? commodities.valueNzd : null,
     kiwiSaver: ks.length ? kiwiSaverNzd : null,
     debt: debtOutstandingNzd,
     assets: assetsKnownNzd,
@@ -592,9 +612,12 @@ export async function computeNetWorth(
     vehiclesNzd: vehicles ? vehiclesValue : null,
     vehicleLoansNzd: vehicles ? vehicleLoans : null,
     vehiclesEquityNzd: vehicles ? vehiclesValue - vehicleLoans : null,
+    businessAssetsNzd: business ? business.valueNzd : null,
     defiNzd: defi ? defi.netNzd : null,
     bondsNzd: bonds ? bondsValue : null,
     bondsTermDepositsNzd: bonds ? bonds.termDepositsNzd : null,
+    commoditiesNzd: commodities ? commodities.valueNzd : null,
+    commoditiesExposure: isCommoditiesPlus(db, userId),
     kiwiSaverNzd: ks.length ? kiwiSaverNzd : null,
     debtOutstandingNzd,
     debtPersonCount,

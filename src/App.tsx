@@ -1,6 +1,6 @@
 
 import { Suspense } from 'react';
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { Login } from './pages/Login';
@@ -16,6 +16,9 @@ import {
   KiwiSaverPage,
   NewsPage,
   PayePage,
+  BusinessPage,
+  BusinessDetailPage,
+  BusinessClientsPage,
   InvoicesPage,
   InvoiceEditorPage,
   InvoiceDetailPage,
@@ -40,6 +43,12 @@ import { AssetClassPrefsProvider } from './auth/AssetClassPrefsContext';
 import { RequireAuth } from './auth/RequireAuth';
 import { HomeGate } from './auth/HomeGate';
 import './App.css';
+
+/** Invoices moved under Business (KAN-84): /invoices/… → /business/invoices/…, keeping the query. */
+function InvoicesMoved() {
+  const { pathname, search, hash } = useLocation();
+  return <Navigate replace to={`/business${pathname}${search}${hash}`} />;
+}
 
 export default function App() {
   return (
@@ -88,10 +97,15 @@ export default function App() {
                   <Route path="news" element={<NewsPage />} />
                   <Route path="kiwisaver" element={<KiwiSaverPage />} />
                   <Route path="paye" element={<PayePage />} />
-                  <Route path="invoices" element={<InvoicesPage />} />
-                  <Route path="invoices/new" element={<InvoiceEditorPage />} />
-                  <Route path="invoices/:id" element={<InvoiceDetailPage />} />
-                  <Route path="invoices/:id/edit" element={<InvoiceEditorPage />} />
+                  <Route path="business" element={<BusinessPage />} />
+                  <Route path="business/invoices" element={<InvoicesPage />} />
+                  <Route path="business/invoices/new" element={<InvoiceEditorPage />} />
+                  <Route path="business/invoices/:id" element={<InvoiceDetailPage />} />
+                  <Route path="business/invoices/:id/edit" element={<InvoiceEditorPage />} />
+                  <Route path="business/clients" element={<BusinessClientsPage />} />
+                  <Route path="business/clients/:clientId" element={<BusinessClientsPage />} />
+                  <Route path="business/:id" element={<BusinessDetailPage />} />
+                  <Route path="invoices/*" element={<InvoicesMoved />} />
                   <Route path="value-search" element={<ValueSearchPage />} />
                   <Route path="settings" element={<SettingsPage />} />
                 </Route>

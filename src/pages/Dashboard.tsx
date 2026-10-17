@@ -64,8 +64,11 @@ type Summary = {
   vehiclesNzd?: number | null;
   vehicleLoansNzd?: number | null;
   vehiclesEquityNzd?: number | null;
+  businessAssetsNzd?: number | null;
   bondsNzd?: number | null;
   bondsTermDepositsNzd?: number | null;
+  commoditiesNzd?: number | null;
+  commoditiesExposure?: boolean;
   kiwiSaverNzd: number | null;
   debtOutstandingNzd?: number;
   debtPersonCount?: number;
@@ -132,6 +135,7 @@ const DRILL_CLASS: Partial<Record<AssetClassPrefKey, string>> = {
   forex: 'forex',
   real_estate: 'real_estate',
   collectable: 'collectable',
+  commodities: 'commodity',
   kiwisaver: 'kiwisaver',
 };
 
@@ -323,7 +327,9 @@ export function Dashboard() {
     realEstate: 'real_estate',
     collectables: 'collectable',
     vehicles: 'vehicles',
+    business: 'business',
     bonds: 'bonds',
+    commodities: 'commodities',
     kiwiSaver: 'kiwisaver',
   };
 
@@ -344,7 +350,10 @@ export function Dashboard() {
     },
     { key: 'collectables', name: 'Collectables', value: summary.collectablesNzd ?? 0, colour: '#c45a9a' },
     { key: 'vehicles', name: 'Vehicles', value: summary.vehiclesEquityNzd ?? 0, colour: '#8a7a5a' },
+    { key: 'business', name: 'Business assets', value: summary.businessAssetsNzd ?? 0, colour: '#b0884a' },
     { key: 'bonds', name: 'Bonds', value: summary.bondsNzd ?? 0, colour: '#4a9a8a' },
+    // Commodities as its own class in the mix is Plus (KAN-81); the total still counts them.
+    ...(summary.commoditiesExposure ? [{ key: 'commodities', name: 'Commodities', value: summary.commoditiesNzd ?? 0, colour: '#9a7a3a' }] : []),
     { key: 'kiwiSaver', name: 'KiwiSaver', value: summary.kiwiSaverNzd ?? 0, colour: '#6a8fd4' },
   ]
     .filter((row) => {
@@ -386,7 +395,9 @@ export function Dashboard() {
     real_estate: 'Real estate',
     collectable: 'Collectables',
     vehicles: 'Vehicles',
+    business: 'Business assets',
     bonds: 'Bonds',
+    commodities: 'Commodities',
     kiwisaver: 'KiwiSaver',
   };
 
@@ -499,6 +510,17 @@ export function Dashboard() {
             </span>
           </Link>
         ) : null}
+        {assetEnabled('business') && summary.businessAssetsNzd != null ? (
+          <Link className="card dashboard-tile dashboard-tile-link" to="/business">
+            <span className="dashboard-tile-hit">
+              <span className="dashboard-tile-title">Business assets</span>
+              <span className="card-value">{formatNzd(summary.businessAssetsNzd)}</span>
+              <span className="dashboard-tile-cue">
+                Values you recorded · Open <span aria-hidden="true">›</span>
+              </span>
+            </span>
+          </Link>
+        ) : null}
         {assetEnabled('bonds') ? (
           <Link className="card dashboard-tile dashboard-tile-link" to="/portfolio#bonds">
             <span className="dashboard-tile-hit">
@@ -506,6 +528,17 @@ export function Dashboard() {
               <span className="card-value">{summary.bondsNzd != null ? formatNzd(summary.bondsNzd) : '—'}</span>
               <span className="dashboard-tile-cue">
                 {summary.bondsNzd == null ? 'Add a bond or term deposit' : 'Value you recorded, or cost · Open'} <span aria-hidden="true">›</span>
+              </span>
+            </span>
+          </Link>
+        ) : null}
+        {assetEnabled('commodities') ? (
+          <Link className="card dashboard-tile dashboard-tile-link" to="/portfolio#commodities">
+            <span className="dashboard-tile-hit">
+              <span className="dashboard-tile-title">Commodities</span>
+              <span className="card-value">{summary.commoditiesNzd != null ? formatNzd(summary.commoditiesNzd) : '—'}</span>
+              <span className="dashboard-tile-cue">
+                {summary.commoditiesNzd == null ? 'Add scrap metal, honey, wool and more' : 'Values you set · Open'} <span aria-hidden="true">›</span>
               </span>
             </span>
           </Link>

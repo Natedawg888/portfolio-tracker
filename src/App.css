@@ -14205,3 +14205,45 @@ html:not([data-theme]) .settings-page {
 .cat-add input { flex: 1; min-width: 0; }
 /* Built-in categories have no ⋯ menu; keep its width so Rename lines up. */
 .cat-menu-spacer { width: 1.9rem; flex-shrink: 0; }
+
+/* Commodities (KAN-81) */
+.commodity-basis { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; border: 0; padding: 0; margin: 0; }
+.commodity-basis legend { padding: 0; margin-bottom: 0.25rem; }
+.commodity-basis label { display: inline-flex; align-items: center; gap: 0.4rem; min-height: 2.75rem; }
+
+/* Business (KAN-84) */
+.business-tabs a { text-decoration: none; }
+.business-card-grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); }
+.business-card-head,
+.business-detail-title { display: flex; align-items: flex-start; gap: 0.7rem; min-width: 0; }
+.business-card-head h4 a { color: inherit; text-decoration: none; }
+.business-card-head h4 a:hover { text-decoration: underline; }
+.business-card-foot { margin: 0; }
+.business-mark {
+  flex-shrink: 0;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+  background: var(--surface-2);
+}
+.business-mark--letter { display: grid; place-items: center; font-weight: 700; color: var(--accent); }
+.business-totals { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 520px) {
+  .business-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.business-gst { margin: 0; }
+.business-asset-group + .business-asset-group { margin-top: 0.6rem; }
+.business-asset-group h4 { margin: 0 0 0.2rem; }
+.business-movements summary { cursor: pointer; color: var(--muted); }
+.business-movements ul { margin: 0.25rem 0 0; padding-left: 1rem; display: grid; gap: 0.15rem; }
+.business-value-mode { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; align-items: center; border: 0; margin: 0; padding: 0; }
+.business-value-mode legend { padding: 0; margin-right: 0.4rem; float: left; }
+.business-value-mode input[type="radio"] { width: auto; margin: 0 0.25rem 0 0; vertical-align: middle; }
+.business-logo-btn { cursor: pointer; }
+.business-search { display: grid; gap: 0.25rem; margin: 0.5rem 0; }
+.business-money { max-height: 50vh; overflow-y: auto; }
+.business-pre { white-space: pre-line; overflow-wrap: anywhere; }
+.business-card .business-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.business-page .rental-card-head { align-items: center; }
+.business-page .rental-card-head h3 { margin: 0; }

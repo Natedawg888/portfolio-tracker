@@ -77,6 +77,13 @@ export function Privacy() {
           and bond; no contact details), and payees in your transactions. Please only enter what you are
           entitled to use, and tell them if the law requires it.
         </p>
+        <p>
+          On the Business page you can keep a client list for each business: name, contact person, email, phone, address
+          and notes. Those records are yours, and under the Privacy Act 2020 you are responsible for collecting and using
+          them fairly. We hold them only to show them to you and put them on the invoices you make. They are never shared
+          with members of your household. They are included when you download a copy of your data, and deleted when you
+          delete a client, the business, or your account.
+        </p>
         <h3>Technical information</h3>
         <ul>
           <li>

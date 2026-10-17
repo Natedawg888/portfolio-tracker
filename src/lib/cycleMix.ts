@@ -7,7 +7,7 @@
  *   Equities    stocks + KiwiSaver
  *   Property    full property value (before the mortgage)
  *   Cash        bank and wallet balances, plus term deposits held in Bonds (KAN-80)
- *   Commodities metals
+ *   Commodities metals, plus Commodities holdings (KAN-81, Plus: commoditiesExposure)
  *   Bonds       government and corporate bonds (KAN-80)
  * Crypto, GoMining, collectables, art, precious stones and forex have no cycle
  * notes; they are listed as not covered.
@@ -36,6 +36,9 @@ export type NetWorthTotals = {
   bondsTermDepositsNzd?: number | null;
   /** Derived here: bondsNzd − bondsTermDepositsNzd. */
   bondsOnlyNzd?: number | null;
+  /** Commodities (KAN-81), and whether the plan shows them as their own class (Plus). */
+  commoditiesNzd?: number | null;
+  commoditiesExposure?: boolean;
 };
 
 const LABELS: Record<CycleClassId, string> = {
@@ -47,7 +50,7 @@ const LABELS: Record<CycleClassId, string> = {
 };
 
 /** Each part: which net-worth figure, which Settings toggle, and where it goes. */
-const PARTS: Array<{ field: keyof NetWorthTotals; pref: string; to: CycleClassId | { notCovered: string } }> = [
+const PARTS: Array<{ field: Exclude<keyof NetWorthTotals, 'commoditiesExposure'>; pref: string; to: CycleClassId | { notCovered: string } }> = [
   { field: 'stocksNzd', pref: 'stock', to: 'equities' },
   { field: 'kiwiSaverNzd', pref: 'kiwisaver', to: 'equities' },
   { field: 'realEstateNzd', pref: 'real_estate', to: 'property' },
@@ -55,6 +58,7 @@ const PARTS: Array<{ field: keyof NetWorthTotals; pref: string; to: CycleClassId
   { field: 'metalsNzd', pref: 'metal', to: 'commodities' },
   { field: 'bondsOnlyNzd', pref: 'bonds', to: 'bonds' },
   { field: 'bondsTermDepositsNzd', pref: 'bonds', to: 'cash' },
+  { field: 'commoditiesNzd', pref: 'commodities', to: 'commodities' },
   { field: 'cryptoNzd', pref: 'crypto', to: { notCovered: 'Crypto' } },
   { field: 'gominingMinersNzd', pref: 'gomining', to: { notCovered: 'GoMining' } },
   { field: 'collectablesNzd', pref: 'collectable', to: { notCovered: 'Collectables' } },
@@ -69,7 +73,12 @@ function positive(v: number | null | undefined): number {
 
 /** The user's mix, or null when nothing enabled has a value. Rows are largest first; zero rows are left out. */
 export function cycleMix(nwIn: NetWorthTotals, enabled: (pref: string) => boolean): CycleMix | null {
-  const nw: NetWorthTotals = { ...nwIn, bondsOnlyNzd: (nwIn.bondsNzd ?? 0) - (nwIn.bondsTermDepositsNzd ?? 0) };
+  const nw: NetWorthTotals = {
+    ...nwIn,
+    bondsOnlyNzd: (nwIn.bondsNzd ?? 0) - (nwIn.bondsTermDepositsNzd ?? 0),
+    // Without Plus, Commodities holdings aren't part of the cycle mix.
+    commoditiesNzd: nwIn.commoditiesExposure ? nwIn.commoditiesNzd : null,
+  };
   const covered = new Map<CycleClassId, number>();
   const notCovered = new Map<string, number>();
   for (const part of PARTS) {

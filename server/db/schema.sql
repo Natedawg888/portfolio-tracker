@@ -804,6 +804,70 @@ CREATE TABLE IF NOT EXISTS invoice_sends (
 CREATE INDEX IF NOT EXISTS idx_invoice_sends_user_time ON invoice_sends(user_id, sent_at);
 CREATE INDEX IF NOT EXISTS idx_invoice_sends_invoice ON invoice_sends(invoice_id);
 
+-- Business page (KAN-84): one row per business the user runs. The invoice details
+-- (address, phone, bank account, prefix) that used to live in business_profiles are here,
+-- per business; business_profiles stays as the source for the default business.
+CREATE TABLE IF NOT EXISTS businesses (
+  id                 TEXT PRIMARY KEY,
+  user_id            TEXT NOT NULL,
+  name               TEXT NOT NULL,
+  type               TEXT NOT NULL DEFAULT 'sole_trader',  -- sole_trader | partnership | company | hobby
+  industry           TEXT NOT NULL DEFAULT '',
+  nzbn               TEXT NOT NULL DEFAULT '',
+  gst_registered     INTEGER NOT NULL DEFAULT 0,
+  gst_number         TEXT NOT NULL DEFAULT '',
+  email              TEXT NOT NULL DEFAULT '',
+  address            TEXT NOT NULL DEFAULT '',
+  phone              TEXT NOT NULL DEFAULT '',
+  bank_account       TEXT NOT NULL DEFAULT '',
+  invoice_prefix     TEXT NOT NULL DEFAULT 'INV-',
+  logo_path          TEXT,
+  clients_enabled    INTEGER NOT NULL DEFAULT 1,
+  count_in_net_worth INTEGER NOT NULL DEFAULT 1,
+  is_default         INTEGER NOT NULL DEFAULT 0,
+  created_at         TEXT NOT NULL,
+  updated_at         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_businesses_user ON businesses(user_id);
+
+-- Livestock, beehives, equipment, vehicles, stock / inventory and anything else a business
+-- holds. Values are what the user entered (value_nzd on valued_on), never estimated.
+CREATE TABLE IF NOT EXISTS business_assets (
+  id               TEXT PRIMARY KEY,
+  user_id          TEXT NOT NULL,
+  business_id      TEXT NOT NULL,
+  category         TEXT NOT NULL,           -- livestock | beehives | equipment | vehicle | stock | other
+  name             TEXT NOT NULL,
+  quantity         REAL NOT NULL DEFAULT 0,
+  unit             TEXT NOT NULL DEFAULT '',
+  cost_nzd         REAL,
+  value_mode       TEXT NOT NULL DEFAULT 'total', -- total | per_unit
+  value_nzd        REAL,
+  valued_on        TEXT,
+  animal_type      TEXT NOT NULL DEFAULT '',
+  tag              TEXT NOT NULL DEFAULT '',
+  location         TEXT NOT NULL DEFAULT '',
+  status           TEXT NOT NULL DEFAULT 'active', -- beehives: active | dead | sold
+  notes            TEXT NOT NULL DEFAULT '',
+  created_at       TEXT NOT NULL,
+  updated_at       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_business_assets_user ON business_assets(user_id, business_id);
+
+-- Purchases, sales, births, deaths and losses. Each one moves the asset's quantity.
+CREATE TABLE IF NOT EXISTS business_asset_movements (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL,
+  asset_id    TEXT NOT NULL,
+  date        TEXT NOT NULL,
+  kind        TEXT NOT NULL,                -- purchase | sale | birth | death | loss
+  quantity    REAL NOT NULL,
+  amount_nzd  REAL,
+  notes       TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_business_asset_movements_asset ON business_asset_movements(user_id, asset_id, date);
+
 -- Bills and subscriptions (KAN-26). Saved items (confirmed from detection or added by hand).
 -- next_due is an anchor; reads roll it forward to the first due date on or after today.
 -- merchant_key links a confirmed item to its transactions (src/lib/recurring.ts merchantKey).
@@ -1279,6 +1343,28 @@ CREATE TABLE IF NOT EXISTS bond_coupons (
   updated_at   TEXT NOT NULL,
   PRIMARY KEY (bond_id, due_date)
 );
+
+-- Commodities (KAN-81): physical goods other than precious metals (those stay in metal holdings).
+-- price_nzd is what the user set: per unit (price_basis 'unit', × quantity) or a total ('total'),
+-- with value_on the date of that price. Never a fetched or estimated price. cost_nzd blank = $0.
+-- preset: key from COMMODITY_PRESETS (src/lib/commodities.ts), or NULL for free text.
+CREATE TABLE IF NOT EXISTS commodities (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name         TEXT NOT NULL,
+  preset       TEXT,
+  category     TEXT NOT NULL,
+  quantity     REAL NOT NULL,
+  unit         TEXT NOT NULL,
+  cost_nzd     REAL,
+  price_nzd    REAL,
+  price_basis  TEXT NOT NULL DEFAULT 'unit',
+  value_on     TEXT,
+  notes        TEXT NOT NULL DEFAULT '',
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_commodities_user ON commodities(user_id);
 
 -- Read-only crypto wallets: public address only. Never store seed phrases / private keys.
 -- No balance column on purpose: balances come from chain providers at sync time

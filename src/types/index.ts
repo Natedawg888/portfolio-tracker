@@ -12,6 +12,7 @@ import type { Cadence, PossiblePayment, RecurringKind, RecurringStatus, Recurrin
 import type { WarrantyStatus } from '../lib/warranty';
 import type { RentalCategory, RentalEntryKind } from '../lib/rental';
 import type { RentFrequency } from '../lib/rentalRooms';
+import type { CommodityCategory, CommodityUnit, PriceBasis } from '../lib/commodities';
 
 export type CurrencyCode = 'NZD' | 'USD' | 'AUD' | 'EUR' | 'GBP';
 
@@ -937,11 +938,16 @@ export interface NetWorthSummary {
   vehiclesNzd?: number | null;
   vehicleLoansNzd?: number | null;
   vehiclesEquityNzd?: number | null;
+  /** Business assets counted in net worth (KAN-84). */
+  businessAssetsNzd?: number | null;
   /** DeFi positions counted in net worth (KAN-47). */
   defiNzd?: number | null;
   /** Bonds and term deposits (KAN-80), and the term-deposit part. */
   bondsNzd?: number | null;
   bondsTermDepositsNzd?: number | null;
+  /** Commodities (KAN-81): values the user set; and whether Plus shows them in the asset mix. */
+  commoditiesNzd?: number | null;
+  commoditiesExposure?: boolean;
   /** Collectables (cards) market NZD when quotes ok */
   collectablesNzd: number | null;
   /** Sharesies KiwiSaver (read-only) */
@@ -1257,12 +1263,178 @@ export interface BusinessProfile {
 
 export interface InvoiceClient {
   id: string;
+  /** The business this client belongs to (KAN-84). */
+  businessId: string | null;
   name: string;
+  contactPerson: string;
   email: string;
+  phone: string;
   address: string;
   reference: string;
+  notes: string;
+  status: 'active' | 'inactive';
   createdAt: string;
   updatedAt: string;
+}
+
+/** What a client form sends. */
+export interface InvoiceClientWriteBody {
+  businessId?: string | null;
+  name: string;
+  contactPerson?: string;
+  email: string;
+  phone?: string;
+  address: string;
+  reference: string;
+  notes?: string;
+  status?: 'active' | 'inactive';
+}
+
+// ---------------------------------------------------------------- Business (KAN-84)
+
+export type BusinessTypeValue = 'sole_trader' | 'partnership' | 'company' | 'hobby';
+export type BusinessAssetCategory = 'livestock' | 'beehives' | 'equipment' | 'vehicle' | 'stock' | 'other';
+export type BusinessMovementKind = 'purchase' | 'birth' | 'sale' | 'death' | 'loss';
+
+export interface Business {
+  id: string;
+  name: string;
+  type: BusinessTypeValue;
+  industry: string;
+  nzbn: string;
+  gstRegistered: boolean;
+  gstNumber: string;
+  /** Printed on invoices and used as their Reply-To. */
+  email: string;
+  address: string;
+  phone: string;
+  bankAccount: string;
+  invoicePrefix: string;
+  logoUrl: string | null;
+  clientsEnabled: boolean;
+  /** Its assets count in net worth, History and Projections. */
+  countInNetWorth: boolean;
+  /** Existing invoices and clients were attached to this one; it is used when none is picked. */
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type BusinessWriteBody = Omit<Business, 'id' | 'logoUrl' | 'isDefault' | 'createdAt' | 'updatedAt'>;
+
+export interface BusinessTotals {
+  incomeNzd: number;
+  expensesNzd: number;
+  netNzd: number;
+  /** User-entered asset values; null when no asset has a value yet. */
+  assetsNzd: number | null;
+  /** Educational GST-collected estimate for GST-registered businesses (3/23 of income); null otherwise. */
+  gstCollectedEstimateNzd: number | null;
+  outstandingNzd: number;
+}
+
+export interface BusinessCard extends Business {
+  totals: BusinessTotals;
+  assetCount: number;
+  clientCount: number;
+  invoiceCount: number;
+}
+
+export interface BusinessListResponse {
+  today: string;
+  /** Tax year named by the year it ends in (2027 = 1 Apr 2026 – 31 Mar 2027). */
+  taxYear: number;
+  taxYears: number[];
+  businesses: BusinessCard[];
+}
+
+export interface BusinessAssetMovement {
+  id: string;
+  assetId: string;
+  date: string;
+  kind: BusinessMovementKind;
+  quantity: number;
+  amountNzd: number | null;
+  notes: string;
+  createdAt: string;
+}
+
+export interface BusinessAsset {
+  id: string;
+  businessId: string;
+  category: BusinessAssetCategory;
+  name: string;
+  quantity: number;
+  unit: string;
+  costNzd: number | null;
+  valueMode: 'total' | 'per_unit';
+  /** The total, or the value per unit when valueMode is per_unit. */
+  valueNzd: number | null;
+  valuedOn: string | null;
+  /** valueNzd applied to the quantity; null when no value is entered. */
+  currentValueNzd: number | null;
+  animalType: string;
+  tag: string;
+  location: string;
+  status: 'active' | 'dead' | 'sold';
+  notes: string;
+  movements: BusinessAssetMovement[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BusinessAssetWriteBody {
+  category: BusinessAssetCategory;
+  name: string;
+  quantity: number;
+  unit?: string;
+  costNzd?: number | null;
+  valueMode?: 'total' | 'per_unit';
+  valueNzd?: number | null;
+  valuedOn?: string | null;
+  animalType?: string;
+  tag?: string;
+  location?: string;
+  status?: 'active' | 'dead' | 'sold';
+  notes?: string;
+}
+
+/** A transaction or income row tagged to a business (or one that could be). */
+export interface BusinessMoneyItem {
+  kind: 'transaction' | 'income';
+  id: string;
+  date: string;
+  description: string;
+  /** Money in is positive, money out negative. */
+  amountNzd: number;
+  businessId: string | null;
+  /** Counted elsewhere already (an invoice payment, or a deposit an income row is linked to), so not added again. */
+  countedVia: 'invoice' | 'income' | null;
+}
+
+export interface BusinessDetail {
+  today: string;
+  taxYear: number;
+  taxYears: number[];
+  business: Business;
+  totals: BusinessTotals;
+  assets: BusinessAsset[];
+  clients: (InvoiceClient & { billedNzd: number; outstandingNzd: number })[];
+  invoices: InvoiceSummary[];
+  /** Tagged items in the tax year, newest first. */
+  money: BusinessMoneyItem[];
+  /** Commodities linked as produce held (valued and counted on Portfolio → Commodities). */
+  produce: { id: string; name: string; quantity: number; unit: string; valueNzd: number | null }[];
+}
+
+export interface BusinessClientView {
+  client: InvoiceClient;
+  businessName: string;
+  invoices: InvoiceSummary[];
+  /** Sent invoices (void ones left out). */
+  billedNzd: number;
+  outstandingNzd: number;
+  lastPayment: { date: string; amountNzd: number; invoiceNumber: string } | null;
 }
 
 export interface InvoiceLine {
@@ -1302,6 +1474,8 @@ export interface InvoiceSendLog {
 /** One row of the invoice list. */
 export interface InvoiceSummary {
   id: string;
+  businessId: string | null;
+  businessName: string;
   number: string;
   status: InvoiceStatus;
   storedStatus: InvoiceStoredStatus;
@@ -2031,4 +2205,35 @@ export interface BondsView {
   recent: BondPayment[] | null;
   alerts: { bondId: string; name: string; maturityDate: string; level: 'matured' | '30' | '90'; days: number }[] | null;
   termDepositAccounts: { id: string; name: string; balanceNzd: number }[];
+}
+
+/** Commodities (KAN-81). All amounts NZD. priceNzd is per unit or a total (priceBasis). */
+export interface CommodityWriteBody {
+  name: string;
+  preset: string | null;
+  category: CommodityCategory;
+  quantity: number;
+  unit: CommodityUnit;
+  costNzd: number | null;
+  priceNzd: number | null;
+  priceBasis: PriceBasis;
+  valueOn: string | null;
+  notes: string;
+}
+
+export interface Commodity extends CommodityWriteBody {
+  id: string;
+  updatedAt: string;
+  valueNzd: number | null;
+  unitPriceNzd: number | null;
+  returnNzd: number | null;
+  returnPct: number | null;
+  ageDays: number | null;
+  stale: boolean;
+}
+
+export interface CommoditiesView {
+  plus: boolean;
+  commodities: Commodity[];
+  totals: { valueNzd: number; costNzd: number; returnNzd: number; unvalued: number; stale: number };
 }

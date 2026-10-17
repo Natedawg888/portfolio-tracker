@@ -32,6 +32,9 @@ const { default: householdRouter } = await import('../routes/household.ts');
 const { default: payslipsRouter } = await import('../routes/payslips.ts');
 const { default: bondsRouter } = await import('../routes/bonds.ts');
 const { default: rentalsRouter } = await import('../routes/rentals.ts');
+const { default: commoditiesRouter } = await import('../routes/commodities.ts');
+const { default: businessRouter } = await import('../routes/business.ts');
+const { default: invoicesRouter } = await import('../routes/invoices.ts');
 const { setPlan } = await import('../lib/entitlements.ts');
 const { uploadsGate, UPLOADS_DIR } = await import('../lib/uploads.ts');
 const { applyBtcLink, reverseBtcDelta } = await import('../lib/txnBtcLink.ts');
@@ -53,6 +56,9 @@ app.use('/api/household', householdRouter);
 app.use('/api/payslips', payslipsRouter);
 app.use('/api/bonds', bondsRouter);
 app.use('/api/rentals', rentalsRouter);
+app.use('/api/commodities', commoditiesRouter);
+app.use('/api/business', businessRouter);
+app.use('/api/invoices', invoicesRouter);
 
 const server: Server = await new Promise((resolve) => {
   const s = app.listen(0, '127.0.0.1', () => resolve(s));
@@ -421,6 +427,36 @@ try {
   assert((await req('DELETE', `/api/bonds/${bondId}`, { cookie: b.cookie })).status === 404, 'B can’t delete it');
   assert((await req('POST', `/api/bonds/${bondId}/repaid`, { cookie: b.cookie, body: {} })).status === 404, 'B can’t close it');
 
+  // Commodities (KAN-81): another user can't list, change or delete A's commodity.
+  const cmdBody = { name: 'Alpha Secret Wool', preset: null, category: 'agriculture', quantity: 10, unit: 'bale', costNzd: null, priceNzd: null, priceBasis: 'unit', valueOn: null, notes: '' };
+  const cmd = await req('POST', '/api/commodities', { cookie: a.cookie, body: cmdBody });
+  assert(cmd.status === 201, 'A adds a commodity');
+  const cmdId = String((cmd.json as { commodities: { id: string }[] }).commodities[0].id);
+  assert(!JSON.stringify((await req('GET', '/api/commodities', { cookie: b.cookie })).json).includes('Alpha Secret Wool'), 'B can’t list A’s commodities');
+  assert((await req('PUT', `/api/commodities/${cmdId}`, { cookie: b.cookie, body: { ...cmdBody, name: 'x' } })).status === 404, 'B can’t edit it');
+  assert((await req('DELETE', `/api/commodities/${cmdId}`, { cookie: b.cookie })).status === 404, 'B can’t delete it');
+
+  // Business (KAN-84): another user can't read or change A's business, its assets or clients.
+  const biz = await req('POST', '/api/business', { cookie: a.cookie, body: { name: 'Alpha Secret Apiary', type: 'sole_trader' } });
+  assert(biz.status === 201, 'A adds a business');
+  const bizId = String((biz.json as { id: string }).id);
+  const hives = await req('POST', `/api/business/${bizId}/assets`, { cookie: a.cookie, body: { category: 'beehives', name: 'Hives', quantity: 40 } });
+  assert(hives.status === 201, 'A adds hives');
+  const hiveId = String((hives.json as { id: string }).id);
+  const client = await req('POST', '/api/invoices/clients', { cookie: a.cookie, body: { businessId: bizId, name: 'Alpha Secret Client' } });
+  assert(client.status === 201, 'A adds a client');
+  const clientId = String((client.json as { id: string }).id);
+  assert(!JSON.stringify((await req('GET', '/api/business', { cookie: b.cookie })).json).includes('Alpha Secret'), 'B can’t list A’s businesses');
+  assert(!JSON.stringify((await req('GET', '/api/invoices/clients', { cookie: b.cookie })).json).includes('Alpha Secret Client'), 'B can’t list A’s clients');
+  assert((await req('GET', `/api/business/${bizId}`, { cookie: b.cookie })).status === 404, 'B can’t open it');
+  assert((await req('PUT', `/api/business/${bizId}`, { cookie: b.cookie, body: { name: 'x' } })).status === 404, 'B can’t edit it');
+  assert((await req('DELETE', `/api/business/${bizId}`, { cookie: b.cookie })).status === 404, 'B can’t delete it');
+  assert((await req('POST', `/api/business/${bizId}/assets`, { cookie: b.cookie, body: { category: 'other', name: 'x', quantity: 1 } })).status === 404, 'B can’t add assets');
+  assert((await req('POST', `/api/business/assets/${hiveId}/movements`, { cookie: b.cookie, body: { kind: 'sale', quantity: 1 } })).status === 404, 'B can’t move A’s stock');
+  assert((await req('DELETE', `/api/business/assets/${hiveId}`, { cookie: b.cookie })).status === 404, 'B can’t delete A’s assets');
+  assert((await req('GET', `/api/business/clients/${clientId}`, { cookie: b.cookie })).status === 404, 'B can’t open A’s client');
+  assert((await req('POST', '/api/invoices/clients', { cookie: b.cookie, body: { businessId: bizId, name: 'x' } })).status === 404, 'B can’t add to A’s business');
+
   // Rental rooms (KAN-83): another user can't see, change or delete A's rooms or tenancies,
   // or record rent against A's room.
   const home = await req('POST', '/api/rentals/properties', { cookie: a.cookie, body: { name: 'Alpha Secret Home', letType: 'rooms', ownHome: true } });
@@ -450,7 +486,7 @@ try {
     'B can’t record rent against A’s room',
   );
 
-  console.log('OK: cross-user BTC, income, uploads, settings, households, payslips, bonds, and rental rooms');
+  console.log('OK: cross-user BTC, income, uploads, settings, households, payslips, bonds, commodities, businesses, and rental rooms');
 } finally {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 }

@@ -196,6 +196,77 @@ function tableColumns(database: Database, table: string): Set<string> {
   return cols;
 }
 
+/**
+ * Business page (KAN-84). Adds business_id to invoices, clients, transactions and income, and the
+ * client fields the Clients page uses. Anyone with invoice details, invoices or clients gets a
+ * default business made from their invoice details (Settings → Business), and their existing
+ * invoices and clients are attached to it, so nothing is lost or left without a business.
+ */
+export function migrateBusinesses(database: Database) {
+  // Commodities (KAN-81) can be produce a business holds, like honey or wool.
+  for (const table of ['invoices', 'invoice_clients', 'transactions', 'income_records', 'commodities']) {
+    const cols = tableColumns(database, table);
+    if (cols.size > 0 && !cols.has('business_id')) database.run(`ALTER TABLE ${table} ADD COLUMN business_id TEXT`);
+  }
+  const clientCols = tableColumns(database, 'invoice_clients');
+  for (const [col, type] of [
+    ['contact_person', "TEXT NOT NULL DEFAULT ''"],
+    ['phone', "TEXT NOT NULL DEFAULT ''"],
+    ['notes', "TEXT NOT NULL DEFAULT ''"],
+    ['status', "TEXT NOT NULL DEFAULT 'active'"],
+  ] as const) {
+    if (clientCols.size > 0 && !clientCols.has(col)) database.run(`ALTER TABLE invoice_clients ADD COLUMN ${col} ${type}`);
+  }
+  database.run(`CREATE INDEX IF NOT EXISTS idx_transactions_user_business ON transactions(user_id, business_id) WHERE business_id IS NOT NULL`);
+  database.run(`CREATE INDEX IF NOT EXISTS idx_income_records_user_business ON income_records(user_id, business_id) WHERE business_id IS NOT NULL`);
+
+  const read = (sql: string, params: unknown[] = []) => {
+    const stmt = database.prepare(sql);
+    stmt.bind(params as never[]);
+    const rows: Record<string, unknown>[] = [];
+    while (stmt.step()) rows.push(stmt.getAsObject());
+    stmt.free();
+    return rows;
+  };
+  const owners = read(
+    `SELECT user_id FROM business_profiles WHERE user_id IS NOT NULL
+     UNION SELECT user_id FROM invoices WHERE user_id IS NOT NULL
+     UNION SELECT user_id FROM invoice_clients WHERE user_id IS NOT NULL`,
+  ).map((r) => String(r.user_id)).filter(Boolean);
+  for (const userId of owners) {
+    let def = read(`SELECT id FROM businesses WHERE user_id = ? ORDER BY is_default DESC, created_at LIMIT 1`, [userId])[0]?.id as string | undefined;
+    if (!def) {
+      const p = read(`SELECT * FROM business_profiles WHERE user_id = ?`, [userId])[0];
+      const u = read(`SELECT * FROM users WHERE id = ?`, [userId])[0];
+      const accountName =
+        String(u?.display_name ?? '').trim() || [u?.first_name, u?.last_name].filter((x) => x && String(x).trim()).join(' ');
+      const now = new Date().toISOString();
+      def = newId('biz');
+      database.run(
+        `INSERT INTO businesses (id, user_id, name, type, nzbn, gst_registered, gst_number, email, address, phone, bank_account,
+           invoice_prefix, is_default, created_at, updated_at)
+         VALUES (?,?,?, 'sole_trader', ?,?,?,?,?,?,?,?, 1, ?, ?)`,
+        [
+          def, userId, String(p?.business_name ?? '').trim() || accountName,
+          String(p?.nzbn ?? ''), Number(p?.gst_registered ?? 0) === 1 ? 1 : 0, String(p?.gst_number ?? ''),
+          String(p?.email ?? u?.email ?? ''), String(p?.address ?? ''), String(p?.phone ?? ''), String(p?.bank_account ?? ''),
+          String(p?.invoice_prefix ?? '') || 'INV-', now, now,
+        ],
+      );
+    }
+    database.run(`UPDATE invoices SET business_id = ? WHERE user_id = ? AND business_id IS NULL`, [def, userId]);
+    database.run(`UPDATE invoice_clients SET business_id = ? WHERE user_id = ? AND business_id IS NULL`, [def, userId]);
+    // Invoice payments recorded in Income belong to the invoice's business.
+    database.run(
+      `UPDATE income_records SET business_id = (
+         SELECT i.business_id FROM invoice_payments p JOIN invoices i ON i.id = p.invoice_id AND i.user_id = p.user_id
+         WHERE p.id = income_records.invoice_payment_id)
+       WHERE user_id = ? AND invoice_payment_id IS NOT NULL AND business_id IS NULL`,
+      [userId],
+    );
+  }
+}
+
 /** Runtime migration for existing sql.js DBs (CREATE TABLE IF NOT EXISTS won't add columns). */
 function migrateSchema(database: Database) {
   const cols = tableColumns(database, 'holdings');
@@ -569,6 +640,9 @@ function migrateSchema(database: Database) {
   if (incomeCols.size > 0 && !incomeCols.has('bond_coupon_ref')) {
     database.run('ALTER TABLE income_records ADD COLUMN bond_coupon_ref TEXT');
   }
+
+  // Business page (KAN-84): invoices, clients, transactions and income belong to a business.
+  migrateBusinesses(database);
 
   // Savings goal → savings account link (KAN-20).
   const goalCols = tableColumns(database, 'savings_goals');

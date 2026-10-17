@@ -194,10 +194,10 @@ try {
   assert(sent.json.status === 'overdue', 'due 15 Sep 2026 has passed → overdue');
   assert((await call('PUT', `/api/invoices/${id1}`, A, draft)).status === 409, 'sent invoice is read-only');
   assert((await call('DELETE', `/api/invoices/${id1}`, A)).status === 409, 'sent invoice cannot be deleted');
-  await run(db, `UPDATE business_profiles SET business_name = 'Renamed Ltd' WHERE user_id = ?`, [userA]);
+  await run(db, `UPDATE businesses SET name = 'Renamed Ltd' WHERE user_id = ?`, [userA]);
   const frozen = await call('GET', `/api/invoices/${id1}`, A);
   assert(frozen.json.business.businessName === 'Hana Contracting', 'sent invoice keeps business details from when it was sent');
-  await run(db, `UPDATE business_profiles SET business_name = 'Hana Contracting' WHERE user_id = ?`, [userA]);
+  await run(db, `UPDATE businesses SET name = 'Hana Contracting' WHERE user_id = ?`, [userA]);
 
   // Partial payment → income; bank deposit dedupe; full payment → paid.
   const tooMuch = await call('POST', `/api/invoices/${id1}/payments`, A, { amountNzd: 901 });
