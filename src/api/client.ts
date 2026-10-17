@@ -160,7 +160,10 @@ export type WarrantyWriteBody = {
   notes: string;
 };
 
-export type RentalPropertyWriteBody = { name: string; address: string; notes: string; letType: RentalProperty['letType']; ownHome: boolean };
+export type RentalPropertyWriteBody = Pick<
+  RentalProperty,
+  'name' | 'address' | 'notes' | 'letType' | 'ownHome' | 'purchaseDate' | 'purchasePrice' | 'saleAgreementDate' | 'salePrice' | 'saleCosts'
+>;
 
 export type RentalEntryWriteBody = {
   propertyId: string;
@@ -907,6 +910,8 @@ export const api = {
   },
   rentals: {
     list: () => req<RentalListResponse>('/rentals'),
+    setLossBasis: (lossBasis: RentalListResponse['lossBasis']) =>
+      req<{ lossBasis: RentalListResponse['lossBasis'] }>('/rentals/settings', { method: 'PUT', body: JSON.stringify({ lossBasis }) }),
     createProperty: (body: RentalPropertyWriteBody) =>
       req<RentalProperty>('/rentals/properties', { method: 'POST', body: JSON.stringify(body) }),
     updateProperty: (id: string, body: Partial<RentalPropertyWriteBody>) =>

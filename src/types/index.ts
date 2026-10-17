@@ -1729,6 +1729,14 @@ export interface RentalProperty {
   letType: RentalLetType;
   /** The user lives here and lets rooms (boarders / flatmates). Only with letType 'rooms'. */
   ownHome: boolean;
+  /** Bright-line (KAN-93): settlement date, usually when the title was registered to you. */
+  purchaseDate: string | null;
+  purchasePrice: number | null;
+  /** Date of the binding sale agreement; set once the property is sold. */
+  saleAgreementDate: string | null;
+  salePrice: number | null;
+  /** Costs of buying, improving and selling. */
+  saleCosts: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1772,6 +1780,8 @@ export interface RentalListResponse {
   rooms: RentalRoom[];
   /** Newest start first. */
   tenancies: RentalTenancy[];
+  /** How ring-fenced losses are pooled (KAN-93): across all properties or per property. */
+  lossBasis: 'portfolio' | 'property';
 }
 
 /** A room let in a property (KAN-83). */

@@ -28,6 +28,13 @@ import {
   taxYearRange,
   type RentalEntryKind,
 } from '../lib/rental';
+import {
+  RENTAL_TAX_SOURCES,
+  brightLineCheck,
+  rentalTaxView,
+  type BrightLineResult,
+  type RentalLossBasis,
+} from '../lib/rentalTax';
 import { RadioChips } from '../components/warranties/RadioChips';
 import { errText } from '../components/warranties/receiptFile';
 import { Dialog, FormActions } from '../components/rentals/RentalDialog';
@@ -48,6 +55,36 @@ const LET_OPTIONS = [
   { value: 'rooms', label: 'Room by room' },
 ];
 
+const BASIS_OPTIONS = [
+  { value: 'portfolio', label: 'All properties together' },
+  { value: 'property', label: 'Each property' },
+];
+
+type SaleField = 'purchaseDate' | 'purchasePrice' | 'saleAgreementDate' | 'salePrice' | 'saleCosts';
+type SaleText = Record<SaleField, string>;
+const SALE_MONEY_FIELDS = ['purchasePrice', 'salePrice', 'saleCosts'] as const;
+
+function saleText(p: Pick<RentalPropertyWriteBody, SaleField>): SaleText {
+  const s = (v: string | number | null) => (v == null ? '' : String(v));
+  return {
+    purchaseDate: s(p.purchaseDate),
+    purchasePrice: s(p.purchasePrice),
+    saleAgreementDate: s(p.saleAgreementDate),
+    salePrice: s(p.salePrice),
+    saleCosts: s(p.saleCosts),
+  };
+}
+
+function saleBlocker(t: SaleText): string | null {
+  for (const k of SALE_MONEY_FIELDS) {
+    if (t[k].trim() !== '' && !(Number(t[k]) >= 0)) return 'Prices and costs must be 0 or more';
+  }
+  if (t.purchaseDate && t.saleAgreementDate && t.saleAgreementDate < t.purchaseDate) return 'The sale agreement can’t be before settlement';
+  return null;
+}
+
+const EMPTY_SALE = { purchaseDate: null, purchasePrice: null, saleAgreementDate: null, salePrice: null, saleCosts: null } as const;
+
 function PropertyForm({ title, initial, onSave, onClose }: {
   title: string;
   initial: RentalPropertyWriteBody;
@@ -55,15 +92,27 @@ function PropertyForm({ title, initial, onSave, onClose }: {
   onClose: () => void;
 }) {
   const [d, setD] = useState(initial);
+  const [sale, setSale] = useState(() => saleText(initial));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const letLabel = useId();
+  const blocker = d.name.trim() ? saleBlocker(sale) : 'Add a name';
+  const setSaleField = (k: SaleField, v: string) => setSale((prev) => ({ ...prev, [k]: v }));
+  const money = (v: string) => (v.trim() === '' ? null : Number(v));
 
   async function save() {
     setBusy(true);
     setError(null);
     try {
-      await onSave({ ...d, ownHome: d.letType === 'rooms' && d.ownHome });
+      await onSave({
+        ...d,
+        ownHome: d.letType === 'rooms' && d.ownHome,
+        purchaseDate: sale.purchaseDate || null,
+        purchasePrice: money(sale.purchasePrice),
+        saleAgreementDate: sale.saleAgreementDate || null,
+        salePrice: money(sale.salePrice),
+        saleCosts: money(sale.saleCosts),
+      });
     } catch (e) {
       setError(errText(e, 'Could not save.'));
       setBusy(false);
@@ -99,13 +148,43 @@ function PropertyForm({ title, initial, onSave, onClose }: {
           Notes (optional)
           <input value={d.notes} maxLength={500} placeholder="e.g. tenant, lease end, property manager" onChange={(e) => setD({ ...d, notes: e.target.value })} />
         </label>
+        <p className="span-2 muted small">
+          Bought and sold (optional). Used for the{' '}
+          <a href={RENTAL_TAX_SOURCES.brightLine.url} target="_blank" rel="noreferrer">
+            IRD bright-line test
+          </a>
+          .
+        </p>
+        <label>
+          Settlement date
+          <input type="date" value={sale.purchaseDate} onChange={(e) => setSaleField('purchaseDate', e.target.value)} />
+          <span className="muted small">Usually when the title was registered to you.</span>
+        </label>
+        <label>
+          Purchase price
+          <input type="number" min={0} step="0.01" inputMode="decimal" value={sale.purchasePrice} onChange={(e) => setSaleField('purchasePrice', e.target.value)} />
+        </label>
+        <label>
+          Sale agreement date
+          <input type="date" value={sale.saleAgreementDate} onChange={(e) => setSaleField('saleAgreementDate', e.target.value)} />
+          <span className="muted small">The day the binding sale agreement was signed.</span>
+        </label>
+        <label>
+          Sale price
+          <input type="number" min={0} step="0.01" inputMode="decimal" value={sale.salePrice} onChange={(e) => setSaleField('salePrice', e.target.value)} />
+        </label>
+        <label className="span-2">
+          Costs
+          <input type="number" min={0} step="0.01" inputMode="decimal" value={sale.saleCosts} onChange={(e) => setSaleField('saleCosts', e.target.value)} />
+          <span className="muted small">Legal fees, agent’s commission and improvements, for buying and selling.</span>
+        </label>
       </div>
       {error ? <p className="auth-error" role="alert">{error}</p> : null}
       <FormActions
         busy={busy}
-        disabled={!d.name.trim()}
+        disabled={blocker != null}
         saveLabel="Save property"
-        hint={d.name.trim() ? null : 'Add a name'}
+        hint={blocker}
         onSave={() => void save()}
         onClose={onClose}
       />
@@ -267,6 +346,108 @@ function Totals({ income, expenses, net }: { income: number; expenses: number; n
   );
 }
 
+const ESTIMATE_NOTE = 'Estimate, not advice.';
+
+/** What the bright-line test says about a sold property (KAN-93). Nothing until a sale agreement date is set. */
+function BrightLine({ result }: { result: BrightLineResult }) {
+  if (result.status === 'not_sold') return null;
+  let text: string;
+  switch (result.status) {
+    case 'main_home':
+      text = 'Sold. Your main home is excluded from the bright-line test.';
+      break;
+    case 'no_purchase_date':
+      text = 'Sold. Add the settlement date to check the bright-line test.';
+      break;
+    case 'earlier_rules':
+      text = 'Sold before 1 July 2024, when the 2, 5 or 10-year bright-line periods applied. Not worked out here; check with IRD.';
+      break;
+    case 'outside':
+      text = `Outside the 2-year bright-line (it ended ${longDate(result.periodEnds)}). The sale can still be taxable if you bought it to sell, or deal in property.`;
+      break;
+    case 'inside':
+      text =
+        `Inside the 2-year bright-line (it ends ${longDate(result.periodEnds)}), so the gain is taxable. ` +
+        (result.gain == null
+          ? 'Add the purchase and sale prices to estimate it.'
+          : result.gain >= 0
+            ? `Taxable gain about ${formatNzd(result.gain)} (sale price − purchase price − costs).`
+            : `A loss of about ${formatNzd(-result.gain)}, which can only be used against other land-sale income.`) +
+        ` ${ESTIMATE_NOTE}`;
+      break;
+  }
+  return (
+    <p className={`small rental-bright-line${result.status === 'inside' ? ' rental-bright-line--inside' : ''}`}>
+      {text}{' '}
+      <a href={RENTAL_TAX_SOURCES.brightLine.url} target="_blank" rel="noreferrer">
+        IRD bright-line test
+      </a>
+    </p>
+  );
+}
+
+/** Taxable rental income for the year after the interest rule and loss ring-fencing (KAN-93). */
+function TaxSummary({ entries, properties, year, basis, busy, onBasis }: {
+  entries: RentalEntry[];
+  properties: RentalProperty[];
+  year: number;
+  basis: RentalLossBasis;
+  busy: boolean;
+  onBasis: (b: RentalLossBasis) => void;
+}) {
+  const basisLabel = useId();
+  const view = rentalTaxView(entries, properties, year, basis);
+  const r = view.rental;
+  const hasHome = properties.some((p) => p.ownHome);
+  return (
+    <div className="rental-tax">
+      <dl className="rental-totals">
+        <div>
+          <dt>Net after tax rules</dt>
+          <dd className={r.net < 0 ? 'rental-net--loss' : undefined}>{formatNzd(r.net)}</dd>
+        </div>
+        <div>
+          <dt>Loss brought forward used</dt>
+          <dd>{formatNzd(r.lossUsed)}</dd>
+        </div>
+        <div>
+          <dt>Taxable rental income</dt>
+          <dd>{formatNzd(r.taxable)}</dd>
+        </div>
+      </dl>
+      {r.carriedForward > 0 ? (
+        <p className="small">{formatNzd(r.carriedForward)} of rental loss carries forward to later rental profit. It can’t reduce your salary, wages or other income.</p>
+      ) : null}
+      {r.interest > 0 && view.interestShare < 1 ? (
+        <p className="small">
+          Only {Math.round(view.interestShare * 100)}% of mortgage interest is deductible this year: {formatNzd(r.deductibleInterest)} of {formatNzd(r.interest)}.
+        </p>
+      ) : null}
+      {!view.interestModelled ? (
+        <p className="small muted">Interest limits before 2024/25 aren’t worked out here, so interest is counted in full.</p>
+      ) : null}
+      <div className="warranty-field">
+        <span id={basisLabel} className="warranty-field-label">
+          Losses worked out for
+        </span>
+        <RadioChips labelId={basisLabel} options={BASIS_OPTIONS} value={basis} onChange={(v) => !busy && onBasis(v as RentalLossBasis)} />
+      </div>
+      <p className="small muted">
+        {hasHome ? 'Your home with rooms let isn’t included. ' : ''}
+        {ESTIMATE_NOTE} IRD:{' '}
+        <a href={RENTAL_TAX_SOURCES.ringFencing.url} target="_blank" rel="noreferrer">
+          ring-fencing and the portfolio or per-property basis
+        </a>
+        ;{' '}
+        <a href={RENTAL_TAX_SOURCES.interest.url} target="_blank" rel="noreferrer">
+          property interest rules
+        </a>
+        .
+      </p>
+    </div>
+  );
+}
+
 function moneyNote(e: RentalEntry, moneyViewsFrom: string): string {
   if (e.bankMatch) return `In Budget · matched to ${e.bankMatch.description || 'bank payment'} on ${longDate(e.bankMatch.date)}`;
   if (e.inMoneyViews) return e.kind === 'income' ? 'In Income' : 'In Budget';
@@ -321,6 +502,7 @@ function PropertyCard({ property, entries, rooms, tenancies, year, today, roomAc
         </div>
       </div>
       <Totals {...rentalTotals(entries, year, property.id)} />
+      <BrightLine result={brightLineCheck(property)} />
       {property.letType === 'rooms' ? (
         <RoomsPanel
           property={property}
@@ -589,6 +771,14 @@ export function Rentals() {
               All properties · 1 Apr {shownYear - 1} – 31 Mar {shownYear}
             </p>
             <Totals {...rentalTotals(entries, shownYear)} />
+            <TaxSummary
+              entries={entries}
+              properties={properties}
+              year={shownYear}
+              basis={data.lossBasis ?? 'portfolio'}
+              busy={busy}
+              onBasis={(b) => void act(() => api.rentals.setLossBasis(b), b === 'portfolio' ? 'Losses pooled across all properties.' : 'Losses kept per property.')}
+            />
           </section>
           <section className="warranty-card-list" aria-label="Properties">
             {properties.map((p) => (
@@ -624,8 +814,9 @@ export function Rentals() {
             ))}
           </section>
           <p className="warranties-cga">
-            Totals run over the tax year, 1 April to 31 March. What you can deduct (mortgage interest especially) depends on
-            IRD’s current rules, so check before filing your IR3R. General information, not tax advice.
+            Totals run over the tax year, 1 April to 31 March. Taxable rental income follows IRD’s interest rules (80% of
+            interest in 2024/25, all of it from 1 April 2025) and keeps losses ring-fenced to rental income. Check before
+            filing your IR3R. General information, not tax advice.
           </p>
         </>
       ) : null}
@@ -633,7 +824,7 @@ export function Rentals() {
       {dialog?.mode === 'add-property' ? (
         <PropertyForm
           title="Add property"
-          initial={{ name: '', address: '', notes: '', letType: 'whole', ownHome: false }}
+          initial={{ name: '', address: '', notes: '', letType: 'whole', ownHome: false, ...EMPTY_SALE }}
           onClose={() => setDialog(null)}
           onSave={async (body) => {
             await api.rentals.createProperty(body);
@@ -650,6 +841,11 @@ export function Rentals() {
             notes: dialog.item.notes,
             letType: dialog.item.letType,
             ownHome: dialog.item.ownHome,
+            purchaseDate: dialog.item.purchaseDate,
+            purchasePrice: dialog.item.purchasePrice,
+            saleAgreementDate: dialog.item.saleAgreementDate,
+            salePrice: dialog.item.salePrice,
+            saleCosts: dialog.item.saleCosts,
           }}
           onClose={() => setDialog(null)}
           onSave={async (body) => {
