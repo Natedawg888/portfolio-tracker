@@ -372,7 +372,7 @@ export const WFF_2026: WffRates = {
   iwtcAnnual: 7_670,
   iwtcPerExtraChildAnnual: 780,
   iwtcNote:
-    'The in-work tax credit is temporarily $147 a week from 1 April 2026. It goes back to $97 a week ($5,070 a year) after 31 March 2027, or sooner if 91 petrol stays under $3 a litre for 4 weeks.',
+    'The in-work tax credit is temporarily $147 a week from 1 April 2026. IRD says it may reduce back to $97 a week if the cost of petrol drops below $3 a litre for four weeks, and it returns to $97 a week ($5,070 a year) after 31 March 2027.',
   mftcGuaranteedAfterTax: 36_604,
   mftcHoursSole: 20,
   mftcHoursCouple: 30,
