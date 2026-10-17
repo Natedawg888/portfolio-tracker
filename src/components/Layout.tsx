@@ -28,6 +28,8 @@ const LEGAL_ONLY_FOOTER_PATHS = new Set(['/shopping']);
 
 function legalOnlyFooter(pathname: string, search: string): boolean {
   if (LEGAL_ONLY_FOOTER_PATHS.has(pathname)) return true;
+  // Business overview and a single business: their own footer line covers what the figures are.
+  if (pathname === '/business' || /^\/business\/(?!invoices(\/|$)|clients(\/|$))[^/]+$/.test(pathname)) return true;
   // Settings → Business is about invoices, and Categories & assets about what is shown;
   // the metals / sync note belongs on neither.
   const tab = new URLSearchParams(search).get('tab');

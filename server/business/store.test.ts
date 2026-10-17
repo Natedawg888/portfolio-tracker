@@ -213,6 +213,15 @@ try {
   const deposit = detail.json.money.find((m: Json) => m.id === 'txn_a_deposit');
   assert(deposit?.countedVia === 'invoice', 'the deposit is shown as already counted through the invoice');
   assert(detail.json.clients.length === 2 && detail.json.invoices.length === 1, 'clients and invoices on the business');
+
+  // Overview cards (Business pages redesign): what was recorded this tax year, counts only; totals unchanged.
+  const yearCards = (await call('GET', '/api/business', A)).json.businesses as Json[];
+  const hive = yearCards.find((c) => c.id === bizId)!;
+  eq(hive.activity.invoices, 1, 'one invoice issued this tax year');
+  eq(hive.activity.tagged, detail.json.money.length, 'tagged count matches the money list');
+  eq(hive.totals.incomeNzd, 1210, 'card totals unchanged');
+  const mowing = yearCards.find((c) => c.id === second.json.id)!;
+  assert(mowing.activity.invoices === 0 && mowing.activity.tagged === 0, 'a business with nothing recorded');
   const candidates = await call('GET', '/api/business/money/candidates?q=super', A);
   assert(candidates.json.length === 1 && candidates.json[0].id === 'txn_a_groceries', 'untagged items can be searched to tag');
 

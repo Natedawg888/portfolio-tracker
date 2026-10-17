@@ -1345,6 +1345,8 @@ export interface BusinessCard extends Business {
   assetCount: number;
   clientCount: number;
   invoiceCount: number;
+  /** Recorded in the selected tax year: invoices issued and items tagged (invoice payments, income, transactions). */
+  activity: { invoices: number; tagged: number };
 }
 
 export interface BusinessListResponse {
@@ -1419,6 +1421,19 @@ export interface BusinessMoneyItem {
   countedVia: 'invoice' | 'income' | null;
 }
 
+/** A commodity held as a business's produce. The price is the one the user set on it, with its date. */
+export interface BusinessProduce {
+  id: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  valueNzd: number | null;
+  unitPriceNzd: number | null;
+  valueOn: string | null;
+  /** Price over 30 days old, or undated. */
+  stale: boolean;
+}
+
 export interface BusinessDetail {
   today: string;
   taxYear: number;
@@ -1431,7 +1446,7 @@ export interface BusinessDetail {
   /** Tagged items in the tax year, newest first. */
   money: BusinessMoneyItem[];
   /** Commodities linked as produce held (valued and counted on Portfolio → Commodities). */
-  produce: { id: string; name: string; quantity: number; unit: string; valueNzd: number | null }[];
+  produce: BusinessProduce[];
 }
 
 export interface BusinessClientView {

@@ -100,3 +100,64 @@ export function gstCollectedEstimate(gstInclusiveIncome: number): number {
 }
 
 export const IRD_GST_URL = 'https://www.ird.govt.nz/gst';
+
+/**
+ * One-line tax note per business type on the Business pages. General information only, kept
+ * short and factual; not tax advice. Change the wording here.
+ */
+export const BUSINESS_TYPE_NOTES: Record<BusinessType, string> = {
+  sole_trader: 'You pay tax on the profit as personal income and file an IR3 each year. You may also need to pay provisional tax.',
+  partnership: 'The partnership files an IR7. Each partner pays tax on their share of the profit in their own IR3.',
+  company: 'The company files its own return (IR4) and pays tax at 28%. Money you take out is taxed as salary or dividends.',
+  hobby: 'Hobby income usually isn’t taxed, and hobby costs can’t be claimed. If you’re selling regularly to make money, IRD may treat it as a business.',
+};
+
+/** "3 entries this tax year" or "nothing recorded yet": invoices issued plus items tagged in the year. */
+export function entriesText(activity: { invoices: number; tagged: number }): string {
+  const n = activity.invoices + activity.tagged;
+  return n === 0 ? 'nothing recorded yet' : `${n} ${n === 1 ? 'entry' : 'entries'} this tax year`;
+}
+
+export type SetupStep = { id: 'money_in' | 'cost' | 'tag'; title: string; done: boolean };
+
+/**
+ * "Get [name] set up" steps for a business with nothing recorded in the tax year. Money in comes
+ * from invoices or tagged income; costs only from tagged bank transactions.
+ */
+export function setupSteps(totals: { incomeNzd: number; expensesNzd: number }, activity: { invoices: number; tagged: number }): SetupStep[] {
+  return [
+    { id: 'money_in', title: 'Record money in', done: totals.incomeNzd > 0 || activity.invoices > 0 },
+    { id: 'cost', title: 'Record a cost', done: totals.expensesNzd > 0 },
+    { id: 'tag', title: 'Tag transactions from Budget', done: activity.tagged > 0 },
+  ];
+}
+
+/** Nothing recorded in the tax year: the card shows setup steps instead of zero figures. */
+export function isUnstarted(totals: { incomeNzd: number; expensesNzd: number }, activity: { invoices: number; tagged: number }): boolean {
+  return totals.incomeNzd === 0 && totals.expensesNzd === 0 && activity.invoices === 0 && activity.tagged === 0;
+}
+
+/** Quick-add presets on a business's "What it owns" card. */
+export const ASSET_QUICK_ADDS: { label: string; category: AssetCategory; name: string }[] = [
+  { label: 'Beehives', category: 'beehives', name: 'Beehives' },
+  { label: 'Equipment', category: 'equipment', name: '' },
+  { label: 'Vehicle', category: 'vehicle', name: '' },
+  { label: 'Livestock', category: 'livestock', name: '' },
+];
+
+/** Produce presets: a Portfolio commodity linked to the business (preset keys from src/lib/commodities.ts). */
+export const PRODUCE_QUICK_ADDS: { label: string; preset: string | null; name: string; category: 'agriculture' | 'other'; unit: 'kg' | 'unit' }[] = [
+  { label: 'Honey (kg)', preset: 'honey', name: 'Honey', category: 'agriculture', unit: 'kg' },
+  { label: 'Wool (kg)', preset: 'wool', name: 'Wool', category: 'agriculture', unit: 'kg' },
+  { label: 'Stock on hand', preset: null, name: 'Stock on hand', category: 'other', unit: 'unit' },
+];
+
+/** Profit is green when positive and in the warning colour when negative (class names). */
+export function profitClass(n: number): string | undefined {
+  return n > 0 ? 'business-profit--up' : n < 0 ? 'rental-net--loss' : undefined;
+}
+
+/** Under "Equipment & stock" / "What it owns". */
+export function netWorthNote(counted: boolean): string {
+  return counted ? 'Counted in your net worth' : 'Not counted in your net worth';
+}

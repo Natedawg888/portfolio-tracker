@@ -1,27 +1,42 @@
 /**
  * Shared pieces of the Business pages (KAN-84): the Overview / Invoices / Clients tabs, the
- * dialog and its save row, the tax year switch and the income / expenses / net figures.
+ * dialog and its save row, the tax year switch, the money in / costs / profit figures, the net
+ * worth switch and the one-line note for the business type.
  */
-import { useId, type ReactNode } from 'react';
-import { NavLink } from 'react-router-dom';
+import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { formatNzd } from '../../api/client';
-import { taxYearLabel } from '../../lib/business';
+import { BUSINESS_TYPES, BUSINESS_TYPE_NOTES, businessTypeLabel, profitClass, taxYearLabel, type BusinessType } from '../../lib/business';
 import type { BusinessTotals } from '../../types';
 
+const TABS = [
+  { to: '/business', label: 'Overview', match: (p: string) => p === '/business' || /^\/business\/(?!invoices|clients)[^/]+$/.test(p) },
+  { to: '/business/invoices', label: 'Invoices', match: (p: string) => p.startsWith('/business/invoices') },
+  { to: '/business/clients', label: 'Clients', match: (p: string) => p.startsWith('/business/clients') },
+];
+
+/** Overview / Invoices / Clients. Each is its own page, so the tabs are links; arrow keys move between them. */
 export function BusinessTabs() {
-  const cls = ({ isActive }: { isActive: boolean }) => `portfolio-tab${isActive ? ' active' : ''}`;
+  const { pathname } = useLocation();
+  const listRef = useRef<HTMLDivElement>(null);
+  const active = Math.max(0, TABS.findIndex((t) => t.match(pathname)));
+  function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    const links = [...(listRef.current?.querySelectorAll<HTMLAnchorElement>('[role="tab"]') ?? [])];
+    const i = links.indexOf(document.activeElement as HTMLAnchorElement);
+    if (i < 0) return;
+    const next = e.key === 'ArrowRight' ? (i + 1) % links.length : e.key === 'ArrowLeft' ? (i - 1 + links.length) % links.length : e.key === 'Home' ? 0 : e.key === 'End' ? links.length - 1 : -1;
+    if (next < 0) return;
+    e.preventDefault();
+    links[next].focus();
+  }
   return (
-    <nav className="portfolio-tabs business-tabs" aria-label="Business">
-      <NavLink to="/business" end className={cls}>
-        Overview
-      </NavLink>
-      <NavLink to="/business/invoices" className={cls}>
-        Invoices
-      </NavLink>
-      <NavLink to="/business/clients" className={cls}>
-        Clients
-      </NavLink>
-    </nav>
+    <div ref={listRef} className="portfolio-tabs business-tabs" role="tablist" aria-label="Business" onKeyDown={onKeyDown}>
+      {TABS.map((t, i) => (
+        <Link key={t.to} to={t.to} role="tab" aria-selected={i === active} tabIndex={i === active ? 0 : -1} className={`portfolio-tab${i === active ? ' active' : ''}`}>
+          {t.label}
+        </Link>
+      ))}
+    </div>
   );
 }
 
@@ -84,26 +99,115 @@ export function TaxYearSwitch({ year, years, onChange }: { year: number; years: 
   );
 }
 
-export function BusinessFigures({ totals }: { totals: BusinessTotals }) {
+/**
+ * Money in, costs and profit for the tax year, and what the business owns. `assetsLabel` names
+ * the last figure; `assetsNote` sits under it (whether it counts in net worth).
+ */
+export function BusinessFigures({ totals, assetsLabel, assetsNote, showAssets = true }: {
+  totals: BusinessTotals;
+  assetsLabel: string;
+  assetsNote?: ReactNode;
+  showAssets?: boolean;
+}) {
   return (
-    <dl className="rental-totals business-totals">
+    <dl className={'rental-totals business-totals' + (showAssets ? '' : ' business-totals--three')}>
       <div>
-        <dt>Income</dt>
+        <dt>Money in</dt>
         <dd>{formatNzd(totals.incomeNzd)}</dd>
       </div>
       <div>
-        <dt>Expenses</dt>
+        <dt>Costs</dt>
         <dd>{formatNzd(totals.expensesNzd)}</dd>
       </div>
       <div>
-        <dt>Net</dt>
-        <dd className={totals.netNzd < 0 ? 'rental-net--loss' : undefined}>{formatNzd(totals.netNzd)}</dd>
+        <dt>Profit</dt>
+        <dd className={profitClass(totals.netNzd)}>{formatNzd(totals.netNzd)}</dd>
       </div>
-      <div>
-        <dt>Assets</dt>
-        <dd>{totals.assetsNzd == null ? '—' : formatNzd(totals.assetsNzd)}</dd>
-      </div>
+      {showAssets ? (
+        <div>
+          <dt>{assetsLabel}</dt>
+          <dd>{totals.assetsNzd == null ? '—' : formatNzd(totals.assetsNzd)}</dd>
+          {assetsNote ? <dd className="business-figure-note">{assetsNote}</dd> : null}
+        </div>
+      ) : null}
     </dl>
+  );
+}
+
+/** role="switch" for "Count what it owns in my net worth" (same look as Settings → Categories & assets). */
+export function NetWorthSwitch({ on, busy, name, onChange }: { on: boolean; busy: boolean; name: string; onChange: (on: boolean) => void }) {
+  const labelId = useId();
+  const descId = useId();
+  return (
+    <button
+      type="button"
+      className={'asset-toggle business-networth-switch ' + (on ? 'on' : 'off')}
+      role="switch"
+      aria-checked={on}
+      aria-labelledby={labelId}
+      aria-describedby={descId}
+      disabled={busy}
+      onClick={() => onChange(!on)}
+    >
+      <span className="asset-toggle-text">
+        <span className="asset-toggle-label" id={labelId}>
+          Count what it owns in my net worth
+        </span>
+        <span className="asset-toggle-blurb" id={descId}>
+          {name ? `${name}’s assets` : 'Its assets'} in net worth, History and Projections. Produce is counted on Portfolio → Commodities.
+        </span>
+      </span>
+      <span className="asset-toggle-state" aria-hidden>
+        {on ? 'On' : 'Off'}
+      </span>
+      <span className="asset-toggle-track" aria-hidden>
+        <span className="asset-toggle-knob" />
+      </span>
+    </button>
+  );
+}
+
+/** One-line note for the business type, with a "Change type" link that opens type buttons in place. */
+export function TypeNote({ type, name, busy, onChange }: { type: BusinessType; name: string; busy?: boolean; onChange: (type: BusinessType) => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const groupId = useId();
+  return (
+    <div className="business-type-note">
+      <p className="muted small">
+        <strong>{businessTypeLabel(type)}:</strong> {BUSINESS_TYPE_NOTES[type]}{' '}
+        <button type="button" className="link-btn" aria-expanded={open} aria-controls={open ? groupId : undefined} onClick={() => setOpen((o) => !o)}>
+          Change type<span className="sr-only"> of {name || 'this business'}</span>
+        </button>
+      </p>
+      {open ? (
+        <div id={groupId} role="group" aria-label={`Type of ${name || 'this business'}`} className="business-type-buttons">
+          {BUSINESS_TYPES.map((t) => (
+            <button
+              key={t.value}
+              type="button"
+              className={'btn small' + (t.value === type ? ' primary' : ' ghost')}
+              aria-pressed={t.value === type}
+              disabled={busy}
+              onClick={() =>
+                void (async () => {
+                  setError(null);
+                  try {
+                    if (t.value !== type) await onChange(t.value);
+                    setOpen(false);
+                  } catch (e) {
+                    setError(errorText(e, 'Could not change the type.'));
+                  }
+                })()
+              }
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {error ? <p className="auth-error" role="alert">{error}</p> : null}
+    </div>
   );
 }
 
