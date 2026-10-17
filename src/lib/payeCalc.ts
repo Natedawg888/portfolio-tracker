@@ -14,6 +14,7 @@ import {
   PAYE_WEEKS_PER_YEAR,
   DONATION_TAX_CREDIT_RATE,
   PAYROLL_GIVING_CREDIT_RATE,
+  kiwiSaverEmployerMinRateFor,
   payTaxYearRates,
   type InvestingCreditKind,
   type PayTaxYearRates,
@@ -227,16 +228,22 @@ export function resolveExtraCredit(row: ExtraTaxCreditInput): ExtraTaxCreditResu
 
 export function calculatePaye(input: PayeInput): PayeBreakdown {
   const rates = payTaxYearRates(input.taxYear);
-  const { accMaxEarnings, kiwiSaverEmployerMinRate, studentLoanRate, studentLoanAnnualThreshold } = rates;
+  const { accMaxEarnings, studentLoanRate, studentLoanAnnualThreshold } = rates;
   const ietcRates = rates.ietc;
   const notes: string[] = [...rates.yearNotes];
   const hours = input.hoursPerWeek > 0 ? input.hoursPerWeek : PAYE_DEFAULT_HOURS_PER_WEEK;
   const packageAnnual = Math.max(0, annualise(input.amount, input.frequency, hours));
 
-  const employerRate =
-    input.kiwiSaverOptIn && input.kiwiSaverEmployerRatePct > 0
-      ? input.kiwiSaverEmployerRatePct / 100
-      : 0;
+  // The employer may go down to 3% only while the employee is on a temporary rate reduction (KAN-88).
+  const kiwiSaverEmployerMinRate = kiwiSaverEmployerMinRateFor(rates, input.kiwiSaverEmployeeRatePct);
+  let employerRatePct = input.kiwiSaverOptIn && input.kiwiSaverEmployerRatePct > 0 ? input.kiwiSaverEmployerRatePct : 0;
+  if (employerRatePct > 0 && employerRatePct < kiwiSaverEmployerMinRate) {
+    notes.push(
+      `Employer KiwiSaver raised from ${employerRatePct}% to the ${kiwiSaverEmployerMinRate}% minimum for your rate.`,
+    );
+    employerRatePct = kiwiSaverEmployerMinRate;
+  }
+  const employerRate = employerRatePct / 100;
   const employeeRate =
     input.kiwiSaverOptIn && input.kiwiSaverEmployeeRatePct > 0
       ? input.kiwiSaverEmployeeRatePct / 100

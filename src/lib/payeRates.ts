@@ -60,12 +60,16 @@ export const ACC_MAX_LEVY = 2_741.22; // published max; equals ACC_MAX_EARNINGS 
 /**
  * KiwiSaver employee deduction rates from pay dates on/after 1 April 2026.
  * Default / minimum employee rate is 3.5%. Employer minimum also 3.5%.
+ * 3% is only open to members on a temporary rate reduction (3–12 months, renewable,
+ * not during a savings suspension); the employer may then match at 3% (KAN-88).
  * Sources: IR340 Apr 2026; IRD "Taxation bill now in effect" (31 Mar 2026);
- * Payroll Calculations & Business Rules Spec 2026.
+ * Payroll Calculations & Business Rules Spec 2026; IRD "Temporary rate reduction";
+ * IRD "Employer contributions to KiwiSaver".
  */
-export const KIWISAVER_EMPLOYEE_RATES = [3.5, 4, 6, 8, 10] as const;
+export const KIWISAVER_EMPLOYEE_RATES = [3, 3.5, 4, 6, 8, 10] as const;
 export const KIWISAVER_DEFAULT_EMPLOYEE_RATE = 3.5;
 export const KIWISAVER_EMPLOYER_MIN_RATE = 3.5;
+export const KIWISAVER_TEMPORARY_REDUCTION_RATE = 3;
 /**
  * Starting employee rate when this account has not saved one.
  * The page states the statutory minimum is 3.5% from 1 April 2026, so that rate is the start.
@@ -154,6 +158,10 @@ export const RATE_SOURCES = [
   {
     label: 'IRD — About donation tax credits (charity / IR526)',
     url: 'https://www.ird.govt.nz/income-tax/income-tax-for-individuals/individual-tax-credits/donation-tax-credits/about-donation-tax-credits',
+  },
+  {
+    label: 'IRD — KiwiSaver temporary rate reduction (3% from 1 April 2026)',
+    url: 'https://www.ird.govt.nz/kiwisaver/kiwisaver-individuals/making-changes-to-my-kiwisaver/changing-my-kiwisaver-contribution-rate/temporary-rate-reduction',
   },
   {
     label: 'IRD — IR340 weekly/fortnightly tax tables Apr 2026',
@@ -421,6 +429,8 @@ export type PayTaxYearRates = {
   kiwiSaverEmployeeRates: readonly number[];
   kiwiSaverDefaultEmployeeRate: number;
   kiwiSaverEmployerMinRate: number;
+  /** Employee rate open only under a temporary rate reduction (the employer may match it); null when the year has none. */
+  kiwiSaverTemporaryReductionRate: number | null;
   studentLoanRate: number;
   studentLoanAnnualThreshold: number;
   /** null = not loaded for this year (the IETC switch is disabled and says so). */
@@ -454,6 +464,7 @@ export const PAY_TAX_YEARS: Readonly<Record<number, PayTaxYearRates>> = {
     kiwiSaverEmployeeRates: KIWISAVER_EMPLOYEE_RATES,
     kiwiSaverDefaultEmployeeRate: KIWISAVER_DEFAULT_EMPLOYEE_RATE,
     kiwiSaverEmployerMinRate: KIWISAVER_EMPLOYER_MIN_RATE,
+    kiwiSaverTemporaryReductionRate: KIWISAVER_TEMPORARY_REDUCTION_RATE,
     studentLoanRate: STUDENT_LOAN_RATE,
     studentLoanAnnualThreshold: STUDENT_LOAN_ANNUAL_THRESHOLD,
     ietc: IETC_2024,
@@ -490,6 +501,7 @@ export const PAY_TAX_YEARS: Readonly<Record<number, PayTaxYearRates>> = {
     kiwiSaverEmployeeRates: [3, 4, 6, 8, 10],
     kiwiSaverDefaultEmployeeRate: 3,
     kiwiSaverEmployerMinRate: 3,
+    kiwiSaverTemporaryReductionRate: null,
     studentLoanRate: STUDENT_LOAN_RATE,
     studentLoanAnnualThreshold: STUDENT_LOAN_ANNUAL_THRESHOLD,
     ietc: IETC_2024,
@@ -612,4 +624,23 @@ export function ratesForPayDate(ymd: string): PayTaxYearRates | null {
 /** Rates for a tax year, or the current year when that year has no config yet. */
 export function payTaxYearRates(startYear: number = CURRENT_PAY_TAX_YEAR): PayTaxYearRates {
   return PAY_TAX_YEARS[startYear] ?? PAY_TAX_YEARS[CURRENT_PAY_TAX_YEAR];
+}
+
+type KiwiSaverYearRates = Pick<PayTaxYearRates, 'kiwiSaverEmployerMinRate' | 'kiwiSaverTemporaryReductionRate'>;
+
+/** True when this employee rate is the year's temporary-rate-reduction rate. */
+export function isKiwiSaverTemporaryReduction(rates: KiwiSaverYearRates, employeeRatePct: number): boolean {
+  return rates.kiwiSaverTemporaryReductionRate != null && employeeRatePct === rates.kiwiSaverTemporaryReductionRate;
+}
+
+/** Lowest employer rate allowed: the reduced rate when the employee is on a temporary reduction, else the year's minimum. */
+export function kiwiSaverEmployerMinRateFor(rates: KiwiSaverYearRates, employeeRatePct: number): number {
+  return isKiwiSaverTemporaryReduction(rates, employeeRatePct)
+    ? rates.kiwiSaverTemporaryReductionRate!
+    : rates.kiwiSaverEmployerMinRate;
+}
+
+/** "3% (temporary rate reduction)" for the year's reduced rate, else "4%". */
+export function kiwiSaverEmployeeRateLabel(rate: number, temporaryReductionRate: number | null): string {
+  return rate === temporaryReductionRate ? `${rate}% (temporary rate reduction)` : `${rate}%`;
 }

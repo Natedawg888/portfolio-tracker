@@ -146,6 +146,19 @@ if (note.includes('1.75') || note.includes('156,641')) {
   throw new Error('FAIL: the note must not bake in the live ACC figures');
 }
 
+{
+  const reducedNote = ratesInUseNote(
+    {
+      accRate: 0.02, accMaxEarnings: 111, accMaxLevy: 222, accountDefaultEmployeeRate: 3.5,
+      statutoryEmployeeRates: [3, 3.5, 4], statutoryMinimumEmployeeRate: 3.5, temporaryReductionRate: 3,
+      statutoryFrom: '1 April 2030', minimumWageAdultHourly: 9, holidayPayPaygRate: 0.08,
+    },
+    (n) => `$${n}`,
+  );
+  if (!reducedNote.includes('3% (temporary rate reduction only), 3.5%, 4%')) throw new Error(`FAIL: the reduced rate is marked in the note (${reducedNote})`);
+  if (!reducedNote.includes('IRD minimum 3.5%')) throw new Error('FAIL: the minimum stays 3.5% with a reduced rate listed');
+}
+
 // $55,000 yearly at 40 hours → hourly (full precision, not cents) → back to 55000.
 {
   const hours = 40;
@@ -215,7 +228,11 @@ if (note.includes('1.75') || note.includes('156,641')) {
   eq(options.some((o) => o.value === KIWISAVER_CUSTOM_RATE_VALUE), false, 'custom is not invented as a statutory rate');
   const live = kiwiSaverEmployeeRateOptions(KIWISAVER_EMPLOYEE_RATES);
   eq(live.length, KIWISAVER_EMPLOYEE_RATES.length, 'the page radios match the statutory list');
-  eq(live[0].label, `${KIWISAVER_EMPLOYEE_RATES[0]}%`, 'the first radio is the first statutory rate');
+  eq(live[0].value, String(KIWISAVER_EMPLOYEE_RATES[0]), 'the first radio is the first statutory rate');
+  const reduced = kiwiSaverEmployeeRateOptions([3, 3.5, 4], 3);
+  eq(reduced[0].label, '3% (temporary rate reduction)', 'the temporary-reduction rate says so');
+  eq(reduced[1].label, '3.5%', 'other rates keep the plain label');
+  eq(reduced.length, 3, 'the label adds no rate');
 }
 
 {
@@ -241,7 +258,10 @@ eq(centsPerDollar(1 / 3), '33.33c', 'one third is 33.33c');
   const tip = kiwiSaverOptInTip(9);
   if (!tip.includes('9%')) throw new Error('FAIL: opt-in tip should use the starting rate passed in');
   if (tip.includes('3.5')) throw new Error('FAIL: opt-in tip must not bake in the live starting rate');
+  const matched = kiwiSaverEmployerTip({ minimumRate: 2, statutoryFrom: '1 April 2030', temporaryReductionRate: 1.5 });
+  if (!matched.includes('match at 1.5%')) throw new Error('FAIL: employer tip should say the employer may match the reduced rate');
   const employer = kiwiSaverEmployerTip({ minimumRate: 2, statutoryFrom: '1 April 2030' });
+  if (employer.includes('temporary')) throw new Error('FAIL: no temporary-reduction sentence without a reduced rate');
   if (!employer.includes('2%')) throw new Error('FAIL: employer tip should use the minimum passed in');
   if (!employer.includes('1 April 2030')) throw new Error('FAIL: employer tip should use the date passed in');
   if (employer.includes('3.5')) throw new Error('FAIL: employer tip must not bake in the live minimum');

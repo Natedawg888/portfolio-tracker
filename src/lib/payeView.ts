@@ -10,6 +10,7 @@
  */
 import { annualise, toPeriods, type PayFrequency, type PeriodAmounts } from './payeCalc';
 import type { PayePayType } from './payePrefs';
+import { kiwiSaverEmployeeRateLabel } from './payeRates';
 
 const MONTHS = [
   'January',
@@ -98,6 +99,8 @@ export type RatesInUseFigures = {
   accountDefaultEmployeeRate: number;
   statutoryEmployeeRates: readonly number[];
   statutoryMinimumEmployeeRate: number;
+  /** Rate in the list that is only open under a temporary rate reduction; null when none. */
+  temporaryReductionRate?: number | null;
   /** When the statutory KiwiSaver rates apply, formatted from the tax year. */
   statutoryFrom: string;
   minimumWageAdultHourly: number;
@@ -108,7 +111,9 @@ export type RatesInUseFigures = {
 export function ratesInUseNote(figures: RatesInUseFigures, money: (n: number) => string): string {
   const accPct = (figures.accRate * 100).toFixed(2);
   const holidayPct = Math.round(figures.holidayPayPaygRate * 100);
-  const choices = figures.statutoryEmployeeRates.map((rate) => `${rate}%`).join(', ');
+  const choices = figures.statutoryEmployeeRates
+    .map((rate) => (rate === figures.temporaryReductionRate ? `${rate}% (temporary rate reduction only)` : `${rate}%`))
+    .join(', ');
   return (
     `ACC ${accPct}% on liable earnings up to ${money(figures.accMaxEarnings)} ` +
     `(max levy ${money(figures.accMaxLevy)}). KiwiSaver employee rate saved for this account ` +
@@ -194,9 +199,12 @@ export function centsPerDollar(rate: number): string {
 
 export type KiwiSaverRateOption = { value: string; label: string };
 
-/** One radio per employee rate passed in. No rate is added. */
-export function kiwiSaverEmployeeRateOptions(rates: readonly number[]): KiwiSaverRateOption[] {
-  return rates.map((rate) => ({ value: String(rate), label: `${rate}%` }));
+/** One radio per employee rate passed in. No rate is added. The temporary-reduction rate says so in its label. */
+export function kiwiSaverEmployeeRateOptions(
+  rates: readonly number[],
+  temporaryReductionRate: number | null = null,
+): KiwiSaverRateOption[] {
+  return rates.map((rate) => ({ value: String(rate), label: kiwiSaverEmployeeRateLabel(rate, temporaryReductionRate) }));
 }
 
 /** Radiogroup value for a percent that is not one of the statutory choices. */
@@ -228,9 +236,18 @@ export function kiwiSaverOptInTip(startingRate: number): string {
   );
 }
 
-export function kiwiSaverEmployerTip(figures: { minimumRate: number; statutoryFrom: string }): string {
+export function kiwiSaverEmployerTip(figures: {
+  minimumRate: number;
+  statutoryFrom: string;
+  temporaryReductionRate?: number | null;
+}): string {
+  const reduction =
+    figures.temporaryReductionRate != null
+      ? `If you're on IRD's ${figures.temporaryReductionRate}% temporary rate reduction, the employer may match at ${figures.temporaryReductionRate}%. `
+      : '';
   return (
     `Statutory minimum ${figures.minimumRate}% from ${figures.statutoryFrom}. ` +
+    reduction +
     `The employer pays it, so it is not deducted from take-home unless salary sacrifice is on.`
   );
 }

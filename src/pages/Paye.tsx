@@ -40,6 +40,7 @@ import {
   INVESTING_CREDIT_KIND_OPTIONS,
   RATE_SOURCES,
   SCHEDULAR_SOURCES,
+  kiwiSaverEmployerMinRateFor,
   payTaxYearRates,
   type InvestingCreditKind,
   type PayTaxYearRates,
@@ -265,6 +266,7 @@ function WhatsIncluded({ open, rates }: { open: boolean; rates: PayTaxYearRates 
             accountDefaultEmployeeRate: rates.kiwiSaverDefaultEmployeeRate,
             statutoryEmployeeRates: rates.kiwiSaverEmployeeRates,
             statutoryMinimumEmployeeRate: rates.kiwiSaverDefaultEmployeeRate,
+            temporaryReductionRate: rates.kiwiSaverTemporaryReductionRate,
             statutoryFrom: formatPayeTaxDay(rates.start),
             minimumWageAdultHourly: rates.minimumWageAdultHourly,
             holidayPayPaygRate: rates.holidayPayPaygRate,
@@ -471,7 +473,7 @@ export function Paye() {
       otherAnnualGross: Number(otherAnnual) || 0,
       kiwiSaverOptIn,
       kiwiSaverEmployeeRatePct: employeeRatePct,
-      kiwiSaverEmployerRatePct: Number(ksEmployerRate) || rates.kiwiSaverEmployerMinRate,
+      kiwiSaverEmployerRatePct: Number(ksEmployerRate) || kiwiSaverEmployerMinRateFor(rates, employeeRatePct),
       salarySacrifice: kiwiSaverOptIn && salarySacrifice,
       studentLoan,
       ietc,
@@ -538,7 +540,7 @@ export function Paye() {
   }, [payType, outputPrefs, payeOptions, rates, result, employment, studentLoan, ietc, secondaryTotal]);
 
   const ksRateOptions = [
-    ...kiwiSaverEmployeeRateOptions(rates.kiwiSaverEmployeeRates),
+    ...kiwiSaverEmployeeRateOptions(rates.kiwiSaverEmployeeRates, rates.kiwiSaverTemporaryReductionRate),
     { value: KIWISAVER_CUSTOM_RATE_VALUE, label: 'Custom' },
   ];
   const ksListed = kiwiSaverRateSelection(ksRate, rates.kiwiSaverEmployeeRates);
@@ -799,13 +801,14 @@ export function Paye() {
                   {kiwiSaverEmployerTip({
                     minimumRate: rates.kiwiSaverEmployerMinRate,
                     statutoryFrom: formatPayeTaxDay(rates.start),
+                    temporaryReductionRate: rates.kiwiSaverTemporaryReductionRate,
                   })}
                 </InfoTip>
               </span>
               <input
                 id="paye-ks-employer"
                 type="number"
-                min={0}
+                min={kiwiSaverEmployerMinRateFor(rates, employeeRatePct)}
                 max={100}
                 step={0.1}
                 value={ksEmployerRate}

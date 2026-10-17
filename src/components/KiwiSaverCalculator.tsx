@@ -11,7 +11,7 @@ import { api, formatNzd } from '../api/client';
 import { AssetLineChart, type LineSeries } from './AssetLineChart';
 import { calculateKiwiSaver } from '../lib/kiwiSaverCalc';
 import { GOVERNMENT_CONTRIBUTION, KIWISAVER_RULES_CHECKED_ON, KIWISAVER_RULES_SOURCES, KIWISAVER_WITHDRAWAL_AGE } from '../lib/kiwiSaverRules';
-import { payTaxYearRates } from '../lib/payeRates';
+import { kiwiSaverEmployeeRateLabel, payTaxYearRates } from '../lib/payeRates';
 import { PAYE_PREFS_STORAGE_KEY, loadPayePrefs } from '../lib/payePrefs';
 import { annualise } from '../lib/payeCalc';
 
@@ -283,7 +283,7 @@ export function KiwiSaverCalculator({ balanceNzd }: { balanceNzd: number | null 
               .sort((a, b) => a - b)
               .map((r) => (
                 <option key={r} value={String(r)}>
-                  {r === 0 ? 'Not contributing' : `${r}%`}
+                  {r === 0 ? 'Not contributing' : kiwiSaverEmployeeRateLabel(r, rates.kiwiSaverTemporaryReductionRate)}
                 </option>
               ))}
           </select>
@@ -291,7 +291,10 @@ export function KiwiSaverCalculator({ balanceNzd }: { balanceNzd: number | null 
         <label>
           Employer contribution (%)
           <input type="number" min={0} max={100} step="0.5" inputMode="decimal" value={f.employerRatePct} onChange={(e) => set('employerRatePct', e.target.value)} />
-          <span className="muted small">The minimum is {rates.kiwiSaverEmployerMinRate}% when you contribute. ESCT is taken off it.</span>
+          <span className="muted small">
+            The minimum is {rates.kiwiSaverEmployerMinRate}% when you contribute
+            {rates.kiwiSaverTemporaryReductionRate != null && <>, or {rates.kiwiSaverTemporaryReductionRate}% if you’re on a temporary rate reduction</>}. ESCT is taken off it.
+          </span>
         </label>
         <label>
           Extra you put in, a year (NZD)
