@@ -2,7 +2,9 @@
  * Rental income for the signed-in user (KAN-66), with rooms and tenancies (KAN-83).
  *   GET    /                  properties, entries (newest first), rooms and tenancies
  *   POST   /properties        { name, address?, notes?, letType?: whole | rooms, ownHome? }
+ *          purchaseDate?, purchasePrice?, saleAgreementDate?, salePrice?, saleCosts? (bright-line, KAN-93; null clears)
  *   PATCH  /properties/:id    any of the fields above
+ *   PUT    /settings          { lossBasis: portfolio | property } how ring-fenced losses are pooled (KAN-93)
  *   DELETE /properties/:id    also deletes its rooms, tenancies, entries and their Budget / Income rows
  *   POST   /entries           { propertyId, date, kind, category, amountNzd, description?, addToMoney?, roomId?, shared? }
  *   PATCH  /entries/:id       any of the fields above
@@ -19,6 +21,7 @@ import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { requireUserId } from '../lib/userScope.ts';
 import { getDb } from '../db/index.ts';
 import { aucklandToday } from '../debts/model.ts';
+import { isRentalLossBasis } from '../../src/lib/rentalTax.ts';
 import {
   createEntry,
   createProperty,
@@ -30,6 +33,8 @@ import {
   updateEntry,
   updateProperty,
   checkPropertyLetting,
+  checkPropertySale,
+  saveLossBasis,
   type EntryDraft,
   type PropertyDraft,
 } from '../rentals/store.ts';
@@ -79,7 +84,7 @@ router.post('/properties', async (req, res) => {
     res.status(400).json({ error: parsed.error });
     return;
   }
-  const err = checkPropertyLetting(parsed.value as PropertyDraft);
+  const err = checkPropertyLetting(parsed.value as PropertyDraft) ?? checkPropertySale(parsed.value as PropertyDraft);
   if (err) {
     res.status(400).json({ error: err });
     return;
@@ -114,6 +119,20 @@ router.delete('/properties/:id', async (req, res) => {
     return;
   }
   res.json({ ok: true, id: req.params.id });
+});
+
+router.put('/settings', async (req, res) => {
+  const basis = (req.body as { lossBasis?: unknown } | undefined)?.lossBasis;
+  if (!isRentalLossBasis(basis)) {
+    res.status(400).json({ error: 'Loss basis must be portfolio or property' });
+    return;
+  }
+  const db = await getDb();
+  if (!saveLossBasis(db, uid(req), basis)) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+  res.json({ lossBasis: basis });
 });
 
 router.post('/entries', async (req, res) => {

@@ -17,6 +17,7 @@
 import type { Database } from 'sql.js';
 import type { RentalEntry, RentalLetType, RentalListResponse, RentalProperty } from '../../src/types/index.ts';
 import { isRentalCategory, rentalCategoryLabel, type RentalCategory, type RentalEntryKind } from '../../src/lib/rental.ts';
+import { RENTAL_LOSS_BASIS_DEFAULT, isRentalLossBasis, type RentalLossBasis } from '../../src/lib/rentalTax.ts';
 import { isYmd } from '../../src/lib/invoiceCalc.ts';
 import { newId, queryAll, queryOne, run } from '../db/index.ts';
 import { roundMoney } from '../debts/model.ts';
@@ -30,7 +31,18 @@ const RENTAL_EXPENSES_CATEGORY = { slug: RENTAL_EXPENSES_SLUG, name: 'Rental pro
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 
-export type PropertyDraft = { name: string; address: string; notes: string; letType: RentalLetType; ownHome: boolean };
+export type PropertySale = {
+  purchaseDate: string | null;
+  purchasePrice: number | null;
+  saleAgreementDate: string | null;
+  salePrice: number | null;
+  saleCosts: number | null;
+};
+
+export type PropertyDraft = { name: string; address: string; notes: string; letType: RentalLetType; ownHome: boolean } & PropertySale;
+
+const SALE_DATES = ['purchaseDate', 'saleAgreementDate'] as const;
+const SALE_MONEY = { purchasePrice: 'Purchase price', salePrice: 'Sale price', saleCosts: 'Costs' } as const;
 
 export type EntryDraft = {
   propertyId: string;
@@ -74,7 +86,34 @@ export function parseProperty(raw: unknown, partial: boolean): Parsed<Partial<Pr
   } else if (!partial) out.letType = 'whole';
   if (o.ownHome !== undefined) out.ownHome = o.ownHome === true;
   else if (!partial) out.ownHome = false;
+  for (const k of SALE_DATES) {
+    if (o[k] === undefined) {
+      if (!partial) out[k] = null;
+    } else if (o[k] === null || o[k] === '') out[k] = null;
+    else if (isYmd(o[k])) out[k] = o[k];
+    else return { ok: false, error: `${k === 'purchaseDate' ? 'Settlement date' : 'Sale agreement date'} must be YYYY-MM-DD` };
+  }
+  for (const [k, label] of Object.entries(SALE_MONEY) as [keyof typeof SALE_MONEY, string][]) {
+    if (o[k] === undefined) {
+      if (!partial) out[k] = null;
+      continue;
+    }
+    if (o[k] === null || o[k] === '') {
+      out[k] = null;
+      continue;
+    }
+    const n = Number(o[k]);
+    if (!Number.isFinite(n) || n < 0 || n > 1_000_000_000) return { ok: false, error: `${label} must be 0 or more` };
+    out[k] = roundMoney(n);
+  }
   return { ok: true, value: out };
+}
+
+/** A sale can't be agreed before the property was bought. */
+export function checkPropertySale(d: Pick<PropertySale, 'purchaseDate' | 'saleAgreementDate'>): string | null {
+  return d.purchaseDate && d.saleAgreementDate && d.saleAgreementDate < d.purchaseDate
+    ? 'The sale agreement can’t be before the settlement date'
+    : null;
 }
 
 /** Field checks only; the kind / category pairing and property ownership are checked on save. */
@@ -127,6 +166,11 @@ type PropertyRow = {
   notes: string;
   let_type: RentalLetType;
   own_home: number;
+  purchase_date: string | null;
+  purchase_price: number | null;
+  sale_agreement_date: string | null;
+  sale_price: number | null;
+  sale_costs: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -167,6 +211,11 @@ function presentProperty(r: PropertyRow): RentalProperty {
     notes: r.notes ?? '',
     letType: r.let_type === 'rooms' ? 'rooms' : 'whole',
     ownHome: r.let_type === 'rooms' && Boolean(r.own_home),
+    purchaseDate: r.purchase_date ?? null,
+    purchasePrice: r.purchase_price == null ? null : roundMoney(Number(r.purchase_price)),
+    saleAgreementDate: r.sale_agreement_date ?? null,
+    salePrice: r.sale_price == null ? null : roundMoney(Number(r.sale_price)),
+    saleCosts: r.sale_costs == null ? null : roundMoney(Number(r.sale_costs)),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -205,7 +254,44 @@ export function listRentals(db: Database, userId: string, today: string): Rental
     `${ENTRY_SELECT} WHERE e.user_id = ? ORDER BY e.date DESC, e.created_at DESC`,
     [userId],
   ).map(presentEntry);
-  return { today, moneyViewsFrom: TXN_SYNC_FROM_DATE, properties, entries, rooms: listRooms(db, userId), tenancies: listTenancies(db, userId) };
+  return {
+    today,
+    moneyViewsFrom: TXN_SYNC_FROM_DATE,
+    properties,
+    entries,
+    rooms: listRooms(db, userId),
+    tenancies: listTenancies(db, userId),
+    lossBasis: readLossBasis(db, userId),
+  };
+}
+
+// ---------------------------------------------------------------- loss basis (users.preferences_json)
+
+const LOSS_BASIS_KEY = 'rentalLossBasis';
+
+function userPrefs(db: Database, userId: string): Record<string, unknown> | null {
+  const row = queryOne<{ preferences_json: string | null }>(db, `SELECT preferences_json FROM users WHERE id = ?`, [userId]);
+  if (!row) return null;
+  try {
+    const parsed = JSON.parse(row.preferences_json || '{}') as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function readLossBasis(db: Database, userId: string): RentalLossBasis {
+  const v = userPrefs(db, userId)?.[LOSS_BASIS_KEY];
+  return isRentalLossBasis(v) ? v : RENTAL_LOSS_BASIS_DEFAULT;
+}
+
+/** false = user not found. */
+export function saveLossBasis(db: Database, userId: string, basis: RentalLossBasis): boolean {
+  const prefs = userPrefs(db, userId);
+  if (!prefs) return false;
+  prefs[LOSS_BASIS_KEY] = basis;
+  run(db, `UPDATE users SET preferences_json = ?, updated_at = ? WHERE id = ?`, [JSON.stringify(prefs), new Date().toISOString(), userId]);
+  return true;
 }
 
 export function propertyRow(db: Database, userId: string, id: string): PropertyRow | null {
@@ -224,8 +310,9 @@ export function createProperty(db: Database, userId: string, d: PropertyDraft): 
   const now = new Date().toISOString();
   run(
     db,
-    `INSERT INTO rental_properties (id, user_id, name, address, notes, let_type, own_home, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)`,
-    [id, userId, d.name, d.address, d.notes, d.letType, d.ownHome ? 1 : 0, now, now],
+    `INSERT INTO rental_properties (id, user_id, name, address, notes, let_type, own_home, purchase_date, purchase_price, sale_agreement_date, sale_price, sale_costs, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, userId, d.name, d.address, d.notes, d.letType, d.ownHome ? 1 : 0, d.purchaseDate, d.purchasePrice, d.saleAgreementDate, d.salePrice, d.saleCosts, now, now],
   );
   return presentProperty(propertyRow(db, userId, id)!);
 }
@@ -243,15 +330,26 @@ export function updateProperty(db: Database, userId: string, id: string, patch: 
   const letType = patch.letType ?? (r.let_type === 'rooms' ? 'rooms' : 'whole');
   // Back to a whole property: it stops being your home unless told otherwise.
   const ownHome = patch.ownHome ?? (letType === 'rooms' && Boolean(r.own_home));
-  const err = checkPropertyLetting({ letType, ownHome });
+  const sale: PropertySale = {
+    purchaseDate: patch.purchaseDate !== undefined ? patch.purchaseDate : r.purchase_date,
+    purchasePrice: patch.purchasePrice !== undefined ? patch.purchasePrice : r.purchase_price,
+    saleAgreementDate: patch.saleAgreementDate !== undefined ? patch.saleAgreementDate : r.sale_agreement_date,
+    salePrice: patch.salePrice !== undefined ? patch.salePrice : r.sale_price,
+    saleCosts: patch.saleCosts !== undefined ? patch.saleCosts : r.sale_costs,
+  };
+  const err = checkPropertyLetting({ letType, ownHome }) ?? checkPropertySale(sale);
   if (err) return { ok: false, error: err };
   if (letType === 'whole' && r.let_type === 'rooms' && listRooms(db, userId).some((room) => room.propertyId === id)) {
     return { ok: false, error: 'Remove its rooms before letting it as a whole property' };
   }
   run(
     db,
-    `UPDATE rental_properties SET name=?, address=?, notes=?, let_type=?, own_home=?, updated_at=? WHERE id=? AND user_id=?`,
-    [name, patch.address ?? r.address, patch.notes ?? r.notes, letType, ownHome ? 1 : 0, new Date().toISOString(), id, userId],
+    `UPDATE rental_properties SET name=?, address=?, notes=?, let_type=?, own_home=?,
+       purchase_date=?, purchase_price=?, sale_agreement_date=?, sale_price=?, sale_costs=?, updated_at=? WHERE id=? AND user_id=?`,
+    [
+      name, patch.address ?? r.address, patch.notes ?? r.notes, letType, ownHome ? 1 : 0,
+      sale.purchaseDate, sale.purchasePrice, sale.saleAgreementDate, sale.salePrice, sale.saleCosts, new Date().toISOString(), id, userId,
+    ],
   );
   // Mirrored rows carry the property name in their description.
   if (name !== r.name) {
