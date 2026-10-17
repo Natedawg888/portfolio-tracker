@@ -105,84 +105,45 @@ function migrateNullableTransactionAccount(database: Database) {
   }
 }
 
-/** Existing databases were created with cost_basis_nzd NOT NULL DEFAULT 0.
- * Rebuild that table once so a blank cost basis can be stored as SQL NULL. */
+/**
+ * Existing databases were created with cost_basis_nzd NOT NULL DEFAULT 0. Rebuild that table once
+ * so a blank cost basis can be stored as SQL NULL. Same approach as the transactions rebuild above:
+ * the live CREATE statement keeps every migrated column (user_id, card, art, mining…), every row is
+ * copied, and the indexes are recreated. A fixed column list here used to drop later columns.
+ */
 function migrateNullableHoldingCost(database: Database) {
-  const stmt = database.prepare('PRAGMA table_info(holdings)');
-  let costIsNotNull = false;
-  while (stmt.step()) {
-    const row = stmt.getAsObject() as { name?: string; notnull?: number };
-    if (row.name === 'cost_basis_nzd') costIsNotNull = Number(row.notnull) === 1;
+  const cols = database.exec('PRAGMA table_info(holdings)')[0];
+  if (!cols) return;
+  const nameIdx = cols.columns.indexOf('name');
+  const notNullIdx = cols.columns.indexOf('notnull');
+  const costCol = cols.values.find((r) => r[nameIdx] === 'cost_basis_nzd');
+  if (!costCol || Number(costCol[notNullIdx]) !== 1) return;
+
+  const createSql = String(
+    database.exec(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'holdings'`)[0].values[0][0],
+  );
+  const relaxed = createSql
+    .replace(/CREATE TABLE\s+(IF NOT EXISTS\s+)?"?holdings"?/i, 'CREATE TABLE holdings_nullable_cost')
+    .replace(/(cost_basis_nzd\s+REAL)\s+NOT NULL(\s+DEFAULT\s+0)?/i, '$1');
+  if (relaxed === createSql || /cost_basis_nzd\s+REAL\s+NOT NULL/i.test(relaxed)) {
+    throw new Error('holdings migration: could not relax cost_basis_nzd NOT NULL');
   }
-  stmt.free();
-  if (!costIsNotNull) return;
+  const indexSql = (database.exec(
+    `SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'holdings' AND sql IS NOT NULL`,
+  )[0]?.values ?? []).map((r) => String(r[0]));
 
-  database.run(`
-    CREATE TABLE holdings_nullable (
-      id              TEXT PRIMARY KEY,
-      asset_class     TEXT NOT NULL,
-      name            TEXT NOT NULL,
-      notes           TEXT,
-      cost_basis_nzd  REAL,
-      acquired_at     TEXT,
-      created_at      TEXT NOT NULL,
-      updated_at      TEXT NOT NULL,
-      symbol          TEXT,
-      shares          REAL,
-      exchange        TEXT,
-      asset           TEXT,
-      amount          REAL,
-      miner_name          TEXT,
-      miner_external_id   TEXT,
-      hashrate_ths        REAL,
-      energy_efficiency_wth REAL,
-      rarity              TEXT,
-      level               INTEGER,
-      estimated_value_nzd REAL,
-      estimated_value_at  TEXT,
-      estimated_value_source TEXT,
-      ownership_pct       REAL,
-      purchase_price_nzd  REAL,
-      purchase_date       TEXT,
-      last_valuation_nzd  REAL,
-      last_valuation_at   TEXT,
-      artwork_title       TEXT,
-      artist              TEXT,
-      metal           TEXT,
-      metal_amount    REAL,
-      metal_unit      TEXT,
-      stone_type      TEXT,
-      carat           REAL,
-      clarity         TEXT,
-      cut             TEXT,
-      colour          TEXT,
-      length_mm       REAL,
-      width_mm        REAL,
-      depth_mm        REAL,
-      valuation_nzd   REAL,
-      valuation_source TEXT,
-      valuation_notes TEXT,
-      source          TEXT,
-      external_id     TEXT
-    )
-  `);
-  database.run(`
-    INSERT INTO holdings_nullable
-    SELECT id, asset_class, name, notes, cost_basis_nzd, acquired_at, created_at, updated_at,
-      symbol, shares, exchange, asset, amount,
-      miner_name, miner_external_id, hashrate_ths, energy_efficiency_wth, rarity, level,
-      estimated_value_nzd, estimated_value_at, estimated_value_source,
-      ownership_pct, purchase_price_nzd, purchase_date, last_valuation_nzd, last_valuation_at,
-      artwork_title, artist, metal, metal_amount, metal_unit,
-      stone_type, carat, clarity, cut, colour, length_mm, width_mm, depth_mm,
-      valuation_nzd, valuation_source, valuation_notes, source, external_id
-    FROM holdings
-  `);
-  database.run('DROP TABLE holdings');
-  database.run('ALTER TABLE holdings_nullable RENAME TO holdings');
-  database.run('CREATE INDEX IF NOT EXISTS idx_holdings_class ON holdings(asset_class)');
-  // idx_holdings_user_external created after user_id migration below
-
+  database.run('BEGIN');
+  try {
+    database.run(relaxed);
+    database.run('INSERT INTO holdings_nullable_cost SELECT * FROM holdings');
+    database.run('DROP TABLE holdings');
+    database.run('ALTER TABLE holdings_nullable_cost RENAME TO holdings');
+    for (const sql of indexSql) database.run(sql);
+    database.run('COMMIT');
+  } catch (err) {
+    database.run('ROLLBACK');
+    throw err;
+  }
 }
 
 function tableColumns(database: Database, table: string): Set<string> {
