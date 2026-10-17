@@ -962,6 +962,14 @@ CREATE TABLE IF NOT EXISTS rental_properties (
   notes       TEXT NOT NULL DEFAULT '',
   let_type    TEXT NOT NULL DEFAULT 'whole',  -- whole | rooms (KAN-83)
   own_home    INTEGER NOT NULL DEFAULT 0,     -- 1 = the user lives here and lets rooms
+  -- Tax (KAN-93): interest limitation exemption, and the bright-line test on a sale.
+  new_build           INTEGER NOT NULL DEFAULT 0,  -- 1 = exempt from interest limitation
+  purchase_date       TEXT,                        -- settlement (title transferred)
+  purchase_cost       REAL,                        -- price plus purchase costs and improvements
+  sale_agreement_date TEXT,                        -- set = sold; binding sale agreement
+  sale_price          REAL,
+  sale_costs          REAL,
+  main_home           INTEGER NOT NULL DEFAULT 0,  -- 1 = was the user's main home (bright-line)
   created_at  TEXT NOT NULL,
   updated_at  TEXT NOT NULL
 );
@@ -1017,6 +1025,13 @@ CREATE TABLE IF NOT EXISTS rental_tenancies (
   updated_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_rental_tenancies_user ON rental_tenancies(user_id, room_id);
+
+-- Rental tax settings (KAN-93): how ring-fenced losses carry forward. portfolio | property
+CREATE TABLE IF NOT EXISTS rental_settings (
+  user_id     TEXT PRIMARY KEY,
+  loss_basis  TEXT NOT NULL DEFAULT 'portfolio',
+  updated_at  TEXT NOT NULL
+);
 
 -- Shopping lists (KAN-74). Per user. est_price_nzd is the price of one unit (× quantity for
 -- the line). category_id links an item, or the whole list, to a budget category.

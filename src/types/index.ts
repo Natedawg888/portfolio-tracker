@@ -1729,6 +1729,17 @@ export interface RentalProperty {
   letType: RentalLetType;
   /** The user lives here and lets rooms (boarders / flatmates). Only with letType 'rooms'. */
   ownHome: boolean;
+  /** New build: exempt from the interest limitation (KAN-93). */
+  newBuild: boolean;
+  /** Purchase settlement (bright-line start) and cost incl. purchase costs and improvements (KAN-93). */
+  purchaseDate: string | null;
+  purchaseCostNzd: number | null;
+  /** Set when sold: the binding sale agreement (bright-line end), price and selling costs (KAN-93). */
+  saleAgreementDate: string | null;
+  salePriceNzd: number | null;
+  saleCostsNzd: number | null;
+  /** Was the user's main home (bright-line main home exclusion). */
+  mainHome: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -1764,6 +1775,8 @@ export interface RentalListResponse {
   today: string;
   /** Budget and Income count rental entries from this date. */
   moneyViewsFrom: string;
+  /** How ring-fenced rental losses carry forward (KAN-93). */
+  lossBasis: 'portfolio' | 'property';
   /** Oldest first by name. */
   properties: RentalProperty[];
   /** Newest first. */
