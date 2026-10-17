@@ -65,5 +65,6 @@ jobs:
       - run: npm run test:rentals
       - run: npm run test:shopping
       - run: npm run test:settings-categories
+      - run: npm run test:onboarding-categories
       - run: npm run test:household
       - run: npm run build

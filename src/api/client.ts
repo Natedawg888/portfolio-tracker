@@ -1061,6 +1061,7 @@ export const api = {
       req<
         Array<{
           id: string;
+          slug?: string;
           name: string;
           parentId: string | null;
           colour: string | null;
@@ -1071,6 +1072,9 @@ export const api = {
       >('/budgets/categories'),
     createCategory: (body: {
       name: string;
+      /** A starter category recreated in onboarding keeps its slug (the server makes the id per user). */
+      slug?: string;
+      id?: string;
       type?: 'spending' | 'income' | 'transfer_out' | 'transfer_in';
       isIncome?: boolean;
       colour?: string | null;
