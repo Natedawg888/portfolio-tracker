@@ -15,7 +15,9 @@
  *                                   commodities held as a business's produce (KAN-81)
  *   GET    /clients/:clientId        client view: invoices, billed, outstanding, last payment
  *   POST   /:id/employees            { name, role?, email?, phone?, address?, bankAccount?, payRateNzd?, payUnit?, payFrequency?, payDate?, startDate?, status?, notes? }
- *   PUT    /employees/:employeeId | DELETE /employees/:employeeId
+ *   PUT    /employees/:employeeId | DELETE /employees/:employeeId (also removes the contract file)
+ *   POST   /employees/:employeeId/contract  { fileBase64, fileName? }  PDF, Word (.docx/.doc) or photo, max 8MB; replaces any earlier one
+ *   DELETE /employees/:employeeId/contract
  *
  * Clients are created and edited through /api/invoices/clients with a businessId.
  */
@@ -47,7 +49,7 @@ import {
   updateAsset,
   updateBusiness,
 } from '../business/store.ts';
-import { createEmployee, deleteEmployee, parseEmployee, updateEmployee } from '../business/employees.ts';
+import { clearEmployeeContract, createEmployee, deleteEmployee, parseEmployee, setEmployeeContract, updateEmployee } from '../business/employees.ts';
 
 const router = Router();
 
@@ -142,6 +144,16 @@ router.put('/employees/:employeeId', async (req, res) => {
   }
   const db = await getDb();
   reply(res, updateEmployee(db, uid(req), req.params.employeeId, parsed.value, aucklandToday()));
+});
+
+router.post('/employees/:employeeId/contract', async (req, res) => {
+  const db = await getDb();
+  reply(res, setEmployeeContract(db, uid(req), req.params.employeeId, req.body?.fileBase64, req.body?.fileName, aucklandToday()));
+});
+
+router.delete('/employees/:employeeId/contract', async (req, res) => {
+  const db = await getDb();
+  reply(res, clearEmployeeContract(db, uid(req), req.params.employeeId, aucklandToday()));
 });
 
 router.delete('/employees/:employeeId', async (req, res) => {

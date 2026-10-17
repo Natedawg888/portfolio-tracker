@@ -456,6 +456,21 @@ try {
   assert((await req('DELETE', `/api/business/assets/${hiveId}`, { cookie: b.cookie })).status === 404, 'B can’t delete A’s assets');
   assert((await req('GET', `/api/business/clients/${clientId}`, { cookie: b.cookie })).status === 404, 'B can’t open A’s client');
   assert((await req('POST', '/api/invoices/clients', { cookie: b.cookie, body: { businessId: bizId, name: 'x' } })).status === 404, 'B can’t add to A’s business');
+
+  // Employee contracts: another user can't add, open or remove A's employee's contract.
+  const worker = await req('POST', `/api/business/${bizId}/employees`, { cookie: a.cookie, body: { name: 'Alpha Secret Worker' } });
+  assert(worker.status === 201, 'A adds an employee');
+  const workerId = String((worker.json as { id: string }).id);
+  const contractPdf = `data:application/pdf;base64,${Buffer.from(`%PDF-1.4 SECRET_CONTRACT_FILE ${'x'.repeat(40)}`).toString('base64')}`;
+  const signed = await req('POST', `/api/business/employees/${workerId}/contract`, { cookie: a.cookie, body: { fileBase64: contractPdf, fileName: 'contract.pdf' } });
+  assert(signed.status === 200, 'A saves the contract');
+  const contractUrl = String((signed.json as { contract: { url: string } }).contract.url);
+  assert((await req('POST', `/api/business/employees/${workerId}/contract`, { cookie: b.cookie, body: { fileBase64: contractPdf } })).status === 404, 'B can’t replace it');
+  assert((await req('DELETE', `/api/business/employees/${workerId}/contract`, { cookie: b.cookie })).status === 404, 'B can’t remove it');
+  const otherContract = await req('GET', contractUrl, { cookie: b.cookie, raw: true });
+  assert(otherContract.status === 404 && !otherContract.text.includes('SECRET_CONTRACT_FILE'), 'B can’t open it');
+  const ownContract = await req('GET', contractUrl, { cookie: a.cookie, raw: true });
+  assert(ownContract.status === 200 && ownContract.text.includes('SECRET_CONTRACT_FILE'), 'A can');
   const staff = await req('POST', `/api/business/${bizId}/employees`, { cookie: a.cookie, body: { name: 'Alpha Secret Employee', bankAccount: '12-3456-7890123-00' } });
   assert(staff.status === 201, 'A adds an employee');
   const staffId = String((staff.json as { id: string }).id);
@@ -492,7 +507,7 @@ try {
     'B can’t record rent against A’s room',
   );
 
-  console.log('OK: cross-user BTC, income, uploads, settings, households, payslips, bonds, commodities, businesses, and rental rooms');
+  console.log('OK: cross-user BTC, income, uploads, settings, households, payslips, bonds, commodities, businesses, employee contracts, and rental rooms');
 } finally {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 }

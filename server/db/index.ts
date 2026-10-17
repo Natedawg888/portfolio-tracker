@@ -608,6 +608,13 @@ function migrateSchema(database: Database) {
       if (!vehicleCols.has(col)) database.run(`ALTER TABLE vehicles ADD COLUMN ${col} ${type}`);
     }
   }
+  // Employee contracts (business employees predate these columns).
+  const employeeCols = tableColumns(database, 'business_employees');
+  if (employeeCols.size > 0) {
+    for (const [col, type] of [['contract_path', 'TEXT'], ['contract_name', "TEXT NOT NULL DEFAULT ''"], ['contract_at', 'TEXT']] as const) {
+      if (!employeeCols.has(col)) database.run(`ALTER TABLE business_employees ADD COLUMN ${col} ${type}`);
+    }
+  }
   // Payslip net pay mirrored into income (KAN-78).
   if (incomeCols.size > 0 && !incomeCols.has('payslip_id')) {
     database.run('ALTER TABLE income_records ADD COLUMN payslip_id TEXT');

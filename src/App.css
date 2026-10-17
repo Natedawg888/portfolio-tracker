@@ -14276,6 +14276,9 @@ html:not([data-theme]) .assets-page .portfolio-tab.active {
 .business-detail-actions { display: flex; align-items: center; gap: 0.4rem; }
 /* + Invoice is a link (a.btn is inline-block): flex centres its label; same height as the ⋯ toggle beside it. */
 .business-detail-actions .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 1.9rem; }
+/* Employee contract: current file, picker and help stacked. */
+.employee-contract-field { display: grid; gap: 0.35rem; justify-items: start; }
+.employee-contract-field p { margin: 0; overflow-wrap: anywhere; }
 .business-mark--slot { border: 2px dashed var(--border); background: transparent; color: var(--muted); cursor: pointer; display: grid; place-items: center; font-weight: 700; font-size: 1.1rem; padding: 0; }
 .business-mark--slot:hover:not(:disabled), .business-mark--slot:focus-visible { border-color: var(--accent); color: var(--accent); }
 .more-menu-body .business-menu-danger { color: var(--danger); }

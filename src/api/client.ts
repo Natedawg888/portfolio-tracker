@@ -1003,6 +1003,9 @@ export const api = {
     updateEmployee: (id: string, body: BusinessEmployeeWriteBody) =>
       req<BusinessEmployee>(`/business/employees/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
     removeEmployee: (id: string) => req<{ ok: boolean; id: string }>(`/business/employees/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    uploadContract: (id: string, fileBase64: string, fileName: string) =>
+      req<BusinessEmployee>(`/business/employees/${encodeURIComponent(id)}/contract`, { method: 'POST', body: JSON.stringify({ fileBase64, fileName }) }),
+    removeContract: (id: string) => req<BusinessEmployee>(`/business/employees/${encodeURIComponent(id)}/contract`, { method: 'DELETE' }),
     produceCandidates: () => req<BusinessDetail['produce']>('/business/produce/candidates'),
     linkProduce: (commodityId: string, businessId: string | null) =>
       req<{ ok: true }>('/business/produce/link', { method: 'POST', body: JSON.stringify({ commodityId, businessId }) }),

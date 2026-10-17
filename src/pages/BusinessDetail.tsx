@@ -526,6 +526,14 @@ export function BusinessDetail() {
                         Bank <span className="business-employee-bank">{maskBankAccount(e.bankAccount)}</span>
                       </span>
                     ) : null}
+                    {e.contract ? (
+                      <span className="small">
+                        <a href={e.contract.url} target="_blank" rel="noreferrer" download={e.contract.name} aria-label={`${e.name}’s contract: ${e.contract.name}`}>
+                          Contract
+                        </a>
+                        <span className="muted"> · {e.contract.name}</span>
+                      </span>
+                    ) : null}
                   </div>
                   <span className="rental-entry-amount rental-entry-amount--out business-employee-pay">
                     {rate || <span className="muted small">No rate</span>}
@@ -543,7 +551,7 @@ export function BusinessDetail() {
                       className="link-btn"
                       disabled={busy}
                       aria-label={`Delete ${e.name}`}
-                      onClick={() => void act(() => api.business.removeEmployee(e.id), `${e.name} deleted.`, `Delete ${e.name}? Their contact, bank and pay details are removed.`)}
+                      onClick={() => void act(() => api.business.removeEmployee(e.id), `${e.name} deleted.`, `Delete ${e.name}? Their contact, bank and pay details${e.contract ? ', and their contract,' : ''} are removed.`)}
                     >
                       Delete
                     </button>
@@ -611,11 +619,20 @@ export function BusinessDetail() {
         <EmployeeForm
           title={dialog.mode === 'add-employee' ? 'Add employee' : `Edit ${dialog.employee.name}`}
           initial={employeeDraft(dialog.mode === 'edit-employee' ? dialog.employee : null)}
+          contract={dialog.mode === 'edit-employee' ? dialog.employee.contract : null}
           onClose={() => setDialog(null)}
-          onSave={async (body) => {
-            if (dialog.mode === 'edit-employee') await api.business.updateEmployee(dialog.employee.id, body);
-            else await api.business.createEmployee(id, body);
-            await saved(`${body.name} saved.`);
+          onSave={async (body, file, removeContract) => {
+            const employee =
+              dialog.mode === 'edit-employee' ? await api.business.updateEmployee(dialog.employee.id, body) : await api.business.createEmployee(id, body);
+            let note = `${body.name} saved.`;
+            // The employee is saved first; a contract that fails to upload doesn't undo that.
+            try {
+              if (file) await api.business.uploadContract(employee.id, file.data, file.name);
+              else if (removeContract) await api.business.removeContract(employee.id);
+            } catch (e) {
+              note = `${note} The contract ${file ? 'didn’t upload' : 'wasn’t removed'}: ${errorText(e, 'try again from Edit')}.`;
+            }
+            await saved(note);
           }}
         />
       ) : null}
