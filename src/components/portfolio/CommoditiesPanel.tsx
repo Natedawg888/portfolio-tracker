@@ -210,7 +210,13 @@ function CommodityCard({ c, onEdit, onDelete }: { c: Commodity; onEdit: () => vo
             {CATEGORY_LABEL[c.category]} · {quantityText(c.quantity, c.unit)}
           </p>
         </div>
-        {c.valueNzd == null ? <span className="payslip-badge">No value</span> : c.stale ? <span className="payslip-badge payslip-badge-warn">Out of date</span> : null}
+        {c.businessName != null ? (
+          <span className="payslip-badge">Part of {c.businessName || 'a business'}</span>
+        ) : c.valueNzd == null ? (
+          <span className="payslip-badge">No value</span>
+        ) : c.stale ? (
+          <span className="payslip-badge payslip-badge-warn">Out of date</span>
+        ) : null}
       </div>
       <dl className="payslip-figs">
         <div>
@@ -231,10 +237,11 @@ function CommodityCard({ c, onEdit, onDelete }: { c: Commodity; onEdit: () => vo
       </dl>
       <p className="small muted">
         {c.valueNzd == null
-          ? 'Add a price to count it in net worth.'
+          ? `Add a price to count it in ${c.businessName != null ? `${c.businessName || 'its business'}’s value` : 'net worth'}.`
           : `${c.unitPriceNzd != null ? `${unitPrice(c.unitPriceNzd)}/${UNIT_SHORT[c.unit]}` : ''}${c.priceBasis === 'total' ? ' (from your total)' : ''} · your price${c.valueOn ? `, ${longDate(c.valueOn)}` : ''}.`}
         {c.stale && c.valueNzd != null ? ` Over ${STALE_AFTER_DAYS} days old: check a current price.` : ''}
         {c.notes ? ` ${c.notes}` : ''}
+        {c.businessName != null && c.valueNzd != null ? ` Counted in ${c.businessName || 'its business'}’s value on Business, not in this total.` : ''}
       </p>
       <div className="payslip-actions">
         <button type="button" className="link-btn" onClick={onEdit}>
