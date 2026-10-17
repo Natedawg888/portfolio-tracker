@@ -55,6 +55,7 @@ import {
   convertSalaryHourly,
   formatPayeTaxDay,
   ietcCreditTip,
+  ietcNotLoadedTip,
   incomeBracketRows,
   kiwiSaverEmployeeRateOptions,
   kiwiSaverEmployerTip,
@@ -530,7 +531,7 @@ export function Paye() {
     return buildTaxCode({
       employment,
       studentLoan,
-      ietcApplied: employment === 'primary' && ietc,
+      ietcApplied: employment === 'primary' && ietc && rates.ietc != null,
       secondaryCode:
         employment === 'secondary' ? pickSecondaryCode(Number(secondaryTotal) || 0, rates).code : null,
     });
@@ -870,19 +871,23 @@ export function Paye() {
             label="IETC"
             pressed={ietc}
             onChange={setIetc}
-            disabled={employment === 'secondary'}
-            note={employment === 'secondary' ? 'Main job only' : undefined}
+            disabled={employment === 'secondary' || !rates.ietc}
+            note={!rates.ietc ? 'Not loaded for this year' : employment === 'secondary' ? 'Main job only' : undefined}
             tipLabel="About the independent earner tax credit"
-            tip={ietcCreditTip(
-              {
-                minIncome: rates.ietc.minIncome,
-                fullMaxIncome: rates.ietc.fullMaxIncome,
-                abateEnd: rates.ietc.abateEnd,
-                fullAnnual: rates.ietc.fullAnnual,
-                abateRate: rates.ietc.abateRate,
-              },
-              bandMoney,
-            )}
+            tip={
+              rates.ietc
+                ? ietcCreditTip(
+                    {
+                      minIncome: rates.ietc.minIncome,
+                      fullMaxIncome: rates.ietc.fullMaxIncome,
+                      abateEnd: rates.ietc.abateEnd,
+                      fullAnnual: rates.ietc.fullAnnual,
+                      abateRate: rates.ietc.abateRate,
+                    },
+                    bandMoney,
+                  )
+                : ietcNotLoadedTip(rates.label)
+            }
           />
           <PayeToggle
             label="Charity donations"

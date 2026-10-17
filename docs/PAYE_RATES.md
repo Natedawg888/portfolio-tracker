@@ -2,7 +2,7 @@
 
 This app's PAYE calculator (`src/lib/payeRates.ts`, `src/lib/payeCalc.ts`, `/paye` page) uses **only** published IRD (and ACC-via-IRD) figures. When IRD publishes a new tax year, update `payeRates.ts` and this document together.
 
-**Tax years (KAN-79):** the calculator reads every rate from the selected year's entry in `PAY_TAX_YEARS` (`payeRates.ts`). The current year is **1 April 2026 – 31 March 2027** (as of October 2026, Pacific/Auckland); **1 April 2025 – 31 March 2026** is also available (see [2025/26 rates](#202526-rates-1-april-2025--31-march-2026)). The PAYE page has a tax-year picker. Add a year only once IRD has published **all** its figures. ACC for 2027/28 is already published (1.83%, max earnings $160,244, max levy $2,932.47), but income tax, student loan and minimum wage for that year are not, so 2027/28 is not offered yet.
+**Tax years (KAN-79):** the calculator reads every rate from the selected year's entry in `PAY_TAX_YEARS` (`payeRates.ts`). The current year is **1 April 2026 – 31 March 2027** (as of October 2026, Pacific/Auckland); **1 April 2025 – 31 March 2026** and **1 April 2024 – 31 March 2025** are also available (see [2025/26 rates](#202526-rates-1-april-2025--31-march-2026) and [2024/25 rates](#202425-rates-1-april-2024--31-march-2025)). The PAYE page has a tax-year picker. Add a year only once IRD has published **all** its figures. ACC for 2027/28 is already published (1.83%, max earnings $160,244, max levy $2,932.47), but income tax, student loan and minimum wage for that year are not, so 2027/28 is not offered yet.
 
 **Method note:** Take-home is estimated with an **annual progressive** income-tax model, ACC levied separately, then periodised (÷52 / ÷26 / ÷12). IRD's official weekly/fortnightly **tables** (IR340/IR341) combine PAYE+ACC and use pay-period truncation/rounding, so results can differ by a few dollars from IRD's calculator or payroll software. Feature set is inspired by https://www.paye.net.nz/calculator/; visuals use Portfolio Tracker panels/theme only.
 
@@ -219,6 +219,32 @@ Sources:
 - IRD — IETC: https://www.ird.govt.nz/income-tax/income-tax-for-individuals/individual-tax-credits/independent-earner-tax-credit-ietc
 - Employment NZ — Previous minimum wage rates: https://www.employment.govt.nz/pay-and-hours/pay-and-wages/minimum-wage/previous-min-wage-rates
 
+## 2024/25 rates (1 April 2024 – 31 March 2025)
+
+Added for KAN-96 and checked on 18 October 2026. The income tax brackets and IETC thresholds changed on **31 July 2024**, part way through the year.
+
+| Item | 2024/25 |
+| --- | --- |
+| Income tax (whole year) | IRD's **composite** rates: 10.5% to $14,000; 12.82% to $15,600; 17.5% to $48,000; 21.64% to $53,500; 30% to $70,000; 30.99% to $78,100; 33% to $180,000; 39% above |
+| Income tax (single pay) | Pay days to 30 July 2024: 10.5% to $14,000; 17.5% to $48,000; 30% to $70,000; 33% to $180,000; 39% above. From 31 July 2024: the current bands |
+| Secondary codes | Whole year: the codes from 31 July 2024 (no composite table exists; the result says so). Single pay: by pay date, before 31 July 2024 SB $14,000 / S $48,000 / SH $70,000 / ST $180,000 |
+| ACC earners' levy | **1.60%**, max earnings **$142,283**, max levy **$2,276.52** |
+| KiwiSaver employee rates | **3, 4, 6, 8, 10%**; default and employer minimum **3%** |
+| Student loan | 12% over **$24,128** (from 1 April 2024) |
+| IETC (whole year) | **Not loaded.** IRD squares up 2024/25 with a transitional calculation and its figures weren't confirmed, so the PAYE page disables the IETC switch for this year |
+| IETC (single pay) | Pay days to 30 July 2024: $24,000–$44,000, abates 13c to $48,000. From 31 July 2024: $24,000–$66,000, abates 13c to $70,000 |
+| Minimum wage (adult / starting-out) | **$23.15 / $18.52** from 1 April 2024 |
+| Working for Families | Not loaded |
+
+The whole-year PAYE calculator uses the composite rates. The payslip check uses the rates in force on each pay day (`payDatePeriods` in `payeRates.ts`, read by `ratesForPayDate`).
+
+Sources:
+- IRD — Tax rates for individuals ("From 1 April 2024 to 31 March 2025" table): https://www.ird.govt.nz/income-tax/income-tax-for-individuals/tax-codes-and-tax-rates-for-individuals/tax-rates-for-individuals
+- IRD — ACC earners' levy: https://www.ird.govt.nz/acclevy
+- IRD — IETC: https://www.ird.govt.nz/income-tax/income-tax-for-individuals/individual-tax-credits/independent-earner-tax-credit-ietc
+- TIB Vol 36 No 7 (Aug 2024): https://www.taxtechnical.ird.govt.nz/-/media/project/ir/tt/pdfs/tib/volume-36---2024/tib-vol36-no7.pdf
+- Employment NZ — Previous minimum wage rates: https://www.employment.govt.nz/pay-and-hours/pay-and-wages/minimum-wage/previous-min-wage-rates
+
 ## Household take-home pay (KAN-79)
 
 The Household page adds up members who opt in to sharing their pay. Each member is worked out on their own with `calculatePaye` for the tax year being viewed (NZ has no joint filing), and saved piece-rate sources go through the same engine. Contract and share-of-catch sources aren't taxed through payroll, so only their gross and amount received are counted. Payroll giving and investing credits aren't part of the household inputs. Code: `server/households/paye.ts`; tests: `server/households/paye.test.ts`.
@@ -248,7 +274,7 @@ Not modelled: shared care, foster care / orphan's / unsupported child's benefits
 
 ## Payslip check (KAN-78)
 
-Budget → Payslips compares each payslip with what the calculator expects for its pay period, tax code and the tax year of its pay date (`src/lib/payslipCheck.ts`): PAYE (income tax after IETC on ME), the ACC earners' levy (or PAYE including ACC, when the payslip shows them together), the KiwiSaver employee contribution (at the rate given, or whichever standard rate it matches) and student loan (per-period threshold on M/ME; every dollar on secondary codes). Pay is annualised (×52, ×26, ×13 or ×12) and divided back, as IRD's payroll specification does. A difference of up to $1, or 1% when that's more, counts as matching because IRD's period tables round. Covered tax codes: M, ME, SB, S, SH, ST, SA, each with or without SL. ESCT and other codes are recorded but not checked. A pay date in a tax year without loaded rates isn't checked.
+Budget → Payslips compares each payslip with what the calculator expects for its pay period, tax code and the tax year of its pay date (`src/lib/payslipCheck.ts`): PAYE (income tax after IETC on ME), the ACC earners' levy (or PAYE including ACC, when the payslip shows them together), the KiwiSaver employee contribution (at the rate given, or whichever standard rate it matches) and student loan (per-period threshold on M/ME; every dollar on secondary codes). Rates are the ones in force on the pay date, so a 2024/25 payslip before 31 July 2024 uses that year's old brackets and IETC thresholds. Pay is annualised (×52, ×26, ×13 or ×12) and divided back, as IRD's payroll specification does. A difference of up to $1, or 1% when that's more, counts as matching because IRD's period tables round. Covered tax codes: M, ME, SB, S, SH, ST, SA, each with or without SL. ESCT and other codes are recorded but not checked. A pay date in a tax year without loaded rates isn't checked.
 
 ## KiwiSaver calculator (KAN-59)
 
