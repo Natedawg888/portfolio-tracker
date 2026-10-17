@@ -21,7 +21,7 @@ export function providerList(labels: string[]): string {
 export const DELETED_ITEMS: readonly string[] = [
   'Your profile: name, email, photo, preferences and settings',
   'How you sign in: password, passkeys, Google, Apple or Microsoft connections, two-factor setup, trusted devices, signed-in sessions and sign-in history',
-  'Your money: accounts, transactions and receipts, holdings and their photos, KiwiSaver, crypto, bonds, vehicles, rentals, budgets and categories, savings goals, income, payslips, invoices, warranties and shopping lists',
+  'Your money: accounts, transactions and receipts, holdings and their photos, KiwiSaver, crypto, bonds, commodities, vehicles, rentals, businesses with their assets, clients and logos, budgets and categories, savings goals, income, payslips, invoices, warranties and shopping lists',
   'Your Akahu bank connection',
   'Supermarket prices you shared',
   'Your place in a household, what you shared with it, and your name in its history',
