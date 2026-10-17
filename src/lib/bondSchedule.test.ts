@@ -1,7 +1,7 @@
 /**
  * Bonds and term deposits schedule (KAN-80). Figures worked by hand. Run: npm run test:bonds
  */
-import { addMonths, bondSchedule, couponDates, maturityAlert } from './bondSchedule.ts';
+import { RWT_CHOICES, addMonths, bondSchedule, couponDates, maturityAlert, rwtChoiceLabel } from './bondSchedule.ts';
 
 function eq(actual: unknown, expected: unknown, msg: string): void {
   if (actual !== expected) throw new Error(`FAIL: ${msg} (got ${String(actual)}, expected ${String(expected)})`);
@@ -48,5 +48,19 @@ eq(maturityAlert('2026-10-20', '2026-10-16')?.level, '30', 'within 30 days');
 eq(maturityAlert('2026-12-20', '2026-10-16')?.level, '90', 'within 90 days');
 eq(maturityAlert('2027-06-01', '2026-10-16'), null, 'later');
 eq(maturityAlert('2026-10-01', '2026-10-16')?.level, 'matured', 'already matured');
+
+// RWT 28% (company) and 45% (no IRD number) (KAN-95): $10,000 at 10% yearly → $1,000 coupon.
+{
+  const yearly = { kind: 'corporate' as const, faceValue: 10000, ratePct: 10, frequency: 'yearly' as const, purchaseDate: '2026-10-01', maturityDate: '2027-06-30' };
+  const at = (rwtPct: number) => bondSchedule({ ...yearly, rwtPct }).find((p) => p.kind === 'coupon')!;
+  eq(at(45).gross, 1000, '$1,000 coupon');
+  eq(at(45).net, 550, '45%: $450 RWT, $550 net');
+  eq(at(28).net, 720, '28%: $280 RWT, $720 net');
+  eq(at(33).net, 670, 'existing 33% unchanged');
+  eq(RWT_CHOICES.join(), '10.5,17.5,28,30,33,39,45', 'RWT choices in order');
+  eq(rwtChoiceLabel(28), '28% (company)', '28% label');
+  eq(rwtChoiceLabel(45), '45% (no IRD number)', '45% label');
+  eq(rwtChoiceLabel(10.5), '10.5%', 'individual rates keep the plain label');
+}
 
 console.log('bondSchedule.test.ts ok');
