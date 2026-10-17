@@ -490,12 +490,26 @@ function assetsTotal(assets: BusinessAsset[]): number | null {
   return valued.length ? roundMoney(valued.reduce((s, a) => s + (a.currentValueNzd ?? 0), 0)) : null;
 }
 
-/** Net worth (KAN-84): business assets of businesses counted in net worth, by business. */
-export function businessAssetTotals(db: Database, userId: string): { valueNzd: number; perBusiness: { id: string; name: string; valueNzd: number }[] } | null {
+/**
+ * What a business is worth from what it owns: its assets (equipment, livestock, hives, stock …)
+ * plus the produce linked to it, at the values the user entered. null when nothing has a value.
+ */
+export function businessValue(db: Database, userId: string, businessId: string, today: string): number | null {
+  const parts = [assetsTotal(listAssets(db, userId, businessId)), ...businessProduce(db, userId, businessId, today).map((p) => p.valueNzd)].filter(
+    (n): n is number => n != null,
+  );
+  return parts.length ? roundMoney(parts.reduce((s, n) => s + n, 0)) : null;
+}
+
+/**
+ * Net worth (KAN-84): one value per business counted in net worth. Its equipment, stock and
+ * produce count only through it (Commodities leaves out produce linked to a business).
+ */
+export function businessAssetTotals(db: Database, userId: string, today: string): { valueNzd: number; perBusiness: { id: string; name: string; valueNzd: number }[] } | null {
   const perBusiness: { id: string; name: string; valueNzd: number }[] = [];
   for (const b of rows(db, userId)) {
     if (!Number(b.count_in_net_worth)) continue;
-    const total = assetsTotal(listAssets(db, userId, b.id));
+    const total = businessValue(db, userId, b.id, today);
     if (total != null) perBusiness.push({ id: b.id, name: b.name, valueNzd: total });
   }
   if (!perBusiness.length) return null;
@@ -616,7 +630,7 @@ export function businessTotals(db: Database, userId: string, b: BusinessRow, tax
     incomeNzd: money.incomeNzd,
     expensesNzd: money.expensesNzd,
     netNzd: roundMoney(money.incomeNzd - money.expensesNzd),
-    assetsNzd: assetsTotal(listAssets(db, userId, b.id)),
+    assetsNzd: businessValue(db, userId, b.id, today),
     gstCollectedEstimateNzd: Number(b.gst_registered) === 1 ? gstCollectedEstimate(money.incomeNzd) : null,
     outstandingNzd: outstanding(db, userId, b.id, today),
   };

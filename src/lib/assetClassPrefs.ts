@@ -43,7 +43,7 @@ export const ASSET_CLASS_PREF_OPTIONS: AssetClassPrefMeta[] = [
   { key: 'stone', label: 'Precious stones', blurb: 'Diamonds & gems' },
   { key: 'collectable', label: 'Collectables', blurb: 'MTG, Pokémon, figurines' },
   { key: 'vehicles', label: 'Vehicles', blurb: 'Cars, bikes, boats − loans' },
-  { key: 'business', label: 'Business assets', blurb: 'Livestock, beehives, equipment, stock' },
+  { key: 'business', label: 'Businesses', blurb: 'Each business at what it owns: equipment, stock, produce' },
   { key: 'bonds', label: 'Bonds & fixed income', blurb: 'Govt & corporate bonds, term deposits' },
   { key: 'commodities', label: 'Commodities', blurb: 'Scrap metal, honey, wool, oil, livestock' },
   { key: 'kiwisaver', label: 'KiwiSaver', blurb: 'Sharesies KiwiSaver (read-only)' },

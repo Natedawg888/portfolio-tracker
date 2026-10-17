@@ -265,7 +265,12 @@ try {
   assert((await call('POST', '/api/business/produce/link', A, { commodityId: honeyId, businessId: bizId })).status === 200, 'honey linked');
   const withProduce = await call('GET', `/api/business/${bizId}`, A);
   assert(withProduce.json.produce.length === 1 && withProduce.json.produce[0].valueNzd === 8000, 'produce shown with its Commodities value');
-  eq(withProduce.json.totals.assetsNzd, 41000, 'produce isn’t added to the business’s own assets (no double count)');
+  eq(withProduce.json.totals.assetsNzd, 49000, 'the business value includes its produce');
+  const { listCommodities, commodityTotals } = await import('../commodities/store.ts');
+  const cview = listCommodities(db, userA, today);
+  assert(cview.commodities[0].businessName === 'Kōwhai Honey', 'Commodities shows which business the produce belongs to');
+  eq(cview.totals.valueNzd, 0, 'and leaves it out of the Commodities total');
+  assert(commodityTotals(db, userA, today) === null, 'net worth doesn’t count it under Commodities (no double count)');
 
   // ---------------------------------------------------------------- employees
   const empBody = {
@@ -309,7 +314,8 @@ try {
 
   // ---------------------------------------------------------------- net worth
   const nw = await computeNetWorth(db, userA);
-  eq(nw.businessAssetsNzd, 41000, 'business assets in net worth');
+  eq(nw.businessAssetsNzd, 49000, 'the business counts in net worth once, at its value (assets + produce)');
+  eq(nw.commoditiesNzd ?? 0, 0, 'its produce isn’t counted again under Commodities');
   const off = await call('PUT', `/api/business/${bizId}`, A, { ...created.json, countInNetWorth: false });
   assert(off.status === 200 && off.json.countInNetWorth === false, 'net worth switch saved');
   assert((await computeNetWorth(db, userA)).businessAssetsNzd === null, 'left out when switched off');

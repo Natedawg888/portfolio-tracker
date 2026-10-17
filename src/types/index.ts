@@ -943,7 +943,7 @@ export interface NetWorthSummary {
   vehiclesNzd?: number | null;
   vehicleLoansNzd?: number | null;
   vehiclesEquityNzd?: number | null;
-  /** Business assets counted in net worth (KAN-84). */
+  /** Businesses counted in net worth (KAN-84): each one's value (assets plus linked produce). */
   businessAssetsNzd?: number | null;
   /** DeFi positions counted in net worth (KAN-47). */
   defiNzd?: number | null;
@@ -2276,6 +2276,9 @@ export interface CommodityWriteBody {
 export interface Commodity extends CommodityWriteBody {
   id: string;
   updatedAt: string;
+  /** Produce of this business: its value counts in the business, not in Commodities (KAN-84). */
+  businessId?: string | null;
+  businessName?: string | null;
   valueNzd: number | null;
   unitPriceNzd: number | null;
   returnNzd: number | null;

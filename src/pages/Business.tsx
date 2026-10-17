@@ -65,12 +65,12 @@ function Card({ b, onEdit, onType }: { b: BusinessCard; onEdit: () => void; onTy
           <BusinessSetup b={b} />
           {b.totals.assetsNzd != null ? (
             <p className="muted small business-card-owns">
-              Equipment &amp; stock {formatNzd(b.totals.assetsNzd)} · {netWorthNote(b.countInNetWorth)}
+              Business value {formatNzd(b.totals.assetsNzd)} · {netWorthNote(b.countInNetWorth)}
             </p>
           ) : null}
         </>
       ) : (
-        <BusinessFigures totals={b.totals} assetsLabel="Equipment & stock" assetsNote={netWorthNote(b.countInNetWorth)} />
+        <BusinessFigures totals={b.totals} assetsLabel="Business value" assetsNote={netWorthNote(b.countInNetWorth)} />
       )}
       {b.totals.outstandingNzd > 0 ? <p className="muted small business-card-owed">{formatNzd(b.totals.outstandingNzd)} still owed on sent invoices</p> : null}
       <TypeNote type={b.type} name={name} onChange={onType} />

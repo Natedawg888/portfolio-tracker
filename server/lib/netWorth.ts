@@ -84,7 +84,7 @@ export type NetWorthResult = {
   vehiclesNzd: number | null;
   vehicleLoansNzd: number | null;
   vehiclesEquityNzd: number | null;
-  /** Business assets (KAN-84) as the user valued them, for businesses counted in net worth. */
+  /** Businesses counted in net worth (KAN-84): each one's value from what it owns (assets plus linked produce). Field name kept for the API. */
   businessAssetsNzd: number | null;
   /** DeFi positions counted in net worth (KAN-47): recorded values, borrowing taken off. */
   defiNzd: number | null;
@@ -516,7 +516,7 @@ export async function computeNetWorth(
   for (const v of vehicles?.perVehicle ?? []) {
     holdingPoints.push({ id: v.id, label: v.name, assetClass: 'vehicle', valueNzd: v.valueNzd - v.loanNzd });
   }
-  const business = businessAssetTotals(db, userId);
+  const business = businessAssetTotals(db, userId, aucklandToday());
   for (const b of business?.perBusiness ?? []) {
     holdingPoints.push({ id: b.id, label: b.name, assetClass: 'business', valueNzd: b.valueNzd });
   }
