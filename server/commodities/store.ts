@@ -57,9 +57,12 @@ type Row = {
   value_on: string | null;
   notes: string;
   updated_at: string;
+  business_id: string | null;
+  business_name: string | null;
 };
 
-export type Commodity = CommodityDraft & CommodityFigures & { id: string; updatedAt: string };
+/** businessName: the business this is produce of (KAN-84); its value counts in that business, not here. */
+export type Commodity = CommodityDraft & CommodityFigures & { id: string; updatedAt: string; businessId: string | null; businessName: string | null };
 
 export type CommoditiesView = {
   plus: boolean;
@@ -140,16 +143,30 @@ function present(r: Row, today: string): Commodity {
     valueOn: r.value_on,
     notes: r.notes,
   };
-  return { id: r.id, ...draft, ...commodityFigures(draft, today), updatedAt: r.updated_at };
+  return {
+    id: r.id,
+    ...draft,
+    ...commodityFigures(draft, today),
+    updatedAt: r.updated_at,
+    businessId: r.business_id ?? null,
+    businessName: r.business_id ? (r.business_name ?? '') : null,
+  };
 }
 
 function rows(db: Database, userId: string): Row[] {
-  return queryAll<Row>(db, `SELECT * FROM commodities WHERE user_id = ? ORDER BY category, name, created_at`, [userId]);
+  return queryAll<Row>(
+    db,
+    `SELECT c.*, b.name AS business_name FROM commodities c
+     LEFT JOIN businesses b ON b.id = c.business_id AND b.user_id = c.user_id
+     WHERE c.user_id = ? ORDER BY c.category, c.name, c.created_at`,
+    [userId],
+  );
 }
 
 export function listCommodities(db: Database, userId: string, today = aucklandToday()): CommoditiesView {
   const commodities = rows(db, userId).map((r) => present(r, today));
-  const valued = commodities.filter((c) => c.valueNzd != null);
+  // Produce of a business counts in that business's value (KAN-84), so it isn't in these totals.
+  const valued = commodities.filter((c) => c.valueNzd != null && !c.businessId);
   const valueNzd = roundMoney(valued.reduce((s, c) => s + c.valueNzd!, 0));
   // Return compares like with like: only holdings that have a value.
   const costNzd = roundMoney(valued.reduce((s, c) => s + (c.costNzd ?? 0), 0));
@@ -160,7 +177,7 @@ export function listCommodities(db: Database, userId: string, today = aucklandTo
       valueNzd,
       costNzd,
       returnNzd: roundMoney(valueNzd - costNzd),
-      unvalued: commodities.length - valued.length,
+      unvalued: commodities.filter((c) => c.valueNzd == null && !c.businessId).length,
       stale: valued.filter((c) => c.stale).length,
     },
   };
@@ -168,7 +185,8 @@ export function listCommodities(db: Database, userId: string, today = aucklandTo
 
 /** Valued holdings for net worth, or null when the user has none at all. */
 export function commodityTotals(db: Database, userId: string, today = aucklandToday()): { valueNzd: number; perHolding: { id: string; label: string; valueNzd: number }[]; unvalued: number } | null {
-  const all = rows(db, userId).map((r) => present(r, today));
+  // Produce of a business is counted in that business (businessAssetTotals), not here.
+  const all = rows(db, userId).map((r) => present(r, today)).filter((c) => !c.businessId);
   if (!all.length) return null;
   const perHolding = all.filter((c) => c.valueNzd != null).map((c) => ({ id: c.id, label: c.name, valueNzd: c.valueNzd! }));
   return { valueNzd: roundMoney(perHolding.reduce((s, c) => s + c.valueNzd, 0)), perHolding, unvalued: all.length - perHolding.length };

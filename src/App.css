@@ -14374,3 +14374,5 @@ html .business-page .more-menu-body .business-menu-danger:not(:disabled),
 html .business-page .more-menu-body .business-menu-danger:hover:not(:disabled),
 html .business-page .more-menu-body .business-menu-danger:focus-visible { color: var(--danger); }
 html .business-page .more-menu-body .business-menu-item:disabled { color: var(--muted); background: transparent; }
+/* Link buttons on the Business pages keep their 44px tap height with the label centred. */
+.business-page a.btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.25rem; }

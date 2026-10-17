@@ -398,7 +398,7 @@ export function BusinessDetail() {
       {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
       <section className="panel rental-summary business-summary" aria-label="This tax year">
-        <BusinessFigures totals={t} assetsLabel="What it owns" assetsNote={netWorthNote(b.countInNetWorth)} />
+        <BusinessFigures totals={t} assetsLabel="Business value" assetsNote={netWorthNote(b.countInNetWorth)} />
         <NetWorthSwitch
           on={b.countInNetWorth}
           busy={busy}
