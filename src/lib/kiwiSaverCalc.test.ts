@@ -39,6 +39,30 @@ eq(r.firstYear.government, 0, 'none over $180,000');
 eq(r.firstYear.esctRatePct, 33, 'ESCT 33%');
 eq(r.firstYear.governmentNote?.includes('180,000'), true, 'says why');
 
+// Income test is total taxable income, not salary (KAN-99).
+r = calculateKiwiSaver({ ...flat, salary: 170000, otherIncomePerYear: 15000 })!;
+eq(r.firstYear.government, 0, 'salary $170k + other $15k: none');
+eq(r.firstYear.taxableIncome, 185000, 'tested on $185,000');
+eq(r.firstYear.incomeBasis, 'salary_and_other', 'basis: salary and other');
+eq(r.firstYear.governmentNote?.includes('185,000'), true, 'says the income tested');
+r = calculateKiwiSaver({ ...flat, salary: 185000, taxableIncomeOverride: 175000 })!;
+eq(r.firstYear.government, 260.72, 'salary $185k, total taxable $175k: eligible');
+eq(r.firstYear.incomeBasis, 'entered', 'basis: entered');
+eq(r.firstYear.esctRatePct, 33, 'ESCT still on salary + employer contribution');
+r = calculateKiwiSaver({ ...flat, salary: 170000 })!;
+eq(r.firstYear.incomeBasis, 'salary_only', 'basis: salary only');
+eq(r.firstYear.government, 260.72, 'salary only under the limit');
+eq(calculateKiwiSaver({ ...flat, salary: 170000, otherIncomePerYear: 10000 })!.firstYear.government, 260.72, 'exactly $180,000 is eligible');
+eq(calculateKiwiSaver({ ...flat, salary: 170000, otherIncomePerYear: 10000.01 })!.firstYear.government, 0, 'a cent over is not');
+eq(calculateKiwiSaver({ ...flat, salary: 50000, taxableIncomeOverride: 0 })!.firstYear.incomeBasis, 'entered', 'an entered 0 is used');
+// Entered income moves with pay: $175,000 with 3% inflation → $180,250 next year, over the limit.
+r = calculateKiwiSaver({ ...flat, age: 40, salary: 185000, taxableIncomeOverride: 175000, inflationPct: 3 })!;
+eq(r.rows[0].government > 0 && r.rows[1].government === 0, true, 'entered income grows with pay');
+// Other income keeps pace with inflation only: $160k salary + 2% growth, $15k other, 0% inflation.
+r = calculateKiwiSaver({ ...flat, age: 40, salary: 160000, salaryGrowthPct: 2, otherIncomePerYear: 15000 })!;
+eq(r.rows[0].government > 0, true, 'year 1: $175,000');
+eq(r.rows[2].government, 0, 'year 3: $166,464 + $15,000 is over');
+
 // Growth: $12,000 a year in monthly, 6% a year → FV of monthly deposits.
 r = calculateKiwiSaver({ ...flat, salary: 100000, employeeRatePct: 6, employerRatePct: 6, returnPct: 6 })!;
 const rm = 1.06 ** (1 / 12) - 1;

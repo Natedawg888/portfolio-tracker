@@ -7,8 +7,11 @@
  *   - you put in salary × your rate, plus any extra (extra keeps pace with inflation);
  *   - your employer puts in salary × their rate, less ESCT at the band for salary + employer
  *     contribution;
- *   - the government adds 25c per $1 you put in, up to $260.72, while you're 16–64 and earn
- *     $180,000 or less (those dollar amounts stay as they are, as the law has them);
+ *   - the government adds 25c per $1 you put in, up to $260.72, while you're 16–64 and your
+ *     annual taxable income is $180,000 or less (those dollar amounts stay as they are, as the law
+ *     has them). Taxable income is all of it, not just pay (KAN-99, IRD "Getting the KiwiSaver
+ *     government contribution"): salary plus other taxable income, or the total you enter, which
+ *     then moves with your pay. With neither, salary alone is used and the result says so;
  *   - each month the balance grows at the monthly rate of the yearly return, then that month's
  *     contributions go in; the government contribution goes in at the end of the year.
  * Results are also shown in today's dollars (divided by inflation over the years).
@@ -25,6 +28,10 @@ export type KiwiSaverCalcInput = {
   employerRatePct: number;
   /** Extra you put in a year, today's dollars. */
   extraPerYear: number;
+  /** Other taxable income a year (interest, dividends, rental profit, business), today's dollars; keeps pace with inflation. */
+  otherIncomePerYear?: number;
+  /** This year's total taxable income, if known (e.g. after losses); replaces salary + other income, then moves with pay. */
+  taxableIncomeOverride?: number | null;
   /** Yearly return after fees and tax, %. */
   returnPct: number;
   inflationPct: number;
@@ -47,7 +54,19 @@ export type KiwiSaverCalcResult = {
   atWithdrawal: number;
   atWithdrawalToday: number;
   totals: { you: number; employer: number; esct: number; government: number; growth: number; startingBalance: number };
-  firstYear: { you: number; employerGross: number; esct: number; esctRatePct: number; employer: number; government: number; governmentFull: boolean; governmentNote: string | null };
+  firstYear: {
+    you: number;
+    employerGross: number;
+    esct: number;
+    esctRatePct: number;
+    employer: number;
+    government: number;
+    governmentFull: boolean;
+    governmentNote: string | null;
+    /** Taxable income tested against the $180,000 limit, and where it came from. */
+    taxableIncome: number;
+    incomeBasis: 'entered' | 'salary_and_other' | 'salary_only';
+  };
   rows: KiwiSaverYear[];
 };
 
@@ -66,13 +85,16 @@ export function calculateKiwiSaver(input: KiwiSaverCalcInput): KiwiSaverCalcResu
 
   for (let y = 0; y < years; y++) {
     const age = input.age + y;
-    const salary = Math.max(0, input.salary) * ((1 + i) * (1 + g)) ** y;
+    const payFactor = ((1 + i) * (1 + g)) ** y;
+    const salary = Math.max(0, input.salary) * payFactor;
+    const override = input.taxableIncomeOverride;
+    const income = override != null && Number.isFinite(override) ? Math.max(0, override) * payFactor : salary + Math.max(0, input.otherIncomePerYear ?? 0) * (1 + i) ** y;
     const you = salary * (input.employeeRatePct / 100) + Math.max(0, input.extraPerYear) * (1 + i) ** y;
     const employerGross = salary * (input.employerRatePct / 100);
     const rate = employerGross > 0 ? esctRate(salary + employerGross) : 0;
     const esct = employerGross * rate;
     const employer = employerGross - esct;
-    const eligible = age >= GOVERNMENT_CONTRIBUTION.minAge && age < GOVERNMENT_CONTRIBUTION.maxAge && salary <= GOVERNMENT_CONTRIBUTION.incomeLimit;
+    const eligible = age >= GOVERNMENT_CONTRIBUTION.minAge && age < GOVERNMENT_CONTRIBUTION.maxAge && income <= GOVERNMENT_CONTRIBUTION.incomeLimit;
     const government = eligible ? Math.min(you * GOVERNMENT_CONTRIBUTION.perDollar, GOVERNMENT_CONTRIBUTION.maxPerYear) : 0;
 
     for (let m = 0; m < 12; m++) {
@@ -86,6 +108,7 @@ export function calculateKiwiSaver(input: KiwiSaverCalcInput): KiwiSaverCalcResu
     rows.push({ age: age + 1, balance: r2(balance), balanceToday: r2(balance / (1 + i) ** (y + 1)), you: r2(you), employer: r2(employer), esct: r2(esct), government: r2(government) });
     if (y === 0) {
       const needed = GOVERNMENT_CONTRIBUTION.contributeForFull;
+      const incomeBasis = override != null && Number.isFinite(override) ? 'entered' : (input.otherIncomePerYear ?? 0) > 0 ? 'salary_and_other' : 'salary_only';
       firstYear = {
         you: r2(you),
         employerGross: r2(employerGross),
@@ -95,12 +118,14 @@ export function calculateKiwiSaver(input: KiwiSaverCalcInput): KiwiSaverCalcResu
         government: r2(government),
         governmentFull: government >= GOVERNMENT_CONTRIBUTION.maxPerYear - 0.005,
         governmentNote: !eligible
-          ? salary > GOVERNMENT_CONTRIBUTION.incomeLimit
-            ? `No government contribution on income over $${GOVERNMENT_CONTRIBUTION.incomeLimit.toLocaleString('en-NZ')}.`
+          ? income > GOVERNMENT_CONTRIBUTION.incomeLimit
+            ? `No government contribution: taxable income of $${Math.round(income).toLocaleString('en-NZ')} is over $${GOVERNMENT_CONTRIBUTION.incomeLimit.toLocaleString('en-NZ')}.`
             : `The government contribution is for members aged ${GOVERNMENT_CONTRIBUTION.minAge} to ${GOVERNMENT_CONTRIBUTION.maxAge}.`
           : government < GOVERNMENT_CONTRIBUTION.maxPerYear - 0.005
             ? `Put in $${needed.toLocaleString('en-NZ', { minimumFractionDigits: 2 })} a year (1 July – 30 June) to get the full $${GOVERNMENT_CONTRIBUTION.maxPerYear}.`
             : null,
+        taxableIncome: r2(income),
+        incomeBasis,
       };
     }
   }
