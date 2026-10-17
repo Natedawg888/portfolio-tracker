@@ -982,6 +982,8 @@ export const api = {
     update: (id: string, body: BusinessWriteBody) =>
       req<Business>(`/business/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
     remove: (id: string) => req<{ ok: boolean; id: string }>(`/business/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    archive: (id: string) => req<Business>(`/business/${encodeURIComponent(id)}/archive`, { method: 'POST' }),
+    restore: (id: string) => req<Business>(`/business/${encodeURIComponent(id)}/restore`, { method: 'POST' }),
     setLogo: (id: string, image: string) =>
       req<Business>(`/business/${encodeURIComponent(id)}/logo`, { method: 'POST', body: JSON.stringify({ image }) }),
     removeLogo: (id: string) => req<Business>(`/business/${encodeURIComponent(id)}/logo`, { method: 'DELETE' }),

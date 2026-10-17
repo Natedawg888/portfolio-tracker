@@ -12,14 +12,15 @@ import { BusinessFigures, BusinessMark, BusinessTabs, Dialog, NetWorthSwitch, Ta
 import { BusinessForm, businessBody } from '../components/business/BusinessForm';
 import { ClientForm, clientBody } from '../components/business/ClientForm';
 import { EmployeeForm, employeeDraft } from '../components/business/EmployeeForm';
+import { DeleteBusinessConfirm } from '../components/business/DeleteBusiness';
 import { maskBankAccount, payFrequencyLabel, payRateText } from '../lib/employees';
 import { AssetForm, MovementForm, assetDraft } from '../components/business/AssetForms';
 import { WhatItOwns } from '../components/business/WhatItOwns';
 import { BusinessActivity } from '../components/business/BusinessActivity';
 import { MoreMenu } from '../components/MoreMenu';
-import { ConfirmInline } from '../components/security/ConfirmInline';
 import { showQuietToast } from '../lib/quietToast';
 import { formatInvoiceDate } from './invoicesView';
+import { aucklandToday } from '../lib/debtModel';
 import type { BusinessAsset, BusinessDetail as Detail, BusinessEmployee, BusinessMoneyItem, InvoiceClient } from '../types';
 
 type DialogState =
@@ -209,7 +210,6 @@ export function BusinessDetail() {
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [businesses, setBusinesses] = useState<Detail['business'][]>([]);
   const [reload, setReload] = useState(0);
   const logoInput = useRef<HTMLInputElement>(null);
@@ -248,6 +248,10 @@ export function BusinessDetail() {
       next.delete('tag');
       setSearchParams(next, { replace: true });
     }
+  }
+
+  async function restore() {
+    await act(() => api.business.restore(id), 'Restored. It’s back on Business.');
   }
 
   async function act(fn: () => Promise<unknown>, note: string, confirmText?: string) {
@@ -300,19 +304,6 @@ export function BusinessDetail() {
   const invoiceWord = `${data.invoices.length} invoice${data.invoices.length === 1 ? '' : 's'}`;
   const details = [b.industry, b.nzbn ? `NZBN ${b.nzbn}` : null, b.gstRegistered ? `GST ${b.gstNumber}` : null].filter(Boolean).join(' · ');
 
-  async function deleteBusiness() {
-    setBusy(true);
-    setDeleteError(null);
-    try {
-      await api.business.remove(id);
-      showQuietToast(`${name} deleted.`);
-      navigate('/business');
-    } catch (e) {
-      setDeleteError(errorText(e, 'Could not delete it.'));
-      setBusy(false);
-    }
-  }
-
   return (
     <div className="stack bills-page warranties-page rentals-page business-page">
       <BusinessTabs />
@@ -336,9 +327,11 @@ export function BusinessDetail() {
             </p>
           </div>
           <div className="business-detail-actions">
-            <Link className="btn small primary" to={`/business/invoices/new?business=${encodeURIComponent(b.id)}`} aria-label={`New invoice for ${name}`}>
-              + Invoice
-            </Link>
+            {b.archivedAt ? null : (
+              <Link className="btn small primary" to={`/business/invoices/new?business=${encodeURIComponent(b.id)}`} aria-label={`New invoice for ${name}`}>
+                + Invoice
+              </Link>
+            )}
             <MoreMenu label={`More actions for ${name}`} menu>
               {(close) => (
                 <>
@@ -353,19 +346,25 @@ export function BusinessDetail() {
                       Remove logo
                     </button>
                   ) : null}
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="btn small business-menu-item business-menu-danger"
-                    disabled={hasInvoices}
-                    aria-describedby={hasInvoices ? 'biz-delete-reason' : undefined}
-                    onClick={() => { close(); setDeleteError(null); setConfirmDelete(true); }}
-                  >
-                    Delete business…
-                  </button>
-                  {hasInvoices ? (
+                  {b.archivedAt ? (
+                    <button type="button" role="menuitem" className="btn small business-menu-item" onClick={() => { close(); void restore(); }}>
+                      Restore business
+                    </button>
+                  ) : null}
+                  {b.archivedAt && hasInvoices ? null : (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="btn small business-menu-item business-menu-danger"
+                      aria-describedby={hasInvoices ? 'biz-delete-reason' : undefined}
+                      onClick={() => { close(); setConfirmDelete(true); }}
+                    >
+                      Delete business…
+                    </button>
+                  )}
+                  {hasInvoices && !b.archivedAt ? (
                     <p id="biz-delete-reason" className="muted small business-menu-reason">
-                      Has {invoiceWord}, which are kept on record
+                      Has {invoiceWord}: you can archive it
                     </p>
                   ) : null}
                 </>
@@ -377,32 +376,39 @@ export function BusinessDetail() {
         <input ref={logoInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" tabIndex={-1} aria-hidden="true" onChange={(e) => void onLogo(e)} />
       </header>
 
+      {b.archivedAt ? (
+        <section className="panel business-archived-note" role="status">
+          <p>
+            <strong>Archived {formatInvoiceDate(aucklandToday(new Date(b.archivedAt)))}.</strong> Hidden from Business, your net worth and the invoice and
+            client pickers. Everything is kept.
+          </p>
+          <button type="button" className="btn small" disabled={busy} onClick={() => void restore()}>
+            Restore business
+          </button>
+        </section>
+      ) : null}
+
       {confirmDelete ? (
-        <ConfirmInline
-          title={`Delete ${name}?`}
-          confirmLabel="Delete business"
-          confirmAriaLabel={`Delete ${name}`}
-          cancelLabel="Keep it"
-          tone="danger"
-          focus="cancel"
-          busy={busy}
-          error={deleteError}
-          onConfirm={() => void deleteBusiness()}
+        <DeleteBusinessConfirm
+          id={id}
+          name={name}
+          invoiceCount={data.invoices.length}
           onCancel={() => setConfirmDelete(false)}
-        >
-          <p>
-            <strong>Removed:</strong> its assets and their history, its clients, and its logo.
-          </p>
-          <p>
-            <strong>Kept:</strong> transactions and income tagged to it stay in Budget and Income, and produce stays on Portfolio, all untagged. This can’t be undone.
-          </p>
-        </ConfirmInline>
+          onDone={(message, archived) => {
+            showQuietToast(message);
+            if (archived) {
+              setConfirmDelete(false);
+              load();
+            } else navigate('/business');
+          }}
+        />
       ) : null}
 
       {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
       <section className="panel rental-summary business-summary" aria-label="This tax year">
-        <BusinessFigures totals={t} assetsLabel="Business value" assetsNote={netWorthNote(b.countInNetWorth)} />
+        <BusinessFigures totals={t} assetsLabel="Business value" assetsNote={b.archivedAt ? 'Not counted while archived' : netWorthNote(b.countInNetWorth)} />
+        {b.archivedAt ? null : (
         <NetWorthSwitch
           on={b.countInNetWorth}
           busy={busy}
@@ -414,6 +420,7 @@ export function BusinessDetail() {
             )
           }
         />
+        )}
         {t.outstandingNzd > 0 ? <p className="muted small">{formatNzd(t.outstandingNzd)} still owed on sent invoices.</p> : null}
         {t.gstCollectedEstimateNzd != null ? (
           <p className="muted small business-gst">
