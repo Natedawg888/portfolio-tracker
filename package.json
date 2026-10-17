@@ -44,7 +44,7 @@
     "test:bills": "node --import tsx src/lib/recurring.test.ts && node --import tsx server/recurring/store.test.ts && node --import tsx src/pages/billsView.test.ts",
     "test:ads": "node --import tsx src/lib/ads.test.ts && node --import tsx server/routes/ads.test.ts",
     "test:warranties": "node --import tsx src/lib/warranty.test.ts && node --import tsx src/pages/warrantiesView.test.ts && node --import tsx server/warranties/store.test.ts",
-    "test:rentals": "node --import tsx src/lib/rental.test.ts && node --import tsx server/rentals/store.test.ts",
+    "test:rentals": "node --import tsx src/lib/rental.test.ts && node --import tsx src/lib/rentalRooms.test.ts && node --import tsx server/rentals/store.test.ts && node --import tsx server/rentals/rooms.test.ts",
     "test:shopping": "node --import tsx server/shopping/store.test.ts && node --import tsx src/lib/shoppingView.test.ts",
     "test:settings-categories": "node --import tsx src/lib/assetClassSummary.test.ts && node --import tsx src/lib/visibleNetWorth.test.ts && node --import tsx src/lib/categoryManagerView.test.ts && node --import tsx server/lib/categoryDelete.test.ts",
     "test:household": "node --import tsx server/households/store.test.ts && node --import tsx server/households/sharing.test.ts && node --import tsx server/households/splitMath.test.ts && node --import tsx server/households/splits.test.ts && node --import tsx server/households/paye.test.ts && node --import tsx server/households/family.test.ts",

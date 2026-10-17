@@ -538,6 +538,12 @@ function migrateSchema(database: Database) {
   if (rentalCols.size > 0 && !rentalCols.has('txn_owned')) {
     database.run('ALTER TABLE rental_entries ADD COLUMN txn_owned INTEGER NOT NULL DEFAULT 1');
   }
+  // Rooms (KAN-83): rent per room and expenses shared across rooms.
+  if (rentalCols.size > 0 && !rentalCols.has('room_id')) database.run('ALTER TABLE rental_entries ADD COLUMN room_id TEXT');
+  if (rentalCols.size > 0 && !rentalCols.has('shared')) database.run('ALTER TABLE rental_entries ADD COLUMN shared INTEGER NOT NULL DEFAULT 0');
+  const propertyCols = tableColumns(database, 'rental_properties');
+  if (propertyCols.size > 0 && !propertyCols.has('let_type')) database.run("ALTER TABLE rental_properties ADD COLUMN let_type TEXT NOT NULL DEFAULT 'whole'");
+  if (propertyCols.size > 0 && !propertyCols.has('own_home')) database.run('ALTER TABLE rental_properties ADD COLUMN own_home INTEGER NOT NULL DEFAULT 0');
   // Rental income entries mirrored into income (KAN-66).
   if (incomeCols.size > 0 && !incomeCols.has('rental_entry_id')) {
     database.run('ALTER TABLE income_records ADD COLUMN rental_entry_id TEXT');

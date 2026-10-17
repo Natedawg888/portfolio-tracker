@@ -865,6 +865,8 @@ CREATE TABLE IF NOT EXISTS rental_properties (
   name        TEXT NOT NULL,
   address     TEXT NOT NULL DEFAULT '',
   notes       TEXT NOT NULL DEFAULT '',
+  let_type    TEXT NOT NULL DEFAULT 'whole',  -- whole | rooms (KAN-83)
+  own_home    INTEGER NOT NULL DEFAULT 0,     -- 1 = the user lives here and lets rooms
   created_at  TEXT NOT NULL,
   updated_at  TEXT NOT NULL
 );
@@ -882,10 +884,44 @@ CREATE TABLE IF NOT EXISTS rental_entries (
   add_to_money    INTEGER NOT NULL DEFAULT 1,
   transaction_id  TEXT,                       -- expense mirror
   txn_owned       INTEGER NOT NULL DEFAULT 1,  -- 1 = transaction_id was added by this entry
+  room_id         TEXT,                       -- income: rent for this room (KAN-83)
+  shared          INTEGER NOT NULL DEFAULT 0,  -- expense: split across the rooms by share (KAN-83)
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_rental_entries_user ON rental_entries(user_id, date);
+
+-- Rooms let in a rental property, including the user's own home (KAN-83). Per user.
+CREATE TABLE IF NOT EXISTS rental_rooms (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT,
+  property_id  TEXT NOT NULL,
+  name         TEXT NOT NULL,
+  note         TEXT NOT NULL DEFAULT '',
+  share        REAL NOT NULL DEFAULT 1,      -- weight for splitting shared expenses
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rental_rooms_user ON rental_rooms(user_id, property_id);
+
+-- A tenant's stay in a room (KAN-83). tenant_label is a display name only; no contact details.
+-- Tenancies in one room never overlap (checked on save).
+CREATE TABLE IF NOT EXISTS rental_tenancies (
+  id              TEXT PRIMARY KEY,
+  user_id         TEXT,
+  room_id         TEXT NOT NULL,
+  tenant_label    TEXT NOT NULL,
+  rent_amount     REAL NOT NULL,
+  rent_frequency  TEXT NOT NULL,              -- weekly | fortnightly | monthly
+  bills_included  INTEGER NOT NULL DEFAULT 0,
+  start_date      TEXT NOT NULL,
+  end_date        TEXT,
+  bond_amount     REAL NOT NULL DEFAULT 0,
+  bond_lodged     INTEGER NOT NULL DEFAULT 0,  -- 1 = lodged with Tenancy Services
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rental_tenancies_user ON rental_tenancies(user_id, room_id);
 
 -- Shopping lists (KAN-74). Per user. est_price_nzd is the price of one unit (× quantity for
 -- the line). category_id links an item, or the whole list, to a budget category.
