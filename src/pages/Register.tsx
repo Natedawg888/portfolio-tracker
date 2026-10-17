@@ -7,7 +7,6 @@ import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import { ApiError, api, type SsoProvider } from '../api/client';
 import { ssoStartUrl } from '../lib/sso';
 import { AssetClassToggles } from '../components/AssetClassToggles';
-import { isBuiltInCategory } from '../lib/categoryManagerView';
 import { GoogleButton } from '../components/auth/AuthControls';
 import { AddWalletPanel } from '../components/AddWalletPanel';
 import {
@@ -22,27 +21,11 @@ import {
   akahuSyncTransactions,
   type AkahuConnectionStatus,
 } from '../api/akahuClient';
-import {
-  CATEGORY_TYPES,
-  CATEGORY_TYPE_LABELS,
-  normalizeCategoryType,
-  type CategoryType,
-} from '../lib/categoryTypes';
-import { CategoryTypeToggle } from '../components/CategoryTypeToggle';
 import { akahuOnboardingRequiredForEmail } from '../lib/onboardingPrefs';
+import { stepLabel, type OnboardingStep } from '../lib/onboardingSteps';
+import { BudgetCategoriesStep } from '../components/onboarding/BudgetCategoriesStep';
 
-type Step = 'credentials' | 'assets' | 'wallets' | 'budgets' | 'connect';
-
-type TxCategory = {
-  id: string;
-  slug?: string;
-  name: string;
-  parentId: string | null;
-  colour: string | null;
-  type: CategoryType;
-  isIncome: boolean;
-  sortOrder: number;
-};
+type Step = OnboardingStep;
 
 function stepFromOnboarding(user: {
   email?: string | null;
@@ -63,7 +46,7 @@ function stepFromOnboarding(user: {
 
 export function Register() {
   const { user, loading, register, status, setUser, refresh } = useAuth();
-  const { save: savePrefs } = useAssetClassPrefs();
+  const { save: savePrefs, enabled: assetEnabled } = useAssetClassPrefs();
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>('credentials');
   const [firstName, setFirstName] = useState('');
@@ -78,11 +61,6 @@ export function Register() {
   const [providers, setProviders] = useState<SsoProvider[]>([]);
   const midSignupRef = useRef(false);
   const [resumed, setResumed] = useState(false);
-
-  const [categories, setCategories] = useState<TxCategory[]>([]);
-  const [catBusy, setCatBusy] = useState(false);
-  const [newCatName, setNewCatName] = useState('');
-  const [newCatType, setNewCatType] = useState<CategoryType>('spending');
 
   const [akahu, setAkahu] = useState<AkahuConnectionStatus | null>(null);
   const [walletsAdded, setWalletsAdded] = useState<string[]>([]);
@@ -120,19 +98,6 @@ export function Register() {
       cancelled = true;
     };
   }, []);
-
-  const loadCategories = useCallback(async () => {
-    try {
-      const rows = await api.budgets.categories();
-      setCategories(rows);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not load categories');
-    }
-  }, []);
-
-  useEffect(() => {
-    if (step === 'budgets' && user) void loadCategories();
-  }, [step, user, loadCategories]);
 
   const loadAkahu = useCallback(async () => {
     try {
@@ -269,46 +234,8 @@ export function Register() {
     }
   };
 
-  const onAddCategory = async (e: FormEvent) => {
-    e.preventDefault();
-    const name = newCatName.trim();
-    if (!name) return;
-    setCatBusy(true);
-    setError(null);
-    try {
-      await api.budgets.createCategory({ name, type: newCatType });
-      setNewCatName('');
-      setNewCatType('spending');
-      await loadCategories();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not add category');
-    } finally {
-      setCatBusy(false);
-    }
-  };
-
-  const onDeleteCategory = async (cat: TxCategory) => {
-    if (
-      !window.confirm(
-        `Remove category “${cat.name}”? Transactions keep their history but lose this category tag.`,
-      )
-    ) {
-      return;
-    }
-    setCatBusy(true);
-    setError(null);
-    try {
-      await api.budgets.deleteCategory(cat.id);
-      await loadCategories();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not remove category');
-    } finally {
-      setCatBusy(false);
-    }
-  };
-
-  const onBudgets = async (e: FormEvent) => {
-    e.preventDefault();
+  /** The categories are saved; mark the step done and move on. Errors go back to the step. */
+  const onBudgets = async () => {
     setError(null);
     setBusy(true);
     midSignupRef.current = true;
@@ -421,8 +348,8 @@ export function Register() {
     void completeAkahuStep('Could not finish onboarding');
   };
 
-  const catsByType = (t: CategoryType) =>
-    categories.filter((c) => normalizeCategoryType(c.type, c.isIncome) === t);
+  // Crypto adds the wallets step: the choice on the asset step, the saved preference after it.
+  const stepText = step === 'credentials' ? null : stepLabel(step, { crypto: step === 'assets' ? prefs.crypto : assetEnabled('crypto'), offerAkahu });
   const wide = step === 'assets' || step === 'wallets' || step === 'budgets' || step === 'connect';
 
   if (loading || !resumed) {
@@ -436,13 +363,14 @@ export function Register() {
   }
 
   return (
-    <div className={`auth-page${step === 'credentials' ? ' register-page' : step === 'assets' ? ' assets-page' : ''}`}>
+    <div className={`auth-page${step === 'credentials' ? ' register-page' : ' assets-page'}`}>
       <div className={`auth-card panel${wide ? ' auth-card-wide' : ''}`}>
         <div className="auth-brand">
           <Link to="/" className="auth-brand-link" aria-label="KoruLedger home">
             <BrandLockup size="md" />
           </Link>
         </div>
+        {stepText ? <p className="onboarding-step">{stepText}</p> : null}
         {step === 'credentials' ? (
           <>
             <h2>{firstUser ? 'Create your account' : 'Create account'}</h2>
@@ -593,90 +521,12 @@ export function Register() {
           </>
         ) : step === 'budgets' ? (
           <>
-            <h2>Set budget categories</h2>
+            <h2>Pick your budget categories</h2>
             <p className="page-lead">
-              Review categories by type for the Budget page and budget plans. Choose type with the
-              toggle when adding (spending, income, transfer out, transfer in). Only spending counts
-              as Budget spend; transfer in is not income. Required before opening the app — edit
-              later in the account menu → Settings.
+              We’ve started you with common ones. Untick any you don’t need. You can change these any time in Settings.
             </p>
-            <form className="auth-form account-form" onSubmit={onAddCategory}>
-              <CategoryTypeToggle
-                value={newCatType}
-                onChange={setNewCatType}
-                disabled={catBusy || busy}
-                label="Type (set when creating)"
-              />
-              <div className="row gap wrap-row" style={{ marginTop: '0.75rem' }}>
-                <label className="field grow">
-                  <span>New category name</span>
-                  <input
-                    type="text"
-                    value={newCatName}
-                    onChange={(e) => setNewCatName(e.target.value)}
-                    maxLength={80}
-                    placeholder="e.g. Pets"
-                    disabled={catBusy || busy}
-                  />
-                </label>
-                <div className="field field-align-end">
-                  <span className="sr-only">Add</span>
-                  <button
-                    type="submit"
-                    className="btn ghost"
-                    disabled={catBusy || busy || !newCatName.trim()}
-                  >
-                    {catBusy
-                      ? 'Adding…'
-                      : `Add ${CATEGORY_TYPE_LABELS[newCatType].toLowerCase()} category`}
-                  </button>
-                </div>
-              </div>
-            </form>
-
-            <div className="txn-cat-columns txn-cat-columns-4">
-              {CATEGORY_TYPES.map((t) => {
-                const rows = catsByType(t);
-                return (
-                  <div key={t}>
-                    <h3>{CATEGORY_TYPE_LABELS[t]}</h3>
-                    <ul className="txn-cat-list">
-                      {rows.map((c) => (
-                        <li key={c.id}>
-                          <span>{c.name}</span>
-                          {isBuiltInCategory(c.slug) ? null : (
-                            <button
-                              type="button"
-                              className="btn small ghost"
-                              disabled={catBusy || busy}
-                              onClick={() => void onDeleteCategory(c)}
-                            >
-                              Remove
-                            </button>
-                          )}
-                        </li>
-                      ))}
-                      {rows.length === 0 ? (
-                        <li className="muted">
-                          No {CATEGORY_TYPE_LABELS[t].toLowerCase()} categories.
-                        </li>
-                      ) : null}
-                    </ul>
-                  </div>
-                );
-              })}
-            </div>
-
-            <form className="auth-form" onSubmit={onBudgets}>
-              {error ? <p className="auth-error" role="alert">{error}</p> : null}
-              <button
-                type="submit"
-                className="btn primary"
-                disabled={busy || categories.length === 0}
-              >
-                {busy ? 'Saving…' : 'Save & continue'}
-              </button>
-            </form>
+            {error ? <p className="auth-error" role="alert">{error}</p> : null}
+            {user ? <BudgetCategoriesStep userId={user.id} onDone={onBudgets} /> : null}
           </>
         ) : step === 'connect' && offerAkahu ? (
           <>

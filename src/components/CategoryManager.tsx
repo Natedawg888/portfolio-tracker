@@ -5,7 +5,7 @@
  * nothing is lost, and a clash with that category's plans is refused rather than merged.
  * Used in Settings and in the Budget page's "Manage categories" dialog.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { ApiError, api, formatNzd } from '../api/client';
 import { beginPageRead, commitPageRead, invalidateFinancial, readPageCache } from '../lib/pageDataCache';
 import { CATEGORY_TYPES, CATEGORY_TYPE_LABELS, normalizeCategoryType, type CategoryType } from '../lib/categoryTypes';
@@ -15,6 +15,7 @@ import { monthEnd, monthStart, todayAucklandYmd } from '../lib/period';
 import { isBuiltInCategory, monthTotalText, TYPE_EXPLAINER, usageText, type UsageCounts } from '../lib/categoryManagerView';
 import { showQuietToast } from '../lib/quietToast';
 import { MoreMenu } from './MoreMenu';
+import { CategoryAddField, CategoryTabPanel, CategoryTabs } from './categories/CategoryParts';
 
 export type ManagedCategory = {
   id: string;
@@ -57,7 +58,6 @@ export function CategoryManager({ onChanged }: { onChanged?: () => void | Promis
   const [deleting, setDeleting] = useState<{ cat: ManagedCategory; usage: UsageCounts; target: string; error?: string } | null>(null);
   const [monthData, setMonthData] = useState<MonthData | null>(null);
   const month = useThisMonth();
-  const tabsRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     const stamp = beginPageRead(CACHE_KEY);
@@ -204,50 +204,22 @@ export function CategoryManager({ onChanged }: { onChanged?: () => void | Promis
     void loadMonth();
   }
 
-  function selectTab(t: CategoryType, focus = false) {
+  function selectTab(t: CategoryType) {
     setTab(t);
     setPaletteId(null);
     setRenamingId(null);
     setDeleting(null);
-    if (focus) window.requestAnimationFrame(() => tabsRef.current?.querySelector<HTMLButtonElement>(`[data-type="${t}"]`)?.focus());
   }
 
   return (
     <div className="category-manager">
-      <div
-        ref={tabsRef}
-        className="portfolio-tabs cat-tabs"
-        role="tablist"
-        aria-label="Category types"
-        onKeyDown={(e) => {
-          const i = CATEGORY_TYPES.indexOf(tab);
-          const n = CATEGORY_TYPES.length;
-          const next =
-            e.key === 'ArrowRight' ? CATEGORY_TYPES[(i + 1) % n] : e.key === 'ArrowLeft' ? CATEGORY_TYPES[(i - 1 + n) % n] : e.key === 'Home' ? CATEGORY_TYPES[0] : e.key === 'End' ? CATEGORY_TYPES[n - 1] : null;
-          if (!next) return;
-          e.preventDefault();
-          selectTab(next, true);
-        }}
-      >
-        {CATEGORY_TYPES.map((t) => (
-          <button
-            key={t}
-            id={`cat-tab-${t}`}
-            data-type={t}
-            type="button"
-            role="tab"
-            aria-selected={t === tab}
-            aria-controls="cat-tab-panel"
-            tabIndex={t === tab ? 0 : -1}
-            className={'portfolio-tab' + (t === tab ? ' active' : '')}
-            onClick={() => selectTab(t)}
-          >
-            {CATEGORY_TYPE_LABELS[t]} <span className="cat-tab-count">{byType(t).length}</span>
-          </button>
-        ))}
-      </div>
+      <CategoryTabs
+        tab={tab}
+        onSelect={selectTab}
+        counts={{ spending: byType('spending').length, income: byType('income').length, transfer_out: byType('transfer_out').length, transfer_in: byType('transfer_in').length }}
+      />
 
-      <div id="cat-tab-panel" role="tabpanel" aria-labelledby={`cat-tab-${tab}`}>
+      <CategoryTabPanel tab={tab}>
         <p className="muted small cat-explainer">{TYPE_EXPLAINER[tab]}</p>
         {loadError ? <p className="auth-error" role="alert">{loadError}</p> : null}
 
@@ -466,7 +438,7 @@ export function CategoryManager({ onChanged }: { onChanged?: () => void | Promis
           {rows.length === 0 ? <li className="muted small cat-empty">No {CATEGORY_TYPE_LABELS[tab].toLowerCase()} categories yet.</li> : null}
         </ul>
 
-        <AddForm
+        <CategoryAddField
           key={tab}
           type={tab}
           busy={busy}
@@ -477,7 +449,7 @@ export function CategoryManager({ onChanged }: { onChanged?: () => void | Promis
             }, 'Could not add the category')
           }
         />
-      </div>
+      </CategoryTabPanel>
     </div>
   );
 }
@@ -507,25 +479,6 @@ function RenameForm({ category, busy, onSave, onCancel }: { category: ManagedCat
       </button>
       <button type="button" className="btn small ghost" disabled={busy} onClick={onCancel}>
         Cancel
-      </button>
-    </form>
-  );
-}
-
-function AddForm({ type, busy, onAdd }: { type: CategoryType; busy: boolean; onAdd: (name: string) => Promise<boolean> }) {
-  const [name, setName] = useState('');
-  const label = `Add ${CATEGORY_TYPE_LABELS[type].toLowerCase()} category`;
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    const n = name.trim();
-    if (!n) return;
-    if (await onAdd(n)) setName('');
-  }
-  return (
-    <form className="cat-add" onSubmit={(e) => void submit(e)}>
-      <input aria-label={label} placeholder={label} value={name} maxLength={80} disabled={busy} onChange={(e) => setName(e.target.value)} />
-      <button type="submit" className="btn small" disabled={busy || !name.trim()}>
-        Add
       </button>
     </form>
   );

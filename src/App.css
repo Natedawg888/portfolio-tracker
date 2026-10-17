@@ -2803,95 +2803,6 @@ html[data-theme="light"] .modal-overlay {
   font-size: 0.88rem;
   margin-top: 0.35rem;
 }
-.txn-cat-columns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  margin-top: 1rem;
-}
-@media (max-width: 640px) {
-  .txn-cat-columns { grid-template-columns: 1fr; }
-}
-.txn-cat-columns h3 {
-  margin: 0 0 0.45rem;
-  font-size: 0.95rem;
-}
-.txn-cat-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-.txn-cat-list li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.4rem 0.55rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  font-size: 0.9rem;
-}
-
-/* Category type toggle (create-time — prominent segmented control) */
-.category-type-toggle {
-  margin: 0;
-  padding: 0.75rem 0.85rem;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--surface) 88%, var(--accent, #3d9a6a) 6%);
-}
-.category-type-toggle-legend {
-  padding: 0 0.25rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--text);
-}
-.category-type-toggle-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  margin-top: 0.45rem;
-}
-.category-type-btn {
-  flex: 1 1 auto;
-  min-width: 6.5rem;
-  padding: 0.55rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--text);
-  font-size: 0.88rem;
-  font-weight: 500;
-  cursor: pointer;
-}
-.category-type-btn:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--accent, #3d9a6a) 55%, var(--border));
-}
-.category-type-btn.active {
-  background: color-mix(in srgb, var(--accent, #3d9a6a) 22%, var(--surface));
-  border-color: var(--accent, #3d9a6a);
-  font-weight: 650;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent, #3d9a6a) 40%, transparent);
-}
-.category-type-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-.category-type-toggle-hint {
-  margin: 0.45rem 0 0;
-}
-.txn-cat-columns-4 {
-  grid-template-columns: repeat(2, 1fr);
-}
-@media (min-width: 900px) {
-  .txn-cat-columns-4 {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}
 .sr-only {
   position: absolute;
   width: 1px;
@@ -4162,7 +4073,9 @@ html:not([data-theme]) .register-page {
 .google-btn:hover { filter: brightness(0.97); }
 .google-btn .google-g { flex: none; }
 
-/* Asset-class onboarding only (the step after create-account). */
+/* Onboarding steps after create-account (asset classes, crypto wallets, budget categories,
+   connect): one look. The palette is also set as the app's colour tokens, so shared pieces
+   inside (category tabs and rows, wallet choices, inputs, buttons) match without their own rules. */
 .auth-page.assets-page {
   min-height: 100vh;
   position: relative;
@@ -4184,6 +4097,9 @@ html:not([data-theme]) .register-page {
   border: none;
   border-radius: 16px;
   padding: 2rem 2rem 1.75rem;
+}
+@media (max-width: 400px) {
+  .assets-page .auth-card { padding: 1.5rem 1rem 1.25rem; }
 }
 .assets-page .eyebrow {
   font-variant-caps: all-small-caps;
@@ -4218,6 +4134,17 @@ html[data-theme="light"] .auth-page.assets-page {
   color-scheme: light;
   color: #1a1a1a;
   background: #e7e0d4;
+  --bg: #fbf8f3;
+  --surface: #f7f3ec;
+  --surface-2: #efe8dc;
+  --surface-3: #e7e0d4;
+  --border: #c8bba8;
+  --border-soft: rgba(48, 36, 22, 0.1);
+  --text: #1a1a1a;
+  --muted: #5c524a;
+  --accent: #1b4332;
+  --accent-2: #1b4332;
+  --btn-primary-text: #ffffff;
 }
 html[data-theme="light"] .assets-page .auth-card {
   background: #f7f3ec;
@@ -4286,6 +4213,26 @@ html:not([data-theme]) .auth-page.assets-page {
   color-scheme: dark;
   color: #f3eee4;
   background: #121a16;
+  --bg: #24302a;
+  --surface: #1c2822;
+  --surface-2: #24302a;
+  --surface-3: #2c3a33;
+  --border: #6f6254;
+  --border-soft: rgba(243, 238, 228, 0.1);
+  --text: #f3eee4;
+  --muted: #c5d5c8;
+  --accent: #2f6b4f;
+  --accent-2: #c5d5c8;
+  --btn-primary-text: #ffffff;
+}
+/* The deep green is too dark for text and ticks on this card. */
+html[data-theme="dark"] .assets-page .link-btn,
+html:not([data-theme]) .assets-page .link-btn {
+  color: #8fcb9a;
+}
+html[data-theme="dark"] .assets-page .cat-pick input[type="checkbox"],
+html:not([data-theme]) .assets-page .cat-pick input[type="checkbox"] {
+  accent-color: #8fcb9a;
 }
 html[data-theme="dark"] .assets-page .auth-card,
 html:not([data-theme]) .assets-page .auth-card {
@@ -14250,3 +14197,28 @@ html:not([data-theme]) .settings-page {
 .business-card .business-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .business-page .rental-card-head { align-items: center; }
 .business-page .rental-card-head h3 { margin: 0; }
+
+/* Onboarding: step indicator and Pick your budget categories (same rows as Settings → Categories & assets) */
+.onboarding-step { margin: -0.5rem 0 0.75rem; text-align: center; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.02em; color: var(--muted); }
+.onboarding-cats { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; min-width: 0; }
+/* Two tabs a row on narrow cards; labels may wrap instead of pushing past the card. */
+.onboarding-cats .portfolio-tabs.cat-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.onboarding-cats .cat-tabs .portfolio-tab { white-space: normal; padding-inline: 0.5rem; text-align: center; }
+@media (max-width: 600px) {
+  .onboarding-cats .portfolio-tabs.cat-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.cat-pick { cursor: pointer; }
+.cat-pick input[type="checkbox"] { width: 1.15rem; height: 1.15rem; margin: 0 0.15rem; flex: none; accent-color: var(--accent); cursor: pointer; }
+.cat-pick input[type="checkbox"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.cat-pick.is-locked { cursor: default; }
+.cat-lock { flex: none; margin: 0 0.1rem; color: var(--muted); }
+.cat-pick .cat-row-sub { display: inline-flex; align-items: center; gap: 0.3rem; }
+.onboarding-cats-note { margin: 0; }
+.onboarding-cats-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; margin-top: 0.25rem; }
+.onboarding-cats-defaults { margin-left: auto; min-height: 44px; }
+/* The lockup grows to fill its card; on the wider onboarding card keep it the sign-in card's size. */
+.auth-card-wide .auth-brand .brand-lockup { max-width: 22.25rem; }
+html[data-theme="dark"] .assets-page .portfolio-tab.active,
+html:not([data-theme]) .assets-page .portfolio-tab.active {
+  border-bottom-color: #8fcb9a;
+}
