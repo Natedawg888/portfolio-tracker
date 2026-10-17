@@ -53,6 +53,7 @@ import { deleteBusinessLogo, saveBusinessLogo } from '../lib/uploads.ts';
 import { getClient, listClients, summary } from '../invoices/store.ts';
 import { listCommodities } from '../commodities/store.ts';
 import { businessRow, presentBusiness, type BusinessRow } from './profile.ts';
+import { activeEmployeeCount, listEmployees } from './employees.ts';
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 type Result<T> = { ok: true; value: T } | { ok: false; status: number; error: string };
@@ -278,6 +279,7 @@ export function deleteBusiness(db: Database, userId: string, id: string): Result
   run(db, `DELETE FROM business_asset_movements WHERE user_id = ? AND asset_id IN (SELECT id FROM business_assets WHERE user_id = ? AND business_id = ?)`, [userId, userId, id]);
   run(db, `DELETE FROM business_assets WHERE user_id = ? AND business_id = ?`, [userId, id]);
   run(db, `DELETE FROM invoice_clients WHERE user_id = ? AND business_id = ?`, [userId, id]);
+  run(db, `DELETE FROM business_employees WHERE user_id = ? AND business_id = ?`, [userId, id]);
   run(db, `UPDATE transactions SET business_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
   run(db, `UPDATE income_records SET business_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
   run(db, `UPDATE commodities SET business_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
@@ -669,6 +671,7 @@ export function listBusinesses(db: Database, userId: string, today: string, taxY
     assetCount: count(db, `SELECT COUNT(*) AS c FROM business_assets WHERE user_id = ? AND business_id = ?`, [userId, r.id]),
     clientCount: count(db, `SELECT COUNT(*) AS c FROM invoice_clients WHERE user_id = ? AND business_id = ?`, [userId, r.id]),
     invoiceCount: count(db, `SELECT COUNT(*) AS c FROM invoices WHERE user_id = ? AND business_id = ?`, [userId, r.id]),
+    employeeCount: activeEmployeeCount(db, userId, r.id),
     activity: yearActivity(db, userId, r.id, year),
   }));
   return { today, taxYear: year, taxYears: taxYears(db, userId, today), businesses };
@@ -713,6 +716,7 @@ export function getBusinessDetail(db: Database, userId: string, id: string, toda
     ).map((inv) => summary(db, userId, inv, today)),
     money: businessMoney(db, userId, id, start, end).items,
     produce: businessProduce(db, userId, id, today),
+    employees: listEmployees(db, userId, id, today),
   };
 }
 

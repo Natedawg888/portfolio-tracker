@@ -14,6 +14,8 @@
  *   GET    /produce/candidates | POST /produce/link { commodityId, businessId | null }
  *                                   commodities held as a business's produce (KAN-81)
  *   GET    /clients/:clientId        client view: invoices, billed, outstanding, last payment
+ *   POST   /:id/employees            { name, role?, email?, phone?, address?, bankAccount?, payRateNzd?, payUnit?, payFrequency?, payDate?, startDate?, status?, notes? }
+ *   PUT    /employees/:employeeId | DELETE /employees/:employeeId
  *
  * Clients are created and edited through /api/invoices/clients with a businessId.
  */
@@ -45,6 +47,7 @@ import {
   updateAsset,
   updateBusiness,
 } from '../business/store.ts';
+import { createEmployee, deleteEmployee, parseEmployee, updateEmployee } from '../business/employees.ts';
 
 const router = Router();
 
@@ -131,6 +134,25 @@ router.get('/clients/:clientId', async (req, res) => {
   res.json(view);
 });
 
+router.put('/employees/:employeeId', async (req, res) => {
+  const parsed = parseEmployee(req.body);
+  if (!parsed.ok) {
+    res.status(400).json({ error: parsed.error });
+    return;
+  }
+  const db = await getDb();
+  reply(res, updateEmployee(db, uid(req), req.params.employeeId, parsed.value, aucklandToday()));
+});
+
+router.delete('/employees/:employeeId', async (req, res) => {
+  const db = await getDb();
+  if (!deleteEmployee(db, uid(req), req.params.employeeId)) {
+    res.status(404).json({ error: 'Employee not found' });
+    return;
+  }
+  res.json({ ok: true, id: req.params.employeeId });
+});
+
 router.put('/assets/:assetId', async (req, res) => {
   const parsed = parseAsset(req.body, aucklandToday());
   if (!parsed.ok) {
@@ -213,6 +235,16 @@ router.post('/:id/logo', async (req, res) => {
 router.delete('/:id/logo', async (req, res) => {
   const db = await getDb();
   reply(res, removeBusinessLogo(db, uid(req), req.params.id));
+});
+
+router.post('/:id/employees', async (req, res) => {
+  const parsed = parseEmployee(req.body);
+  if (!parsed.ok) {
+    res.status(400).json({ error: parsed.error });
+    return;
+  }
+  const db = await getDb();
+  reply(res, createEmployee(db, uid(req), req.params.id, parsed.value, aucklandToday()), true);
 });
 
 router.post('/:id/assets', async (req, res) => {

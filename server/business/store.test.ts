@@ -272,6 +272,35 @@ try {
   eq(cview.totals.valueNzd, 0, 'and leaves it out of the Commodities total');
   assert(commodityTotals(db, userA, today) === null, 'net worth doesn’t count it under Commodities (no double count)');
 
+  // ---------------------------------------------------------------- employees
+  const empBody = {
+    name: 'Mere Tane', role: 'Beekeeping hand', email: 'mere@example.nz', phone: '021 555 0199', bankAccount: '123456 7890123 00',
+    payRateNzd: 28.5, payUnit: 'hour', payFrequency: 'fortnightly', payDate: '2026-01-02', startDate: '2025-11-01',
+  };
+  assert((await call('POST', `/api/business/${bizId}/employees`, A, { ...empBody, name: '' })).status === 400, 'employee name required');
+  assert((await call('POST', `/api/business/${bizId}/employees`, A, { ...empBody, bankAccount: '12-345' })).status === 400, 'bank account must be 15 or 16 digits');
+  assert((await call('POST', `/api/business/${bizId}/employees`, A, { ...empBody, payRateNzd: -1 })).status === 400, 'negative pay rate refused');
+  assert((await call('POST', `/api/business/${bizId}/employees`, A, { ...empBody, payFrequency: 'daily' })).status === 400, 'pay frequency from the list');
+  assert((await call('POST', `/api/business/${bizId}/employees`, A, { ...empBody, payDate: '2/1/2026' })).status === 400, 'pay date is YYYY-MM-DD');
+  const emp = await call('POST', `/api/business/${bizId}/employees`, A, empBody);
+  assert(emp.status === 201 && emp.json.bankAccount === '12-3456-7890123-00', 'employee added, bank account formatted');
+  assert(emp.json.nextPayDate >= today && emp.json.payDate === '2026-01-02', 'next pay date rolls on from the date entered');
+  assert((Date.parse(emp.json.nextPayDate) - Date.parse('2026-01-02')) % (14 * 86_400_000) === 0, 'fortnightly from the date entered');
+  assert((await call('POST', `/api/business/${bizId}/employees`, B, empBody)).status === 404, 'B can’t add an employee to A’s business');
+  assert((await call('PUT', `/api/business/employees/${emp.json.id}`, B, empBody)).status === 404, 'B can’t edit A’s employee');
+  assert((await call('DELETE', `/api/business/employees/${emp.json.id}`, B)).status === 404, 'B can’t delete A’s employee');
+  const left = await call('PUT', `/api/business/employees/${emp.json.id}`, A, { ...empBody, status: 'inactive', payRateNzd: 30 });
+  assert(left.status === 200 && left.json.status === 'inactive' && left.json.payRateNzd === 30, 'employee updated');
+  await call('POST', `/api/business/${bizId}/employees`, A, { name: 'Sam Rua', payRateNzd: 60000, payUnit: 'year', payFrequency: 'monthly', payDate: '2026-01-31' });
+  const withStaff = await call('GET', `/api/business/${bizId}`, A);
+  assert(withStaff.json.employees.length === 2 && withStaff.json.employees[0].name === 'Sam Rua', 'active employees listed first');
+  const staffCard = (await call('GET', '/api/business', A)).json.businesses.find((x: Json) => x.id === bizId);
+  assert(staffCard.employeeCount === 1, 'card counts active employees');
+  const tmpBiz = await call('POST', '/api/business', A, { name: 'Temp', type: 'hobby' });
+  await call('POST', `/api/business/${tmpBiz.json.id}/employees`, A, { name: 'Casual' });
+  await call('DELETE', `/api/business/${tmpBiz.json.id}`, A);
+  assert(!queryOne(db, `SELECT id FROM business_employees WHERE business_id = ?`, [tmpBiz.json.id]), 'employees go with their business');
+
   // ---------------------------------------------------------------- isolation
   assert((await call('GET', `/api/business/${bizId}`, B)).status === 404, 'B can’t read A’s business');
   assert((await call('PUT', `/api/business/${bizId}`, B, { name: 'Mine now' })).status === 404, 'B can’t edit it');
@@ -334,6 +363,7 @@ try {
   // ---------------------------------------------------------------- account delete
   const wiped = deleteScopedDataForUser(db, userA);
   assert(wiped.tables.businesses === 1 && wiped.tables.business_assets === 2 && wiped.tables.business_asset_movements === 1, 'business rows removed with the account');
+  assert(wiped.tables.business_employees === 2, 'employees removed with the account');
   assert(queryAll(db, `SELECT id FROM invoice_clients WHERE user_id = ?`, [userA]).length === 0, 'clients removed');
   assert(queryAll(db, `SELECT id FROM businesses WHERE user_id = ?`, [userB]).length === 1, 'B untouched');
   assert(!fs.existsSync(path.join(path.dirname(dbPath), 'uploads', logoPath.replace('/api/uploads/', ''))), 'logo file removed');

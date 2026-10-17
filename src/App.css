@@ -14374,5 +14374,15 @@ html .business-page .more-menu-body .business-menu-danger:not(:disabled),
 html .business-page .more-menu-body .business-menu-danger:hover:not(:disabled),
 html .business-page .more-menu-body .business-menu-danger:focus-visible { color: var(--danger); }
 html .business-page .more-menu-body .business-menu-item:disabled { color: var(--muted); background: transparent; }
-/* Link buttons on the Business pages keep their 44px tap height with the label centred. */
-.business-page a.btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.25rem; }
+/* Business employees */
+.business-employee-pay { display: flex; flex-direction: column; align-items: flex-end; gap: 0.1rem; text-align: right; }
+.business-employee-pay .muted { font-weight: 400; }
+.business-employee-bank { font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.business-employee.is-inactive .rental-entry-what > span:first-child { color: var(--muted); }
+.employee-field-error { color: var(--danger); }
+@media (max-width: 520px) {
+  .rental-entry.business-employee { grid-template-columns: minmax(0, 1fr); }
+  .business-employee-pay { align-items: flex-start; text-align: left; }
+}
+.business-employee-bank { white-space: nowrap; }
+.business-employee .rental-entry-what > span { overflow-wrap: anywhere; }

@@ -1345,6 +1345,8 @@ export interface BusinessCard extends Business {
   assetCount: number;
   clientCount: number;
   invoiceCount: number;
+  /** Active employees. */
+  employeeCount: number;
   /** Recorded in the selected tax year: invoices issued and items tagged (invoice payments, income, transactions). */
   activity: { invoices: number; tagged: number };
 }
@@ -1447,7 +1449,35 @@ export interface BusinessDetail {
   money: BusinessMoneyItem[];
   /** Commodities linked as produce held (valued and counted on Portfolio → Commodities). */
   produce: BusinessProduce[];
+  employees: BusinessEmployee[];
 }
+
+/** Someone the business employs. Records only: nothing is paid from the app. */
+export interface BusinessEmployee {
+  id: string;
+  businessId: string;
+  name: string;
+  role: string;
+  email: string;
+  phone: string;
+  address: string;
+  /** NZ format, 12-3456-7890123-00. */
+  bankAccount: string;
+  payRateNzd: number | null;
+  payUnit: 'hour' | 'day' | 'week' | 'fortnight' | 'month' | 'year';
+  payFrequency: 'weekly' | 'fortnightly' | 'four_weekly' | 'monthly';
+  /** The pay date as entered. */
+  payDate: string | null;
+  /** The next pay day on or after today, rolled on from payDate. */
+  nextPayDate: string | null;
+  startDate: string | null;
+  status: 'active' | 'inactive';
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type BusinessEmployeeWriteBody = Omit<BusinessEmployee, 'id' | 'businessId' | 'nextPayDate' | 'createdAt' | 'updatedAt'>;
 
 export interface BusinessClientView {
   client: InvoiceClient;

@@ -84,6 +84,13 @@ export function Privacy() {
           with members of your household. They are included when you download a copy of your data, and deleted when you
           delete a client, the business, or your account.
         </p>
+        <p>
+          You can also keep a record of each business’s employees: name, role, email, phone, address, the bank account they
+          are paid into, pay rate and pay dates. The same applies: the records are yours to keep fairly under the Privacy
+          Act 2020, we use them only to show them to you (bank accounts are partly hidden in lists), nothing is paid or sent
+          from them, they are never shared with your household, and they are included in your data download and deleted
+          with the employee, the business, or your account.
+        </p>
         <h3>Technical information</h3>
         <ul>
           <li>

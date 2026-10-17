@@ -16,6 +16,8 @@ import type {
 } from '../types/dividends.ts';
 import type {
   Business,
+  BusinessEmployee,
+  BusinessEmployeeWriteBody,
   BusinessAsset,
   BusinessAssetWriteBody,
   BusinessClientView,
@@ -996,6 +998,11 @@ export const api = {
     tag: (kind: 'transaction' | 'income', id: string, businessId: string | null) =>
       req<{ ok: true }>('/business/money/tag', { method: 'POST', body: JSON.stringify({ kind, id, businessId }) }),
     client: (clientId: string) => req<BusinessClientView>(`/business/clients/${encodeURIComponent(clientId)}`),
+    createEmployee: (businessId: string, body: BusinessEmployeeWriteBody) =>
+      req<BusinessEmployee>(`/business/${encodeURIComponent(businessId)}/employees`, { method: 'POST', body: JSON.stringify(body) }),
+    updateEmployee: (id: string, body: BusinessEmployeeWriteBody) =>
+      req<BusinessEmployee>(`/business/employees/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    removeEmployee: (id: string) => req<{ ok: boolean; id: string }>(`/business/employees/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     produceCandidates: () => req<BusinessDetail['produce']>('/business/produce/candidates'),
     linkProduce: (commodityId: string, businessId: string | null) =>
       req<{ ok: true }>('/business/produce/link', { method: 'POST', body: JSON.stringify({ commodityId, businessId }) }),

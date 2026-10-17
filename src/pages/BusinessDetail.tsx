@@ -11,6 +11,8 @@ import { IRD_GST_URL, businessTypeLabel, movementKindLabel, netWorthNote, type A
 import { BusinessFigures, BusinessMark, BusinessTabs, Dialog, NetWorthSwitch, TaxYearSwitch, TypeNote, errorText } from '../components/business/BusinessUi';
 import { BusinessForm, businessBody } from '../components/business/BusinessForm';
 import { ClientForm, clientBody } from '../components/business/ClientForm';
+import { EmployeeForm, employeeDraft } from '../components/business/EmployeeForm';
+import { maskBankAccount, payFrequencyLabel, payRateText } from '../lib/employees';
 import { AssetForm, MovementForm, assetDraft } from '../components/business/AssetForms';
 import { WhatItOwns } from '../components/business/WhatItOwns';
 import { BusinessActivity } from '../components/business/BusinessActivity';
@@ -18,7 +20,7 @@ import { MoreMenu } from '../components/MoreMenu';
 import { ConfirmInline } from '../components/security/ConfirmInline';
 import { showQuietToast } from '../lib/quietToast';
 import { formatInvoiceDate } from './invoicesView';
-import type { BusinessAsset, BusinessDetail as Detail, BusinessMoneyItem, InvoiceClient } from '../types';
+import type { BusinessAsset, BusinessDetail as Detail, BusinessEmployee, BusinessMoneyItem, InvoiceClient } from '../types';
 
 type DialogState =
   | { mode: 'edit' }
@@ -27,6 +29,8 @@ type DialogState =
   | { mode: 'move'; asset: BusinessAsset }
   | { mode: 'add-client' }
   | { mode: 'edit-client'; client: InvoiceClient }
+  | { mode: 'add-employee' }
+  | { mode: 'edit-employee'; employee: BusinessEmployee }
   | { mode: 'tag' }
   | { mode: 'produce' }
   | null;
@@ -493,6 +497,64 @@ export function BusinessDetail() {
         </section>
       ) : null}
 
+      <section className="panel warranty-card" aria-labelledby="biz-employees">
+        <div className="rental-card-head">
+          <h3 id="biz-employees">Employees</h3>
+          <div className="rental-card-actions">
+            <button type="button" className="btn small ghost" disabled={busy} aria-label={`Add an employee to ${name}`} onClick={() => setDialog({ mode: 'add-employee' })}>
+              + Employee
+            </button>
+          </div>
+        </div>
+        {data.employees.length === 0 ? (
+          <p className="muted small">No employees yet. Keep their contact details, bank account, pay rate and pay day here.</p>
+        ) : (
+          <ul className="rental-entries">
+            {data.employees.map((e) => {
+              const rate = payRateText(e.payRateNzd, e.payUnit, formatNzd);
+              return (
+                <li key={e.id} className={'rental-entry business-employee' + (e.status === 'inactive' ? ' is-inactive' : '')}>
+                  <div className="rental-entry-what">
+                    <span>
+                      {e.name}
+                      {e.role ? <span className="muted"> · {e.role}</span> : null}
+                      {e.status === 'inactive' ? <span className="muted small"> · No longer works here</span> : null}
+                    </span>
+                    <span className="muted small">{[e.email, e.phone].filter(Boolean).join(' · ') || 'No contact details'}</span>
+                    {e.bankAccount ? (
+                      <span className="muted small">
+                        Bank <span className="business-employee-bank">{maskBankAccount(e.bankAccount)}</span>
+                      </span>
+                    ) : null}
+                  </div>
+                  <span className="rental-entry-amount rental-entry-amount--out business-employee-pay">
+                    {rate || <span className="muted small">No rate</span>}
+                    <span className="muted small">
+                      {payFrequencyLabel(e.payFrequency)}
+                      {e.status === 'active' && e.nextPayDate ? ` · next ${formatInvoiceDate(e.nextPayDate)}` : ''}
+                    </span>
+                  </span>
+                  <span className="rental-entry-actions">
+                    <button type="button" className="link-btn" disabled={busy} aria-label={`Edit ${e.name}`} onClick={() => setDialog({ mode: 'edit-employee', employee: e })}>
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="link-btn"
+                      disabled={busy}
+                      aria-label={`Delete ${e.name}`}
+                      onClick={() => void act(() => api.business.removeEmployee(e.id), `${e.name} deleted.`, `Delete ${e.name}? Their contact, bank and pay details are removed.`)}
+                    >
+                      Delete
+                    </button>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
       {dialog?.mode === 'edit' ? (
         <BusinessForm
           title={`Edit ${b.name || 'business'}`}
@@ -541,6 +603,18 @@ export function BusinessDetail() {
           onSave={async (body) => {
             if (dialog.mode === 'edit-client') await api.invoices.updateClient(dialog.client.id, body);
             else await api.invoices.createClient(body);
+            await saved(`${body.name} saved.`);
+          }}
+        />
+      ) : null}
+      {dialog?.mode === 'add-employee' || dialog?.mode === 'edit-employee' ? (
+        <EmployeeForm
+          title={dialog.mode === 'add-employee' ? 'Add employee' : `Edit ${dialog.employee.name}`}
+          initial={employeeDraft(dialog.mode === 'edit-employee' ? dialog.employee : null)}
+          onClose={() => setDialog(null)}
+          onSave={async (body) => {
+            if (dialog.mode === 'edit-employee') await api.business.updateEmployee(dialog.employee.id, body);
+            else await api.business.createEmployee(id, body);
             await saved(`${body.name} saved.`);
           }}
         />

@@ -456,6 +456,12 @@ try {
   assert((await req('DELETE', `/api/business/assets/${hiveId}`, { cookie: b.cookie })).status === 404, 'B can’t delete A’s assets');
   assert((await req('GET', `/api/business/clients/${clientId}`, { cookie: b.cookie })).status === 404, 'B can’t open A’s client');
   assert((await req('POST', '/api/invoices/clients', { cookie: b.cookie, body: { businessId: bizId, name: 'x' } })).status === 404, 'B can’t add to A’s business');
+  const staff = await req('POST', `/api/business/${bizId}/employees`, { cookie: a.cookie, body: { name: 'Alpha Secret Employee', bankAccount: '12-3456-7890123-00' } });
+  assert(staff.status === 201, 'A adds an employee');
+  const staffId = String((staff.json as { id: string }).id);
+  assert((await req('POST', `/api/business/${bizId}/employees`, { cookie: b.cookie, body: { name: 'x' } })).status === 404, 'B can’t add an employee to A’s business');
+  assert((await req('PUT', `/api/business/employees/${staffId}`, { cookie: b.cookie, body: { name: 'x' } })).status === 404, 'B can’t edit A’s employee');
+  assert((await req('DELETE', `/api/business/employees/${staffId}`, { cookie: b.cookie })).status === 404, 'B can’t delete A’s employee');
 
   // Rental rooms (KAN-83): another user can't see, change or delete A's rooms or tenancies,
   // or record rent against A's room.
