@@ -14,12 +14,16 @@
  *   eligibleAmountNzd = sum of amountNzd where amountNzd >= 5.
  *   Donations under $5 are not added together to reach $5.
  *   belowMinimumAmountNzd = sum of amountNzd where amountNzd < 5.
- *   estimatedTaxCreditNzd = round to cents(eligibleAmountNzd / 3).
+ *   estimatedTaxCreditNzd = floor(eligible cents / 3) / 100.
+ *   IRD works the credit to 2 decimal places without rounding up, so a part
+ *   cent is dropped: $200.00 gives $66.66, not $66.67. The division is done
+ *   on integer cents so no floating-point error can push it over a cent.
  *   The one-third is taken once on the summed eligible amount, not by
- *   rounding each donation's third and adding those.
+ *   truncating each donation's third and adding those.
  *
  * The credit is an estimate of the IRD donation tax credit (IR526):
  *   33.33 cents per dollar (one third) of donations of $5 or more.
+ *   Source: https://www.ird.govt.nz/income-tax/income-tax-for-individuals/individual-tax-credits/donation-tax-credits/about-donation-tax-credits
  *   IRD also caps the credit at one third of taxable income. Taxable income
  *   is not stored here, so that cap is not applied (incomeCapApplied is false).
  *   Payroll giving is already credited each pay and is not part of this estimate.
@@ -41,7 +45,7 @@ export const DONATION_TAX_YEAR_NOTE =
   'An NZ tax year runs from 1 April through 31 March and is labelled by the year it ends. The 2027 tax year is 2026-04-01 through 2027-03-31. A date on or after 1 April belongs to the tax year that ends the following 31 March.';
 
 export const DONATION_TAX_CREDIT_ESTIMATE_NOTE =
-  'Estimate only. The IRD donation tax credit is one third of donations of $5 or more to an approved donee (33.33 cents per $1), claimed after year-end on IR526 with receipts. estimatedTaxCreditNzd is eligibleAmountNzd divided by 3, rounded to the nearest cent. Donations under $5 stay in totalAmountNzd and are not added together to reach $5. IRD also caps the credit at one third of taxable income. Taxable income is not stored here, so that cap is not applied. Payroll giving is already credited each pay and is not part of this estimate. Approved-donee status and whether a receipt is linked are not checked.';
+  'Estimate only. The IRD donation tax credit is one third of donations of $5 or more to an approved donee (33.33 cents per $1), claimed after year-end on IR526 with receipts. estimatedTaxCreditNzd is eligibleAmountNzd divided by 3, worked to 2 decimal places without rounding up, as IRD does ($200 gives $66.66). Donations under $5 stay in totalAmountNzd and are not added together to reach $5. IRD also caps the credit at one third of taxable income. Taxable income is not stored here, so that cap is not applied. Payroll giving is already credited each pay and is not part of this estimate. Approved-donee status and whether a receipt is linked are not checked.';
 
 export type DonationInput = {
   date: string;
@@ -112,7 +116,7 @@ export function summarizeTaxYear(rows: DonationAmount[], taxYear: number): Donat
     eligibleAmountNzd: eligibleCents / 100,
     belowMinimumCount: belowCount,
     belowMinimumAmountNzd: belowCents / 100,
-    estimatedTaxCreditNzd: roundMoney(eligibleCents / 100 / 3),
+    estimatedTaxCreditNzd: Math.floor(eligibleCents / 3) / 100,
     estimateLabel: 'estimate',
     minimumDonationNzd: DONATION_TAX_CREDIT_MINIMUM_NZD,
     creditRate: DONATION_TAX_CREDIT_RATE_LABEL,

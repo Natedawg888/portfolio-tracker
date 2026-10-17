@@ -355,7 +355,8 @@ export interface DonationTaxYearTotals {
   /** Sum of donations under $5. */
   belowMinimumAmountNzd: number;
   /**
-   * Estimate of the IR526 credit: eligibleAmountNzd / 3, rounded to cents.
+   * Estimate of the IR526 credit: eligibleAmountNzd / 3, cut to cents without
+   * rounding up, as IRD does ($200 gives 66.66).
    * Not reduced by the taxable-income cap. See DonationSummary.estimateNote.
    */
   estimatedTaxCreditNzd: number;
