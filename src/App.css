@@ -14238,7 +14238,6 @@ html:not([data-theme]) .assets-page .portfolio-tab.active {
 .business-card-title h3 a:hover, .business-card-title h3 a:focus-visible { text-decoration: underline; }
 .business-card-title p { margin: 0.1rem 0 0; }
 .business-card-actions { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
-.business-card-actions .btn { min-height: 44px; }
 .business-card-owns, .business-card-owed { margin: 0; }
 .business-totals--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .business-totals dd.business-figure-note { margin: 0.1rem 0 0; font-size: 0.75rem; font-weight: 400; color: var(--muted); }
