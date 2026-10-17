@@ -2,7 +2,6 @@
  * Donation tax-year and tax-credit formulas. Amounts are NZD.
  * Run: npm run test:donations
  */
-import { roundMoney } from '../debts/model.ts';
 import {
   donationSummary,
   nzTaxYearForDate,
@@ -67,8 +66,7 @@ const split = summarizeTaxYear(
   2027,
 );
 eq(split.eligibleAmountNzd, 10, 'two $5 gifts sum to 10');
-eq(split.estimatedTaxCreditNzd, roundMoney(10 / 3), 'one third is taken on the sum');
-eq(split.estimatedTaxCreditNzd, 3.33, '10 / 3 rounds to 3.33, not 1.67 + 1.67');
+eq(split.estimatedTaxCreditNzd, 3.33, 'one third is taken on the sum: 10 / 3 is 3.33, not 1.66 + 1.66');
 
 const pooled = summarizeTaxYear(
   [
@@ -81,9 +79,31 @@ eq(pooled.totalAmountNzd, 9.98, 'under-$5 gifts still add into the total');
 eq(pooled.eligibleAmountNzd, 0, 'under-$5 gifts are not pooled to reach $5');
 eq(pooled.estimatedTaxCreditNzd, 0, 'nothing under $5 earns the estimate');
 
-eq(summarizeTaxYear([{ date: '2026-05-01', amountNzd: 5 }], 2027).estimatedTaxCreditNzd, 1.67, '5 / 3 rounds to 1.67');
-eq(summarizeTaxYear([{ date: '2026-05-01', amountNzd: 10 }], 2027).estimatedTaxCreditNzd, 3.33, '10 / 3 rounds to 3.33');
-eq(summarizeTaxYear([{ date: '2026-05-01', amountNzd: 7 }], 2027).estimatedTaxCreditNzd, 2.33, '7 / 3 rounds to 2.33');
+// IRD works the credit to 2 decimal places without rounding up.
+function creditFor(amountNzd: number): number {
+  return summarizeTaxYear([{ date: '2026-05-01', amountNzd }], 2027).estimatedTaxCreditNzd;
+}
+eq(creditFor(5), 1.66, '5 / 3 is cut to 1.66, not rounded to 1.67');
+eq(creditFor(10), 3.33, '10 / 3 is 3.33');
+eq(creditFor(7), 2.33, '7 / 3 is 2.33');
+eq(creditFor(50), 16.66, '50 / 3 is cut to 16.66');
+eq(creditFor(100), 33.33, '100 / 3 is 33.33');
+eq(creditFor(200), 66.66, '200 / 3 is cut to 66.66, not 66.67');
+eq(creditFor(300), 100, 'an exact third keeps its last cent');
+eq(creditFor(5.01), 1.67, '5.01 / 3 is exactly 1.67');
+
+// $0.30 multiples divide by 3 exactly, so float drift would show as a lost cent
+// (6.60 / 3 is 2.1999999999999997 in floating point, which a naive floor cuts to 2.19).
+for (let k = 17; k <= 2000; k += 1) {
+  const amount = (k * 30) / 100;
+  eq(creditFor(amount), k / 10, `${amount.toFixed(2)} / 3 is ${(k / 10).toFixed(2)}`);
+}
+const thirties = summarizeTaxYear(
+  Array.from({ length: 1000 }, () => ({ date: '2026-05-01', amountNzd: 5.3 })),
+  2027,
+);
+eq(thirties.eligibleAmountNzd, 5300, 'a thousand 5.30 gifts sum to exactly 5300');
+eq(thirties.estimatedTaxCreditNzd, 1766.66, 'a thousand 5.30 gifts credit 1766.66');
 
 const empty = summarizeTaxYear([], 2027);
 eq(empty.count, 0, 'an empty year has no donations');
@@ -111,8 +131,7 @@ eq(summary.years.find((year) => year.taxYear === 2028)?.totalAmountNzd, 20, '202
 
 const asked = donationSummary(rows, '2026-10-05', 2026);
 assert(asked.taxYear === 2026, 'taxYear query selects that year');
-eq(asked.selected.estimatedTaxCreditNzd, roundMoney(100 / 3), '2026 credit is one third of 100');
-eq(asked.selected.estimatedTaxCreditNzd, 33.33, '100 / 3 rounds to 33.33');
+eq(asked.selected.estimatedTaxCreditNzd, 33.33, '2026 credit is one third of 100, cut to 33.33');
 assert(asked.currentTaxYear === 2027, 'current tax year stays the year of asOf');
 
 const created = parseCreateDonation({
