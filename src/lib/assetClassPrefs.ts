@@ -34,7 +34,7 @@ export type AssetClassPrefMeta = {
 export const ASSET_CLASS_PREF_OPTIONS: AssetClassPrefMeta[] = [
   { key: 'stock', label: 'Stocks', blurb: 'Sharesies / Hatch / manual tickers' },
   { key: 'crypto', label: 'Crypto', blurb: 'BTC, ETH, Nexo, etc.' },
-  { key: 'gomining', label: 'GoMining', blurb: 'Digital miners' },
+  { key: 'gomining', label: 'Crypto mining', blurb: 'Your own rigs and cloud mining (GoMining…)' },
   { key: 'metal', label: 'Metals', blurb: 'Gold, silver, platinum, palladium' },
   { key: 'forex', label: 'Forex', blurb: 'Foreign cash (Revolut etc.)' },
   { key: 'real_estate', label: 'Property', blurb: 'Market value − mortgage' },

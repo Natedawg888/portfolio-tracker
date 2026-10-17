@@ -14170,3 +14170,6 @@ html:not([data-theme]) .settings-page {
 .commodity-basis { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; border: 0; padding: 0; margin: 0; }
 .commodity-basis legend { padding: 0; margin-bottom: 0.25rem; }
 .commodity-basis label { display: inline-flex; align-items: center; gap: 0.4rem; min-height: 2.75rem; }
+
+/* Crypto mining type and provider tags (KAN-85) */
+.miner-tags { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.15rem 0; }

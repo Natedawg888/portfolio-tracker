@@ -97,9 +97,9 @@ const classKeys = chartClassKeys([
 eq(classKeys.join(','), 'kiwiSaver,stocks,crypto,realEstate,realEstateMortgage,debt,zzNew', 'class lines skip total, assets, wallets, equity and null classes; known ones first, unknown last');
 eq(classLabel('cashLiabilities'), 'Cash liabilities (credit cards)', 'credit card label');
 eq(classLabel('realEstate'), 'Property', 'property label');
-eq(classLabel('gomining'), 'GoMining miners', 'miners label');
+eq(classLabel('gomining'), 'Crypto mining', 'miners label');
 eq(classLabel('zzNew'), 'zzNew', 'unknown class keeps its key');
-eq(assetClassLabel('gomining_miner'), 'GoMining miners', 'holding class maps to the same name as its byClass key');
+eq(assetClassLabel('gomining_miner'), 'Crypto mining', 'holding class maps to the same name as its byClass key');
 eq(assetClassLabel('real_estate'), 'Property', 'real estate holding class reads as Property');
 eq(assetClassLabel('stone'), 'Stones', 'stone holding class');
 
@@ -180,7 +180,7 @@ const groups = holdingsByClass([
   { id: 'x', label: 'Broken', assetClass: 'stock', valueNzd: Number.NaN },
   { id: 'g', label: 'Miner', assetClass: 'gomining_miner', valueNzd: -20 },
 ]);
-eq(groups.map((g) => g.label).join(), 'Stocks,KiwiSaver,GoMining miners', 'classes sorted by total, readable names');
+eq(groups.map((g) => g.label).join(), 'Stocks,KiwiSaver,Crypto mining', 'classes sorted by total, readable names');
 eq(groups[0].classKey, 'stocks', 'group carries the chart class key');
 eq(groups[0].totalNzd, 550, 'class total sums its holdings, skipping non-numbers');
 eq(groups[0].holdings.map((h) => h.label).join(), 'MSFT,AAPL', 'holdings sorted by value');

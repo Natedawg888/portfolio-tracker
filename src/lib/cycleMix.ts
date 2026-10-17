@@ -9,7 +9,7 @@
  *   Cash        bank and wallet balances, plus term deposits held in Bonds (KAN-80)
  *   Commodities metals, plus Commodities holdings (KAN-81, Plus: commoditiesExposure)
  *   Bonds       government and corporate bonds (KAN-80)
- * Crypto, GoMining, collectables, art, precious stones and forex have no cycle
+ * Crypto, crypto mining, collectables, art, precious stones and forex have no cycle
  * notes; they are listed as not covered.
  */
 
@@ -60,7 +60,7 @@ const PARTS: Array<{ field: Exclude<keyof NetWorthTotals, 'commoditiesExposure'>
   { field: 'bondsTermDepositsNzd', pref: 'bonds', to: 'cash' },
   { field: 'commoditiesNzd', pref: 'commodities', to: 'commodities' },
   { field: 'cryptoNzd', pref: 'crypto', to: { notCovered: 'Crypto' } },
-  { field: 'gominingMinersNzd', pref: 'gomining', to: { notCovered: 'GoMining' } },
+  { field: 'gominingMinersNzd', pref: 'gomining', to: { notCovered: 'Crypto mining' } },
   { field: 'collectablesNzd', pref: 'collectable', to: { notCovered: 'Collectables' } },
   { field: 'artNzd', pref: 'art', to: { notCovered: 'Art' } },
   { field: 'stonesNzd', pref: 'stone', to: { notCovered: 'Precious stones' } },

@@ -12,6 +12,7 @@ import type { Cadence, PossiblePayment, RecurringKind, RecurringStatus, Recurrin
 import type { WarrantyStatus } from '../lib/warranty';
 import type { RentalCategory, RentalEntryKind } from '../lib/rental';
 import type { CommodityCategory, CommodityUnit, PriceBasis } from '../lib/commodities';
+import type { MiningType } from '../lib/miningProviders';
 
 export type CurrencyCode = 'NZD' | 'USD' | 'AUD' | 'EUR' | 'GBP';
 
@@ -747,7 +748,8 @@ export interface CryptoHolding extends HoldingBase {
 }
 
 /**
- * GoMining digital miner (https://gomining.com/) — first-class holding.
+ * Crypto mining card (asset class key `gomining_miner`, kept from before KAN-85): the user's own
+ * rig (hardware) or a cloud mining plan with a provider (GoMining, or another named service).
  * Tracks individual miners (multiple supported), not only GMT token balance.
  * GMT token can also be recorded as a CryptoHolding with asset "GMT".
  * Market value: manual entry or GoMiningQuoteProvider stub — NEVER invent.
@@ -756,6 +758,9 @@ export interface GoMiningMinerHolding extends HoldingBase {
   assetClass: 'gomining_miner';
   /** User-facing identifier / nickname for this miner */
   minerName: string;
+  miningType: MiningType;
+  /** Cloud only: provider key from MINING_PROVIDERS, or the name typed. Null for hardware. */
+  miningProvider: string | null;
   /** Optional platform / marketplace id */
   minerExternalId?: string | null;
   /** Hashrate in TH/s (fractional OK) */
@@ -1099,6 +1104,8 @@ export interface AppSettings {
 /** Form payload for creating/editing a GoMining miner */
 export interface GoMiningMinerInput {
   minerName: string;
+  miningType?: MiningType;
+  miningProvider?: string | null;
   minerExternalId?: string | null;
   hashrateThs: number;
   energyEfficiencyWth?: number | null;

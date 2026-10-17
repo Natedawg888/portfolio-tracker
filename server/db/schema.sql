@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS budgets (
 -- idx_budgets_user_category_period created in migrateSchema after user_id exists
 
 -- Polymorphic holdings: asset_class discriminates subtype columns.
--- Classes: stock | crypto | gomining_miner | art | metal | stone | forex | real_estate | collectable
+-- Classes: stock | crypto | gomining_miner (Crypto mining) | art | metal | stone | forex | real_estate | collectable
 CREATE TABLE IF NOT EXISTS holdings (
   id              TEXT PRIMARY KEY,
   user_id         TEXT,
@@ -108,8 +108,11 @@ CREATE TABLE IF NOT EXISTS holdings (
   asset           TEXT,
   amount          REAL,
 
-  -- gomining_miner (first-class digital miners — multiple rows OK)
+  -- gomining_miner: Crypto mining cards (multiple rows OK). The class key predates KAN-85.
   miner_name          TEXT,
+  -- KAN-85: hardware | cloud, and for cloud a provider key (src/lib/miningProviders.ts) or typed name.
+  mining_type         TEXT,
+  mining_provider     TEXT,
   miner_external_id   TEXT,
   hashrate_ths        REAL,
   energy_efficiency_wth REAL,

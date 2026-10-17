@@ -5,6 +5,7 @@
  */
 
 import { isClosedQuantity } from './holdingValue';
+import { isGoMiningMiner } from './miningProviders';
 
 export type HoldingReturn =
   | { kind: 'no_value' }
@@ -51,7 +52,7 @@ export const TAB_LABELS: Record<PortfolioTab, string> = {
   stocks: 'Stocks',
   dividends: 'Dividends',
   crypto: 'Crypto',
-  mining: 'Mining',
+  mining: 'Crypto mining',
   metals: 'Metals',
   forex: 'Forex',
   property: 'Property',
@@ -246,6 +247,8 @@ export type SourceHolding = {
   cardGame?: string | null;
   notes?: string | null;
   stoneType?: string | null;
+  miningType?: string | null;
+  miningProvider?: string | null;
 };
 
 /**
@@ -261,7 +264,7 @@ export function priceSources(holdings: SourceHolding[], metalsProvider: 'gold-ap
     if (h.assetClass === 'stock' && !synced) found.add('Yahoo');
     if (h.assetClass === 'crypto' && !synced) found.add('CoinGecko');
     if (h.assetClass === 'forex' || /frankfurter/i.test(h.notes ?? '')) found.add('Frankfurter FX');
-    if (h.assetClass === 'gomining_miner') found.add('GoMining');
+    if (h.assetClass === 'gomining_miner' && isGoMiningMiner(h)) found.add('GoMining');
     if (h.assetClass === 'metal') found.add(metalsProvider === 'metals_dev' ? 'Metals.Dev' : 'gold-api.com');
     if (h.assetClass === 'collectable' && h.cardGame === 'mtg') found.add('Scryfall');
     if (h.assetClass === 'collectable' && h.cardGame === 'pokemon') found.add('Pokémon TCG API');

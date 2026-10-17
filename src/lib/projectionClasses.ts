@@ -24,7 +24,7 @@ export const PROJECTION_CLASS_LABELS: Record<ProjectionClassKey, string> = {
   shares: 'Shares & funds',
   kiwiSaver: 'KiwiSaver',
   crypto: 'Crypto',
-  mining: 'Mining (GoMining)',
+  mining: 'Crypto mining',
   metals: 'Metals',
   property: 'Property',
   bonds: 'Bonds & term deposits',

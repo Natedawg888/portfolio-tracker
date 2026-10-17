@@ -158,7 +158,7 @@ function MiningPlanFields({
   const inUse = mining.plan;
   return (
     <div className="span-2">
-      <h4 style={{ margin: '0.75rem 0 0.25rem' }}>Mining (GoMining)</h4>
+      <h4 style={{ margin: '0.75rem 0 0.25rem' }}>Crypto mining (GoMining plan)</h4>
       <p className="muted small" style={{ margin: 0 }}>
         {mining.inputs
           ? `${mining.inputs.th.toLocaleString('en-NZ')} TH at ${mining.inputs.avgWth ?? '—'} W/TH. `
@@ -206,7 +206,7 @@ function MiningResults({ mining, months }: { mining: ProjectionMining; months: n
   const yearly = p ? p.months.filter((m) => m.monthIndex % 12 === 0 || m.monthIndex === months) : [];
   return (
     <details className="proj-fold">
-      <summary>Mining (GoMining)</summary>
+      <summary>Crypto mining (GoMining plan)</summary>
       {!p ? (
         <p className="muted">{mining.reason ?? 'Mining rewards are not projected.'}</p>
       ) : (

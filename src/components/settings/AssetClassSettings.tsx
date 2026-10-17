@@ -19,7 +19,7 @@ const DESCRIPTION: Partial<Record<string, string>> = {
   kiwisaver: 'Your KiwiSaver balance',
   stock: 'Shares and funds, synced or added by ticker',
   crypto: 'Coins, wallets and DeFi',
-  gomining: 'GoMining digital miners',
+  gomining: 'Your own mining rigs and cloud mining plans',
   metal: 'Gold, silver, platinum, palladium',
   forex: 'Foreign currency cash',
   real_estate: 'Property value less the mortgage',

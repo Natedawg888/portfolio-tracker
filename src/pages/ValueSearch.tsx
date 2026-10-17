@@ -238,7 +238,7 @@ export function ValueSearch() {
         <section className="panel">
           <h2 className="page-title">What's it worth?</h2>
           <p className="page-lead">
-            No lookups are visible. Turn on an asset class (stocks, crypto, GoMining, metals, precious
+            No lookups are visible. Turn on an asset class (stocks, crypto, crypto mining, metals, precious
             stones or collectables) or the currency exchanger in the account menu →{' '}
             <Link to="/settings">Settings</Link>.
           </p>

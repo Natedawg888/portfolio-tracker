@@ -57,7 +57,7 @@ export function yearHeadline<S extends HeadlineSnapshot>(snapshots: S[]): YearHe
 export const CLASS_LABELS: Record<string, string> = {
   kiwiSaver: 'KiwiSaver',
   stocks: 'Stocks',
-  gomining: 'GoMining miners',
+  gomining: 'Crypto mining',
   crypto: 'Crypto',
   cash: 'Cash',
   metals: 'Metals',

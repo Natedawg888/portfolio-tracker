@@ -196,6 +196,21 @@ function tableColumns(database: Database, table: string): Set<string> {
   return cols;
 }
 
+/**
+ * Crypto mining type and provider (KAN-85). Runs after the table rebuilds above so the columns
+ * can't be dropped by them. Every miner saved before this was a GoMining cloud miner; the backfill
+ * only touches miners with no type, so it is safe on every boot.
+ */
+function migrateMiningTag(database: Database) {
+  const cols = tableColumns(database, 'holdings');
+  if (!cols.has('mining_type')) database.run('ALTER TABLE holdings ADD COLUMN mining_type TEXT');
+  if (!cols.has('mining_provider')) database.run('ALTER TABLE holdings ADD COLUMN mining_provider TEXT');
+  database.run(
+    `UPDATE holdings SET mining_type = 'cloud', mining_provider = COALESCE(mining_provider, 'gomining')
+     WHERE asset_class = 'gomining_miner' AND mining_type IS NULL`,
+  );
+}
+
 /** Runtime migration for existing sql.js DBs (CREATE TABLE IF NOT EXISTS won't add columns). */
 function migrateSchema(database: Database) {
   const cols = tableColumns(database, 'holdings');
@@ -814,6 +829,7 @@ export async function getDb(): Promise<Database> {
   migrateSchema(db);
   migrateNullableHoldingCost(db);
   migrateNullableTransactionAccount(db);
+  migrateMiningTag(db);
   seedDefaults(db);
   persist();
   return db;
