@@ -5,6 +5,7 @@
  *   GET    /:id?taxYear=             one business: totals, assets, clients, invoices, tagged money
  *   PUT    /:id | DELETE /:id        edit | delete (not while it has invoices)
  *   POST   /:id/logo { image } | DELETE /:id/logo
+ *   POST   /:id/archive | /:id/restore   archive hides it (kept with its invoices); restore brings it back
  *   POST   /:id/assets               { category, name, quantity, … }
  *   PUT    /assets/:assetId | DELETE /assets/:assetId
  *   POST   /assets/:assetId/movements { date, kind, quantity, amountNzd?, notes? }
@@ -29,6 +30,8 @@ import { aucklandToday } from '../debts/model.ts';
 import { taxYearOf, taxYearRange } from '../../src/lib/business.ts';
 import {
   addMovement,
+  archiveBusiness,
+  restoreBusiness,
   createAsset,
   createBusiness,
   deleteAsset,
@@ -232,6 +235,16 @@ router.delete('/:id', async (req, res) => {
     return;
   }
   res.json({ ok: true, id: req.params.id });
+});
+
+router.post('/:id/archive', async (req, res) => {
+  const db = await getDb();
+  reply(res, archiveBusiness(db, uid(req), req.params.id));
+});
+
+router.post('/:id/restore', async (req, res) => {
+  const db = await getDb();
+  reply(res, restoreBusiness(db, uid(req), req.params.id));
 });
 
 router.post('/:id/logo', async (req, res) => {

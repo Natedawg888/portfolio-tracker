@@ -184,6 +184,8 @@ export function migrateBusinesses(database: Database) {
     const cols = tableColumns(database, table);
     if (cols.size > 0 && !cols.has('business_id')) database.run(`ALTER TABLE ${table} ADD COLUMN business_id TEXT`);
   }
+  const bizCols = tableColumns(database, 'businesses');
+  if (bizCols.size > 0 && !bizCols.has('archived_at')) database.run('ALTER TABLE businesses ADD COLUMN archived_at TEXT');
   const clientCols = tableColumns(database, 'invoice_clients');
   for (const [col, type] of [
     ['contact_person', "TEXT NOT NULL DEFAULT ''"],

@@ -365,6 +365,32 @@ try {
   assert((await call('DELETE', `/api/business/${second.json.id}`, A)).status === 200, 'an empty business can be deleted');
   assert(!queryOne(db, `SELECT id FROM invoice_clients WHERE id = ?`, [otherClient.json.id]), 'its clients went with it');
 
+  // Archive: a business with invoices is put away instead of deleted, and can come back.
+  const third = await call('POST', '/api/business', A, { name: 'Third Co', type: 'company' });
+  assert((await call('POST', `/api/business/${bizId}/archive`, B)).status === 404, 'B can’t archive A’s business');
+  const archived = await call('POST', `/api/business/${bizId}/archive`, A);
+  assert(archived.status === 200 && archived.json.archivedAt && archived.json.isDefault === false, 'archived, no longer the default');
+  const afterArchive = await call('GET', '/api/business', A);
+  assert(!afterArchive.json.businesses.some((x: Json) => x.id === bizId), 'archived business leaves the cards');
+  const shelf = afterArchive.json.archived.find((x: Json) => x.id === bizId);
+  assert(shelf && shelf.invoiceCount === 2, 'listed under Archived with its invoice count');
+  assert(afterArchive.json.businesses.find((x: Json) => x.id === third.json.id)?.isDefault === true, 'another active business becomes the default');
+  assert((await computeNetWorth(db, userA)).businessAssetsNzd == null, 'archived business leaves net worth');
+  assert((await call('GET', `/api/business/${bizId}`, A)).json.business.archivedAt, 'still readable');
+  assert((await call('GET', `/api/invoices?businessId=${bizId}`, A)).json.invoices.length === 2, 'its invoices are kept');
+  const walkIn = await call('POST', '/api/invoices', A, { clientName: 'Walk-in', lines: [{ description: 'Honey', quantity: 1, rate: 10 }] });
+  assert(walkIn.json.businessId === third.json.id, 'a new invoice goes to the active default, not the archived one');
+  assert((await call('POST', `/api/business/${bizId}/restore`, B)).status === 404, 'B can’t restore it');
+  const restored = await call('POST', `/api/business/${bizId}/restore`, A);
+  assert(restored.status === 200 && restored.json.archivedAt === null, 'restored');
+  assert((await call('GET', '/api/business', A)).json.businesses.some((x: Json) => x.id === bizId), 'back on the cards');
+  await call('DELETE', `/api/invoices/${walkIn.json.id}`, A);
+  await call('POST', `/api/business/${third.json.id}/archive`, A);
+  const onShelf = (await call('GET', '/api/business', A)).json.archived.find((x: Json) => x.id === third.json.id);
+  assert(onShelf?.invoiceCount === 0, 'archived without invoices');
+  assert((await call('DELETE', `/api/business/${third.json.id}`, A)).status === 200, 'an archived business without invoices can be deleted');
+  assert((await call('GET', '/api/business', A)).json.businesses.find((x: Json) => x.id === bizId)?.isDefault === true, 'default promoted back');
+
   // ---------------------------------------------------------------- existing invoices move onto a default business
   run(
     db,

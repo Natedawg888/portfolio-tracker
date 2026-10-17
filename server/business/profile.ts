@@ -31,6 +31,7 @@ export type BusinessRow = {
   clients_enabled: number;
   count_in_net_worth: number;
   is_default: number;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -53,6 +54,7 @@ export function presentBusiness(r: BusinessRow): Business {
     clientsEnabled: Number(r.clients_enabled) === 1,
     countInNetWorth: Number(r.count_in_net_worth) === 1,
     isDefault: Number(r.is_default) === 1,
+    archivedAt: r.archived_at ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -62,8 +64,13 @@ export function businessRow(db: Database, userId: string, id: string): BusinessR
   return queryOne<BusinessRow>(db, `SELECT * FROM businesses WHERE id = ? AND user_id = ?`, [id, userId]);
 }
 
+/** The default business: never an archived one while an active one exists. */
 export function defaultBusinessRow(db: Database, userId: string): BusinessRow | null {
-  return queryOne<BusinessRow>(db, `SELECT * FROM businesses WHERE user_id = ? ORDER BY is_default DESC, created_at, id LIMIT 1`, [userId]);
+  return queryOne<BusinessRow>(
+    db,
+    `SELECT * FROM businesses WHERE user_id = ? ORDER BY archived_at IS NOT NULL, is_default DESC, created_at, id LIMIT 1`,
+    [userId],
+  );
 }
 
 function accountName(db: Database, userId: string): { name: string; email: string } {
@@ -78,9 +85,14 @@ function accountName(db: Database, userId: string): { name: string; email: strin
 
 /** The default business, made now (from Settings → Business or the account) if there is none. */
 export function ensureDefaultBusiness(db: Database, userId: string): BusinessRow {
-  const existing = defaultBusinessRow(db, userId);
+  const found = defaultBusinessRow(db, userId);
+  // Every business archived: a new invoice or client gets a new active default, not an archived one.
+  const existing = found && !found.archived_at ? found : null;
   if (existing) {
-    if (!Number(existing.is_default)) run(db, `UPDATE businesses SET is_default = 1 WHERE id = ? AND user_id = ?`, [existing.id, userId]);
+    if (!Number(existing.is_default)) {
+      run(db, `UPDATE businesses SET is_default = 0 WHERE user_id = ? AND id != ?`, [userId, existing.id]);
+      run(db, `UPDATE businesses SET is_default = 1 WHERE id = ? AND user_id = ?`, [existing.id, userId]);
+    }
     attachOrphans(db, userId, existing.id);
     return { ...existing, is_default: 1 };
   }
@@ -91,6 +103,7 @@ export function ensureDefaultBusiness(db: Database, userId: string): BusinessRow
   const account = accountName(db, userId);
   const id = newId('biz');
   const now = new Date().toISOString();
+  run(db, `UPDATE businesses SET is_default = 0 WHERE user_id = ?`, [userId]);
   run(
     db,
     `INSERT INTO businesses (id, user_id, name, type, nzbn, gst_registered, gst_number, email, address, phone, bank_account,

@@ -15,17 +15,27 @@ import { BusinessForm, blankBusiness, businessBody } from '../components/busines
 import { BusinessSetup } from '../components/business/BusinessSetup';
 import { MoreMenu } from '../components/MoreMenu';
 import { InfoTip } from '../components/InfoTip';
-import type { BusinessCard, BusinessListResponse } from '../types';
+import { DeleteBusinessConfirm } from '../components/business/DeleteBusiness';
+import { formatInvoiceDate } from './invoicesView';
+import { aucklandToday } from '../lib/debtModel';
+import type { ArchivedBusiness, BusinessCard, BusinessListResponse } from '../types';
 
 const BUSINESS_KEY = 'business-list';
 
-function Card({ b, onEdit, onType }: { b: BusinessCard; onEdit: () => void; onType: (type: BusinessType) => Promise<void> }) {
+function Card({ b, onEdit, onType, onRemoved }: {
+  b: BusinessCard;
+  onEdit: () => void;
+  onType: (type: BusinessType) => Promise<void>;
+  /** Deleted or archived. */
+  onRemoved: (message: string) => void;
+}) {
   const navigate = useNavigate();
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const name = b.name || 'Unnamed business';
   const open = `/business/${b.id}`;
   // The whole card opens the business; its own links, buttons and menu still work.
   function onCardClick(e: MouseEvent<HTMLElement>) {
-    if ((e.target as HTMLElement).closest('a, button, input, select, textarea, [role="menu"], .more-menu-body')) return;
+    if ((e.target as HTMLElement).closest('a, button, input, select, textarea, [role="menu"], .more-menu-body, [role="alertdialog"]')) return;
     if (window.getSelection()?.toString()) return;
     navigate(open);
   }
@@ -55,11 +65,23 @@ function Card({ b, onEdit, onType }: { b: BusinessCard; onEdit: () => void; onTy
                 <button type="button" role="menuitem" className="btn small business-menu-item" onClick={() => { close(); onEdit(); }}>
                   Edit details
                 </button>
+                <button type="button" role="menuitem" className="btn small business-menu-item business-menu-danger" onClick={() => { close(); setConfirmDelete(true); }}>
+                  Delete business…
+                </button>
               </>
             )}
           </MoreMenu>
         </div>
       </div>
+      {confirmDelete ? (
+        <DeleteBusinessConfirm
+          id={b.id}
+          name={name}
+          invoiceCount={b.invoiceCount}
+          onCancel={() => setConfirmDelete(false)}
+          onDone={(message) => onRemoved(message)}
+        />
+      ) : null}
       {isUnstarted(b.totals, b.activity) ? (
         <>
           <BusinessSetup b={b} />
@@ -75,6 +97,67 @@ function Card({ b, onEdit, onType }: { b: BusinessCard; onEdit: () => void; onTy
       {b.totals.outstandingNzd > 0 ? <p className="muted small business-card-owed">{formatNzd(b.totals.outstandingNzd)} still owed on sent invoices</p> : null}
       <TypeNote type={b.type} name={name} onChange={onType} />
     </article>
+  );
+}
+
+/** Archived businesses: hidden everywhere else, kept with their invoices. Restore, or delete one without invoices. */
+function ArchivedList({ items, onChanged }: { items: ArchivedBusiness[]; onChanged: (message: string) => void }) {
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  async function restore(a: ArchivedBusiness) {
+    setBusyId(a.id);
+    setError(null);
+    try {
+      await api.business.restore(a.id);
+      onChanged(`${a.name || 'Business'} restored.`);
+    } catch (e) {
+      setError(errorText(e, 'Could not restore it.'));
+    } finally {
+      setBusyId(null);
+    }
+  }
+  return (
+    <details className="panel business-archived">
+      <summary>
+        Archived <span className="cat-tab-count">{items.length}</span>
+      </summary>
+      <p className="muted small">Hidden from Business, your net worth and the invoice and client pickers. Everything is kept.</p>
+      {error ? <p className="auth-error" role="alert">{error}</p> : null}
+      <ul className="rental-entries">
+        {items.map((a) => {
+          const name = a.name || 'Unnamed business';
+          return (
+            <li key={a.id} className="rental-entry business-archived-row">
+              <div className="rental-entry-what">
+                <span>
+                  <Link to={`/business/${a.id}`}>{name}</Link>
+                </span>
+                <span className="muted small">
+                  {businessTypeLabel(a.type)} · archived {formatInvoiceDate(aucklandToday(new Date(a.archivedAt)))}
+                  {a.invoiceCount ? ` · ${a.invoiceCount} invoice${a.invoiceCount === 1 ? '' : 's'} kept` : ''}
+                </span>
+              </div>
+              <span className="rental-entry-actions">
+                <button type="button" className="btn small" disabled={busyId === a.id} aria-label={`Restore ${name}`} onClick={() => void restore(a)}>
+                  Restore
+                </button>
+                {a.invoiceCount === 0 ? (
+                  <button type="button" className="link-btn" aria-label={`Delete ${name}`} onClick={() => setDeleting(a.id)}>
+                    Delete
+                  </button>
+                ) : null}
+              </span>
+              {deleting === a.id ? (
+                <div className="business-archived-confirm">
+                  <DeleteBusinessConfirm id={a.id} name={name} invoiceCount={0} onCancel={() => setDeleting(null)} onDone={(m) => { setDeleting(null); onChanged(m); }} />
+                </div>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </details>
   );
 }
 
@@ -244,9 +327,28 @@ export function Business() {
       {businesses.length > 0 ? (
         <section className="business-card-list" aria-label="Businesses">
           {businesses.map((b) => (
-            <Card key={b.id} b={b} onEdit={() => setEditing(b)} onType={changeType(b)} />
+            <Card
+              key={b.id}
+              b={b}
+              onEdit={() => setEditing(b)}
+              onType={changeType(b)}
+              onRemoved={(message) => {
+                showQuietToast(message);
+                setReload((n) => n + 1);
+              }}
+            />
           ))}
         </section>
+      ) : null}
+
+      {data?.archived?.length ? (
+        <ArchivedList
+          items={data.archived}
+          onChanged={(message) => {
+            showQuietToast(message);
+            setReload((n) => n + 1);
+          }}
+        />
       ) : null}
 
       {businesses.length > 0 ? <p className="muted small business-foot">Totals cover the tax year (1 April – 31 March). Values are the ones you enter. General information, not tax advice.</p> : null}

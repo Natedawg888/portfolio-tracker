@@ -229,8 +229,54 @@ export function parseMovement(raw: unknown, today: string): Parsed<MovementDraft
 
 // ---------------------------------------------------------------- businesses
 
+/** Active businesses (archived ones are left out of Business, net worth and pickers). */
 function rows(db: Database, userId: string): BusinessRow[] {
-  return queryAll<BusinessRow>(db, `SELECT * FROM businesses WHERE user_id = ? ORDER BY is_default DESC, lower(name), created_at`, [userId]);
+  return queryAll<BusinessRow>(
+    db,
+    `SELECT * FROM businesses WHERE user_id = ? AND archived_at IS NULL ORDER BY is_default DESC, lower(name), created_at`,
+    [userId],
+  );
+}
+
+function archivedRows(db: Database, userId: string): BusinessRow[] {
+  return queryAll<BusinessRow>(db, `SELECT * FROM businesses WHERE user_id = ? AND archived_at IS NOT NULL ORDER BY archived_at DESC`, [userId]);
+}
+
+/** Make the first active business the default when the default was deleted or archived. */
+function promoteDefault(db: Database, userId: string): void {
+  if (queryOne(db, `SELECT id FROM businesses WHERE user_id = ? AND archived_at IS NULL AND is_default = 1`, [userId])) return;
+  const next = rows(db, userId)[0];
+  if (!next) return;
+  run(db, `UPDATE businesses SET is_default = 0 WHERE user_id = ?`, [userId]);
+  run(db, `UPDATE businesses SET is_default = 1 WHERE id = ? AND user_id = ?`, [next.id, userId]);
+}
+
+const invoiceCount = (db: Database, userId: string, id: string) =>
+  Number(queryOne<{ c: number }>(db, `SELECT COUNT(*) AS c FROM invoices WHERE user_id = ? AND business_id = ?`, [userId, id])?.c ?? 0);
+
+/**
+ * Archive: the business, its invoices, assets, clients and employees are all kept, but it is
+ * hidden from Business, net worth and the invoice and client pickers until restored. This is
+ * how a business with invoices is put away, since invoices are kept on record.
+ */
+export function archiveBusiness(db: Database, userId: string, id: string): Result<Business> {
+  const r = businessRow(db, userId, id);
+  if (!r) return fail(404, 'Business not found');
+  if (!r.archived_at) {
+    run(db, `UPDATE businesses SET archived_at = ?, is_default = 0, updated_at = ? WHERE id = ? AND user_id = ?`, [
+      new Date().toISOString(), new Date().toISOString(), id, userId,
+    ]);
+    promoteDefault(db, userId);
+  }
+  return { ok: true, value: presentBusiness(businessRow(db, userId, id)!) };
+}
+
+export function restoreBusiness(db: Database, userId: string, id: string): Result<Business> {
+  const r = businessRow(db, userId, id);
+  if (!r) return fail(404, 'Business not found');
+  run(db, `UPDATE businesses SET archived_at = NULL, updated_at = ? WHERE id = ? AND user_id = ?`, [new Date().toISOString(), id, userId]);
+  promoteDefault(db, userId);
+  return { ok: true, value: presentBusiness(businessRow(db, userId, id)!) };
 }
 
 export function createBusiness(db: Database, userId: string, d: BusinessDraft): Business {
@@ -274,8 +320,10 @@ export function updateBusiness(db: Database, userId: string, id: string, d: Busi
 export function deleteBusiness(db: Database, userId: string, id: string): Result<true> {
   const r = businessRow(db, userId, id);
   if (!r) return fail(404, 'Business not found');
-  const invoices = Number(queryOne<{ c: number }>(db, `SELECT COUNT(*) AS c FROM invoices WHERE user_id = ? AND business_id = ?`, [userId, id])?.c ?? 0);
-  if (invoices > 0) return fail(409, `This business has ${invoices} invoice${invoices === 1 ? '' : 's'}. Invoices are kept on record, so it can’t be deleted.`);
+  const invoices = invoiceCount(db, userId, id);
+  if (invoices > 0) {
+    return fail(409, `This business has ${invoices} invoice${invoices === 1 ? '' : 's'}. Invoices are kept on record, so archive it instead.`);
+  }
   run(db, `DELETE FROM business_asset_movements WHERE user_id = ? AND asset_id IN (SELECT id FROM business_assets WHERE user_id = ? AND business_id = ?)`, [userId, userId, id]);
   run(db, `DELETE FROM business_assets WHERE user_id = ? AND business_id = ?`, [userId, id]);
   run(db, `DELETE FROM invoice_clients WHERE user_id = ? AND business_id = ?`, [userId, id]);
@@ -288,10 +336,7 @@ export function deleteBusiness(db: Database, userId: string, id: string): Result
   run(db, `UPDATE commodities SET business_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
   deleteBusinessLogo(r.logo_path);
   run(db, `DELETE FROM businesses WHERE id = ? AND user_id = ?`, [id, userId]);
-  if (Number(r.is_default) === 1) {
-    const next = rows(db, userId)[0];
-    if (next) run(db, `UPDATE businesses SET is_default = 1 WHERE id = ? AND user_id = ?`, [next.id, userId]);
-  }
+  promoteDefault(db, userId);
   return { ok: true, value: true };
 }
 
@@ -677,7 +722,15 @@ export function listBusinesses(db: Database, userId: string, today: string, taxY
     employeeCount: activeEmployeeCount(db, userId, r.id),
     activity: yearActivity(db, userId, r.id, year),
   }));
-  return { today, taxYear: year, taxYears: taxYears(db, userId, today), businesses };
+  const archived = archivedRows(db, userId).map((r) => ({
+    id: r.id,
+    name: r.name,
+    type: presentBusiness(r).type,
+    logoUrl: presentBusiness(r).logoUrl,
+    archivedAt: r.archived_at as string,
+    invoiceCount: invoiceCount(db, userId, r.id),
+  }));
+  return { today, taxYear: year, taxYears: taxYears(db, userId, today), businesses, archived };
 }
 
 type InvoiceRowLike = Parameters<typeof summary>[2];

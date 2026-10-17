@@ -14390,3 +14390,12 @@ html .business-page .more-menu-body .business-menu-item:disabled { color: var(--
 }
 .business-employee-bank { white-space: nowrap; }
 .business-employee .rental-entry-what > span { overflow-wrap: anywhere; }
+/* Archived businesses */
+.business-archived summary { cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 0.35rem; min-height: 44px; }
+.business-archived summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+.business-archived .rental-entry-actions .btn.small { min-height: 44px; }
+.business-archived-confirm { grid-column: 1 / -1; }
+.business-archived-note { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; border-left: 3px solid var(--warn); }
+.business-archived-note p { margin: 0; }
+.business-archived-note .btn.small { min-height: 44px; }
+.business-card .security-confirm { margin-top: 0.25rem; }

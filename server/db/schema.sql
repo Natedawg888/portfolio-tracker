@@ -828,6 +828,7 @@ CREATE TABLE IF NOT EXISTS businesses (
   clients_enabled    INTEGER NOT NULL DEFAULT 1,
   count_in_net_worth INTEGER NOT NULL DEFAULT 1,
   is_default         INTEGER NOT NULL DEFAULT 0,
+  archived_at        TEXT,                  -- archived: hidden from Business and net worth, kept with its invoices
   created_at         TEXT NOT NULL,
   updated_at         TEXT NOT NULL
 );
