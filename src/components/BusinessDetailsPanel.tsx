@@ -1,10 +1,12 @@
 /**
- * Settings → Business (KAN-71): the details printed on every invoice.
+ * Settings → Business (KAN-71): the details printed on every invoice. Since KAN-84 these are the
+ * default business's; other businesses are edited on the Business page.
  * Saved once and pre-filled on each invoice; a sent invoice keeps the copy it was sent with.
  * Grouped cards, formatting as you type, a live invoice header preview, and a save bar that
  * appears only when something has changed.
  */
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { isValidEmail, nextInvoiceNumber } from '../lib/invoiceCalc';
 import {
@@ -206,7 +208,8 @@ export function BusinessDetailsPanel() {
     <header className="biz-head">
       <h2>Business details</h2>
       <p className="page-lead">
-        Printed on your invoices. Invoices you’ve already sent keep the details they were sent with.
+        Printed on your invoices. Invoices you’ve already sent keep the details they were sent with. These are your main
+        business’s details; with more than one business, edit each on the <Link to="/business">Business</Link> page.
       </p>
     </header>
   );

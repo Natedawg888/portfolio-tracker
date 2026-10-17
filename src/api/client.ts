@@ -15,6 +15,16 @@ import type {
   ForecastReinvestResponse,
 } from '../types/dividends.ts';
 import type {
+  Business,
+  BusinessAsset,
+  BusinessAssetWriteBody,
+  BusinessClientView,
+  BusinessDetail,
+  BusinessListResponse,
+  BusinessMoneyItem,
+  BusinessMovementKind,
+  BusinessWriteBody,
+  InvoiceClientWriteBody,
   DebtPerson,
   DebtSummary,
   DebtWriteBody,
@@ -160,6 +170,8 @@ export type RentalEntryWriteBody = {
 
 /** Draft invoice fields sent to the API. Totals are always computed by the server. */
 export type InvoiceWriteBody = {
+  /** Omitted → the default business. */
+  businessId?: string | null;
   number?: string;
   clientId: string | null;
   clientName: string;
@@ -898,7 +910,7 @@ export const api = {
     removeEntry: (id: string) => req<{ ok: boolean; id: string }>(`/rentals/entries/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
   invoices: {
-    list: (filters: { status?: string; clientId?: string; from?: string; to?: string } = {}) => {
+    list: (filters: { status?: string; clientId?: string; businessId?: string; from?: string; to?: string } = {}) => {
       const q = new URLSearchParams(Object.entries(filters).filter(([, v]) => v) as [string, string][]);
       const qs = q.toString();
       return req<InvoiceListResponse>(`/invoices${qs ? `?${qs}` : ''}`);
@@ -932,15 +944,44 @@ export const api = {
     business: () => req<BusinessProfile>('/invoices/business'),
     saveBusiness: (body: BusinessProfile) =>
       req<BusinessProfile>('/invoices/business', { method: 'PUT', body: JSON.stringify(body) }),
-    clients: () => req<InvoiceClient[]>('/invoices/clients'),
-    createClient: (body: { name: string; email: string; address: string; reference: string }) =>
+    clients: (businessId?: string | null) =>
+      req<InvoiceClient[]>(`/invoices/clients${businessId ? `?businessId=${encodeURIComponent(businessId)}` : ''}`),
+    createClient: (body: InvoiceClientWriteBody) =>
       req<InvoiceClient>('/invoices/clients', { method: 'POST', body: JSON.stringify(body) }),
-    updateClient: (id: string, body: { name: string; email: string; address: string; reference: string }) =>
+    updateClient: (id: string, body: InvoiceClientWriteBody) =>
       req<InvoiceClient>(`/invoices/clients/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
     removeClient: (id: string) =>
       req<{ ok: boolean; id: string }>(`/invoices/clients/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     publicView: (token: string) => req<PublicInvoice>(`/public/invoices/${encodeURIComponent(token)}`),
     publicPdfUrl: (token: string) => `${BASE}/public/invoices/${encodeURIComponent(token)}/pdf`,
+  },
+  business: {
+    list: (taxYear?: number | null) => req<BusinessListResponse>(`/business${taxYear ? `?taxYear=${taxYear}` : ''}`),
+    get: (id: string, taxYear?: number | null) =>
+      req<BusinessDetail>(`/business/${encodeURIComponent(id)}${taxYear ? `?taxYear=${taxYear}` : ''}`),
+    create: (body: BusinessWriteBody) => req<Business>('/business', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: BusinessWriteBody) =>
+      req<Business>(`/business/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    remove: (id: string) => req<{ ok: boolean; id: string }>(`/business/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    setLogo: (id: string, image: string) =>
+      req<Business>(`/business/${encodeURIComponent(id)}/logo`, { method: 'POST', body: JSON.stringify({ image }) }),
+    removeLogo: (id: string) => req<Business>(`/business/${encodeURIComponent(id)}/logo`, { method: 'DELETE' }),
+    createAsset: (businessId: string, body: BusinessAssetWriteBody) =>
+      req<BusinessAsset>(`/business/${encodeURIComponent(businessId)}/assets`, { method: 'POST', body: JSON.stringify(body) }),
+    updateAsset: (id: string, body: BusinessAssetWriteBody) =>
+      req<BusinessAsset>(`/business/assets/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    removeAsset: (id: string) => req<{ ok: boolean; id: string }>(`/business/assets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    addMovement: (assetId: string, body: { date: string; kind: BusinessMovementKind; quantity: number; amountNzd?: number | null; notes?: string }) =>
+      req<BusinessAsset>(`/business/assets/${encodeURIComponent(assetId)}/movements`, { method: 'POST', body: JSON.stringify(body) }),
+    removeMovement: (id: string) => req<BusinessAsset>(`/business/movements/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    candidates: (taxYear: number, q: string) =>
+      req<BusinessMoneyItem[]>(`/business/money/candidates?taxYear=${taxYear}&q=${encodeURIComponent(q)}`),
+    tag: (kind: 'transaction' | 'income', id: string, businessId: string | null) =>
+      req<{ ok: true }>('/business/money/tag', { method: 'POST', body: JSON.stringify({ kind, id, businessId }) }),
+    client: (clientId: string) => req<BusinessClientView>(`/business/clients/${encodeURIComponent(clientId)}`),
+    produceCandidates: () => req<BusinessDetail['produce']>('/business/produce/candidates'),
+    linkProduce: (commodityId: string, businessId: string | null) =>
+      req<{ ok: true }>('/business/produce/link', { method: 'POST', body: JSON.stringify({ commodityId, businessId }) }),
   },
   paySources: {
     list: () => req<PaySource[]>('/pay-sources'),

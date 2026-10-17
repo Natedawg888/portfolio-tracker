@@ -9,6 +9,9 @@ const loaders = {
   news: () => import('../pages/News'),
   kiwisaver: () => import('../pages/KiwiSaver'),
   paye: () => import('../pages/Paye'),
+  business: () => import('../pages/Business'),
+  businessDetail: () => import('../pages/BusinessDetail'),
+  businessClients: () => import('../pages/BusinessClients'),
   invoices: () => import('../pages/Invoices'),
   invoiceEditor: () => import('../pages/InvoiceEditor'),
   invoiceDetail: () => import('../pages/InvoiceDetail'),
@@ -57,6 +60,12 @@ function exportName(name: PageName): string {
       return 'KiwiSaver';
     case 'paye':
       return 'Paye';
+    case 'business':
+      return 'Business';
+    case 'businessDetail':
+      return 'BusinessDetail';
+    case 'businessClients':
+      return 'BusinessClients';
     case 'invoices':
       return 'Invoices';
     case 'invoiceEditor':
@@ -98,6 +107,9 @@ export const ProjectionsPage = lazyNamed('projections');
 export const NewsPage = lazyNamed('news');
 export const KiwiSaverPage = lazyNamed('kiwisaver');
 export const PayePage = lazyNamed('paye');
+export const BusinessPage = lazyNamed('business');
+export const BusinessDetailPage = lazyNamed('businessDetail');
+export const BusinessClientsPage = lazyNamed('businessClients');
 export const InvoicesPage = lazyNamed('invoices');
 export const InvoiceEditorPage = lazyNamed('invoiceEditor');
 export const InvoiceDetailPage = lazyNamed('invoiceDetail');
@@ -123,7 +135,9 @@ const NAV_PAGES: Record<string, PageName> = {
   '/news': 'news',
   '/kiwisaver': 'kiwisaver',
   '/paye': 'paye',
-  '/invoices': 'invoices',
+  '/business': 'business',
+  '/business/invoices': 'invoices',
+  '/business/clients': 'businessClients',
   '/bills': 'bills',
   '/warranties': 'warranties',
   '/rentals': 'rentals',

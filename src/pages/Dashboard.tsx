@@ -64,6 +64,7 @@ type Summary = {
   vehiclesNzd?: number | null;
   vehicleLoansNzd?: number | null;
   vehiclesEquityNzd?: number | null;
+  businessAssetsNzd?: number | null;
   bondsNzd?: number | null;
   bondsTermDepositsNzd?: number | null;
   commoditiesNzd?: number | null;
@@ -326,6 +327,7 @@ export function Dashboard() {
     realEstate: 'real_estate',
     collectables: 'collectable',
     vehicles: 'vehicles',
+    business: 'business',
     bonds: 'bonds',
     commodities: 'commodities',
     kiwiSaver: 'kiwisaver',
@@ -348,6 +350,7 @@ export function Dashboard() {
     },
     { key: 'collectables', name: 'Collectables', value: summary.collectablesNzd ?? 0, colour: '#c45a9a' },
     { key: 'vehicles', name: 'Vehicles', value: summary.vehiclesEquityNzd ?? 0, colour: '#8a7a5a' },
+    { key: 'business', name: 'Business assets', value: summary.businessAssetsNzd ?? 0, colour: '#b0884a' },
     { key: 'bonds', name: 'Bonds', value: summary.bondsNzd ?? 0, colour: '#4a9a8a' },
     // Commodities as its own class in the mix is Plus (KAN-81); the total still counts them.
     ...(summary.commoditiesExposure ? [{ key: 'commodities', name: 'Commodities', value: summary.commoditiesNzd ?? 0, colour: '#9a7a3a' }] : []),
@@ -392,6 +395,7 @@ export function Dashboard() {
     real_estate: 'Real estate',
     collectable: 'Collectables',
     vehicles: 'Vehicles',
+    business: 'Business assets',
     bonds: 'Bonds',
     commodities: 'Commodities',
     kiwisaver: 'KiwiSaver',
@@ -502,6 +506,17 @@ export function Dashboard() {
                     ? `Value ${formatNzd(summary.vehiclesNzd)} minus loans ${formatNzd(summary.vehicleLoansNzd)} · Open`
                     : 'Value you recorded · Open'}{' '}
                 <span aria-hidden="true">›</span>
+              </span>
+            </span>
+          </Link>
+        ) : null}
+        {assetEnabled('business') && summary.businessAssetsNzd != null ? (
+          <Link className="card dashboard-tile dashboard-tile-link" to="/business">
+            <span className="dashboard-tile-hit">
+              <span className="dashboard-tile-title">Business assets</span>
+              <span className="card-value">{formatNzd(summary.businessAssetsNzd)}</span>
+              <span className="dashboard-tile-cue">
+                Values you recorded · Open <span aria-hidden="true">›</span>
               </span>
             </span>
           </Link>

@@ -7,9 +7,11 @@
  * You'll receive is amountDue from that result. Mark as sent still goes through
  * the existing mark-sent action, which rejects with sendProblem when the invoice
  * is not ready to send.
+ * Each invoice belongs to a business (KAN-84). With more than one, a picker chooses which;
+ * ?business=<id> preselects it, and saved clients are that business's.
  */
 import { useEffect, useId, useMemo, useState } from 'react';
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, formatNzd, type InvoiceWriteBody } from '../api/client';
 import { InfoTip } from '../components/InfoTip';
 import { InvoicePreview } from '../components/InvoicePreview';
@@ -20,7 +22,7 @@ import {
 } from '../lib/invoiceCalc';
 import { payTaxYearRates } from '../lib/payeRates';
 import { loadOutputPayPrefs } from '../lib/outputPayPrefs';
-import type { BusinessProfile, InvoiceClient, PaySource, PublicInvoice } from '../types';
+import type { Business, BusinessProfile, InvoiceClient, PaySource, PublicInvoice } from '../types';
 import {
   BUSINESS_SETTINGS_HREF,
   DUE_TAP_PRESETS,
@@ -62,6 +64,21 @@ function num(text: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** What an invoice prints for a business. */
+function profileOf(b: Business): BusinessProfile {
+  return {
+    businessName: b.name,
+    address: b.address,
+    email: b.email,
+    phone: b.phone,
+    bankAccount: b.bankAccount,
+    gstRegistered: b.gstRegistered,
+    gstNumber: b.gstNumber,
+    nzbn: b.nzbn,
+    invoicePrefix: b.invoicePrefix,
+  };
+}
+
 function keptDueLabel(preset: DuePreset): string | null {
   if (preset === 'on_receipt') return 'On receipt';
   if (preset === 'days_30') return '30 days';
@@ -76,12 +93,16 @@ export function InvoiceEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const wantedBusiness = searchParams.get('business');
   const editingId = id ?? null;
   const navError = (location.state as { sendError?: string } | null)?.sendError ?? null;
   const actionReasonId = useId();
   const withholdingHintId = useId();
 
   const [business, setBusiness] = useState<BusinessProfile | null>(null);
+  const [businesses, setBusinesses] = useState<Business[]>([]);
+  const [businessId, setBusinessId] = useState('');
   const [clients, setClients] = useState<InvoiceClient[]>([]);
   const [contractSources, setContractSources] = useState<PaySource[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -114,24 +135,32 @@ export function InvoiceEditor() {
     let cancelled = false;
     (async () => {
       try {
-        const [biz, cl, list, sources] = await Promise.all([
+        const [fallback, cl, owned, sources] = await Promise.all([
           api.invoices.business(),
           api.invoices.clients(),
-          editingId ? Promise.resolve(null) : api.invoices.list(),
+          api.business.list().then((r) => r.businesses).catch(() => [] as Business[]),
           api.paySources.list().catch(() => [] as PaySource[]),
         ]);
         if (cancelled) return;
+        // A new invoice goes to ?business=, else the default business (none yet → made on save).
+        const inv = editingId ? await api.invoices.get(editingId) : null;
+        if (cancelled) return;
+        const chosen =
+          owned.find((b) => b.id === (inv?.businessId ?? wantedBusiness)) ?? owned.find((b) => b.isDefault) ?? owned[0] ?? null;
+        const biz = chosen ? profileOf(chosen) : fallback;
+        const list = inv ? null : await api.invoices.list(chosen ? { businessId: chosen.id } : {});
+        if (cancelled) return;
+        setBusinesses(owned);
+        setBusinessId(chosen?.id ?? '');
         setBusiness(biz);
         setClients(cl);
         setContractSources(sources.filter((s) => s.inputs?.payType === 'schedular'));
         if (list) setNumber(list.nextNumber);
         const prefill = editorWithholdingPrefill(loadOutputPayPrefs(), payTaxYearRates());
         setPrefillRate(prefill.ratePct);
-        if (editingId) {
-          const inv = await api.invoices.get(editingId);
-          if (cancelled) return;
+        if (inv) {
           if (inv.storedStatus !== 'draft') {
-            navigate(`/invoices/${inv.id}`, { replace: true });
+            navigate(`/business/invoices/${inv.id}`, { replace: true });
             return;
           }
           setNumber(inv.number);
@@ -173,7 +202,26 @@ export function InvoiceEditor() {
     return () => {
       cancelled = true;
     };
-  }, [editingId, navigate, navError]);
+  }, [editingId, navigate, navError, wantedBusiness]);
+
+  /** Another business: its details and GST, its clients, and (for a new invoice) its next number. */
+  function chooseBusiness(nextId: string) {
+    const b = businesses.find((x) => x.id === nextId);
+    if (!b) return;
+    setBusinessId(b.id);
+    setBusiness(profileOf(b));
+    if (clientId && clients.find((c) => c.id === clientId)?.businessId !== b.id) setClientId('');
+    if (!editingId) {
+      setGstMode(b.gstRegistered ? 'exclusive' : 'none');
+      setInclusiveDraft(false);
+      api.invoices
+        .list({ businessId: b.id })
+        .then((l) => setNumber(l.nextNumber))
+        .catch(() => undefined);
+    }
+  }
+
+  const businessClients = clients.filter((c) => !businessId || !c.businessId || c.businessId === businessId);
 
   function applyClient(c: InvoiceClient) {
     setClientId(c.id);
@@ -186,7 +234,7 @@ export function InvoiceEditor() {
 
   function onNameChange(value: string) {
     setClientName(value);
-    const selected = clients.find((c) => c.id === clientId);
+    const selected = businessClients.find((c) => c.id === clientId);
     if (selected && selected.name !== value) setClientId('');
   }
 
@@ -274,6 +322,7 @@ export function InvoiceEditor() {
 
   function writeBody(cid: string | null): InvoiceWriteBody {
     return {
+      businessId: businessId || null,
       number: number.trim() || undefined,
       clientId: cid,
       clientName: clientName.trim(),
@@ -296,12 +345,13 @@ export function InvoiceEditor() {
     let cid: string | null = clientId || null;
     const trimmedName = clientName.trim();
     if (!cid && trimmedName) {
-      const existing = clients.find((c) => c.name.trim().toLowerCase() === trimmedName.toLowerCase());
+      const existing = businessClients.find((c) => c.name.trim().toLowerCase() === trimmedName.toLowerCase());
       if (existing) {
         cid = existing.id;
         setClientId(existing.id);
       } else {
         const created = await api.invoices.createClient({
+          businessId: businessId || null,
           name: trimmedName,
           email: clientEmail.trim(),
           address: clientAddress.trim(),
@@ -325,7 +375,7 @@ export function InvoiceEditor() {
     setError(null);
     try {
       const saved = await persist();
-      navigate(`/invoices/${saved.id}`);
+      navigate(`/business/invoices/${saved.id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save the invoice.');
       setBusy(false);
@@ -346,11 +396,11 @@ export function InvoiceEditor() {
         setError(message);
         setBusy(false);
         if (!editingId) {
-          navigate(`/invoices/${saved.id}/edit`, { replace: true, state: { sendError: message } });
+          navigate(`/business/invoices/${saved.id}/edit`, { replace: true, state: { sendError: message } });
         }
         return;
       }
-      navigate(`/invoices/${saved.id}`);
+      navigate(`/business/invoices/${saved.id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save the invoice.');
       setBusy(false);
@@ -373,7 +423,7 @@ export function InvoiceEditor() {
       <section className="panel">
         <div className="panel-heading">
           <h2 className="page-title">{editingId ? `Edit ${number}` : 'New invoice'}</h2>
-          <Link to={editingId ? `/invoices/${editingId}` : '/invoices'} className="btn small">
+          <Link to={editingId ? `/business/invoices/${editingId}` : '/business/invoices'} className="btn small">
             Cancel
           </Link>
         </div>
@@ -383,16 +433,28 @@ export function InvoiceEditor() {
         <div className="stack">
           <section className="panel">
             <div className="form-grid">
+              {businesses.length > 1 ? (
+                <label className="span-2">
+                  Business
+                  <select value={businessId} onChange={(e) => chooseBusiness(e.target.value)}>
+                    {businesses.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name || 'Unnamed business'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               <label className="span-2 invoice-bill-to">
                 Bill to
                 <input value={clientName} maxLength={120} onChange={(e) => onNameChange(e.target.value)} />
               </label>
             </div>
-            {clients.length > 0 ? (
+            {businessClients.length > 0 ? (
               <div className="invoice-client-block">
                 <span className="invoice-field-label" id="invoice-saved-clients">Saved clients</span>
                 <div className="invoice-client-chips" role="group" aria-labelledby="invoice-saved-clients">
-                  {clients.map((c) => (
+                  {businessClients.filter((c) => c.status !== 'inactive' || c.id === clientId).map((c) => (
                     <button
                       key={c.id}
                       type="button"
@@ -670,7 +732,8 @@ export function InvoiceEditor() {
           <h3 id="invoice-preview-heading">Preview</h3>
           {promptLead ? (
             <p className="invoice-business-prompt">
-              {promptLead} <Link to={BUSINESS_SETTINGS_HREF}>Settings → Business</Link>.
+              {promptLead}{' '}
+              {businessId ? <Link to={`/business/${businessId}`}>its business details</Link> : <Link to={BUSINESS_SETTINGS_HREF}>Settings → Business</Link>}.
             </p>
           ) : null}
           {preview ? <InvoicePreview invoice={preview} /> : null}

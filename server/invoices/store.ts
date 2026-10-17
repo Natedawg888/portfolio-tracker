@@ -3,6 +3,9 @@
  * share links and the send log. Every query filters on user_id; a row id from
  * another user behaves exactly like a missing row.
  *
+ * Each invoice and client belongs to a business (KAN-84). The details printed on a draft
+ * come from its business; Settings → Business edits the default business.
+ *
  * Totals are recomputed from the lines on every save. Status: draft / sent / void is
  * stored; partly paid / paid / overdue are counted from payments and the due date.
  * Only drafts can be edited. Drafts and void invoices can be deleted. A sent invoice can be voided (when it has no
@@ -34,6 +37,7 @@ import {
   type InvoiceStoredStatus,
 } from '../../src/lib/invoiceCalc.ts';
 import { newId, queryAll, queryOne, run } from '../db/index.ts';
+import { businessRow, defaultBusinessRow, ensureDefaultBusiness, profileFromBusiness, resolveBusiness, type BusinessRow } from '../business/profile.ts';
 import { INCOME_SLUG, resolveCategoryIdOrSlug, seedCategoriesForUser } from '../lib/categories.ts';
 import { incomeCategoryForPayee } from '../payees/store.ts';
 import { linkMirroredIncomeToBankCredits } from '../lib/incomeBankLink.ts';
@@ -57,8 +61,14 @@ type ProfileRow = {
   invoice_prefix: string;
 };
 
-/** Saved business details, or a starting point from the account's name and email. */
-export function getBusinessProfile(db: Database, userId: string): BusinessProfile {
+/**
+ * What an invoice prints for a business: the given one, else the default business, else the
+ * saved Settings → Business details, else a starting point from the account's name and email.
+ * Reading never creates a business.
+ */
+export function getBusinessProfile(db: Database, userId: string, businessId?: string | null): BusinessProfile {
+  const biz = (businessId ? businessRow(db, userId, businessId) : null) ?? defaultBusinessRow(db, userId);
+  if (biz) return profileFromBusiness(biz);
   const row = queryOne<ProfileRow>(db, `SELECT * FROM business_profiles WHERE user_id = ?`, [userId]);
   if (row) {
     return {
@@ -94,8 +104,25 @@ export function getBusinessProfile(db: Database, userId: string): BusinessProfil
   };
 }
 
+/** Settings → Business: saves onto the default business (made now if there is none). */
 export function saveBusinessProfile(db: Database, userId: string, p: BusinessProfile): BusinessProfile {
+  const biz = ensureDefaultBusiness(db, userId);
   const now = new Date().toISOString();
+  run(
+    db,
+    `UPDATE businesses SET name=?, address=?, email=?, phone=?, bank_account=?, gst_registered=?, gst_number=?, nzbn=?,
+       invoice_prefix=?, updated_at=? WHERE id=? AND user_id=?`,
+    [
+      p.businessName.trim(), p.address, p.email, p.phone, p.bankAccount, p.gstRegistered ? 1 : 0, p.gstNumber,
+      p.nzbn, p.invoicePrefix, now, biz.id, userId,
+    ],
+  );
+  saveLegacyProfile(db, userId, p, now);
+  return getBusinessProfile(db, userId, biz.id);
+}
+
+/** Keep business_profiles in step, so a rollback still has the latest Settings → Business details. */
+function saveLegacyProfile(db: Database, userId: string, p: BusinessProfile, now: string): void {
   const params = [
     p.businessName, p.address, p.email, p.phone, p.bankAccount, p.gstRegistered ? 1 : 0,
     p.gstNumber, p.nzbn, p.invoicePrefix, now,
@@ -116,7 +143,6 @@ export function saveBusinessProfile(db: Database, userId: string, p: BusinessPro
       [...params, userId],
     );
   }
-  return getBusinessProfile(db, userId);
 }
 
 function parseBusinessJson(raw: string | null | undefined): BusinessProfile | null {
@@ -144,10 +170,15 @@ function parseBusinessJson(raw: string | null | undefined): BusinessProfile | nu
 
 type ClientRow = {
   id: string;
+  business_id: string | null;
   name: string;
+  contact_person: string | null;
   email: string;
+  phone: string | null;
   address: string;
   reference: string;
+  notes: string | null;
+  status: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -155,20 +186,26 @@ type ClientRow = {
 function presentClient(r: ClientRow): InvoiceClient {
   return {
     id: r.id,
+    businessId: r.business_id,
     name: r.name,
+    contactPerson: r.contact_person ?? '',
     email: r.email,
+    phone: r.phone ?? '',
     address: r.address,
     reference: r.reference,
+    notes: r.notes ?? '',
+    status: r.status === 'inactive' ? 'inactive' : 'active',
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
 }
 
-export function listClients(db: Database, userId: string): InvoiceClient[] {
+/** Every client, or one business's. */
+export function listClients(db: Database, userId: string, businessId?: string | null): InvoiceClient[] {
   return queryAll<ClientRow>(
     db,
-    `SELECT * FROM invoice_clients WHERE user_id = ? ORDER BY name COLLATE NOCASE, id`,
-    [userId],
+    `SELECT * FROM invoice_clients WHERE user_id = ?${businessId ? ' AND business_id = ?' : ''} ORDER BY name COLLATE NOCASE, id`,
+    businessId ? [userId, businessId] : [userId],
   ).map(presentClient);
 }
 
@@ -177,24 +214,31 @@ export function getClient(db: Database, userId: string, id: string): InvoiceClie
   return r ? presentClient(r) : null;
 }
 
-export function createClient(db: Database, userId: string, c: ClientDraft): InvoiceClient {
+/** null = the business isn't this user's. No business → the default one. */
+export function createClient(db: Database, userId: string, c: ClientDraft): InvoiceClient | null {
+  const biz = resolveBusiness(db, userId, c.businessId);
+  if (!biz) return null;
   const id = newId('icl');
   const now = new Date().toISOString();
   run(
     db,
-    `INSERT INTO invoice_clients (id, user_id, name, email, address, reference, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?)`,
-    [id, userId, c.name, c.email, c.address, c.reference, now, now],
+    `INSERT INTO invoice_clients (id, user_id, business_id, name, contact_person, email, phone, address, reference, notes, status, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, userId, biz.id, c.name, c.contactPerson, c.email, c.phone, c.address, c.reference, c.notes, c.status, now, now],
   );
   return getClient(db, userId, id)!;
 }
 
+/** A client keeps its business unless the form names another of this user's businesses. */
 export function updateClient(db: Database, userId: string, id: string, c: ClientDraft): InvoiceClient | null {
-  if (!getClient(db, userId, id)) return null;
+  const current = getClient(db, userId, id);
+  if (!current) return null;
+  const businessId = c.businessId && businessRow(db, userId, c.businessId) ? c.businessId : current.businessId;
   run(
     db,
-    `UPDATE invoice_clients SET name=?, email=?, address=?, reference=?, updated_at=? WHERE id=? AND user_id=?`,
-    [c.name, c.email, c.address, c.reference, new Date().toISOString(), id, userId],
+    `UPDATE invoice_clients SET business_id=?, name=?, contact_person=?, email=?, phone=?, address=?, reference=?, notes=?, status=?, updated_at=?
+     WHERE id=? AND user_id=?`,
+    [businessId, c.name, c.contactPerson, c.email, c.phone, c.address, c.reference, c.notes, c.status, new Date().toISOString(), id, userId],
   );
   return getClient(db, userId, id);
 }
@@ -211,6 +255,7 @@ export function deleteClient(db: Database, userId: string, id: string): boolean 
 
 type InvoiceRow = {
   id: string;
+  business_id: string | null;
   number: string;
   number_key: string;
   status: string;
@@ -253,12 +298,19 @@ function paidTotal(db: Database, userId: string, invoiceId: string): number {
   return roundCents(Number(row?.total ?? 0));
 }
 
-function summary(db: Database, userId: string, r: InvoiceRow, today: string): InvoiceSummary {
+function businessNameOf(db: Database, userId: string, businessId: string | null): string {
+  if (!businessId) return '';
+  return queryOne<{ name: string }>(db, `SELECT name FROM businesses WHERE id = ? AND user_id = ?`, [businessId, userId])?.name ?? '';
+}
+
+export function summary(db: Database, userId: string, r: InvoiceRow, today: string): InvoiceSummary {
   const paid = paidTotal(db, userId, r.id);
   const amountDue = roundCents(Number(r.amount_due_nzd));
   const stored = storedStatus(r);
   return {
     id: r.id,
+    businessId: r.business_id,
+    businessName: businessNameOf(db, userId, r.business_id),
     number: r.number,
     status: invoiceStatus({ stored, amountDue, paid, dueDate: r.due_date, today }),
     storedStatus: stored,
@@ -334,10 +386,10 @@ function row(db: Database, userId: string, id: string): InvoiceRow | null {
   return queryOne<InvoiceRow>(db, `SELECT * FROM invoices WHERE id = ? AND user_id = ?`, [id, userId]);
 }
 
-/** Drafts show the current business details; sent invoices keep the copy made when sent. */
+/** Drafts show their business's current details; sent invoices keep the copy made when sent. */
 function businessFor(db: Database, userId: string, r: InvoiceRow): BusinessProfile {
-  if (storedStatus(r) === 'draft') return getBusinessProfile(db, userId);
-  return parseBusinessJson(r.business_json) ?? getBusinessProfile(db, userId);
+  if (storedStatus(r) === 'draft') return getBusinessProfile(db, userId, r.business_id);
+  return parseBusinessJson(r.business_json) ?? getBusinessProfile(db, userId, r.business_id);
 }
 
 function titleFor(business: BusinessProfile, gstMode: GstMode): 'Tax invoice' | 'Invoice' {
@@ -389,8 +441,9 @@ function usedNumbers(db: Database, userId: string): string[] {
   return queryAll<{ number: string }>(db, `SELECT number FROM invoices WHERE user_id = ?`, [userId]).map((r) => r.number);
 }
 
-export function suggestNextNumber(db: Database, userId: string): string {
-  return nextInvoiceNumber(usedNumbers(db, userId), getBusinessProfile(db, userId).invoicePrefix);
+/** Numbers are unique across all of a user's invoices; the prefix is the business's. */
+export function suggestNextNumber(db: Database, userId: string, businessId?: string | null): string {
+  return nextInvoiceNumber(usedNumbers(db, userId), getBusinessProfile(db, userId, businessId).invoicePrefix);
 }
 
 function numberTaken(db: Database, userId: string, key: string, exceptId: string | null): boolean {
@@ -408,15 +461,19 @@ function prepare(
   userId: string,
   draft: InvoiceDraft,
   exceptId: string | null,
-): Result<{ number: string; gstMode: GstMode; dueDate: string; clientId: string | null; totals: ReturnType<typeof invoiceTotals> }> {
-  const business = getBusinessProfile(db, userId);
-  const number = draft.number ?? suggestNextNumber(db, userId);
+): Result<{ biz: BusinessRow; number: string; gstMode: GstMode; dueDate: string; clientId: string | null; totals: ReturnType<typeof invoiceTotals> }> {
+  const biz = resolveBusiness(db, userId, draft.businessId);
+  if (!biz) return fail(400, 'Business not found');
+  const business = profileFromBusiness(biz);
+  const number = draft.number ?? suggestNextNumber(db, userId, biz.id);
   if (numberTaken(db, userId, invoiceNumberKey(number), exceptId)) {
     return fail(409, `Invoice number ${number} is already used`);
   }
   let clientId: string | null = null;
   if (draft.clientId) {
-    if (!getClient(db, userId, draft.clientId)) return fail(400, 'Client not found');
+    const client = getClient(db, userId, draft.clientId);
+    if (!client) return fail(400, 'Client not found');
+    if (client.businessId && client.businessId !== biz.id) return fail(400, 'That client belongs to another business');
     clientId = draft.clientId;
   }
   // GST is charged only by GST-registered businesses. A registered business can leave
@@ -425,7 +482,7 @@ function prepare(
   if (!business.gstRegistered) gstMode = 'none';
   const dueDate = dueDateForPreset(draft.issueDate, draft.duePreset, draft.dueDate);
   const totals = invoiceTotals(draft.lines, gstMode, draft.withholdingRatePct);
-  return { ok: true, value: { number, gstMode, dueDate, clientId, totals } };
+  return { ok: true, value: { biz, number, gstMode, dueDate, clientId, totals } };
 }
 
 function writeLines(db: Database, userId: string, invoiceId: string, draft: InvoiceDraft, lineTotals: number[]): void {
@@ -443,21 +500,21 @@ function writeLines(db: Database, userId: string, invoiceId: string, draft: Invo
 export function createInvoice(db: Database, userId: string, draft: InvoiceDraft, today: string, shareBase = ''): Result<Invoice> {
   const prep = prepare(db, userId, draft, null);
   if (!prep.ok) return prep;
-  const { number, gstMode, dueDate, clientId, totals } = prep.value;
+  const { biz, number, gstMode, dueDate, clientId, totals } = prep.value;
   const id = newId('inv');
   const now = new Date().toISOString();
   run(
     db,
-    `INSERT INTO invoices (id, user_id, number, number_key, status, client_id, client_name, client_email,
+    `INSERT INTO invoices (id, user_id, business_id, number, number_key, status, client_id, client_name, client_email,
        client_address, client_reference, issue_date, due_preset, due_date, reference, gst_mode,
        withholding_rate_pct, notes, payment_instructions, business_json, subtotal_nzd, gst_nzd, total_nzd,
        withholding_nzd, amount_due_nzd, created_at, updated_at)
-     VALUES (?,?,?,?,'draft',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+     VALUES (?,?,?,?,?,'draft',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
-      id, userId, number, invoiceNumberKey(number), clientId, draft.clientName, draft.clientEmail,
+      id, userId, biz.id, number, invoiceNumberKey(number), clientId, draft.clientName, draft.clientEmail,
       draft.clientAddress, draft.clientReference, draft.issueDate, draft.duePreset, dueDate, draft.reference,
       gstMode, draft.withholdingRatePct, draft.notes, draft.paymentInstructions,
-      JSON.stringify(getBusinessProfile(db, userId)), totals.subtotal, totals.gst, totals.total,
+      JSON.stringify(profileFromBusiness(biz)), totals.subtotal, totals.gst, totals.total,
       totals.withholding, totals.amountDue, now, now,
     ],
   );
@@ -476,20 +533,20 @@ export function updateInvoice(
   const r = row(db, userId, id);
   if (!r) return fail(404, 'Invoice not found');
   if (storedStatus(r) !== 'draft') return fail(409, 'Only draft invoices can be edited. Void it and duplicate instead.');
-  const prep = prepare(db, userId, { ...draft, number: draft.number ?? r.number }, id);
+  const prep = prepare(db, userId, { ...draft, businessId: draft.businessId ?? r.business_id, number: draft.number ?? r.number }, id);
   if (!prep.ok) return prep;
-  const { number, gstMode, dueDate, clientId, totals } = prep.value;
+  const { biz, number, gstMode, dueDate, clientId, totals } = prep.value;
   run(
     db,
-    `UPDATE invoices SET number=?, number_key=?, client_id=?, client_name=?, client_email=?, client_address=?,
+    `UPDATE invoices SET business_id=?, number=?, number_key=?, client_id=?, client_name=?, client_email=?, client_address=?,
        client_reference=?, issue_date=?, due_preset=?, due_date=?, reference=?, gst_mode=?, withholding_rate_pct=?,
        notes=?, payment_instructions=?, business_json=?, subtotal_nzd=?, gst_nzd=?, total_nzd=?, withholding_nzd=?,
        amount_due_nzd=?, updated_at=?
      WHERE id=? AND user_id=?`,
     [
-      number, invoiceNumberKey(number), clientId, draft.clientName, draft.clientEmail, draft.clientAddress,
+      biz.id, number, invoiceNumberKey(number), clientId, draft.clientName, draft.clientEmail, draft.clientAddress,
       draft.clientReference, draft.issueDate, draft.duePreset, dueDate, draft.reference, gstMode,
-      draft.withholdingRatePct, draft.notes, draft.paymentInstructions, JSON.stringify(getBusinessProfile(db, userId)),
+      draft.withholdingRatePct, draft.notes, draft.paymentInstructions, JSON.stringify(profileFromBusiness(biz)),
       totals.subtotal, totals.gst, totals.total, totals.withholding, totals.amountDue, new Date().toISOString(),
       id, userId,
     ],
@@ -513,8 +570,8 @@ export function deleteInvoice(db: Database, userId: string, id: string): Result<
 export function sendProblem(inv: Invoice): string | null {
   if (inv.lines.length === 0) return 'Add at least one line before sending.';
   if (!inv.clientName.trim()) return 'Add the client’s name before sending.';
-  if (!inv.business.businessName.trim()) return 'Add your name or business name in Settings → Business before sending.';
-  if (inv.business.gstRegistered && !inv.business.gstNumber.trim()) return 'Add your GST number in Settings → Business.';
+  if (!inv.business.businessName.trim()) return 'Add your name or business name on the Business page before sending.';
+  if (inv.business.gstRegistered && !inv.business.gstNumber.trim()) return 'Add your GST number on the Business page.';
   // IRD taxable supply information: over $1,000, a GST-registered buyer must be identified
   // by name plus an address, phone, email, NZBN or similar. Email or address covers it here.
   if (inv.title === 'Tax invoice' && inv.totalNzd > 1000 && !inv.clientEmail.trim() && !inv.clientAddress.trim()) {
@@ -535,7 +592,7 @@ export function markSent(db: Database, userId: string, id: string, today: string
   run(
     db,
     `UPDATE invoices SET status='sent', sent_at=?, business_json=?, updated_at=? WHERE id=? AND user_id=? AND status='draft'`,
-    [now, JSON.stringify(getBusinessProfile(db, userId)), now, id, userId],
+    [now, JSON.stringify(getBusinessProfile(db, userId, inv.businessId)), now, id, userId],
   );
   return { ok: true, value: getInvoice(db, userId, id, today, shareBase)! };
 }
@@ -560,6 +617,7 @@ export function duplicateInvoice(db: Database, userId: string, id: string, today
     db,
     userId,
     {
+      businessId: src.businessId,
       number: null,
       clientId: src.clientId && getClient(db, userId, src.clientId) ? src.clientId : null,
       clientName: src.clientName,
@@ -581,7 +639,13 @@ export function duplicateInvoice(db: Database, userId: string, id: string, today
   );
 }
 
-export type InvoiceFilters = { status?: string | null; clientId?: string | null; from?: string | null; to?: string | null };
+export type InvoiceFilters = {
+  status?: string | null;
+  clientId?: string | null;
+  businessId?: string | null;
+  from?: string | null;
+  to?: string | null;
+};
 
 /** NZ tax year start (1 April) for a date. */
 export function taxYearStart(today: string): string {
@@ -595,10 +659,12 @@ export function listInvoices(
   filters: InvoiceFilters,
   today: string,
 ): Omit<InvoiceListResponse, 'emailEnabled'> {
+  // With a business picked, the totals and the next number are that business's.
+  const biz = filters.businessId ? filters.businessId : null;
   const all = queryAll<InvoiceRow>(
     db,
-    `SELECT * FROM invoices WHERE user_id = ? ORDER BY issue_date DESC, created_at DESC`,
-    [userId],
+    `SELECT * FROM invoices WHERE user_id = ?${biz ? ' AND business_id = ?' : ''} ORDER BY issue_date DESC, created_at DESC`,
+    biz ? [userId, biz] : [userId],
   ).map((r) => summary(db, userId, r, today));
 
   let outstanding = 0;
@@ -616,8 +682,8 @@ export function listInvoices(
         db,
         `SELECT COALESCE(SUM(p.amount_nzd), 0) AS total FROM invoice_payments p
          INNER JOIN invoices i ON i.id = p.invoice_id AND i.user_id = p.user_id
-         WHERE p.user_id = ? AND p.date >= ? AND p.date <= ? AND i.status != 'void'`,
-        [userId, from, today],
+         WHERE p.user_id = ? AND p.date >= ? AND p.date <= ? AND i.status != 'void'${biz ? ' AND i.business_id = ?' : ''}`,
+        biz ? [userId, from, today, biz] : [userId, from, today],
       )?.total ?? 0,
     );
 
@@ -637,7 +703,7 @@ export function listInvoices(
       paidTaxYearNzd: roundCents(paidSince(tyStart)),
       taxYearStart: tyStart,
     },
-    nextNumber: suggestNextNumber(db, userId),
+    nextNumber: suggestNextNumber(db, userId, biz),
   };
 }
 
@@ -669,11 +735,11 @@ export function addPayment(
     incomeId = newId('inc');
     run(
       db,
-      `INSERT INTO income_records (id, user_id, date, amount_nzd, kind, description, category_id, notes, created_at, invoice_payment_id)
-       VALUES (?,?,?,?, 'cash', ?, ?, ?, ?, ?)`,
+      `INSERT INTO income_records (id, user_id, date, amount_nzd, kind, description, category_id, notes, created_at, invoice_payment_id, business_id)
+       VALUES (?,?,?,?, 'cash', ?, ?, ?, ?, ?, ?)`,
       [
         incomeId, userId, p.date, p.amountNzd, `Invoice ${inv.number} · ${inv.clientName}`.slice(0, 200),
-        categoryId, `Payment recorded on invoice ${inv.number}${p.method ? ` (${p.method})` : ''}.`, now, id,
+        categoryId, `Payment recorded on invoice ${inv.number}${p.method ? ` (${p.method})` : ''}.`, now, id, inv.businessId,
       ],
     );
   }

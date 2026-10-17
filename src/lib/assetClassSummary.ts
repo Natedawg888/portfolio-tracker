@@ -18,6 +18,7 @@ const GROUP_OF: Partial<Record<string, AssetClassGroupId>> = {
   kiwisaver: 'accounts',
   real_estate: 'owned',
   vehicles: 'owned',
+  business: 'owned',
   collectable: 'owned',
   art: 'owned',
   stone: 'owned',
@@ -29,7 +30,7 @@ export function assetClassGroup(key: string): AssetClassGroupId {
 }
 
 /** Order inside "Things you own" (the option list orders the rest). */
-const OWNED_ORDER = ['real_estate', 'vehicles', 'collectable', 'art', 'stone'];
+const OWNED_ORDER = ['real_estate', 'vehicles', 'business', 'collectable', 'art', 'stone'];
 const ACCOUNTS_ORDER = ['cash', 'kiwisaver'];
 
 export function orderInGroup<T extends { key: string }>(group: AssetClassGroupId, options: T[]): T[] {
@@ -55,6 +56,7 @@ type NetWorthLike = {
   stonesNzd?: number | null;
   collectablesNzd?: number | null;
   vehiclesEquityNzd?: number | null;
+  businessAssetsNzd?: number | null;
   bondsNzd?: number | null;
   commoditiesNzd?: number | null;
   kiwiSaverNzd?: number | null;
@@ -75,6 +77,7 @@ export const POINT_CLASSES: Partial<Record<AssetClassPrefKey, string[]>> = {
   stone: ['stone'],
   collectable: ['collectable'],
   vehicles: ['vehicle'],
+  business: ['business'],
   bonds: ['bond'],
   commodities: ['commodity'],
   kiwisaver: ['kiwisaver'],
@@ -109,12 +112,13 @@ export function classContents(raw: unknown, key: string): ClassContents | null {
     stone: s.stonesNzd,
     collectable: s.collectablesNzd,
     vehicles: s.vehiclesEquityNzd,
+    business: s.businessAssetsNzd,
     bonds: s.bondsNzd,
     commodities: s.commoditiesNzd,
     kiwisaver: s.kiwiSaverNzd,
   };
   const noun: [string, string] =
-    key === 'real_estate' ? ['property', 'properties'] : key === 'vehicles' ? ['vehicle', 'vehicles'] : key === 'kiwisaver' ? ['account', 'accounts'] : ['holding', 'holdings'];
+    key === 'real_estate' ? ['property', 'properties'] : key === 'vehicles' ? ['vehicle', 'vehicles'] : key === 'business' ? ['business', 'businesses'] : key === 'kiwisaver' ? ['account', 'accounts'] : ['holding', 'holdings'];
   return { count, valueNzd: count > 0 ? num(value[key]) : null, noun };
 }
 

@@ -27,6 +27,7 @@ const BY_CLASS_KEYS: Record<AssetClassPrefKey, string[]> = {
   stone: ['stones'],
   collectable: ['collectables'],
   vehicles: ['vehicles', 'vehicleLoans', 'vehiclesEquity'],
+  business: ['business'],
   bonds: ['bonds'],
   commodities: ['commodities'],
   kiwisaver: ['kiwiSaver'],
@@ -58,6 +59,8 @@ export function classNetNzd(byClass: ByClass, key: AssetClassPrefKey): number {
       return n(b.collectables);
     case 'vehicles':
       return b.vehiclesEquity != null ? n(b.vehiclesEquity) : n(b.vehicles) - n(b.vehicleLoans);
+    case 'business':
+      return n(b.business);
     case 'bonds':
       return n(b.bonds);
     case 'commodities':

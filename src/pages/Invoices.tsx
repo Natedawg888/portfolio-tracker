@@ -4,16 +4,19 @@
  * Each row has a status badge and a ⋯ menu. Mark paid opens the invoice page's payment dialog.
  * Visibility, badges, and which actions apply come from invoicesView.
  * Amounts, statuses, and dates come from the list response. Missing values show —.
+ * Business → Invoices (KAN-84): with more than one business, a Business filter (also ?business=)
+ * narrows the list and its totals to one.
  */
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, formatNzd } from '../api/client';
 import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import { INVOICE_STATUS_LABELS, type InvoiceStatus } from '../lib/invoiceCalc';
-import type { BusinessProfile, Invoice, InvoiceClient, InvoiceListResponse, InvoiceSummary } from '../types';
+import type { Business, BusinessProfile, Invoice, InvoiceClient, InvoiceListResponse, InvoiceSummary } from '../types';
 import { InvoicePaymentDialog } from '../components/InvoicePaymentDialog';
 import { MoreMenu } from '../components/MoreMenu';
 import { InvoiceStatusBadge } from '../components/InvoicePreview';
+import { BusinessTabs } from '../components/business/BusinessUi';
 import {
   BUSINESS_SETTINGS_HREF,
   INVOICE_MISSING,
@@ -216,7 +219,7 @@ function FirstInvoicePanel({
               ) : null}
               {step.id === 'invoice' ? (
                 <p className="invoice-step-action">
-                  <Link className="btn small primary" to="/invoices/new">
+                  <Link className="btn small primary" to="/business/invoices/new">
                     Create the invoice
                   </Link>
                 </p>
@@ -310,14 +313,14 @@ function InvoiceRowMenu({
             const className = 'btn small invoice-menu-item' + (action.danger ? ' danger' : '');
             if (action.id === 'open') {
               return (
-                <Link key={action.id} role="menuitem" tabIndex={-1} className={className} to={`/invoices/${id}`} onClick={close}>
+                <Link key={action.id} role="menuitem" tabIndex={-1} className={className} to={`/business/invoices/${id}`} onClick={close}>
                   {action.label}
                 </Link>
               );
             }
             if (action.id === 'edit') {
               return (
-                <Link key={action.id} role="menuitem" tabIndex={-1} className={className} to={`/invoices/${id}/edit`} onClick={close}>
+                <Link key={action.id} role="menuitem" tabIndex={-1} className={className} to={`/business/invoices/${id}/edit`} onClick={close}>
                   {action.label}
                 </Link>
               );
@@ -382,6 +385,9 @@ function invoicesRequestKey(status: string, clientId: string, from: string, to: 
 
 export function Invoices() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const businessId = searchParams.get('business') ?? '';
+  const [businesses, setBusinesses] = useState<Business[]>([]);
   const [status, setStatus] = useState<'' | InvoiceStatus>('');
   const [clientId, setClientId] = useState('');
   const [from, setFrom] = useState('');
@@ -406,22 +412,43 @@ export function Invoices() {
   const [paymentInvoice, setPaymentInvoice] = useState<Invoice | null>(null);
   const [reload, setReload] = useState(0);
 
-  const filtersActive = Boolean(status || clientId || from || to);
-  const requestKey = invoicesRequestKey(status, clientId, from, to, reload);
+  const filtersActive = Boolean(status || clientId || from || to || businessId);
+  const requestKey = `${invoicesRequestKey(status, clientId, from, to, reload)}|${businessId}`;
 
   useEffect(() => {
     let cancelled = false;
-    const unfiltered = !status && !clientId && !from && !to;
+    api.business
+      .list()
+      .then((l) => {
+        if (!cancelled) setBusinesses(l.businesses);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function setBusinessFilter(id: string) {
+    const next = new URLSearchParams(searchParams);
+    if (id) next.set('business', id);
+    else next.delete('business');
+    setSearchParams(next, { replace: true });
+    setClientId('');
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    const unfiltered = !status && !clientId && !from && !to && !businessId;
     const stamp = unfiltered ? beginPageRead(INVOICES_LIST_KEY) : null;
     api.invoices
-      .list({ status, clientId, from, to })
+      .list({ status, clientId, businessId, from, to })
       .then((d) => {
         if (stamp && !commitPageRead(stamp, d)) return;
         if (!cancelled) {
           setData(d);
           setAppliedKey(requestKey);
           setError(null);
-          if (!status && !clientId && !from && !to) setCatalogCount(d.invoices.length);
+          if (!status && !clientId && !from && !to && !businessId) setCatalogCount(d.invoices.length);
         }
       })
       .catch((e: unknown) => {
@@ -430,7 +457,7 @@ export function Invoices() {
     return () => {
       cancelled = true;
     };
-  }, [status, clientId, from, to, reload, requestKey]);
+  }, [status, clientId, businessId, from, to, reload, requestKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -535,7 +562,7 @@ export function Invoices() {
       }
       const next = await api.invoices.action(id, action);
       if (action === 'duplicate') {
-        if (next.id) navigate(`/invoices/${next.id}/edit`);
+        if (next.id) navigate(`/business/invoices/${next.id}/edit`);
         return;
       }
       setNotice(action === 'void' ? 'Invoice voided. It stays in your records.' : 'Marked as sent.');
@@ -555,6 +582,7 @@ export function Invoices() {
 
   return (
     <div className="stack invoices-page">
+      <BusinessTabs />
       <header className="invoices-header">
         <div>
           <h2 className="page-title">Invoices</h2>
@@ -566,7 +594,7 @@ export function Invoices() {
               Export CSV
             </a>
           ) : null}
-          <Link className="btn primary" to="/invoices/new">
+          <Link className="btn primary" to={businessId ? `/business/invoices/new?business=${encodeURIComponent(businessId)}` : '/business/invoices/new'}>
             + New invoice
           </Link>
         </div>
@@ -600,6 +628,19 @@ export function Invoices() {
       {chrome?.showFilters && data ? (
         <section className="panel">
           <div className="form-grid">
+            {businesses.length > 1 ? (
+              <label>
+                Business
+                <select value={businessId} onChange={(e) => setBusinessFilter(e.target.value)}>
+                  <option value="">All businesses</option>
+                  {businesses.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name || 'Unnamed business'}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <label>
               Status
               <select value={status} onChange={(e) => setStatus(e.target.value as '' | InvoiceStatus)}>
@@ -614,7 +655,7 @@ export function Invoices() {
               Client
               <select value={clientId} onChange={(e) => setClientId(e.target.value)}>
                 <option value="">All clients</option>
-                {clients.map((c) => (
+                {clients.filter((c) => !businessId || c.businessId === businessId).map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
                   </option>
@@ -660,7 +701,7 @@ export function Invoices() {
                     <tr key={inv.id}>
                       <td>
                         {inv.id ? (
-                          <Link to={`/invoices/${inv.id}`}>
+                          <Link to={`/business/invoices/${inv.id}`}>
                             <DashOr value={invoiceTextCell(inv.number)} />
                           </Link>
                         ) : (
