@@ -48,7 +48,7 @@
     "test:bills": "node --import tsx src/lib/recurring.test.ts && node --import tsx server/recurring/store.test.ts && node --import tsx src/pages/billsView.test.ts",
     "test:ads": "node --import tsx src/lib/ads.test.ts && node --import tsx server/routes/ads.test.ts",
     "test:warranties": "node --import tsx src/lib/warranty.test.ts && node --import tsx src/pages/warrantiesView.test.ts && node --import tsx server/warranties/store.test.ts",
-    "test:rentals": "node --import tsx src/lib/rental.test.ts && node --import tsx src/lib/rentalRooms.test.ts && node --import tsx server/rentals/store.test.ts && node --import tsx server/rentals/rooms.test.ts",
+    "test:rentals": "node --import tsx src/lib/rental.test.ts && node --import tsx src/lib/rentalTax.test.ts && node --import tsx src/lib/rentalRooms.test.ts && node --import tsx server/rentals/store.test.ts && node --import tsx server/rentals/rooms.test.ts",
     "test:shopping": "node --import tsx server/shopping/store.test.ts && node --import tsx src/lib/shoppingView.test.ts",
     "test:onboarding-categories": "node --import tsx src/lib/onboardingCategories.test.ts && node --import tsx server/lib/onboardingCategories.api.test.ts",
     "test:settings-categories": "node --import tsx src/lib/assetClassSummary.test.ts && node --import tsx src/lib/visibleNetWorth.test.ts && node --import tsx src/lib/categoryManagerView.test.ts && node --import tsx server/lib/categoryDelete.test.ts",

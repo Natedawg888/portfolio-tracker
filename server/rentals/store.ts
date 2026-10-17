@@ -13,9 +13,15 @@
  *               transaction (linkRentalExpensesToBankDebits), so it isn't counted twice.
  * Editing an entry updates its mirror; deleting the entry or its property removes it.
  * A linked bank debit is never edited or deleted here, only linked and unlinked.
+ *
+ * Tax (KAN-93): a property records whether it's a new build (no interest limitation) and,
+ * for the bright-line test, its purchase settlement and cost and, once sold, the sale
+ * agreement date, price and costs. The loss basis (portfolio or per property) is per user.
+ * The figures are worked out on the page (src/lib/rentalTax.ts).
  */
 import type { Database } from 'sql.js';
 import type { RentalEntry, RentalLetType, RentalListResponse, RentalProperty } from '../../src/types/index.ts';
+import type { LossBasis } from '../../src/lib/rentalTax.ts';
 import { isRentalCategory, rentalCategoryLabel, type RentalCategory, type RentalEntryKind } from '../../src/lib/rental.ts';
 import { isYmd } from '../../src/lib/invoiceCalc.ts';
 import { newId, queryAll, queryOne, run } from '../db/index.ts';
@@ -30,7 +36,30 @@ const RENTAL_EXPENSES_CATEGORY = { slug: RENTAL_EXPENSES_SLUG, name: 'Rental pro
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 
-export type PropertyDraft = { name: string; address: string; notes: string; letType: RentalLetType; ownHome: boolean };
+export type PropertyDraft = {
+  name: string;
+  address: string;
+  notes: string;
+  letType: RentalLetType;
+  ownHome: boolean;
+  newBuild: boolean;
+  purchaseDate: string | null;
+  purchaseCostNzd: number | null;
+  saleAgreementDate: string | null;
+  salePriceNzd: number | null;
+  saleCostsNzd: number | null;
+  mainHome: boolean;
+};
+
+const MAX_PRICE = 1_000_000_000;
+
+/** Optional money: null when blank. */
+function optionalMoney(v: unknown, label: string): Parsed<number | null> {
+  if (v === null || v === undefined || v === '') return { ok: true, value: null };
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0 || n > MAX_PRICE) return { ok: false, error: `${label} must be 0 or more` };
+  return { ok: true, value: roundMoney(n) };
+}
 
 export type EntryDraft = {
   propertyId: string;
@@ -74,6 +103,22 @@ export function parseProperty(raw: unknown, partial: boolean): Parsed<Partial<Pr
   } else if (!partial) out.letType = 'whole';
   if (o.ownHome !== undefined) out.ownHome = o.ownHome === true;
   else if (!partial) out.ownHome = false;
+  for (const key of ['newBuild', 'mainHome'] as const) {
+    if (o[key] !== undefined) out[key] = o[key] === true;
+    else if (!partial) out[key] = false;
+  }
+  for (const [key, label] of [['purchaseDate', 'Settlement date'], ['saleAgreementDate', 'Sale agreement date']] as const) {
+    if (o[key] === undefined && partial) continue;
+    if (o[key] === undefined || o[key] === null || o[key] === '') out[key] = null;
+    else if (!isYmd(o[key])) return { ok: false, error: `${label} must be YYYY-MM-DD` };
+    else out[key] = o[key] as string;
+  }
+  for (const [key, label] of [['purchaseCostNzd', 'Cost'], ['salePriceNzd', 'Sale price'], ['saleCostsNzd', 'Sale costs']] as const) {
+    if (o[key] === undefined && partial) continue;
+    const m = optionalMoney(o[key], label);
+    if (!m.ok) return m;
+    out[key] = m.value;
+  }
   return { ok: true, value: out };
 }
 
@@ -127,6 +172,13 @@ type PropertyRow = {
   notes: string;
   let_type: RentalLetType;
   own_home: number;
+  new_build: number;
+  purchase_date: string | null;
+  purchase_cost: number | null;
+  sale_agreement_date: string | null;
+  sale_price: number | null;
+  sale_costs: number | null;
+  main_home: number;
   created_at: string;
   updated_at: string;
 };
@@ -167,6 +219,13 @@ function presentProperty(r: PropertyRow): RentalProperty {
     notes: r.notes ?? '',
     letType: r.let_type === 'rooms' ? 'rooms' : 'whole',
     ownHome: r.let_type === 'rooms' && Boolean(r.own_home),
+    newBuild: Boolean(r.new_build),
+    purchaseDate: r.purchase_date ?? null,
+    purchaseCostNzd: r.purchase_cost == null ? null : roundMoney(Number(r.purchase_cost)),
+    saleAgreementDate: r.sale_agreement_date ?? null,
+    salePriceNzd: r.sale_agreement_date && r.sale_price != null ? roundMoney(Number(r.sale_price)) : null,
+    saleCostsNzd: r.sale_agreement_date && r.sale_costs != null ? roundMoney(Number(r.sale_costs)) : null,
+    mainHome: Boolean(r.main_home),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -205,7 +264,30 @@ export function listRentals(db: Database, userId: string, today: string): Rental
     `${ENTRY_SELECT} WHERE e.user_id = ? ORDER BY e.date DESC, e.created_at DESC`,
     [userId],
   ).map(presentEntry);
-  return { today, moneyViewsFrom: TXN_SYNC_FROM_DATE, properties, entries, rooms: listRooms(db, userId), tenancies: listTenancies(db, userId) };
+  return {
+    today,
+    moneyViewsFrom: TXN_SYNC_FROM_DATE,
+    lossBasis: lossBasisOf(db, userId),
+    properties,
+    entries,
+    rooms: listRooms(db, userId),
+    tenancies: listTenancies(db, userId),
+  };
+}
+
+export function lossBasisOf(db: Database, userId: string): LossBasis {
+  return queryOne<{ loss_basis: string }>(db, `SELECT loss_basis FROM rental_settings WHERE user_id = ?`, [userId])?.loss_basis === 'property' ? 'property' : 'portfolio';
+}
+
+export function setLossBasis(db: Database, userId: string, raw: unknown): Parsed<{ lossBasis: LossBasis }> {
+  const v = body(raw)?.lossBasis;
+  if (v !== 'portfolio' && v !== 'property') return { ok: false, error: 'Loss basis must be portfolio or property' };
+  run(
+    db,
+    `INSERT INTO rental_settings (user_id, loss_basis, updated_at) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET loss_basis = excluded.loss_basis, updated_at = excluded.updated_at`,
+    [userId, v, new Date().toISOString()],
+  );
+  return { ok: true, value: { lossBasis: v } };
 }
 
 export function propertyRow(db: Database, userId: string, id: string): PropertyRow | null {
@@ -224,15 +306,21 @@ export function createProperty(db: Database, userId: string, d: PropertyDraft): 
   const now = new Date().toISOString();
   run(
     db,
-    `INSERT INTO rental_properties (id, user_id, name, address, notes, let_type, own_home, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)`,
-    [id, userId, d.name, d.address, d.notes, d.letType, d.ownHome ? 1 : 0, now, now],
+    `INSERT INTO rental_properties (id, user_id, name, address, notes, let_type, own_home, new_build, purchase_date, purchase_cost,
+       sale_agreement_date, sale_price, sale_costs, main_home, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [
+      id, userId, d.name, d.address, d.notes, d.letType, d.ownHome ? 1 : 0, d.newBuild ? 1 : 0, d.purchaseDate, d.purchaseCostNzd,
+      d.saleAgreementDate, d.salePriceNzd, d.saleCostsNzd, d.mainHome ? 1 : 0, now, now,
+    ],
   );
   return presentProperty(propertyRow(db, userId, id)!);
 }
 
-/** Your own home is always let room by room. */
-export function checkPropertyLetting(d: { letType: RentalLetType; ownHome: boolean }): string | null {
-  return d.ownHome && d.letType !== 'rooms' ? 'Only a property let by room can be marked as your home' : null;
+/** Your own home is always let room by room; a sale comes after the purchase. */
+export function checkProperty(d: Pick<PropertyDraft, 'letType' | 'ownHome' | 'purchaseDate' | 'saleAgreementDate'>): string | null {
+  if (d.ownHome && d.letType !== 'rooms') return 'Only a property let by room can be marked as your home';
+  if (d.purchaseDate && d.saleAgreementDate && d.saleAgreementDate < d.purchaseDate) return 'The sale agreement can’t be before the purchase settled';
+  return null;
 }
 
 /** null = not found. */
@@ -243,15 +331,24 @@ export function updateProperty(db: Database, userId: string, id: string, patch: 
   const letType = patch.letType ?? (r.let_type === 'rooms' ? 'rooms' : 'whole');
   // Back to a whole property: it stops being your home unless told otherwise.
   const ownHome = patch.ownHome ?? (letType === 'rooms' && Boolean(r.own_home));
-  const err = checkPropertyLetting({ letType, ownHome });
+  const purchaseDate = patch.purchaseDate !== undefined ? patch.purchaseDate : r.purchase_date;
+  const saleAgreementDate = patch.saleAgreementDate !== undefined ? patch.saleAgreementDate : r.sale_agreement_date;
+  const err = checkProperty({ letType, ownHome, purchaseDate, saleAgreementDate });
   if (err) return { ok: false, error: err };
+  const pick = <K extends keyof PropertyDraft>(k: K, current: PropertyDraft[K]): PropertyDraft[K] => (patch[k] !== undefined ? (patch[k] as PropertyDraft[K]) : current);
   if (letType === 'whole' && r.let_type === 'rooms' && listRooms(db, userId).some((room) => room.propertyId === id)) {
     return { ok: false, error: 'Remove its rooms before letting it as a whole property' };
   }
   run(
     db,
-    `UPDATE rental_properties SET name=?, address=?, notes=?, let_type=?, own_home=?, updated_at=? WHERE id=? AND user_id=?`,
-    [name, patch.address ?? r.address, patch.notes ?? r.notes, letType, ownHome ? 1 : 0, new Date().toISOString(), id, userId],
+    `UPDATE rental_properties SET name=?, address=?, notes=?, let_type=?, own_home=?, new_build=?, purchase_date=?, purchase_cost=?,
+       sale_agreement_date=?, sale_price=?, sale_costs=?, main_home=?, updated_at=? WHERE id=? AND user_id=?`,
+    [
+      name, patch.address ?? r.address, patch.notes ?? r.notes, letType, ownHome ? 1 : 0,
+      pick('newBuild', Boolean(r.new_build)) ? 1 : 0, purchaseDate, pick('purchaseCostNzd', r.purchase_cost),
+      saleAgreementDate, pick('salePriceNzd', r.sale_price), pick('saleCostsNzd', r.sale_costs), pick('mainHome', Boolean(r.main_home)) ? 1 : 0,
+      new Date().toISOString(), id, userId,
+    ],
   );
   // Mirrored rows carry the property name in their description.
   if (name !== r.name) {

@@ -160,7 +160,10 @@ export type WarrantyWriteBody = {
   notes: string;
 };
 
-export type RentalPropertyWriteBody = { name: string; address: string; notes: string; letType: RentalProperty['letType']; ownHome: boolean };
+export type RentalPropertyWriteBody = Pick<
+  RentalProperty,
+  'name' | 'address' | 'notes' | 'letType' | 'ownHome' | 'newBuild' | 'purchaseDate' | 'purchaseCostNzd' | 'saleAgreementDate' | 'salePriceNzd' | 'saleCostsNzd' | 'mainHome'
+>;
 
 export type RentalEntryWriteBody = {
   propertyId: string;
@@ -927,6 +930,8 @@ export const api = {
     updateTenancy: (id: string, body: Partial<Omit<RentalTenancyWriteBody, 'roomId'>>) =>
       req<RentalTenancy>(`/rentals/tenancies/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
     removeTenancy: (id: string) => req<{ ok: boolean; id: string }>(`/rentals/tenancies/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    setLossBasis: (lossBasis: RentalListResponse['lossBasis']) =>
+      req<{ lossBasis: RentalListResponse['lossBasis'] }>('/rentals/settings', { method: 'PUT', body: JSON.stringify({ lossBasis }) }),
   },
   invoices: {
     list: (filters: { status?: string; clientId?: string; businessId?: string; from?: string; to?: string } = {}) => {

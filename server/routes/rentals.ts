@@ -1,7 +1,8 @@
 /**
  * Rental income for the signed-in user (KAN-66), with rooms and tenancies (KAN-83).
  *   GET    /                  properties, entries (newest first), rooms and tenancies
- *   POST   /properties        { name, address?, notes?, letType?: whole | rooms, ownHome? }
+ *   POST   /properties        { name, address?, notes?, letType?: whole | rooms, ownHome?, newBuild?, purchaseDate?,
+ *                              purchaseCostNzd?, saleAgreementDate?, salePriceNzd?, saleCostsNzd?, mainHome? } (KAN-93)
  *   PATCH  /properties/:id    any of the fields above
  *   DELETE /properties/:id    also deletes its rooms, tenancies, entries and their Budget / Income rows
  *   POST   /entries           { propertyId, date, kind, category, amountNzd, description?, addToMoney?, roomId?, shared? }
@@ -13,6 +14,7 @@
  *   POST   /tenancies         { roomId, tenantLabel, rentAmount, rentFrequency, billsIncluded?, startDate, endDate?, bondAmount?, bondLodged? }
  *   PATCH  /tenancies/:id     any of the fields above except roomId
  *   DELETE /tenancies/:id
+ *   PUT    /settings          { lossBasis: portfolio | property } (KAN-93)
  */
 import { Router, type Request } from 'express';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
@@ -29,7 +31,8 @@ import {
   parseProperty,
   updateEntry,
   updateProperty,
-  checkPropertyLetting,
+  checkProperty,
+  setLossBasis,
   type EntryDraft,
   type PropertyDraft,
 } from '../rentals/store.ts';
@@ -79,13 +82,23 @@ router.post('/properties', async (req, res) => {
     res.status(400).json({ error: parsed.error });
     return;
   }
-  const err = checkPropertyLetting(parsed.value as PropertyDraft);
+  const err = checkProperty(parsed.value as PropertyDraft);
   if (err) {
     res.status(400).json({ error: err });
     return;
   }
   const db = await getDb();
   res.status(201).json(createProperty(db, uid(req), parsed.value as PropertyDraft));
+});
+
+router.put('/settings', async (req, res) => {
+  const db = await getDb();
+  const saved = setLossBasis(db, uid(req), req.body);
+  if (!saved.ok) {
+    res.status(400).json({ error: saved.error });
+    return;
+  }
+  res.json(saved.value);
 });
 
 router.patch('/properties/:id', async (req, res) => {

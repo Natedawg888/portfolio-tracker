@@ -593,6 +593,18 @@ function migrateSchema(database: Database) {
   const propertyCols = tableColumns(database, 'rental_properties');
   if (propertyCols.size > 0 && !propertyCols.has('let_type')) database.run("ALTER TABLE rental_properties ADD COLUMN let_type TEXT NOT NULL DEFAULT 'whole'");
   if (propertyCols.size > 0 && !propertyCols.has('own_home')) database.run('ALTER TABLE rental_properties ADD COLUMN own_home INTEGER NOT NULL DEFAULT 0');
+  // Rental tax (KAN-93): new-build exemption and the bright-line test on a sale.
+  for (const [col, typ] of [
+    ['new_build', 'INTEGER NOT NULL DEFAULT 0'],
+    ['purchase_date', 'TEXT'],
+    ['purchase_cost', 'REAL'],
+    ['sale_agreement_date', 'TEXT'],
+    ['sale_price', 'REAL'],
+    ['sale_costs', 'REAL'],
+    ['main_home', 'INTEGER NOT NULL DEFAULT 0'],
+  ] as const) {
+    if (propertyCols.size > 0 && !propertyCols.has(col)) database.run(`ALTER TABLE rental_properties ADD COLUMN ${col} ${typ}`);
+  }
   // Rental income entries mirrored into income (KAN-66).
   if (incomeCols.size > 0 && !incomeCols.has('rental_entry_id')) {
     database.run('ALTER TABLE income_records ADD COLUMN rental_entry_id TEXT');

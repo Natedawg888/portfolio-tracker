@@ -32,7 +32,7 @@ const userA = 'rent_user_a';
 const userB = 'rent_user_b';
 const now = '2026-10-05T00:00:00.000Z';
 const db = await getDb();
-for (const t of ['rental_properties', 'rental_entries']) {
+for (const t of ['rental_properties', 'rental_entries', 'rental_settings']) {
   assert(queryOne(db, `SELECT name FROM sqlite_master WHERE type='table' AND name=?`, [t]), `schema creates ${t}`);
   assert((SCOPED_TABLES as readonly string[]).includes(t), `${t} is user-scoped`);
 }
@@ -253,8 +253,32 @@ try {
   assert(txnRow('rent_bank'), 'the bank deposit is kept');
   assert(incomeRow(bachRent.id), 'other property kept');
 
+  // Tax fields (KAN-93): new build, purchase, sale; checked; partial updates keep the rest.
+  const sold = await call('POST', '/api/rentals/properties', A, {
+    name: 'Flip', newBuild: true, purchaseDate: '2024-08-01', purchaseCostNzd: 700000.004, saleAgreementDate: '2026-07-01', salePriceNzd: 780000, saleCostsNzd: 20000, mainHome: false,
+  });
+  assert(sold.status === 201 && sold.json.newBuild === true && sold.json.purchaseCostNzd === 700000 && sold.json.saleAgreementDate === '2026-07-01', `tax fields saved ${JSON.stringify(sold.json)}`);
+  const plain = await call('POST', '/api/rentals/properties', A, { name: 'Plain' });
+  assert(plain.json.newBuild === false && plain.json.purchaseDate === null && plain.json.saleAgreementDate === null && plain.json.mainHome === false, 'tax fields default empty');
+  assert((await call('POST', '/api/rentals/properties', A, { name: 'X', purchaseDate: '2025-01-01', saleAgreementDate: '2024-12-31' })).status === 400, 'sale before purchase');
+  assert((await call('POST', '/api/rentals/properties', A, { name: 'X', purchaseDate: '1 Aug' })).status === 400, 'date checked');
+  assert((await call('POST', '/api/rentals/properties', A, { name: 'X', salePriceNzd: -1 })).status === 400, 'money checked');
+  assert((await call('PATCH', `/api/rentals/properties/${sold.json.id}`, A, { saleAgreementDate: '2024-01-01' })).status === 400, 'patch checks against the stored purchase date');
+  const renamed = await call('PATCH', `/api/rentals/properties/${sold.json.id}`, A, { name: 'Flip 2' });
+  assert(renamed.status === 200 && renamed.json.salePriceNzd === 780000 && renamed.json.newBuild === true, 'rename keeps the tax fields');
+  const unsold = await call('PATCH', `/api/rentals/properties/${sold.json.id}`, A, { saleAgreementDate: null, salePriceNzd: null, saleCostsNzd: null });
+  assert(unsold.status === 200 && unsold.json.saleAgreementDate === null && unsold.json.purchaseDate === '2024-08-01', 'unmark sold');
+
+  // Loss basis (KAN-93): portfolio by default, per user.
+  assert((await call('GET', '/api/rentals', A)).json.lossBasis === 'portfolio', 'portfolio by default');
+  assert((await call('PUT', '/api/rentals/settings', A, { lossBasis: 'nope' })).status === 400, 'basis checked');
+  assert((await call('PUT', '/api/rentals/settings', A, { lossBasis: 'property' })).json.lossBasis === 'property', 'set per property');
+  assert((await call('GET', '/api/rentals', A)).json.lossBasis === 'property', 'saved');
+  assert((await call('GET', '/api/rentals', B)).json.lossBasis === 'portfolio', 'B unaffected');
+
   // Account delete.
   deleteScopedDataForUser(db, userA);
+  assert(queryAll(db, `SELECT user_id FROM rental_settings WHERE user_id = ?`, [userA]).length === 0, 'rental_settings deleted with the account');
   for (const tbl of ['rental_properties', 'rental_entries']) {
     assert(queryAll(db, `SELECT id FROM ${tbl} WHERE user_id = ?`, [userA]).length === 0, `${tbl} deleted with the account`);
   }
