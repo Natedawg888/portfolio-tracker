@@ -1,24 +1,28 @@
 /**
- * One business (KAN-84): its details and logo, income / expenses / net for the selected NZ tax
- * year, an educational GST-collected estimate when GST registered, its assets and their
- * movements, its clients (when switched on), its invoices, and the transactions and income
- * tagged to it. Totals come from the server, which counts each dollar once.
+ * One business (KAN-84): header with its logo, type and tax year; money in, costs, profit and
+ * what it owns for the selected NZ tax year, with the net worth switch; what it owns (assets and
+ * produce); its clients (when switched on); and its invoices and tagged money in one list.
+ * Totals come from the server, which counts each dollar once.
  */
-import { useEffect, useState, type ChangeEvent } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, formatNzd } from '../api/client';
-import { ASSET_CATEGORIES, IRD_GST_URL, businessTypeLabel, movementKindLabel } from '../lib/business';
-import { BusinessFigures, BusinessMark, BusinessTabs, Dialog, TaxYearSwitch, errorText } from '../components/business/BusinessUi';
+import { IRD_GST_URL, businessTypeLabel, movementKindLabel, netWorthNote, type AssetCategory } from '../lib/business';
+import { BusinessFigures, BusinessMark, BusinessTabs, Dialog, NetWorthSwitch, TaxYearSwitch, TypeNote, errorText } from '../components/business/BusinessUi';
 import { BusinessForm, businessBody } from '../components/business/BusinessForm';
 import { ClientForm, clientBody } from '../components/business/ClientForm';
 import { AssetForm, MovementForm, assetDraft } from '../components/business/AssetForms';
-import { InvoiceStatusBadge } from '../components/InvoicePreview';
+import { WhatItOwns } from '../components/business/WhatItOwns';
+import { BusinessActivity } from '../components/business/BusinessActivity';
+import { MoreMenu } from '../components/MoreMenu';
+import { ConfirmInline } from '../components/security/ConfirmInline';
+import { showQuietToast } from '../lib/quietToast';
 import { formatInvoiceDate } from './invoicesView';
 import type { BusinessAsset, BusinessDetail as Detail, BusinessMoneyItem, InvoiceClient } from '../types';
 
 type DialogState =
   | { mode: 'edit' }
-  | { mode: 'add-asset' }
+  | { mode: 'add-asset'; preset?: { category: AssetCategory; name: string } }
   | { mode: 'edit-asset'; asset: BusinessAsset }
   | { mode: 'move'; asset: BusinessAsset }
   | { mode: 'add-client' }
@@ -28,12 +32,6 @@ type DialogState =
   | null;
 
 const signed = (n: number) => `${n < 0 ? '−' : '+'}${formatNzd(Math.abs(n))}`;
-
-function countedNote(m: BusinessMoneyItem): string {
-  if (m.countedVia === 'invoice') return 'Counted through its invoice payment';
-  if (m.countedVia === 'income') return 'Counted through the income row linked to it';
-  return m.kind === 'income' ? 'Income' : m.amountNzd < 0 ? 'Expense' : 'Income';
-}
 
 function TagDialog({ year, businessId, onTagged, onClose }: { year: number; businessId: string; onTagged: () => void; onClose: () => void }) {
   const [q, setQ] = useState('');
@@ -188,67 +186,6 @@ function ProduceDialog({ businessId, onLinked, onClose }: { businessId: string; 
   );
 }
 
-function AssetRow({ a, busy, onEdit, onMove, onDelete, onUndo }: {
-  a: BusinessAsset;
-  busy: boolean;
-  onEdit: () => void;
-  onMove: () => void;
-  onDelete: () => void;
-  onUndo: (movementId: string) => void;
-}) {
-  const detail = [
-    a.animalType,
-    a.tag,
-    a.location,
-    a.category === 'beehives' && a.status !== 'active' ? (a.status === 'dead' ? 'Dead' : 'Sold') : null,
-    a.valueNzd != null && a.valueMode === 'per_unit' ? `${formatNzd(a.valueNzd)} each` : null,
-    a.valuedOn ? `valued ${formatInvoiceDate(a.valuedOn)}` : null,
-    a.costNzd != null ? `cost ${formatNzd(a.costNzd)}` : null,
-  ].filter(Boolean).join(' · ');
-  return (
-    <li className="rental-entry business-asset">
-      <div className="rental-entry-what">
-        <span>
-          {a.name} <span className="muted">· {a.quantity}{a.unit ? ` ${a.unit}` : ''}</span>
-        </span>
-        {detail ? <span className="muted small">{detail}</span> : null}
-        {a.notes ? <span className="muted small">{a.notes}</span> : null}
-        {a.movements.length > 0 ? (
-          <details className="business-movements">
-            <summary className="small">
-              {a.movements.length} {a.movements.length === 1 ? 'change' : 'changes'}
-            </summary>
-            <ul>
-              {a.movements.map((m) => (
-                <li key={m.id} className="small">
-                  {formatInvoiceDate(m.date)} · {movementKindLabel(m.kind)} {m.quantity}
-                  {m.amountNzd != null ? ` · ${formatNzd(m.amountNzd)}` : ''}
-                  {m.notes ? ` · ${m.notes}` : ''}{' '}
-                  <button type="button" className="link-btn" disabled={busy} onClick={() => onUndo(m.id)}>
-                    Remove
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </details>
-        ) : null}
-      </div>
-      <span className="rental-entry-amount rental-entry-amount--out">{a.currentValueNzd == null ? '—' : formatNzd(a.currentValueNzd)}</span>
-      <span className="rental-entry-actions">
-        <button type="button" className="link-btn" disabled={busy} onClick={onMove}>
-          Record change
-        </button>
-        <button type="button" className="link-btn" disabled={busy} onClick={onEdit}>
-          Edit
-        </button>
-        <button type="button" className="link-btn" disabled={busy} onClick={onDelete}>
-          Delete
-        </button>
-      </span>
-    </li>
-  );
-}
-
 function readImage(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -261,14 +198,17 @@ function readImage(file: File): Promise<string> {
 export function BusinessDetail() {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData] = useState<Detail | null>(null);
   const [year, setYear] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<DialogState>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [businesses, setBusinesses] = useState<Detail['business'][]>([]);
   const [reload, setReload] = useState(0);
+  const logoInput = useRef<HTMLInputElement>(null);
   const load = () => setReload((n) => n + 1);
 
   useEffect(() => {
@@ -295,14 +235,24 @@ export function BusinessDetail() {
       .catch(() => setBusinesses([]));
   }, [id]);
 
+  // Setup steps on the Overview link here with ?tag=1 to open the tag picker.
+  const tagFromLink = searchParams.get('tag') === '1';
+  function closeTag() {
+    setDialog(null);
+    if (tagFromLink) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('tag');
+      setSearchParams(next, { replace: true });
+    }
+  }
+
   async function act(fn: () => Promise<unknown>, note: string, confirmText?: string) {
     if (confirmText && !window.confirm(confirmText)) return;
     setBusy(true);
-    setMsg(null);
     setError(null);
     try {
       await fn();
-      setMsg(note);
+      showQuietToast(note);
       load();
     } catch (e) {
       setError(errorText(e, 'Something went wrong.'));
@@ -313,7 +263,7 @@ export function BusinessDetail() {
 
   async function saved(note: string) {
     setDialog(null);
-    setMsg(note);
+    showQuietToast(note);
     load();
   }
 
@@ -340,145 +290,176 @@ export function BusinessDetail() {
   const b = data.business;
   const t = data.totals;
   const today = data.today;
-  const grouped = ASSET_CATEGORIES.map((c) => ({ ...c, assets: data.assets.filter((a) => a.category === c.value) })).filter((g) => g.assets.length > 0);
-  const sub = [businessTypeLabel(b.type), b.industry, b.nzbn ? `NZBN ${b.nzbn}` : null, b.gstRegistered ? `GST ${b.gstNumber}` : null]
-    .filter(Boolean)
-    .join(' · ');
+  const name = b.name || 'Unnamed business';
   const others = businesses.length ? businesses : [b];
+  const hasInvoices = data.invoices.length > 0;
+  const invoiceWord = `${data.invoices.length} invoice${data.invoices.length === 1 ? '' : 's'}`;
+  const details = [b.industry, b.nzbn ? `NZBN ${b.nzbn}` : null, b.gstRegistered ? `GST ${b.gstNumber}` : null].filter(Boolean).join(' · ');
+
+  async function deleteBusiness() {
+    setBusy(true);
+    setDeleteError(null);
+    try {
+      await api.business.remove(id);
+      showQuietToast(`${name} deleted.`);
+      navigate('/business');
+    } catch (e) {
+      setDeleteError(errorText(e, 'Could not delete it.'));
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="stack bills-page warranties-page rentals-page business-page">
       <BusinessTabs />
-      <header className="warranties-header">
-        <div className="business-detail-title">
-          <BusinessMark name={b.name} logoUrl={b.logoUrl} />
-          <div>
-            <Link className="warranties-back" to="/business">
-              ‹ All businesses
+      <header className="business-detail-header">
+        <Link className="warranties-back" to="/business">
+          ‹ All businesses
+        </Link>
+        <div className="business-detail-row">
+          {b.logoUrl ? (
+            <BusinessMark name={b.name} logoUrl={b.logoUrl} />
+          ) : (
+            <button type="button" className="business-mark business-mark--slot" aria-label={`Add a logo for ${name}`} disabled={busy} onClick={() => logoInput.current?.click()}>
+              <span aria-hidden="true">{(b.name.trim()[0] ?? '?').toUpperCase()}</span>
+            </button>
+          )}
+          <div className="business-detail-name">
+            <h2 className="page-title">{name}</h2>
+            <p className="business-detail-sub">
+              <span className="business-type-chip">{businessTypeLabel(b.type)}</span>
+              {details ? <span className="muted small">{details}</span> : null}
+            </p>
+          </div>
+          <div className="business-detail-actions">
+            <Link className="btn small primary" to={`/business/invoices/new?business=${encodeURIComponent(b.id)}`} aria-label={`New invoice for ${name}`}>
+              + Invoice
             </Link>
-            <h2 className="page-title">{b.name || 'Unnamed business'}</h2>
-            <p className="muted small">{sub}</p>
-            <TaxYearSwitch year={data.taxYear} years={data.taxYears} onChange={setYear} />
+            <MoreMenu label={`More actions for ${name}`} menu>
+              {(close) => (
+                <>
+                  <button type="button" role="menuitem" className="btn small business-menu-item" onClick={() => { close(); setDialog({ mode: 'edit' }); }}>
+                    Edit details
+                  </button>
+                  <button type="button" role="menuitem" className="btn small business-menu-item" onClick={() => { close(); logoInput.current?.click(); }}>
+                    {b.logoUrl ? 'Change logo' : 'Add logo'}
+                  </button>
+                  {b.logoUrl ? (
+                    <button type="button" role="menuitem" className="btn small business-menu-item" onClick={() => { close(); void act(() => api.business.removeLogo(id), 'Logo removed.'); }}>
+                      Remove logo
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="btn small business-menu-item business-menu-danger"
+                    disabled={hasInvoices}
+                    aria-describedby={hasInvoices ? 'biz-delete-reason' : undefined}
+                    onClick={() => { close(); setDeleteError(null); setConfirmDelete(true); }}
+                  >
+                    Delete business…
+                  </button>
+                  {hasInvoices ? (
+                    <p id="biz-delete-reason" className="muted small business-menu-reason">
+                      Has {invoiceWord}, which are kept on record
+                    </p>
+                  ) : null}
+                </>
+              )}
+            </MoreMenu>
           </div>
         </div>
-        <div className="warranties-header-actions">
-          <button type="button" className="btn small" disabled={busy} onClick={() => setDialog({ mode: 'edit' })}>
-            Edit details
-          </button>
-          <label className="btn small business-logo-btn">
-            {b.logoUrl ? 'Change logo' : 'Add logo'}
-            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" onChange={(e) => void onLogo(e)} />
-          </label>
-          {b.logoUrl ? (
-            <button type="button" className="link-btn" disabled={busy} onClick={() => void act(() => api.business.removeLogo(id), 'Logo removed.')}>
-              Remove logo
-            </button>
-          ) : null}
-        </div>
+        <TaxYearSwitch year={data.taxYear} years={data.taxYears} onChange={setYear} />
+        <input ref={logoInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" tabIndex={-1} aria-hidden="true" onChange={(e) => void onLogo(e)} />
       </header>
 
-      {error ? <p className="auth-error" role="alert">{error}</p> : null}
-      {msg ? <p className="banner">{msg}</p> : null}
+      {confirmDelete ? (
+        <ConfirmInline
+          title={`Delete ${name}?`}
+          confirmLabel="Delete business"
+          confirmAriaLabel={`Delete ${name}`}
+          cancelLabel="Keep it"
+          tone="danger"
+          focus="cancel"
+          busy={busy}
+          error={deleteError}
+          onConfirm={() => void deleteBusiness()}
+          onCancel={() => setConfirmDelete(false)}
+        >
+          <p>
+            <strong>Removed:</strong> its assets and their history, its clients, and its logo.
+          </p>
+          <p>
+            <strong>Kept:</strong> transactions and income tagged to it stay in Budget and Income, and produce stays on Portfolio, all untagged. This can’t be undone.
+          </p>
+        </ConfirmInline>
+      ) : null}
 
-      <section className="panel rental-summary" aria-label="This tax year">
-        <BusinessFigures totals={t} />
+      {error ? <p className="auth-error" role="alert">{error}</p> : null}
+
+      <section className="panel rental-summary business-summary" aria-label="This tax year">
+        <BusinessFigures totals={t} assetsLabel="What it owns" assetsNote={netWorthNote(b.countInNetWorth)} />
+        <NetWorthSwitch
+          on={b.countInNetWorth}
+          busy={busy}
+          name={b.name}
+          onChange={(on) =>
+            void act(
+              () => api.business.update(id, { ...businessBody(b), countInNetWorth: on }),
+              on ? `${name}’s assets now count in your net worth.` : `${name}’s assets no longer count in your net worth.`,
+            )
+          }
+        />
         {t.outstandingNzd > 0 ? <p className="muted small">{formatNzd(t.outstandingNzd)} still owed on sent invoices.</p> : null}
         {t.gstCollectedEstimateNzd != null ? (
           <p className="muted small business-gst">
-            GST in that income, estimated at 3/23: <strong>{formatNzd(t.gstCollectedEstimateNzd)}</strong>. This is a rough
-            guide only. It ignores zero-rated and exempt sales and the GST you can claim on expenses. It isn’t a GST return or
-            tax advice. See{' '}
+            GST in that money in, estimated at 3/23: <strong>{formatNzd(t.gstCollectedEstimateNzd)}</strong>. A rough guide only: it
+            ignores zero-rated and exempt sales and the GST you can claim on costs. See{' '}
             <a href={IRD_GST_URL} target="_blank" rel="noreferrer">
               IRD’s GST guidance
             </a>
             .
           </p>
         ) : null}
-        {!b.countInNetWorth ? <p className="muted small">This business’s assets aren’t counted in net worth (Edit details to change).</p> : null}
+        <TypeNote type={b.type} name={name} busy={busy} onChange={async (type) => {
+          await api.business.update(id, { ...businessBody(b), type });
+          showQuietToast(`${name} is now a ${businessTypeLabel(type).toLowerCase()}.`);
+          load();
+        }} />
       </section>
 
-      <section className="panel warranty-card" aria-labelledby="biz-assets">
-        <div className="rental-card-head">
-          <h3 id="biz-assets">Assets</h3>
-          <div className="rental-card-actions">
-            <button type="button" className="btn small" disabled={busy} onClick={() => setDialog({ mode: 'add-asset' })}>
-              + Asset
-            </button>
-          </div>
-        </div>
-        {grouped.length === 0 ? (
-          <p className="muted small">Add livestock, beehives, equipment, vehicles, stock or anything else the business owns.</p>
-        ) : (
-          grouped.map((g) => (
-            <div key={g.value} className="business-asset-group">
-              <h4 className="eyebrow">{g.label}</h4>
-              <ul className="rental-entries">
-                {g.assets.map((a) => (
-                  <AssetRow
-                    key={a.id}
-                    a={a}
-                    busy={busy}
-                    onEdit={() => setDialog({ mode: 'edit-asset', asset: a })}
-                    onMove={() => setDialog({ mode: 'move', asset: a })}
-                    onDelete={() =>
-                      void act(() => api.business.removeAsset(a.id), `${a.name} deleted.`, `Delete ${a.name} and its ${a.movements.length} recorded changes?`)
-                    }
-                    onUndo={(movementId) =>
-                      void act(() => api.business.removeMovement(movementId), 'Change removed.', 'Remove this change? The count goes back.')
-                    }
-                  />
-                ))}
-              </ul>
-            </div>
-          ))
-        )}
-      </section>
+      <WhatItOwns
+        businessId={id}
+        businessName={b.name}
+        assets={data.assets}
+        produce={data.produce}
+        assetsTotal={t.assetsNzd}
+        today={today}
+        busy={busy}
+        act={act}
+        onEditAsset={(a, preset) => setDialog(a ? { mode: 'edit-asset', asset: a } : { mode: 'add-asset', preset })}
+        onMoveAsset={(a) => setDialog({ mode: 'move', asset: a })}
+        onLinkExisting={() => setDialog({ mode: 'produce' })}
+        onChanged={(note) => void saved(note)}
+      />
 
-      <section className="panel warranty-card" aria-labelledby="biz-produce">
-        <div className="rental-card-head">
-          <h3 id="biz-produce">Produce held</h3>
-          <div className="rental-card-actions">
-            <button type="button" className="btn small" disabled={busy} onClick={() => setDialog({ mode: 'produce' })}>
-              + Link commodity
-            </button>
-          </div>
-        </div>
-        {data.produce.length === 0 ? (
-          <p className="muted small">Link commodities like honey or wool that you hold for this business.</p>
-        ) : (
-          <>
-            <ul className="rental-entries">
-              {data.produce.map((c) => (
-                <li key={c.id} className="rental-entry">
-                  <div className="rental-entry-what">
-                    <span>{c.name}</span>
-                    <span className="muted small">
-                      {c.quantity} {c.unit}
-                    </span>
-                  </div>
-                  <span className="rental-entry-amount rental-entry-amount--out">{c.valueNzd == null ? '—' : formatNzd(c.valueNzd)}</span>
-                  <span className="rental-entry-actions">
-                    <button type="button" className="link-btn" disabled={busy} onClick={() => void act(() => api.business.linkProduce(c.id, null), `${c.name} unlinked.`)}>
-                      Unlink
-                    </button>
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <p className="muted small">
-              Valued on <Link to="/portfolio#commodities">Portfolio → Commodities</Link> and counted in net worth there, not in this
-              business’s assets.
-            </p>
-          </>
-        )}
-      </section>
+      <BusinessActivity
+        businessId={id}
+        businessName={b.name}
+        taxYear={data.taxYear}
+        invoices={data.invoices}
+        money={data.money}
+        busy={busy}
+        act={act}
+        onTag={() => setDialog({ mode: 'tag' })}
+      />
 
       {b.clientsEnabled ? (
         <section className="panel warranty-card" aria-labelledby="biz-clients">
           <div className="rental-card-head">
             <h3 id="biz-clients">Clients</h3>
             <div className="rental-card-actions">
-              <button type="button" className="btn small" disabled={busy} onClick={() => setDialog({ mode: 'add-client' })}>
+              <button type="button" className="btn small ghost" disabled={busy} aria-label={`Add a client to ${name}`} onClick={() => setDialog({ mode: 'add-client' })}>
                 + Client
               </button>
             </div>
@@ -494,16 +475,14 @@ export function BusinessDetail() {
                       <Link to={`/business/clients/${c.id}`}>{c.name}</Link>
                       {c.status === 'inactive' ? <span className="muted small"> · Inactive</span> : null}
                     </span>
-                    <span className="muted small">
-                      {[c.contactPerson, c.email, c.phone].filter(Boolean).join(' · ') || 'No contact details'}
-                    </span>
+                    <span className="muted small">{[c.contactPerson, c.email, c.phone].filter(Boolean).join(' · ') || 'No contact details'}</span>
                   </div>
                   <span className="rental-entry-amount rental-entry-amount--out">
                     {formatNzd(c.billedNzd)}
                     {c.outstandingNzd > 0 ? <span className="muted small"> · {formatNzd(c.outstandingNzd)} owed</span> : null}
                   </span>
                   <span className="rental-entry-actions">
-                    <button type="button" className="link-btn" disabled={busy} onClick={() => setDialog({ mode: 'edit-client', client: c })}>
+                    <button type="button" className="link-btn" disabled={busy} aria-label={`Edit ${c.name}`} onClick={() => setDialog({ mode: 'edit-client', client: c })}>
                       Edit
                     </button>
                   </span>
@@ -513,110 +492,6 @@ export function BusinessDetail() {
           )}
         </section>
       ) : null}
-
-      <section className="panel warranty-card" aria-labelledby="biz-invoices">
-        <div className="rental-card-head">
-          <h3 id="biz-invoices">Invoices</h3>
-          <div className="rental-card-actions">
-            <Link className="btn small" to={`/business/invoices/new?business=${encodeURIComponent(b.id)}`}>
-              + Invoice
-            </Link>
-            {data.invoices.length > 0 ? (
-              <Link className="link-btn" to={`/business/invoices?business=${encodeURIComponent(b.id)}`}>
-                All invoices
-              </Link>
-            ) : null}
-          </div>
-        </div>
-        {data.invoices.length === 0 ? (
-          <p className="muted small">No invoices yet.</p>
-        ) : (
-          <ul className="rental-entries">
-            {data.invoices.slice(0, 5).map((inv) => (
-              <li key={inv.id} className="rental-entry">
-                <div className="rental-entry-what">
-                  <span>
-                    <Link to={`/business/invoices/${inv.id}`}>{inv.number}</Link> · {inv.clientName || 'No client'}
-                  </span>
-                  <span className="muted small">
-                    {formatInvoiceDate(inv.issueDate)} · <InvoiceStatusBadge status={inv.status} />
-                  </span>
-                </div>
-                <span className="rental-entry-amount rental-entry-amount--out">{formatNzd(inv.totalNzd)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="panel warranty-card" aria-labelledby="biz-money">
-        <div className="rental-card-head">
-          <h3 id="biz-money">Money in and out</h3>
-          <div className="rental-card-actions">
-            <button type="button" className="btn small" disabled={busy} onClick={() => setDialog({ mode: 'tag' })}>
-              + Tag transactions
-            </button>
-          </div>
-        </div>
-        <p className="muted small">
-          Tag bank transactions and income to this business. Invoice payments are counted automatically, and a deposit
-          linked to one isn’t counted again.
-        </p>
-        {data.money.length === 0 ? (
-          <p className="muted small">Nothing tagged in this tax year.</p>
-        ) : (
-          <ul className="rental-entries">
-            {data.money.map((m) => (
-              <li key={`${m.kind}:${m.id}`} className="rental-entry">
-                <div className="rental-entry-what">
-                  <span>{m.description}</span>
-                  <span className="muted small">
-                    {formatInvoiceDate(m.date)} · {countedNote(m)}
-                  </span>
-                </div>
-                <span className={'rental-entry-amount' + (m.amountNzd < 0 || m.countedVia ? ' rental-entry-amount--out' : '')}>{signed(m.amountNzd)}</span>
-                <span className="rental-entry-actions">
-                  {m.kind === 'income' && m.countedVia === 'invoice' ? null : (
-                    <button type="button" className="link-btn" disabled={busy} onClick={() => void act(() => api.business.tag(m.kind, m.id, null), 'Untagged.')}>
-                      Untag
-                    </button>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="panel warranty-card">
-        <h3>Delete this business</h3>
-        <p className="muted small">
-          Deletes its assets, their changes and its clients. Tagged transactions and income stay in Budget and Income,
-          untagged. A business with invoices can’t be deleted, because invoices are kept on record.
-        </p>
-        <div>
-          <button
-            type="button"
-            className="btn small"
-            disabled={busy || data.invoices.length > 0}
-            onClick={() =>
-              void (async () => {
-                if (!window.confirm(`Delete ${b.name || 'this business'}? This can’t be undone.`)) return;
-                setBusy(true);
-                try {
-                  await api.business.remove(id);
-                  navigate('/business');
-                } catch (e) {
-                  setError(errorText(e, 'Could not delete it.'));
-                  setBusy(false);
-                }
-              })()
-            }
-          >
-            Delete business
-          </button>
-        </div>
-      </section>
 
       {dialog?.mode === 'edit' ? (
         <BusinessForm
@@ -632,7 +507,11 @@ export function BusinessDetail() {
       {dialog?.mode === 'add-asset' || dialog?.mode === 'edit-asset' ? (
         <AssetForm
           title={dialog.mode === 'add-asset' ? 'Add asset' : `Edit ${dialog.asset.name}`}
-          initial={assetDraft(dialog.mode === 'edit-asset' ? dialog.asset : null, today)}
+          initial={
+            dialog.mode === 'edit-asset'
+              ? assetDraft(dialog.asset, today)
+              : { ...assetDraft(null, today), ...(dialog.preset ? { category: dialog.preset.category, name: dialog.preset.name } : {}) }
+          }
           today={today}
           onClose={() => setDialog(null)}
           onSave={async (body) => {
@@ -667,11 +546,8 @@ export function BusinessDetail() {
         />
       ) : null}
       {dialog?.mode === 'produce' ? <ProduceDialog businessId={id} onLinked={load} onClose={() => setDialog(null)} /> : null}
-      {dialog?.mode === 'tag' ? <TagDialog year={data.taxYear} businessId={id} onTagged={load} onClose={() => setDialog(null)} /> : null}
-      <p className="warranties-cga">
-        Totals run over the tax year, 1 April to 31 March. Asset values are the ones you enter. General information, not tax
-        advice.
-      </p>
+      {dialog?.mode === 'tag' || (tagFromLink && dialog == null) ? <TagDialog year={data.taxYear} businessId={id} onTagged={load} onClose={closeTag} /> : null}
+      <p className="muted small business-foot">Totals cover the tax year (1 April – 31 March). Values are the ones you enter. General information, not tax advice.</p>
     </div>
   );
 }

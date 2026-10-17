@@ -638,6 +638,15 @@ function count(db: Database, sql: string, params: unknown[]): number {
   return Number(queryOne<{ c: number }>(db, sql, params)?.c ?? 0);
 }
 
+/** What was recorded in the tax year (counts only; the totals above are unchanged). */
+function yearActivity(db: Database, userId: string, businessId: string, taxYear: number): BusinessCard['activity'] {
+  const { start, end } = taxYearRange(taxYear);
+  return {
+    invoices: count(db, `SELECT COUNT(*) AS c FROM invoices WHERE user_id = ? AND business_id = ? AND issue_date >= ? AND issue_date <= ?`, [userId, businessId, start, end]),
+    tagged: businessMoney(db, userId, businessId, start, end).items.length,
+  };
+}
+
 export function listBusinesses(db: Database, userId: string, today: string, taxYear?: number | null): BusinessListResponse {
   const year = taxYear ?? taxYearOf(today);
   const businesses: BusinessCard[] = rows(db, userId).map((r) => ({
@@ -646,6 +655,7 @@ export function listBusinesses(db: Database, userId: string, today: string, taxY
     assetCount: count(db, `SELECT COUNT(*) AS c FROM business_assets WHERE user_id = ? AND business_id = ?`, [userId, r.id]),
     clientCount: count(db, `SELECT COUNT(*) AS c FROM invoice_clients WHERE user_id = ? AND business_id = ?`, [userId, r.id]),
     invoiceCount: count(db, `SELECT COUNT(*) AS c FROM invoices WHERE user_id = ? AND business_id = ?`, [userId, r.id]),
+    activity: yearActivity(db, userId, r.id, year),
   }));
   return { today, taxYear: year, taxYears: taxYears(db, userId, today), businesses };
 }
@@ -704,7 +714,7 @@ export function businessProduce(db: Database, userId: string, businessId: string
   if (!linked.size) return [];
   return listCommodities(db, userId, today)
     .commodities.filter((c) => linked.has(c.id))
-    .map((c) => ({ id: c.id, name: c.name, quantity: c.quantity, unit: c.unit, valueNzd: c.valueNzd }));
+    .map((c) => ({ id: c.id, name: c.name, quantity: c.quantity, unit: c.unit, valueNzd: c.valueNzd, unitPriceNzd: c.unitPriceNzd, valueOn: c.valueOn, stale: c.stale }));
 }
 
 /** Untagged commodities that could be linked to a business. */
@@ -714,7 +724,7 @@ export function produceCandidates(db: Database, userId: string, today: string): 
   );
   return listCommodities(db, userId, today)
     .commodities.filter((c) => free.has(c.id))
-    .map((c) => ({ id: c.id, name: c.name, quantity: c.quantity, unit: c.unit, valueNzd: c.valueNzd }));
+    .map((c) => ({ id: c.id, name: c.name, quantity: c.quantity, unit: c.unit, valueNzd: c.valueNzd, unitPriceNzd: c.unitPriceNzd, valueOn: c.valueOn, stale: c.stale }));
 }
 
 /** Link a commodity to a business as produce held, or unlink it (businessId null). */

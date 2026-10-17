@@ -14222,3 +14222,155 @@ html[data-theme="dark"] .assets-page .portfolio-tab.active,
 html:not([data-theme]) .assets-page .portfolio-tab.active {
   border-bottom-color: #8fcb9a;
 }
+
+/* Business pages redesign: overview cards, setup steps, single business header and cards. */
+.business-header { display: grid; gap: 0.6rem; min-width: 0; }
+.business-header-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; min-width: 0; }
+.business-header-row .page-title { margin: 0; }
+.business-header-add { margin-left: auto; min-height: 44px; }
+.business-card-list { display: grid; gap: 0.75rem; min-width: 0; }
+.business-card--wide { display: grid; gap: 0.6rem; cursor: pointer; min-width: 0; }
+.business-card--wide:hover { border-color: var(--accent); }
+.business-card--wide .business-card-head { align-items: center; }
+.business-card-title { flex: 1 1 auto; min-width: 0; }
+.business-card-title h3 { margin: 0; font-size: 1.05rem; overflow-wrap: anywhere; }
+.business-card-title h3 a { color: inherit; text-decoration: none; }
+.business-card-title h3 a:hover, .business-card-title h3 a:focus-visible { text-decoration: underline; }
+.business-card-title p { margin: 0.1rem 0 0; }
+.business-card-actions { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
+.business-card-actions .btn { min-height: 44px; }
+.business-card-owns, .business-card-owed { margin: 0; }
+.business-totals--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.business-totals dd.business-figure-note { margin: 0.1rem 0 0; font-size: 0.75rem; font-weight: 400; color: var(--muted); }
+.business-totals .business-profit--up,
+.business-combined .business-profit--up { color: var(--warranty-ok); }
+.business-combined { display: grid; gap: 0.4rem; }
+.business-combined-title { margin: 0; font-size: 0.95rem; display: flex; align-items: center; gap: 0.35rem; }
+.business-type-note p { margin: 0; }
+.business-type-buttons { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.4rem 0 0; padding: 0; border: 0; min-width: 0; }
+.business-type-buttons legend { padding: 0; margin-bottom: 0.3rem; font-size: 0.9rem; }
+.business-type-buttons .btn { min-height: 44px; }
+.business-add { display: grid; gap: 0.6rem; max-width: 36rem; }
+.business-add h3 { margin: 0; }
+.business-add label { display: grid; gap: 0.25rem; }
+.business-foot { margin: 0.25rem 0 0; }
+
+/* "Get [name] set up" */
+.business-setup { display: grid; gap: 0.4rem; padding: 0.7rem 0.8rem; border: 1px dashed var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.business-setup-title { margin: 0; font-size: 0.95rem; }
+.business-setup-steps { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.5rem; }
+.business-setup-steps li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.6rem; align-items: start; }
+.business-setup-check { width: 1.35rem; height: 1.35rem; border-radius: 50%; border: 2px solid var(--border); display: grid; place-items: center; font-size: 0.8rem; font-weight: 700; line-height: 1; }
+.business-setup-steps li.is-done .business-setup-check { background: var(--accent); border-color: var(--accent); color: var(--btn-primary-text); }
+.business-setup-steps li.is-done .business-setup-step { color: var(--muted); text-decoration: line-through; }
+.business-setup-text { display: grid; gap: 0.1rem; min-width: 0; }
+.business-setup-step { font-weight: 600; }
+
+/* Single business header */
+.business-detail-header { display: grid; gap: 0.5rem; min-width: 0; }
+.business-detail-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 0.8rem; min-width: 0; }
+.business-detail-name { flex: 1 1 10rem; min-width: 0; }
+.business-detail-name .page-title { margin: 0; overflow-wrap: anywhere; }
+.business-detail-sub { margin: 0.15rem 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.6rem; }
+.business-type-chip { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 999px; border: 1px solid var(--border); font-size: 0.78rem; font-weight: 600; color: var(--text); background: var(--surface-2); }
+.business-detail-actions { display: flex; align-items: center; gap: 0.4rem; }
+.business-detail-actions .btn { min-height: 44px; }
+.business-mark--slot { border: 2px dashed var(--border); background: transparent; color: var(--muted); cursor: pointer; display: grid; place-items: center; font-weight: 700; font-size: 1.1rem; padding: 0; }
+.business-mark--slot:hover:not(:disabled), .business-mark--slot:focus-visible { border-color: var(--accent); color: var(--accent); }
+.more-menu-body .business-menu-danger { color: var(--danger); }
+.more-menu-body .business-menu-danger:disabled { color: var(--muted); }
+.more-menu-body .business-menu-reason { margin: 0 0.5rem 0.25rem; max-width: 16rem; }
+.business-summary { display: grid; gap: 0.6rem; }
+.business-summary > p { margin: 0; }
+.business-networth-switch { width: 100%; }
+
+/* What it owns */
+.business-owns { display: grid; gap: 0.6rem; min-width: 0; }
+.business-owns-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.business-tab-count { display: inline-block; min-width: 1.4rem; padding: 0 0.35rem; margin-left: 0.25rem; border-radius: 999px; background: var(--surface-3); font-size: 0.75rem; }
+.business-owns-panel { display: grid; gap: 0.6rem; min-width: 0; }
+.business-owns-panel > p { margin: 0; }
+.business-quick-adds { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.business-quick-adds .btn { min-height: 44px; }
+.business-add-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr)); gap: 0.5rem; align-items: end; min-width: 0; }
+.business-add-row label { display: grid; gap: 0.2rem; min-width: 0; font-size: 0.9rem; }
+.business-add-row input { width: 100%; min-width: 0; }
+.business-add-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.8rem; }
+.business-add-row-actions .btn { min-height: 44px; }
+.business-stale { margin-left: 0.4rem; vertical-align: middle; }
+.business-activity-empty p { margin: 0 0 0.2rem; }
+
+@media (max-width: 520px) {
+  .business-totals--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .business-card--wide .business-card-head { flex-wrap: wrap; }
+  .business-card-actions { width: 100%; justify-content: flex-end; }
+  .business-header-add { margin-left: 0; }
+}
+@media (max-width: 360px) {
+  .business-totals--three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .business-detail-actions { width: 100%; justify-content: flex-end; }
+}
+/* Secondary actions on the Business pages are outlined (bills-page fills every .btn). */
+html[data-theme="light"] .business-page .btn.ghost {
+  background: transparent;
+  border-color: #8c7b66;
+  color: #1a1a1a;
+}
+html[data-theme="dark"] .business-page .btn.ghost,
+html:not([data-theme]) .business-page .btn.ghost {
+  background: transparent;
+  border-color: #6f8276;
+  color: #f3eee4;
+}
+.business-detail-header .budget-month-switch,
+.business-header .budget-month-switch { justify-self: start; }
+.business-page .business-card-title h3 a,
+.business-page .business-card-title h3 a:visited { color: inherit; }
+/* Delete confirmation: warning-styled confirm, outlined "Keep it" (bills-page fills every .btn). */
+html[data-theme="light"] .business-page .security-confirm .btn.danger {
+  background: #f8e4e0;
+  border-color: #8a4a42;
+  color: #6e1b1b;
+}
+html[data-theme="dark"] .business-page .security-confirm .btn.danger,
+html:not([data-theme]) .business-page .security-confirm .btn.danger {
+  background: #4a2422;
+  border-color: #e0b2aa;
+  color: #f3eee4;
+}
+html[data-theme="light"] .business-page .security-confirm .btn:not(.danger) {
+  background: transparent;
+  border-color: #8c7b66;
+  color: #1a1a1a;
+}
+html[data-theme="dark"] .business-page .security-confirm .btn:not(.danger),
+html:not([data-theme]) .business-page .security-confirm .btn:not(.danger) {
+  background: transparent;
+  border-color: #6f8276;
+  color: #f3eee4;
+}
+.business-page .security-confirm .btn { min-height: 44px; }
+/* Text buttons use the page's link colour so they read in both themes. */
+html[data-theme="light"] .business-page .link-btn:not(:disabled) { color: #6e6278; }
+html[data-theme="dark"] .business-page .link-btn:not(:disabled),
+html:not([data-theme]) .business-page .link-btn:not(:disabled) { color: #b7a8c4; }
+/* ⋯ menus on the Business pages: plain items, "Delete business…" in the warning colour. */
+html .business-page .more-menu-body .business-menu-item {
+  width: 100%;
+  min-height: 44px;
+  text-align: left;
+  background: transparent;
+  color: var(--text);
+  border-color: transparent;
+  box-shadow: none;
+}
+html .business-page .more-menu-body .business-menu-item:hover:not(:disabled),
+html .business-page .more-menu-body .business-menu-item:focus-visible {
+  background: var(--surface-3);
+  color: var(--text);
+  border-color: var(--border);
+}
+html .business-page .more-menu-body .business-menu-danger:not(:disabled),
+html .business-page .more-menu-body .business-menu-danger:hover:not(:disabled),
+html .business-page .more-menu-body .business-menu-danger:focus-visible { color: var(--danger); }
+html .business-page .more-menu-body .business-menu-item:disabled { color: var(--muted); background: transparent; }
