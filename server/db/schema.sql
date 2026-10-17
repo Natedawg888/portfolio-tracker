@@ -871,6 +871,30 @@ CREATE TABLE IF NOT EXISTS business_asset_movements (
 );
 CREATE INDEX IF NOT EXISTS idx_business_asset_movements_asset ON business_asset_movements(user_id, asset_id, date);
 
+-- People a business employs: contact details, bank account for pay, pay rate and when they're
+-- paid. Records only; nothing is paid or filed from here.
+CREATE TABLE IF NOT EXISTS business_employees (
+  id             TEXT PRIMARY KEY,
+  user_id        TEXT NOT NULL,
+  business_id    TEXT NOT NULL,
+  name           TEXT NOT NULL,
+  role           TEXT NOT NULL DEFAULT '',
+  email          TEXT NOT NULL DEFAULT '',
+  phone          TEXT NOT NULL DEFAULT '',
+  address        TEXT NOT NULL DEFAULT '',
+  bank_account   TEXT NOT NULL DEFAULT '',
+  pay_rate_nzd   REAL,
+  pay_unit       TEXT NOT NULL DEFAULT 'hour',      -- hour | day | week | fortnight | month | year
+  pay_frequency  TEXT NOT NULL DEFAULT 'fortnightly', -- weekly | fortnightly | four_weekly | monthly
+  next_pay_date  TEXT,
+  start_date     TEXT,
+  status         TEXT NOT NULL DEFAULT 'active',    -- active | inactive
+  notes          TEXT NOT NULL DEFAULT '',
+  created_at     TEXT NOT NULL,
+  updated_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_business_employees_user ON business_employees(user_id, business_id);
+
 -- Bills and subscriptions (KAN-26). Saved items (confirmed from detection or added by hand).
 -- next_due is an anchor; reads roll it forward to the first due date on or after today.
 -- merchant_key links a confirmed item to its transactions (src/lib/recurring.ts merchantKey).

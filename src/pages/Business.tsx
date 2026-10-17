@@ -39,6 +39,7 @@ function Card({ b, onEdit, onType }: { b: BusinessCard; onEdit: () => void; onTy
           </h3>
           <p className="muted small">
             {businessTypeLabel(b.type)} · {entriesText(b.activity)}
+            {b.employeeCount > 0 ? ` · ${b.employeeCount} ${b.employeeCount === 1 ? 'employee' : 'employees'}` : ''}
           </p>
         </div>
         <div className="business-card-actions">
