@@ -1,6 +1,7 @@
 /**
  * Rental properties and their income / expenses for one user (KAN-66). Every query
- * filters on user_id.
+ * filters on user_id. A property can be let by room (KAN-83, rooms.ts): rent entries then
+ * name the room, and expenses can be shared across the rooms or kept as owner costs.
  *
  * Money views: an entry with add_to_money, dated on or after the day Budget and Income
  * start (TXN_SYNC_FROM_DATE), is mirrored so those pages count the net rental figures:
@@ -14,7 +15,7 @@
  * A linked bank debit is never edited or deleted here, only linked and unlinked.
  */
 import type { Database } from 'sql.js';
-import type { RentalEntry, RentalListResponse, RentalProperty } from '../../src/types/index.ts';
+import type { RentalEntry, RentalLetType, RentalListResponse, RentalProperty } from '../../src/types/index.ts';
 import { isRentalCategory, rentalCategoryLabel, type RentalCategory, type RentalEntryKind } from '../../src/lib/rental.ts';
 import { isYmd } from '../../src/lib/invoiceCalc.ts';
 import { newId, queryAll, queryOne, run } from '../db/index.ts';
@@ -22,13 +23,14 @@ import { roundMoney } from '../debts/model.ts';
 import { RENTAL_EXPENSES_SLUG, RENTAL_INCOME_SLUG, ensureCategory } from '../lib/categories.ts';
 import { linkMirroredIncomeToBankCredits } from '../lib/incomeBankLink.ts';
 import { TXN_SYNC_FROM_DATE } from '../lib/syncFloor.ts';
+import { deleteRoomsOfProperty, listRooms, listTenancies, roomRow } from './rooms.ts';
 
 const RENTAL_INCOME_CATEGORY = { slug: RENTAL_INCOME_SLUG, name: 'Rental income', type: 'income', sortOrder: 5 } as const;
 const RENTAL_EXPENSES_CATEGORY = { slug: RENTAL_EXPENSES_SLUG, name: 'Rental property', type: 'spending', sortOrder: 88 } as const;
 
-type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
+export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 
-export type PropertyDraft = { name: string; address: string; notes: string };
+export type PropertyDraft = { name: string; address: string; notes: string; letType: RentalLetType; ownHome: boolean };
 
 export type EntryDraft = {
   propertyId: string;
@@ -38,13 +40,15 @@ export type EntryDraft = {
   amountNzd: number;
   description: string;
   addToMoney: boolean;
+  roomId: string | null;
+  shared: boolean;
 };
 
-function body(raw: unknown): Record<string, unknown> | null {
+export function body(raw: unknown): Record<string, unknown> | null {
   return raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
 }
 
-function text(v: unknown): string {
+export function text(v: unknown): string {
   return typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : '';
 }
 
@@ -64,6 +68,12 @@ export function parseProperty(raw: unknown, partial: boolean): Parsed<Partial<Pr
     out.address = address;
   }
   if (o.notes !== undefined || !partial) out.notes = typeof o.notes === 'string' ? o.notes.trim().slice(0, 500) : '';
+  if (o.letType !== undefined) {
+    if (o.letType !== 'whole' && o.letType !== 'rooms') return { ok: false, error: 'Let type must be whole or rooms' };
+    out.letType = o.letType;
+  } else if (!partial) out.letType = 'whole';
+  if (o.ownHome !== undefined) out.ownHome = o.ownHome === true;
+  else if (!partial) out.ownHome = false;
   return { ok: true, value: out };
 }
 
@@ -103,10 +113,23 @@ export function parseEntry(raw: unknown, partial: boolean): Parsed<Partial<Entry
   }
   if (o.addToMoney !== undefined) out.addToMoney = o.addToMoney !== false;
   else if (!partial) out.addToMoney = true;
+  if (o.roomId !== undefined) out.roomId = text(o.roomId) || null;
+  else if (!partial) out.roomId = null;
+  if (o.shared !== undefined) out.shared = o.shared === true;
+  else if (!partial) out.shared = false;
   return { ok: true, value: out };
 }
 
-type PropertyRow = { id: string; name: string; address: string; notes: string; created_at: string; updated_at: string };
+type PropertyRow = {
+  id: string;
+  name: string;
+  address: string;
+  notes: string;
+  let_type: RentalLetType;
+  own_home: number;
+  created_at: string;
+  updated_at: string;
+};
 
 type EntryRow = {
   id: string;
@@ -119,6 +142,8 @@ type EntryRow = {
   add_to_money: number;
   transaction_id: string | null;
   txn_owned: number;
+  room_id: string | null;
+  shared: number;
   created_at: string;
   updated_at: string;
   income_mirror: string | null;
@@ -135,7 +160,16 @@ const ENTRY_SELECT = `SELECT e.*,
   LEFT JOIN transactions t ON t.id = e.transaction_id AND t.user_id = e.user_id`;
 
 function presentProperty(r: PropertyRow): RentalProperty {
-  return { id: r.id, name: r.name, address: r.address ?? '', notes: r.notes ?? '', createdAt: r.created_at, updatedAt: r.updated_at };
+  return {
+    id: r.id,
+    name: r.name,
+    address: r.address ?? '',
+    notes: r.notes ?? '',
+    letType: r.let_type === 'rooms' ? 'rooms' : 'whole',
+    ownHome: r.let_type === 'rooms' && Boolean(r.own_home),
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
 }
 
 function presentEntry(r: EntryRow): RentalEntry {
@@ -147,6 +181,8 @@ function presentEntry(r: EntryRow): RentalEntry {
     category: r.category,
     amountNzd: roundMoney(Number(r.amount_nzd)),
     description: r.description ?? '',
+    roomId: r.room_id ?? null,
+    shared: Boolean(r.shared),
     addToMoney: Boolean(r.add_to_money),
     inMoneyViews: Boolean(r.kind === 'income' ? r.income_mirror : r.txn_mirror),
     bankMatch:
@@ -169,10 +205,10 @@ export function listRentals(db: Database, userId: string, today: string): Rental
     `${ENTRY_SELECT} WHERE e.user_id = ? ORDER BY e.date DESC, e.created_at DESC`,
     [userId],
   ).map(presentEntry);
-  return { today, moneyViewsFrom: TXN_SYNC_FROM_DATE, properties, entries };
+  return { today, moneyViewsFrom: TXN_SYNC_FROM_DATE, properties, entries, rooms: listRooms(db, userId), tenancies: listTenancies(db, userId) };
 }
 
-function propertyRow(db: Database, userId: string, id: string): PropertyRow | null {
+export function propertyRow(db: Database, userId: string, id: string): PropertyRow | null {
   return queryOne<PropertyRow>(db, `SELECT * FROM rental_properties WHERE id = ? AND user_id = ?`, [id, userId]) ?? null;
 }
 
@@ -188,21 +224,34 @@ export function createProperty(db: Database, userId: string, d: PropertyDraft): 
   const now = new Date().toISOString();
   run(
     db,
-    `INSERT INTO rental_properties (id, user_id, name, address, notes, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`,
-    [id, userId, d.name, d.address, d.notes, now, now],
+    `INSERT INTO rental_properties (id, user_id, name, address, notes, let_type, own_home, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+    [id, userId, d.name, d.address, d.notes, d.letType, d.ownHome ? 1 : 0, now, now],
   );
   return presentProperty(propertyRow(db, userId, id)!);
 }
 
+/** Your own home is always let room by room. */
+export function checkPropertyLetting(d: { letType: RentalLetType; ownHome: boolean }): string | null {
+  return d.ownHome && d.letType !== 'rooms' ? 'Only a property let by room can be marked as your home' : null;
+}
+
 /** null = not found. */
-export function updateProperty(db: Database, userId: string, id: string, patch: Partial<PropertyDraft>): RentalProperty | null {
+export function updateProperty(db: Database, userId: string, id: string, patch: Partial<PropertyDraft>): Parsed<RentalProperty> | null {
   const r = propertyRow(db, userId, id);
   if (!r) return null;
   const name = patch.name ?? r.name;
+  const letType = patch.letType ?? (r.let_type === 'rooms' ? 'rooms' : 'whole');
+  // Back to a whole property: it stops being your home unless told otherwise.
+  const ownHome = patch.ownHome ?? (letType === 'rooms' && Boolean(r.own_home));
+  const err = checkPropertyLetting({ letType, ownHome });
+  if (err) return { ok: false, error: err };
+  if (letType === 'whole' && r.let_type === 'rooms' && listRooms(db, userId).some((room) => room.propertyId === id)) {
+    return { ok: false, error: 'Remove its rooms before letting it as a whole property' };
+  }
   run(
     db,
-    `UPDATE rental_properties SET name=?, address=?, notes=?, updated_at=? WHERE id=? AND user_id=?`,
-    [name, patch.address ?? r.address, patch.notes ?? r.notes, new Date().toISOString(), id, userId],
+    `UPDATE rental_properties SET name=?, address=?, notes=?, let_type=?, own_home=?, updated_at=? WHERE id=? AND user_id=?`,
+    [name, patch.address ?? r.address, patch.notes ?? r.notes, letType, ownHome ? 1 : 0, new Date().toISOString(), id, userId],
   );
   // Mirrored rows carry the property name in their description.
   if (name !== r.name) {
@@ -210,15 +259,16 @@ export function updateProperty(db: Database, userId: string, id: string, patch: 
       syncMirror(db, userId, e.id);
     }
   }
-  return presentProperty(propertyRow(db, userId, id)!);
+  return { ok: true, value: presentProperty(propertyRow(db, userId, id)!) };
 }
 
-/** Deletes the property, its entries and their Budget / Income rows. */
+/** Deletes the property, its rooms and tenancies, its entries and their Budget / Income rows. */
 export function deleteProperty(db: Database, userId: string, id: string): boolean {
   if (!propertyRow(db, userId, id)) return false;
   for (const e of queryAll<{ id: string }>(db, `SELECT id FROM rental_entries WHERE property_id = ? AND user_id = ?`, [id, userId])) {
     deleteEntry(db, userId, e.id);
   }
+  deleteRoomsOfProperty(db, userId, id);
   run(db, `DELETE FROM rental_properties WHERE id = ? AND user_id = ?`, [id, userId]);
   return true;
 }
@@ -226,8 +276,16 @@ export function deleteProperty(db: Database, userId: string, id: string): boolea
 // ---------------------------------------------------------------- entries
 
 function checkEntry(db: Database, userId: string, d: EntryDraft): string | null {
-  if (!propertyRow(db, userId, d.propertyId)) return 'Property not found';
+  const property = propertyRow(db, userId, d.propertyId);
+  if (!property) return 'Property not found';
   if (!isRentalCategory(d.kind, d.category)) return `That category isn't used for ${d.kind === 'income' ? 'income' : 'expenses'}`;
+  if (d.roomId) {
+    if (d.kind !== 'income') return 'Only income is recorded against a room';
+    const room = roomRow(db, userId, d.roomId);
+    if (!room) return 'Room not found';
+    if (room.property_id !== d.propertyId) return 'That room is in another property';
+  }
+  if (d.shared && (d.kind !== 'expense' || property.let_type !== 'rooms')) return 'Only expenses on a property let by room can be shared across rooms';
   return null;
 }
 
@@ -238,9 +296,9 @@ export function createEntry(db: Database, userId: string, d: EntryDraft): Parsed
   const now = new Date().toISOString();
   run(
     db,
-    `INSERT INTO rental_entries (id, user_id, property_id, date, kind, category, amount_nzd, description, add_to_money, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, userId, d.propertyId, d.date, d.kind, d.category, d.amountNzd, d.description, d.addToMoney ? 1 : 0, now, now],
+    `INSERT INTO rental_entries (id, user_id, property_id, date, kind, category, amount_nzd, description, add_to_money, room_id, shared, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, userId, d.propertyId, d.date, d.kind, d.category, d.amountNzd, d.description, d.addToMoney ? 1 : 0, d.roomId, d.shared ? 1 : 0, now, now],
   );
   syncMirror(db, userId, id);
   return { ok: true, value: getEntry(db, userId, id)! };
@@ -251,8 +309,11 @@ export function updateEntry(db: Database, userId: string, id: string, patch: Par
   const r = queryOne<EntryRow>(db, `SELECT * FROM rental_entries WHERE id = ? AND user_id = ?`, [id, userId]);
   if (!r) return null;
   const kind = patch.kind ?? r.kind;
+  const propertyId = patch.propertyId ?? r.property_id;
+  // A room or a shared split belongs to one property and one kind; moving drops it unless restated.
+  const keep = propertyId === r.property_id && kind === r.kind;
   const next: EntryDraft = {
-    propertyId: patch.propertyId ?? r.property_id,
+    propertyId,
     date: patch.date ?? r.date,
     kind,
     // Switching kind without a category falls back to that kind's first category.
@@ -260,14 +321,19 @@ export function updateEntry(db: Database, userId: string, id: string, patch: Par
     amountNzd: patch.amountNzd ?? Number(r.amount_nzd),
     description: patch.description ?? r.description,
     addToMoney: patch.addToMoney ?? Boolean(r.add_to_money),
+    roomId: patch.roomId !== undefined ? patch.roomId : keep ? r.room_id : null,
+    shared: patch.shared ?? (keep ? Boolean(r.shared) : false),
   };
   const err = checkEntry(db, userId, next);
   if (err) return { ok: false, error: err };
   run(
     db,
-    `UPDATE rental_entries SET property_id=?, date=?, kind=?, category=?, amount_nzd=?, description=?, add_to_money=?, updated_at=?
+    `UPDATE rental_entries SET property_id=?, date=?, kind=?, category=?, amount_nzd=?, description=?, add_to_money=?, room_id=?, shared=?, updated_at=?
      WHERE id=? AND user_id=?`,
-    [next.propertyId, next.date, next.kind, next.category, next.amountNzd, next.description, next.addToMoney ? 1 : 0, new Date().toISOString(), id, userId],
+    [
+      next.propertyId, next.date, next.kind, next.category, next.amountNzd, next.description, next.addToMoney ? 1 : 0,
+      next.roomId, next.shared ? 1 : 0, new Date().toISOString(), id, userId,
+    ],
   );
   syncMirror(db, userId, id);
   return { ok: true, value: getEntry(db, userId, id)! };
@@ -296,23 +362,24 @@ function removeTxnMirror(db: Database, userId: string, txnId: string | null): vo
   if (txnId) run(db, `DELETE FROM transactions WHERE id = ? AND user_id = ?`, [txnId, userId]);
 }
 
-function mirrorDescription(e: { kind: RentalEntryKind; category: string; description: string }, propertyName: string): string {
+function mirrorDescription(e: { kind: RentalEntryKind; category: string; description: string }, propertyName: string, roomName: string | null): string {
   const what = e.description || rentalCategoryLabel(e.category);
-  return `${what} · ${propertyName}`.slice(0, 200);
+  return (roomName ? `${what} · ${roomName} · ${propertyName}` : `${what} · ${propertyName}`).slice(0, 200);
 }
 
 /** Make the entry's Budget / Income row match the entry (add, update or remove it). */
 export function syncMirror(db: Database, userId: string, entryId: string): void {
-  const e = queryOne<EntryRow & { property_name: string }>(
+  const e = queryOne<EntryRow & { property_name: string; room_name: string | null }>(
     db,
-    `SELECT e.*, p.name AS property_name FROM rental_entries e
+    `SELECT e.*, p.name AS property_name, rm.name AS room_name FROM rental_entries e
      JOIN rental_properties p ON p.id = e.property_id AND p.user_id = e.user_id
+     LEFT JOIN rental_rooms rm ON rm.id = e.room_id AND rm.user_id = e.user_id
      WHERE e.id = ? AND e.user_id = ?`,
     [entryId, userId],
   );
   if (!e) return;
   const wanted = Boolean(e.add_to_money) && e.date >= TXN_SYNC_FROM_DATE;
-  const description = mirrorDescription(e, e.property_name);
+  const description = mirrorDescription(e, e.property_name, e.room_name);
   const amount = roundMoney(Number(e.amount_nzd));
   const now = new Date().toISOString();
 

@@ -807,6 +807,70 @@ CREATE TABLE IF NOT EXISTS invoice_sends (
 CREATE INDEX IF NOT EXISTS idx_invoice_sends_user_time ON invoice_sends(user_id, sent_at);
 CREATE INDEX IF NOT EXISTS idx_invoice_sends_invoice ON invoice_sends(invoice_id);
 
+-- Business page (KAN-84): one row per business the user runs. The invoice details
+-- (address, phone, bank account, prefix) that used to live in business_profiles are here,
+-- per business; business_profiles stays as the source for the default business.
+CREATE TABLE IF NOT EXISTS businesses (
+  id                 TEXT PRIMARY KEY,
+  user_id            TEXT NOT NULL,
+  name               TEXT NOT NULL,
+  type               TEXT NOT NULL DEFAULT 'sole_trader',  -- sole_trader | partnership | company | hobby
+  industry           TEXT NOT NULL DEFAULT '',
+  nzbn               TEXT NOT NULL DEFAULT '',
+  gst_registered     INTEGER NOT NULL DEFAULT 0,
+  gst_number         TEXT NOT NULL DEFAULT '',
+  email              TEXT NOT NULL DEFAULT '',
+  address            TEXT NOT NULL DEFAULT '',
+  phone              TEXT NOT NULL DEFAULT '',
+  bank_account       TEXT NOT NULL DEFAULT '',
+  invoice_prefix     TEXT NOT NULL DEFAULT 'INV-',
+  logo_path          TEXT,
+  clients_enabled    INTEGER NOT NULL DEFAULT 1,
+  count_in_net_worth INTEGER NOT NULL DEFAULT 1,
+  is_default         INTEGER NOT NULL DEFAULT 0,
+  created_at         TEXT NOT NULL,
+  updated_at         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_businesses_user ON businesses(user_id);
+
+-- Livestock, beehives, equipment, vehicles, stock / inventory and anything else a business
+-- holds. Values are what the user entered (value_nzd on valued_on), never estimated.
+CREATE TABLE IF NOT EXISTS business_assets (
+  id               TEXT PRIMARY KEY,
+  user_id          TEXT NOT NULL,
+  business_id      TEXT NOT NULL,
+  category         TEXT NOT NULL,           -- livestock | beehives | equipment | vehicle | stock | other
+  name             TEXT NOT NULL,
+  quantity         REAL NOT NULL DEFAULT 0,
+  unit             TEXT NOT NULL DEFAULT '',
+  cost_nzd         REAL,
+  value_mode       TEXT NOT NULL DEFAULT 'total', -- total | per_unit
+  value_nzd        REAL,
+  valued_on        TEXT,
+  animal_type      TEXT NOT NULL DEFAULT '',
+  tag              TEXT NOT NULL DEFAULT '',
+  location         TEXT NOT NULL DEFAULT '',
+  status           TEXT NOT NULL DEFAULT 'active', -- beehives: active | dead | sold
+  notes            TEXT NOT NULL DEFAULT '',
+  created_at       TEXT NOT NULL,
+  updated_at       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_business_assets_user ON business_assets(user_id, business_id);
+
+-- Purchases, sales, births, deaths and losses. Each one moves the asset's quantity.
+CREATE TABLE IF NOT EXISTS business_asset_movements (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL,
+  asset_id    TEXT NOT NULL,
+  date        TEXT NOT NULL,
+  kind        TEXT NOT NULL,                -- purchase | sale | birth | death | loss
+  quantity    REAL NOT NULL,
+  amount_nzd  REAL,
+  notes       TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_business_asset_movements_asset ON business_asset_movements(user_id, asset_id, date);
+
 -- Bills and subscriptions (KAN-26). Saved items (confirmed from detection or added by hand).
 -- next_due is an anchor; reads roll it forward to the first due date on or after today.
 -- merchant_key links a confirmed item to its transactions (src/lib/recurring.ts merchantKey).
@@ -868,6 +932,8 @@ CREATE TABLE IF NOT EXISTS rental_properties (
   name        TEXT NOT NULL,
   address     TEXT NOT NULL DEFAULT '',
   notes       TEXT NOT NULL DEFAULT '',
+  let_type    TEXT NOT NULL DEFAULT 'whole',  -- whole | rooms (KAN-83)
+  own_home    INTEGER NOT NULL DEFAULT 0,     -- 1 = the user lives here and lets rooms
   created_at  TEXT NOT NULL,
   updated_at  TEXT NOT NULL
 );
@@ -885,10 +951,44 @@ CREATE TABLE IF NOT EXISTS rental_entries (
   add_to_money    INTEGER NOT NULL DEFAULT 1,
   transaction_id  TEXT,                       -- expense mirror
   txn_owned       INTEGER NOT NULL DEFAULT 1,  -- 1 = transaction_id was added by this entry
+  room_id         TEXT,                       -- income: rent for this room (KAN-83)
+  shared          INTEGER NOT NULL DEFAULT 0,  -- expense: split across the rooms by share (KAN-83)
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_rental_entries_user ON rental_entries(user_id, date);
+
+-- Rooms let in a rental property, including the user's own home (KAN-83). Per user.
+CREATE TABLE IF NOT EXISTS rental_rooms (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT,
+  property_id  TEXT NOT NULL,
+  name         TEXT NOT NULL,
+  note         TEXT NOT NULL DEFAULT '',
+  share        REAL NOT NULL DEFAULT 1,      -- weight for splitting shared expenses
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rental_rooms_user ON rental_rooms(user_id, property_id);
+
+-- A tenant's stay in a room (KAN-83). tenant_label is a display name only; no contact details.
+-- Tenancies in one room never overlap (checked on save).
+CREATE TABLE IF NOT EXISTS rental_tenancies (
+  id              TEXT PRIMARY KEY,
+  user_id         TEXT,
+  room_id         TEXT NOT NULL,
+  tenant_label    TEXT NOT NULL,
+  rent_amount     REAL NOT NULL,
+  rent_frequency  TEXT NOT NULL,              -- weekly | fortnightly | monthly
+  bills_included  INTEGER NOT NULL DEFAULT 0,
+  start_date      TEXT NOT NULL,
+  end_date        TEXT,
+  bond_amount     REAL NOT NULL DEFAULT 0,
+  bond_lodged     INTEGER NOT NULL DEFAULT 0,  -- 1 = lodged with Tenancy Services
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rental_tenancies_user ON rental_tenancies(user_id, room_id);
 
 -- Shopping lists (KAN-74). Per user. est_price_nzd is the price of one unit (× quantity for
 -- the line). category_id links an item, or the whole list, to a budget category.

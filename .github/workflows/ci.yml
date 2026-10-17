@@ -42,6 +42,7 @@ jobs:
       - run: npm run test:bonds
       - run: npm run test:commodities
       - run: npm run test:crypto-mining
+      - run: npm run test:db-migrations
       - run: npm run test:mortgage
       - run: npm run test:retirement
       - run: npm run test:home
@@ -60,6 +61,7 @@ jobs:
       - run: npm run test:wallets
       - run: npm run test:chain
       - run: npm run test:invoices
+      - run: npm run test:business
       - run: npm run test:bills
       - run: npm run test:rentals
       - run: npm run test:shopping

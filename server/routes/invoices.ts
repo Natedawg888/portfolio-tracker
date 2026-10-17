@@ -2,9 +2,10 @@
  * Invoices for the signed-in user (KAN-71).
  *
  *   GET/PUT  /business                 business details printed on invoices
- *   GET/POST /clients, PUT/DELETE /clients/:id
+ *   GET/POST /clients (?businessId=), PUT/DELETE /clients/:id
+ *   (every client and invoice belongs to a business, KAN-84; none given → the default one)
  *   GET      /export.csv               all invoices for an accountant
- *   GET/POST /                         list (filters: status, clientId, from, to) / create draft
+ *   GET/POST /                         list (filters: status, clientId, businessId, from, to) / create draft
  *   GET/PUT/DELETE /:id                read / edit draft / delete draft or void invoice
  *   GET      /:id/pdf                  download
  *   POST     /:id/mark-sent | /:id/void | /:id/duplicate
@@ -117,7 +118,8 @@ router.put('/business', async (req, res) => {
 
 router.get('/clients', async (req, res) => {
   const db = await getDb();
-  res.json(listClients(db, uid(req)));
+  const businessId = typeof req.query.businessId === 'string' && req.query.businessId.trim() ? req.query.businessId.trim() : null;
+  res.json(listClients(db, uid(req), businessId));
 });
 
 router.post('/clients', async (req, res) => {
@@ -127,7 +129,12 @@ router.post('/clients', async (req, res) => {
     return;
   }
   const db = await getDb();
-  res.status(201).json(createClient(db, uid(req), parsed.value));
+  const created = createClient(db, uid(req), parsed.value);
+  if (!created) {
+    res.status(404).json({ error: 'Business not found' });
+    return;
+  }
+  res.status(201).json(created);
 });
 
 router.put('/clients/:id', async (req, res) => {
@@ -182,7 +189,7 @@ router.get('/', async (req, res) => {
     return;
   }
   res.json({
-    ...listInvoices(db, uid(req), { status, clientId: one(q.clientId), from, to }, aucklandToday()),
+    ...listInvoices(db, uid(req), { status, clientId: one(q.clientId), businessId: one(q.businessId), from, to }, aucklandToday()),
     emailEnabled: emailEnabled(),
   });
 });

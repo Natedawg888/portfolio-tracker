@@ -309,7 +309,7 @@ export function InvoiceDetail() {
     return (
       <section className="panel invoices-page">
         {error ? <p className="auth-error" role="alert">{error}</p> : <p className="muted">Loading…</p>}
-        <Link to="/invoices">Back to invoices</Link>
+        <Link to="/business/invoices">Back to invoices</Link>
       </section>
     );
   }
@@ -328,7 +328,7 @@ export function InvoiceDetail() {
             </h2>
             <InvoiceStatusBadge status={inv.status} />
           </div>
-          <Link to="/invoices" className="btn small">
+          <Link to="/business/invoices" className="btn small">
             All invoices
           </Link>
         </div>
@@ -339,7 +339,7 @@ export function InvoiceDetail() {
         </p>
         <div className="row gap" style={{ flexWrap: 'wrap' }}>
           {isDraft ? (
-            <Link className="btn small" to={`/invoices/${inv.id}/edit`}>
+            <Link className="btn small" to={`/business/invoices/${inv.id}/edit`}>
               Edit
             </Link>
           ) : null}
@@ -410,7 +410,7 @@ export function InvoiceDetail() {
             onClick={() =>
               void act(async () => {
                 const copy = await api.invoices.action(inv.id, 'duplicate');
-                navigate(`/invoices/${copy.id}/edit`);
+                navigate(`/business/invoices/${copy.id}/edit`);
               }, null)
             }
           >
@@ -434,7 +434,7 @@ export function InvoiceDetail() {
               onClick={() =>
                 void act(async () => {
                   await api.invoices.remove(inv.id);
-                  navigate('/invoices');
+                  navigate('/business/invoices');
                 }, null, `Delete ${isDraft ? 'draft' : 'void invoice'} ${inv.number}? This can’t be undone.`)
               }
             >

@@ -105,84 +105,45 @@ function migrateNullableTransactionAccount(database: Database) {
   }
 }
 
-/** Existing databases were created with cost_basis_nzd NOT NULL DEFAULT 0.
- * Rebuild that table once so a blank cost basis can be stored as SQL NULL. */
+/**
+ * Existing databases were created with cost_basis_nzd NOT NULL DEFAULT 0. Rebuild that table once
+ * so a blank cost basis can be stored as SQL NULL. Same approach as the transactions rebuild above:
+ * the live CREATE statement keeps every migrated column (user_id, card, art, mining…), every row is
+ * copied, and the indexes are recreated. A fixed column list here used to drop later columns.
+ */
 function migrateNullableHoldingCost(database: Database) {
-  const stmt = database.prepare('PRAGMA table_info(holdings)');
-  let costIsNotNull = false;
-  while (stmt.step()) {
-    const row = stmt.getAsObject() as { name?: string; notnull?: number };
-    if (row.name === 'cost_basis_nzd') costIsNotNull = Number(row.notnull) === 1;
+  const cols = database.exec('PRAGMA table_info(holdings)')[0];
+  if (!cols) return;
+  const nameIdx = cols.columns.indexOf('name');
+  const notNullIdx = cols.columns.indexOf('notnull');
+  const costCol = cols.values.find((r) => r[nameIdx] === 'cost_basis_nzd');
+  if (!costCol || Number(costCol[notNullIdx]) !== 1) return;
+
+  const createSql = String(
+    database.exec(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'holdings'`)[0].values[0][0],
+  );
+  const relaxed = createSql
+    .replace(/CREATE TABLE\s+(IF NOT EXISTS\s+)?"?holdings"?/i, 'CREATE TABLE holdings_nullable_cost')
+    .replace(/(cost_basis_nzd\s+REAL)\s+NOT NULL(\s+DEFAULT\s+0)?/i, '$1');
+  if (relaxed === createSql || /cost_basis_nzd\s+REAL\s+NOT NULL/i.test(relaxed)) {
+    throw new Error('holdings migration: could not relax cost_basis_nzd NOT NULL');
   }
-  stmt.free();
-  if (!costIsNotNull) return;
+  const indexSql = (database.exec(
+    `SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'holdings' AND sql IS NOT NULL`,
+  )[0]?.values ?? []).map((r) => String(r[0]));
 
-  database.run(`
-    CREATE TABLE holdings_nullable (
-      id              TEXT PRIMARY KEY,
-      asset_class     TEXT NOT NULL,
-      name            TEXT NOT NULL,
-      notes           TEXT,
-      cost_basis_nzd  REAL,
-      acquired_at     TEXT,
-      created_at      TEXT NOT NULL,
-      updated_at      TEXT NOT NULL,
-      symbol          TEXT,
-      shares          REAL,
-      exchange        TEXT,
-      asset           TEXT,
-      amount          REAL,
-      miner_name          TEXT,
-      miner_external_id   TEXT,
-      hashrate_ths        REAL,
-      energy_efficiency_wth REAL,
-      rarity              TEXT,
-      level               INTEGER,
-      estimated_value_nzd REAL,
-      estimated_value_at  TEXT,
-      estimated_value_source TEXT,
-      ownership_pct       REAL,
-      purchase_price_nzd  REAL,
-      purchase_date       TEXT,
-      last_valuation_nzd  REAL,
-      last_valuation_at   TEXT,
-      artwork_title       TEXT,
-      artist              TEXT,
-      metal           TEXT,
-      metal_amount    REAL,
-      metal_unit      TEXT,
-      stone_type      TEXT,
-      carat           REAL,
-      clarity         TEXT,
-      cut             TEXT,
-      colour          TEXT,
-      length_mm       REAL,
-      width_mm        REAL,
-      depth_mm        REAL,
-      valuation_nzd   REAL,
-      valuation_source TEXT,
-      valuation_notes TEXT,
-      source          TEXT,
-      external_id     TEXT
-    )
-  `);
-  database.run(`
-    INSERT INTO holdings_nullable
-    SELECT id, asset_class, name, notes, cost_basis_nzd, acquired_at, created_at, updated_at,
-      symbol, shares, exchange, asset, amount,
-      miner_name, miner_external_id, hashrate_ths, energy_efficiency_wth, rarity, level,
-      estimated_value_nzd, estimated_value_at, estimated_value_source,
-      ownership_pct, purchase_price_nzd, purchase_date, last_valuation_nzd, last_valuation_at,
-      artwork_title, artist, metal, metal_amount, metal_unit,
-      stone_type, carat, clarity, cut, colour, length_mm, width_mm, depth_mm,
-      valuation_nzd, valuation_source, valuation_notes, source, external_id
-    FROM holdings
-  `);
-  database.run('DROP TABLE holdings');
-  database.run('ALTER TABLE holdings_nullable RENAME TO holdings');
-  database.run('CREATE INDEX IF NOT EXISTS idx_holdings_class ON holdings(asset_class)');
-  // idx_holdings_user_external created after user_id migration below
-
+  database.run('BEGIN');
+  try {
+    database.run(relaxed);
+    database.run('INSERT INTO holdings_nullable_cost SELECT * FROM holdings');
+    database.run('DROP TABLE holdings');
+    database.run('ALTER TABLE holdings_nullable_cost RENAME TO holdings');
+    for (const sql of indexSql) database.run(sql);
+    database.run('COMMIT');
+  } catch (err) {
+    database.run('ROLLBACK');
+    throw err;
+  }
 }
 
 function tableColumns(database: Database, table: string): Set<string> {
@@ -209,6 +170,77 @@ function migrateMiningTag(database: Database) {
     `UPDATE holdings SET mining_type = 'cloud', mining_provider = COALESCE(mining_provider, 'gomining')
      WHERE asset_class = 'gomining_miner' AND mining_type IS NULL`,
   );
+}
+
+/**
+ * Business page (KAN-84). Adds business_id to invoices, clients, transactions and income, and the
+ * client fields the Clients page uses. Anyone with invoice details, invoices or clients gets a
+ * default business made from their invoice details (Settings → Business), and their existing
+ * invoices and clients are attached to it, so nothing is lost or left without a business.
+ */
+export function migrateBusinesses(database: Database) {
+  // Commodities (KAN-81) can be produce a business holds, like honey or wool.
+  for (const table of ['invoices', 'invoice_clients', 'transactions', 'income_records', 'commodities']) {
+    const cols = tableColumns(database, table);
+    if (cols.size > 0 && !cols.has('business_id')) database.run(`ALTER TABLE ${table} ADD COLUMN business_id TEXT`);
+  }
+  const clientCols = tableColumns(database, 'invoice_clients');
+  for (const [col, type] of [
+    ['contact_person', "TEXT NOT NULL DEFAULT ''"],
+    ['phone', "TEXT NOT NULL DEFAULT ''"],
+    ['notes', "TEXT NOT NULL DEFAULT ''"],
+    ['status', "TEXT NOT NULL DEFAULT 'active'"],
+  ] as const) {
+    if (clientCols.size > 0 && !clientCols.has(col)) database.run(`ALTER TABLE invoice_clients ADD COLUMN ${col} ${type}`);
+  }
+  database.run(`CREATE INDEX IF NOT EXISTS idx_transactions_user_business ON transactions(user_id, business_id) WHERE business_id IS NOT NULL`);
+  database.run(`CREATE INDEX IF NOT EXISTS idx_income_records_user_business ON income_records(user_id, business_id) WHERE business_id IS NOT NULL`);
+
+  const read = (sql: string, params: unknown[] = []) => {
+    const stmt = database.prepare(sql);
+    stmt.bind(params as never[]);
+    const rows: Record<string, unknown>[] = [];
+    while (stmt.step()) rows.push(stmt.getAsObject());
+    stmt.free();
+    return rows;
+  };
+  const owners = read(
+    `SELECT user_id FROM business_profiles WHERE user_id IS NOT NULL
+     UNION SELECT user_id FROM invoices WHERE user_id IS NOT NULL
+     UNION SELECT user_id FROM invoice_clients WHERE user_id IS NOT NULL`,
+  ).map((r) => String(r.user_id)).filter(Boolean);
+  for (const userId of owners) {
+    let def = read(`SELECT id FROM businesses WHERE user_id = ? ORDER BY is_default DESC, created_at LIMIT 1`, [userId])[0]?.id as string | undefined;
+    if (!def) {
+      const p = read(`SELECT * FROM business_profiles WHERE user_id = ?`, [userId])[0];
+      const u = read(`SELECT * FROM users WHERE id = ?`, [userId])[0];
+      const accountName =
+        String(u?.display_name ?? '').trim() || [u?.first_name, u?.last_name].filter((x) => x && String(x).trim()).join(' ');
+      const now = new Date().toISOString();
+      def = newId('biz');
+      database.run(
+        `INSERT INTO businesses (id, user_id, name, type, nzbn, gst_registered, gst_number, email, address, phone, bank_account,
+           invoice_prefix, is_default, created_at, updated_at)
+         VALUES (?,?,?, 'sole_trader', ?,?,?,?,?,?,?,?, 1, ?, ?)`,
+        [
+          def, userId, String(p?.business_name ?? '').trim() || accountName,
+          String(p?.nzbn ?? ''), Number(p?.gst_registered ?? 0) === 1 ? 1 : 0, String(p?.gst_number ?? ''),
+          String(p?.email ?? u?.email ?? ''), String(p?.address ?? ''), String(p?.phone ?? ''), String(p?.bank_account ?? ''),
+          String(p?.invoice_prefix ?? '') || 'INV-', now, now,
+        ],
+      );
+    }
+    database.run(`UPDATE invoices SET business_id = ? WHERE user_id = ? AND business_id IS NULL`, [def, userId]);
+    database.run(`UPDATE invoice_clients SET business_id = ? WHERE user_id = ? AND business_id IS NULL`, [def, userId]);
+    // Invoice payments recorded in Income belong to the invoice's business.
+    database.run(
+      `UPDATE income_records SET business_id = (
+         SELECT i.business_id FROM invoice_payments p JOIN invoices i ON i.id = p.invoice_id AND i.user_id = p.user_id
+         WHERE p.id = income_records.invoice_payment_id)
+       WHERE user_id = ? AND invoice_payment_id IS NOT NULL AND business_id IS NULL`,
+      [userId],
+    );
+  }
 }
 
 /** Runtime migration for existing sql.js DBs (CREATE TABLE IF NOT EXISTS won't add columns). */
@@ -553,6 +585,12 @@ function migrateSchema(database: Database) {
   if (rentalCols.size > 0 && !rentalCols.has('txn_owned')) {
     database.run('ALTER TABLE rental_entries ADD COLUMN txn_owned INTEGER NOT NULL DEFAULT 1');
   }
+  // Rooms (KAN-83): rent per room and expenses shared across rooms.
+  if (rentalCols.size > 0 && !rentalCols.has('room_id')) database.run('ALTER TABLE rental_entries ADD COLUMN room_id TEXT');
+  if (rentalCols.size > 0 && !rentalCols.has('shared')) database.run('ALTER TABLE rental_entries ADD COLUMN shared INTEGER NOT NULL DEFAULT 0');
+  const propertyCols = tableColumns(database, 'rental_properties');
+  if (propertyCols.size > 0 && !propertyCols.has('let_type')) database.run("ALTER TABLE rental_properties ADD COLUMN let_type TEXT NOT NULL DEFAULT 'whole'");
+  if (propertyCols.size > 0 && !propertyCols.has('own_home')) database.run('ALTER TABLE rental_properties ADD COLUMN own_home INTEGER NOT NULL DEFAULT 0');
   // Rental income entries mirrored into income (KAN-66).
   if (incomeCols.size > 0 && !incomeCols.has('rental_entry_id')) {
     database.run('ALTER TABLE income_records ADD COLUMN rental_entry_id TEXT');
@@ -578,6 +616,9 @@ function migrateSchema(database: Database) {
   if (incomeCols.size > 0 && !incomeCols.has('bond_coupon_ref')) {
     database.run('ALTER TABLE income_records ADD COLUMN bond_coupon_ref TEXT');
   }
+
+  // Business page (KAN-84): invoices, clients, transactions and income belong to a business.
+  migrateBusinesses(database);
 
   // Savings goal → savings account link (KAN-20).
   const goalCols = tableColumns(database, 'savings_goals');

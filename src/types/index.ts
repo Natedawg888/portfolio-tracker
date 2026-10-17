@@ -11,6 +11,7 @@ import type { MiningProjection } from '../lib/miningProjection';
 import type { Cadence, PossiblePayment, RecurringKind, RecurringStatus, RecurringSuggestion } from '../lib/recurring';
 import type { WarrantyStatus } from '../lib/warranty';
 import type { RentalCategory, RentalEntryKind } from '../lib/rental';
+import type { RentFrequency } from '../lib/rentalRooms';
 import type { CommodityCategory, CommodityUnit, PriceBasis } from '../lib/commodities';
 import type { MiningType } from '../lib/miningProviders';
 
@@ -942,6 +943,8 @@ export interface NetWorthSummary {
   vehiclesNzd?: number | null;
   vehicleLoansNzd?: number | null;
   vehiclesEquityNzd?: number | null;
+  /** Business assets counted in net worth (KAN-84). */
+  businessAssetsNzd?: number | null;
   /** DeFi positions counted in net worth (KAN-47). */
   defiNzd?: number | null;
   /** Bonds and term deposits (KAN-80), and the term-deposit part. */
@@ -1267,12 +1270,178 @@ export interface BusinessProfile {
 
 export interface InvoiceClient {
   id: string;
+  /** The business this client belongs to (KAN-84). */
+  businessId: string | null;
   name: string;
+  contactPerson: string;
   email: string;
+  phone: string;
   address: string;
   reference: string;
+  notes: string;
+  status: 'active' | 'inactive';
   createdAt: string;
   updatedAt: string;
+}
+
+/** What a client form sends. */
+export interface InvoiceClientWriteBody {
+  businessId?: string | null;
+  name: string;
+  contactPerson?: string;
+  email: string;
+  phone?: string;
+  address: string;
+  reference: string;
+  notes?: string;
+  status?: 'active' | 'inactive';
+}
+
+// ---------------------------------------------------------------- Business (KAN-84)
+
+export type BusinessTypeValue = 'sole_trader' | 'partnership' | 'company' | 'hobby';
+export type BusinessAssetCategory = 'livestock' | 'beehives' | 'equipment' | 'vehicle' | 'stock' | 'other';
+export type BusinessMovementKind = 'purchase' | 'birth' | 'sale' | 'death' | 'loss';
+
+export interface Business {
+  id: string;
+  name: string;
+  type: BusinessTypeValue;
+  industry: string;
+  nzbn: string;
+  gstRegistered: boolean;
+  gstNumber: string;
+  /** Printed on invoices and used as their Reply-To. */
+  email: string;
+  address: string;
+  phone: string;
+  bankAccount: string;
+  invoicePrefix: string;
+  logoUrl: string | null;
+  clientsEnabled: boolean;
+  /** Its assets count in net worth, History and Projections. */
+  countInNetWorth: boolean;
+  /** Existing invoices and clients were attached to this one; it is used when none is picked. */
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type BusinessWriteBody = Omit<Business, 'id' | 'logoUrl' | 'isDefault' | 'createdAt' | 'updatedAt'>;
+
+export interface BusinessTotals {
+  incomeNzd: number;
+  expensesNzd: number;
+  netNzd: number;
+  /** User-entered asset values; null when no asset has a value yet. */
+  assetsNzd: number | null;
+  /** Educational GST-collected estimate for GST-registered businesses (3/23 of income); null otherwise. */
+  gstCollectedEstimateNzd: number | null;
+  outstandingNzd: number;
+}
+
+export interface BusinessCard extends Business {
+  totals: BusinessTotals;
+  assetCount: number;
+  clientCount: number;
+  invoiceCount: number;
+}
+
+export interface BusinessListResponse {
+  today: string;
+  /** Tax year named by the year it ends in (2027 = 1 Apr 2026 – 31 Mar 2027). */
+  taxYear: number;
+  taxYears: number[];
+  businesses: BusinessCard[];
+}
+
+export interface BusinessAssetMovement {
+  id: string;
+  assetId: string;
+  date: string;
+  kind: BusinessMovementKind;
+  quantity: number;
+  amountNzd: number | null;
+  notes: string;
+  createdAt: string;
+}
+
+export interface BusinessAsset {
+  id: string;
+  businessId: string;
+  category: BusinessAssetCategory;
+  name: string;
+  quantity: number;
+  unit: string;
+  costNzd: number | null;
+  valueMode: 'total' | 'per_unit';
+  /** The total, or the value per unit when valueMode is per_unit. */
+  valueNzd: number | null;
+  valuedOn: string | null;
+  /** valueNzd applied to the quantity; null when no value is entered. */
+  currentValueNzd: number | null;
+  animalType: string;
+  tag: string;
+  location: string;
+  status: 'active' | 'dead' | 'sold';
+  notes: string;
+  movements: BusinessAssetMovement[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BusinessAssetWriteBody {
+  category: BusinessAssetCategory;
+  name: string;
+  quantity: number;
+  unit?: string;
+  costNzd?: number | null;
+  valueMode?: 'total' | 'per_unit';
+  valueNzd?: number | null;
+  valuedOn?: string | null;
+  animalType?: string;
+  tag?: string;
+  location?: string;
+  status?: 'active' | 'dead' | 'sold';
+  notes?: string;
+}
+
+/** A transaction or income row tagged to a business (or one that could be). */
+export interface BusinessMoneyItem {
+  kind: 'transaction' | 'income';
+  id: string;
+  date: string;
+  description: string;
+  /** Money in is positive, money out negative. */
+  amountNzd: number;
+  businessId: string | null;
+  /** Counted elsewhere already (an invoice payment, or a deposit an income row is linked to), so not added again. */
+  countedVia: 'invoice' | 'income' | null;
+}
+
+export interface BusinessDetail {
+  today: string;
+  taxYear: number;
+  taxYears: number[];
+  business: Business;
+  totals: BusinessTotals;
+  assets: BusinessAsset[];
+  clients: (InvoiceClient & { billedNzd: number; outstandingNzd: number })[];
+  invoices: InvoiceSummary[];
+  /** Tagged items in the tax year, newest first. */
+  money: BusinessMoneyItem[];
+  /** Commodities linked as produce held (valued and counted on Portfolio → Commodities). */
+  produce: { id: string; name: string; quantity: number; unit: string; valueNzd: number | null }[];
+}
+
+export interface BusinessClientView {
+  client: InvoiceClient;
+  businessName: string;
+  invoices: InvoiceSummary[];
+  /** Sent invoices (void ones left out). */
+  billedNzd: number;
+  outstandingNzd: number;
+  lastPayment: { date: string; amountNzd: number; invoiceNumber: string } | null;
 }
 
 export interface InvoiceLine {
@@ -1312,6 +1481,8 @@ export interface InvoiceSendLog {
 /** One row of the invoice list. */
 export interface InvoiceSummary {
   id: string;
+  businessId: string | null;
+  businessName: string;
   number: string;
   status: InvoiceStatus;
   storedStatus: InvoiceStoredStatus;
@@ -1484,12 +1655,18 @@ export interface WarrantyListResponse {
   totals: { active: number; expiring: number; expired: number };
 }
 
+/** How a rental property is let (KAN-83): the whole place, or room by room. */
+export type RentalLetType = 'whole' | 'rooms';
+
 /** A rental property (KAN-66). */
 export interface RentalProperty {
   id: string;
   name: string;
   address: string;
   notes: string;
+  letType: RentalLetType;
+  /** The user lives here and lets rooms (boarders / flatmates). Only with letType 'rooms'. */
+  ownHome: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -1503,6 +1680,10 @@ export interface RentalEntry {
   category: RentalCategory;
   amountNzd: number;
   description: string;
+  /** Rent received for this room (KAN-83). Income on a property let by room only. */
+  roomId: string | null;
+  /** Expense split across the property's rooms by share; false = an owner cost (KAN-83). */
+  shared: boolean;
   /** User asked for this entry to count in Budget / Income. */
   addToMoney: boolean;
   /**
@@ -1525,6 +1706,40 @@ export interface RentalListResponse {
   properties: RentalProperty[];
   /** Newest first. */
   entries: RentalEntry[];
+  /** Rooms of properties let by room, in the order added. */
+  rooms: RentalRoom[];
+  /** Newest start first. */
+  tenancies: RentalTenancy[];
+}
+
+/** A room let in a property (KAN-83). */
+export interface RentalRoom {
+  id: string;
+  propertyId: string;
+  name: string;
+  /** e.g. ensuite, furnished */
+  note: string;
+  /** Weight for splitting shared expenses across the property's rooms. */
+  share: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Someone renting a room (KAN-83). Display name only; no contact details. */
+export interface RentalTenancy {
+  id: string;
+  roomId: string;
+  tenantLabel: string;
+  rentAmount: number;
+  rentFrequency: RentFrequency;
+  billsIncluded: boolean;
+  startDate: string;
+  endDate: string | null;
+  bondAmount: number;
+  /** Bond lodged with Tenancy Services. */
+  bondLodged: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** Shopping lists (KAN-74). */

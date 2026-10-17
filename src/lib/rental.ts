@@ -19,6 +19,8 @@ export const RENTAL_CATEGORIES = {
     { value: 'repairs', label: 'Repairs & maintenance' },
     { value: 'management', label: 'Property management' },
     { value: 'body_corporate', label: 'Body corporate' },
+    { value: 'utilities', label: 'Power, gas & water' },
+    { value: 'internet', label: 'Internet & phone' },
     { value: 'other_expense', label: 'Other expense' },
   ],
 } as const satisfies Record<RentalEntryKind, readonly { value: string; label: string }[]>;

@@ -6,7 +6,7 @@
 import type { Database } from 'sql.js';
 import type { Response } from 'express';
 import { getDb, queryAll, queryOne, run } from '../db/index.ts';
-import { deleteCharityReceipt, deletePayslipFile, deletePropertyPhoto, deleteWarrantyReceipt } from './uploads.ts';
+import { deleteBusinessLogo, deleteCharityReceipt, deletePayslipFile, deletePropertyPhoto, deleteWarrantyReceipt } from './uploads.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { priceContributor } from '../shopping/prices.ts';
 import { removeUserFromHouseholds } from '../households/store.ts';
@@ -30,6 +30,9 @@ export const SCOPED_TABLES = [
   'wallets',
   'pay_sources',
   'business_profiles',
+  'businesses',
+  'business_assets',
+  'business_asset_movements',
   'invoice_clients',
   'invoices',
   'invoice_lines',
@@ -40,6 +43,8 @@ export const SCOPED_TABLES = [
   'warranties',
   'rental_properties',
   'rental_entries',
+  'rental_rooms',
+  'rental_tenancies',
   'shopping_lists',
   'shopping_items',
   'shopping_prefs',
@@ -151,6 +156,11 @@ export function deleteScopedDataForUser(
     deleteWarrantyReceipt(row.p);
   }
 
+  // Business logos (KAN-84).
+  for (const row of queryAll<{ p: string | null }>(db, `SELECT logo_path AS p FROM businesses WHERE user_id = ? AND logo_path IS NOT NULL`, [userId])) {
+    deleteBusinessLogo(row.p);
+  }
+
   // Uploaded payslips (KAN-78).
   for (const row of queryAll<{ p: string | null }>(db, `SELECT file_path AS p FROM payslips WHERE user_id = ? AND file_path IS NOT NULL`, [userId])) {
     deletePayslipFile(row.p);
@@ -180,6 +190,8 @@ export function deleteScopedDataForUser(
     'shopping_items',
     'shopping_lists',
     'shopping_prefs',
+    'rental_tenancies',
+    'rental_rooms',
     'rental_entries',
     'rental_properties',
     'warranties',
@@ -190,6 +202,9 @@ export function deleteScopedDataForUser(
     'invoice_lines',
     'invoices',
     'invoice_clients',
+    'business_asset_movements',
+    'business_assets',
+    'businesses',
     'business_profiles',
     'income_records',
     'income_plans',
