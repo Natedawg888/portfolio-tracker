@@ -296,10 +296,50 @@ try {
   assert(withStaff.json.employees.length === 2 && withStaff.json.employees[0].name === 'Sam Rua', 'active employees listed first');
   const staffCard = (await call('GET', '/api/business', A)).json.businesses.find((x: Json) => x.id === bizId);
   assert(staffCard.employeeCount === 1, 'card counts active employees');
+  // Contracts: a PDF, Word document or photo per employee, served only to the owner.
+  const uploadsDir = path.join(path.dirname(dbPath), 'uploads');
+  const fileOf = (url: string) => path.join(uploadsDir, url.replace('/api/uploads/', ''));
+  const pdf = `data:application/pdf;base64,${Buffer.from(`%PDF-1.4 SECRET_CONTRACT ${'x'.repeat(60)}`).toString('base64')}`;
+  const docx = `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${Buffer.concat([Buffer.from('504b0304', 'hex'), Buffer.alloc(60, 7)]).toString('base64')}`;
+  const contractUrl = `/api/business/employees/${emp.json.id}/contract`;
+  assert(emp.json.contract === null, 'no contract to start with');
+  assert((await call('POST', contractUrl, A, {})).status === 400, 'a file is required');
+  const fakePdf = `data:application/pdf;base64,${Buffer.from(`<html>${'x'.repeat(60)}</html>`).toString('base64')}`;
+  assert((await call('POST', contractUrl, A, { fileBase64: fakePdf, fileName: 'x.pdf' })).status === 400, 'a "PDF" that isn’t one is refused');
+  const fakeDocx = `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${Buffer.alloc(64, 1).toString('base64')}`;
+  assert((await call('POST', contractUrl, A, { fileBase64: fakeDocx, fileName: 'x.docx' })).status === 400, 'a "Word file" that isn’t one is refused');
+  const html = `data:text/html;base64,${Buffer.from(`<script>${'x'.repeat(60)}</script>`).toString('base64')}`;
+  assert((await call('POST', contractUrl, A, { fileBase64: html, fileName: 'x.html' })).status === 400, 'other file types are refused');
+  assert((await call('POST', contractUrl, B, { fileBase64: pdf, fileName: 'x.pdf' })).status === 404, 'B can’t add a contract to A’s employee');
+  const signed = await call('POST', contractUrl, A, { fileBase64: pdf, fileName: 'C:\\Users\\me\\Aroha contract.pdf' });
+  assert(signed.status === 200 && signed.json.contract?.name === 'Aroha contract.pdf', 'contract saved under its own name, no folders');
+  assert(String(signed.json.contract.url).startsWith('/api/uploads/employee-contracts/') && signed.json.contract.url.endsWith('.pdf'), 'stored as a private upload');
+  const own = await fetch(`${base}${signed.json.contract.url}`, { headers: { Cookie: A } });
+  assert(own.status === 200 && (await own.text()).includes('SECRET_CONTRACT'), 'owner opens the contract');
+  assert((await fetch(`${base}${signed.json.contract.url}`, { headers: { Cookie: B } })).status === 404, 'another user can’t open it');
+  assert((await fetch(`${base}${signed.json.contract.url}`)).status === 401, 'signed out can’t open it');
+  const listed = (await call('GET', `/api/business/${bizId}`, A)).json.employees.find((x: Json) => x.id === emp.json.id);
+  assert(listed.contract?.name === 'Aroha contract.pdf', 'contract shows in the employee list');
+  const edited = await call('PUT', `/api/business/employees/${emp.json.id}`, A, { ...empBody, status: 'inactive', payRateNzd: 30, notes: 'edited' });
+  assert(edited.json.contract?.url === signed.json.contract.url, 'editing the employee keeps the contract');
+  const replaced = await call('POST', contractUrl, A, { fileBase64: docx, fileName: 'Aroha contract v2.docx' });
+  assert(replaced.status === 200 && replaced.json.contract.url.endsWith('.docx') && replaced.json.contract.name === 'Aroha contract v2.docx', 'Word contract replaces it');
+  assert(!fs.existsSync(fileOf(signed.json.contract.url)) && fs.existsSync(fileOf(replaced.json.contract.url)), 'the old file is removed');
+  assert((await call('DELETE', contractUrl, B)).status === 404, 'B can’t remove A’s contract');
+  const cleared = await call('DELETE', contractUrl, A);
+  assert(cleared.status === 200 && cleared.json.contract === null && !fs.existsSync(fileOf(replaced.json.contract.url)), 'contract removed, file gone');
+  const kept = (await call('POST', contractUrl, A, { fileBase64: pdf, fileName: 'kept.pdf' })).json.contract;
+
   const tmpBiz = await call('POST', '/api/business', A, { name: 'Temp', type: 'hobby' });
-  await call('POST', `/api/business/${tmpBiz.json.id}/employees`, A, { name: 'Casual' });
+  const casual = await call('POST', `/api/business/${tmpBiz.json.id}/employees`, A, { name: 'Casual' });
+  const casualContract = (await call('POST', `/api/business/employees/${casual.json.id}/contract`, A, { fileBase64: pdf, fileName: 'casual.pdf' })).json.contract;
+  const goner = await call('POST', `/api/business/${tmpBiz.json.id}/employees`, A, { name: 'Goner' });
+  const gonerContract = (await call('POST', `/api/business/employees/${goner.json.id}/contract`, A, { fileBase64: pdf, fileName: 'g.pdf' })).json.contract;
+  await call('DELETE', `/api/business/employees/${goner.json.id}`, A);
+  assert(!fs.existsSync(fileOf(gonerContract.url)), 'deleting an employee removes their contract file');
   await call('DELETE', `/api/business/${tmpBiz.json.id}`, A);
   assert(!queryOne(db, `SELECT id FROM business_employees WHERE business_id = ?`, [tmpBiz.json.id]), 'employees go with their business');
+  assert(!fs.existsSync(fileOf(casualContract.url)), 'and so do their contract files');
 
   // ---------------------------------------------------------------- isolation
   assert((await call('GET', `/api/business/${bizId}`, B)).status === 404, 'B can’t read A’s business');
@@ -367,6 +407,7 @@ try {
   assert(queryAll(db, `SELECT id FROM invoice_clients WHERE user_id = ?`, [userA]).length === 0, 'clients removed');
   assert(queryAll(db, `SELECT id FROM businesses WHERE user_id = ?`, [userB]).length === 1, 'B untouched');
   assert(!fs.existsSync(path.join(path.dirname(dbPath), 'uploads', logoPath.replace('/api/uploads/', ''))), 'logo file removed');
+  assert(fs.existsSync(path.dirname(fileOf(kept.url))) && !fs.existsSync(fileOf(kept.url)), 'contract files removed with the account');
 
   console.log('business tests passed');
 } finally {

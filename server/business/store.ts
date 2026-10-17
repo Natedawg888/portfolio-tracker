@@ -49,7 +49,7 @@ import {
 import { isValidEmail, isYmd } from '../../src/lib/invoiceCalc.ts';
 import { roundMoney } from '../../src/lib/debtModel.ts';
 import { newId, queryAll, queryOne, run } from '../db/index.ts';
-import { deleteBusinessLogo, saveBusinessLogo } from '../lib/uploads.ts';
+import { deleteBusinessLogo, deleteEmployeeContract, saveBusinessLogo } from '../lib/uploads.ts';
 import { getClient, listClients, summary } from '../invoices/store.ts';
 import { listCommodities } from '../commodities/store.ts';
 import { businessRow, presentBusiness, type BusinessRow } from './profile.ts';
@@ -279,6 +279,9 @@ export function deleteBusiness(db: Database, userId: string, id: string): Result
   run(db, `DELETE FROM business_asset_movements WHERE user_id = ? AND asset_id IN (SELECT id FROM business_assets WHERE user_id = ? AND business_id = ?)`, [userId, userId, id]);
   run(db, `DELETE FROM business_assets WHERE user_id = ? AND business_id = ?`, [userId, id]);
   run(db, `DELETE FROM invoice_clients WHERE user_id = ? AND business_id = ?`, [userId, id]);
+  for (const e of queryAll<{ p: string | null }>(db, `SELECT contract_path AS p FROM business_employees WHERE user_id = ? AND business_id = ?`, [userId, id])) {
+    deleteEmployeeContract(e.p);
+  }
   run(db, `DELETE FROM business_employees WHERE user_id = ? AND business_id = ?`, [userId, id]);
   run(db, `UPDATE transactions SET business_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
   run(db, `UPDATE income_records SET business_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);

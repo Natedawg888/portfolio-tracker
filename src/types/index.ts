@@ -1473,11 +1473,13 @@ export interface BusinessEmployee {
   startDate: string | null;
   status: 'active' | 'inactive';
   notes: string;
+  /** Their employment contract, stored privately (opened through /api/uploads). */
+  contract: { url: string; name: string; uploadedAt: string } | null;
   createdAt: string;
   updatedAt: string;
 }
 
-export type BusinessEmployeeWriteBody = Omit<BusinessEmployee, 'id' | 'businessId' | 'nextPayDate' | 'createdAt' | 'updatedAt'>;
+export type BusinessEmployeeWriteBody = Omit<BusinessEmployee, 'id' | 'businessId' | 'nextPayDate' | 'contract' | 'createdAt' | 'updatedAt'>;
 
 export interface BusinessClientView {
   client: InvoiceClient;
