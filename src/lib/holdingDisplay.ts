@@ -14,6 +14,9 @@ export type Holding = {
   /** Last change to the holding (ISO). */
   updatedAt?: string;
   minerName?: string;
+  /** Crypto mining (KAN-85): hardware | cloud, and the cloud provider key or name. */
+  miningType?: 'hardware' | 'cloud';
+  miningProvider?: string | null;
   hashrateThs?: number;
   energyEfficiencyWth?: number | null;
   rarity?: string | null;

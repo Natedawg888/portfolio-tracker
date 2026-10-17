@@ -93,8 +93,35 @@ import { revealAddForm, revealHolding, whenElementAppears } from '../lib/revealE
 import { AddCostButton } from '../components/portfolio/AddCostButton';
 import { ClassHeading } from '../components/portfolio/ClassHeading';
 import { PropertyList, type PropertyDetailsPatch, type PropertyValuePatch } from '../components/portfolio/PropertyList';
+import {
+  CRYPTO_MINING_LABEL,
+  GOMINING,
+  MINING_PROVIDERS,
+  MINING_TYPE_LABEL,
+  MINING_TYPES,
+  isGoMiningMiner,
+  minerProvider,
+  minerType,
+  providerLabel,
+  type MiningType,
+} from '../lib/miningProviders';
+
+/** Edits from a miner card: specs and value, and optionally its type and provider (KAN-85). */
+type MinerPatch = {
+  hashrateThs: number;
+  energyEfficiencyWth: number | null;
+  estimatedValueNzd?: number | null;
+  miningType?: MiningType;
+  miningProvider?: string | null;
+};
+
+/** Provider select value for a provider that isn't listed (the name is typed). */
+const OTHER_PROVIDER = '__other';
 
 const emptyMiner = {
+  miningType: 'cloud' as MiningType,
+  miningProvider: GOMINING,
+  providerName: '',
   minerName: '',
   hashrateThs: '',
   energyEfficiencyWth: '',
@@ -998,14 +1025,7 @@ function GoMiningMinersSection({
     note: string | null;
     failures: Array<{ minerName: string; ee: string; reason: string }>;
   } | null;
-  onUpdateMiner?: (
-    id: string,
-    patch: {
-      hashrateThs: number;
-      energyEfficiencyWth: number | null;
-      estimatedValueNzd?: number | null;
-    },
-  ) => Promise<void>;
+  onUpdateMiner?: (id: string, patch: MinerPatch) => Promise<void>;
   settings: GominingUiSettings;
   onSettingsChange: (s: GominingUiSettings) => void;
   onSaveDiscount: () => void;
@@ -1083,7 +1103,8 @@ function GoMiningMinersSection({
   const earningsById = useMemo(() => {
     const network = networkFromUi(settings);
     const map: Record<string, GoMiningEarningsEstimate> = {};
-    for (const h of items) {
+    // The pool reward, maintenance and discount model is GoMining's; other miners show no estimate.
+    for (const h of items.filter((x) => isGoMiningMiner(x))) {
       map[h.id] = estimateMinerEarnings({
         hashrateThs: Number(h.hashrateThs) || 0,
         energyEfficiencyWth: h.energyEfficiencyWth ?? null,
@@ -1142,10 +1163,11 @@ function GoMiningMinersSection({
   const totalEarnings = totals.periods[period];
   const totalsHaveFigures = totals.netBtcPerDay != null || totals.poolRewardBtcPerDay != null;
   const sorted = [...items].sort((a, b) => (Number(b.hashrateThs) || 0) - (Number(a.hashrateThs) || 0));
+  const goMiningCount = items.filter((h) => isGoMiningMiner(h)).length;
 
   return (
     <section className="panel mining-panel" aria-labelledby="mining-title">
-      <ClassHeading id="mining-title" title="GoMining miners" total={total} />
+      <ClassHeading id="mining-title" title={CRYPTO_MINING_LABEL} total={total} />
 
       {items.length > 0 ? (
         <dl className="budget-summary-figures mining-summary">
@@ -1153,7 +1175,7 @@ function GoMiningMinersSection({
             <dt>Est. value</dt>
             <dd className="money">
               {formatNzd(totalEstNzd)}
-              <span className="budget-figure-note">GoMining marketplace or your own figure</span>
+              <span className="budget-figure-note">{goMiningCount ? 'GoMining marketplace or your own figure' : 'your own figure'}</span>
             </dd>
           </div>
           <div>
@@ -1275,7 +1297,12 @@ function GoMiningMinersSection({
               </div>
             </li>
           </ul>
-          {!totals.anyCompleteNet ? (
+          {goMiningCount < items.length ? (
+            <p className="muted small">
+              Earnings are estimated for GoMining miners only, from GoMining’s pool reward and fees. Your own rigs and other providers show your value; no estimate is made for them.
+            </p>
+          ) : null}
+          {goMiningCount > 0 && !totals.anyCompleteNet ? (
             <p className="muted small">
               Some figures are pool earnings before maintenance: set W/TH on each miner and keep BTC FX and pool income
               available for a full net estimate.
@@ -1284,6 +1311,7 @@ function GoMiningMinersSection({
         </>
       )}
 
+      {goMiningCount > 0 || items.length === 0 ? (
       <div className="mining-settings">
         <button
           type="button"
@@ -1292,7 +1320,7 @@ function GoMiningMinersSection({
           aria-controls={settingsOpen ? 'mining-settings-body' : undefined}
           onClick={() => setSettingsOpen((o) => !o)}
         >
-          Discount and network settings <span aria-hidden="true">{settingsOpen ? '▴' : '▾'}</span>
+          GoMining discount and network settings <span aria-hidden="true">{settingsOpen ? '▴' : '▾'}</span>
         </button>
         {settingsOpen ? (
           <div id="mining-settings-body" className="form-grid gomining-params-grid">
@@ -1356,6 +1384,7 @@ function GoMiningMinersSection({
           </div>
         ) : null}
       </div>
+      ) : null}
       {children}
     </section>
   );
@@ -1375,10 +1404,7 @@ function MinerRow({
   period: EarningsPeriod;
   currency: 'NZD' | 'USD' | 'BTC';
   onRefresh?: (id: string) => void;
-  onUpdateMiner?: (
-    id: string,
-    patch: { hashrateThs: number; energyEfficiencyWth: number | null; estimatedValueNzd?: number | null },
-  ) => Promise<void>;
+  onUpdateMiner?: (id: string, patch: MinerPatch) => Promise<void>;
   onSetCost: (id: string, costNzd: number) => Promise<boolean>;
 }) {
   const [editing, setEditing] = useState(false);
@@ -1393,6 +1419,10 @@ function MinerRow({
       <div className="asset-row-hit asset-row-static">
         <span className="asset-row-name">
           <span className="asset-row-title">{displayName(h)}</span>
+          <span className="miner-tags">
+            <span className="payslip-badge">{MINING_TYPE_LABEL[minerType(h)]}</span>
+            {minerProvider(h) ? <span className="payslip-badge payslip-badge-ok">{providerLabel(minerProvider(h))}</span> : null}
+          </span>
           <span className="muted small">
             {formatHashrate(h.hashrateThs)} TH/s
             {h.energyEfficiencyWth != null ? ` · ${formatAmount(h.energyEfficiencyWth, 2)} W/TH` : ' · W/TH not set'}
@@ -1422,10 +1452,10 @@ function MinerRow({
                     setEditing(true);
                   }}
                 >
-                  Edit TH / W/TH / value
+                  Edit miner
                 </button>
               ) : null}
-              {onRefresh ? (
+              {onRefresh && isGoMiningMiner(h) ? (
                 <button
                   type="button"
                   className="btn small"
@@ -1454,15 +1484,17 @@ function MinerEditForm({
   onClose,
 }: {
   holding: Holding;
-  onSave: (
-    id: string,
-    patch: { hashrateThs: number; energyEfficiencyWth: number | null; estimatedValueNzd?: number | null },
-  ) => Promise<void>;
+  onSave: (id: string, patch: MinerPatch) => Promise<void>;
   onClose: () => void;
 }) {
   const [th, setTh] = useState(String(h.hashrateThs ?? ''));
   const [ee, setEe] = useState(h.energyEfficiencyWth != null ? String(h.energyEfficiencyWth) : '');
   const [est, setEst] = useState(h.estimatedValueNzd != null ? String(h.estimatedValueNzd) : '');
+  const [type, setType] = useState<MiningType>(minerType(h));
+  const initialProvider = minerProvider(h);
+  const listed = MINING_PROVIDERS.some((p) => p.key === initialProvider);
+  const [provider, setProvider] = useState(initialProvider == null ? GOMINING : listed ? initialProvider : OTHER_PROVIDER);
+  const [providerName, setProviderName] = useState(initialProvider != null && !listed ? initialProvider : '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1474,10 +1506,17 @@ function MinerEditForm({
     if (eeN != null && (!Number.isFinite(eeN) || eeN < 0)) return setError('W/TH must be 0 or more, or blank.');
     const estN = est.trim() === '' ? null : Number(est);
     if (estN != null && (!Number.isFinite(estN) || estN < 0)) return setError('Value must be 0 or more, or blank.');
+    if (type === 'cloud' && provider === OTHER_PROVIDER && !providerName.trim()) return setError('Enter the cloud mining provider.');
     setBusy(true);
     setError(null);
     try {
-      await onSave(h.id, { hashrateThs: thN, energyEfficiencyWth: eeN, estimatedValueNzd: estN });
+      await onSave(h.id, {
+        hashrateThs: thN,
+        energyEfficiencyWth: eeN,
+        estimatedValueNzd: estN,
+        miningType: type,
+        miningProvider: type === 'hardware' ? null : provider === OTHER_PROVIDER ? providerName.trim() : provider,
+      });
       onClose();
     } catch (err) {
       setError((err as Error).message);
@@ -1503,8 +1542,32 @@ function MinerEditForm({
         </label>
         <label>
           Value NZD{' '}
-          <input type="number" step="any" min={0} value={est} onChange={(e) => setEst(e.target.value)} disabled={busy} placeholder="blank = marketplace" />
+          <input type="number" step="any" min={0} value={est} onChange={(e) => setEst(e.target.value)} disabled={busy} placeholder={isGoMiningMiner({ miningType: type, miningProvider: provider }) ? 'blank = marketplace' : 'blank = cost'} />
         </label>
+        <label>
+          Type{' '}
+          <select value={type} onChange={(e) => setType(e.target.value as MiningType)} disabled={busy}>
+            {MINING_TYPES.map((t) => (
+              <option key={t} value={t}>{MINING_TYPE_LABEL[t]}</option>
+            ))}
+          </select>
+        </label>
+        {type === 'cloud' ? (
+          <label>
+            Provider{' '}
+            <select value={provider} onChange={(e) => setProvider(e.target.value)} disabled={busy}>
+              {MINING_PROVIDERS.map((p) => (
+                <option key={p.key} value={p.key}>{p.label}</option>
+              ))}
+              <option value={OTHER_PROVIDER}>Other…</option>
+            </select>
+          </label>
+        ) : null}
+        {type === 'cloud' && provider === OTHER_PROVIDER ? (
+          <label>
+            Provider name <input value={providerName} maxLength={60} onChange={(e) => setProviderName(e.target.value)} disabled={busy} />
+          </label>
+        ) : null}
         <button type="submit" className="btn small primary" disabled={busy}>
           {busy ? 'Saving…' : 'Save'}
         </button>
@@ -1566,7 +1629,7 @@ const OVERVIEW_ROW_META: Record<string, { description: string; tab?: PortfolioTa
   cash: { description: 'Bank balances synced from Akahu and accounts you added', href: '/' },
   stocks: { description: 'Sharesies and Hatch via Akahu, plus manual tickers', tab: 'stocks' },
   crypto: { description: 'Wallets and holdings, valued at market quotes', tab: 'crypto' },
-  gomining: { description: 'GoMining miners at marketplace or your own value', tab: 'mining' },
+  gomining: { description: 'Your own rigs and cloud mining, at marketplace or your own value', tab: 'mining' },
   metals: { description: 'Bullion valued at the live spot price', tab: 'metals' },
   collectables: { description: 'Trading cards and other collectables', tab: 'collectables' },
   forex: { description: 'Foreign cash held outside your bank', tab: 'forex' },
@@ -2090,19 +2153,16 @@ export function Portfolio() {
     }
   }
 
-  async function updateMinerSpecs(
-    id: string,
-    patch: {
-      hashrateThs: number;
-      energyEfficiencyWth: number | null;
-      estimatedValueNzd?: number | null;
-    },
-  ) {
+  async function updateMinerSpecs(id: string, patch: MinerPatch) {
     setMsg(null);
     const body: Record<string, unknown> = {
       hashrateThs: patch.hashrateThs,
       energyEfficiencyWth: patch.energyEfficiencyWth,
     };
+    if (patch.miningType !== undefined) {
+      body.miningType = patch.miningType;
+      body.miningProvider = patch.miningProvider ?? null;
+    }
     if (patch.estimatedValueNzd !== undefined) {
       body.estimatedValueNzd = patch.estimatedValueNzd;
       body.estimatedValueSource = patch.estimatedValueNzd != null ? 'manual' : null;
@@ -2120,16 +2180,24 @@ export function Portfolio() {
     e.preventDefault();
     setMsg(null);
     try {
+      const cloudProvider = form.miningProvider === OTHER_PROVIDER ? form.providerName.trim() : form.miningProvider;
+      if (form.miningType === 'cloud' && !cloudProvider) {
+        setMsg('Enter the cloud mining provider.');
+        return;
+      }
+      const goMining = form.miningType === 'cloud' && cloudProvider === GOMINING;
       await api.holdings.create({
         assetClass: 'gomining_miner',
-        name: form.minerName || 'GoMining miner',
-        minerName: form.minerName || 'GoMining miner',
+        miningType: form.miningType,
+        miningProvider: form.miningType === 'cloud' ? cloudProvider : null,
+        name: form.minerName || 'Miner',
+        minerName: form.minerName || 'Miner',
         hashrateThs: Number(form.hashrateThs) || 0,
         energyEfficiencyWth: form.energyEfficiencyWth
           ? Number(form.energyEfficiencyWth)
           : null,
-        rarity: form.rarity || null,
-        level: form.level ? Number(form.level) : null,
+        rarity: goMining ? form.rarity || null : null,
+        level: goMining && form.level ? Number(form.level) : null,
         costBasisNzd: parseOptionalNumber(form.costBasisNzd),
         acquiredAt: form.acquiredAt || null,
         estimatedValueNzd: form.estimatedValueNzd ? Number(form.estimatedValueNzd) : null,
@@ -2613,7 +2681,7 @@ export function Portfolio() {
         { key: 'cash', name: 'Cash', value: summary.cashNzd, colour: '#3d9a6a' },
         { key: 'stocks', name: 'Stocks', value: summary.stocksNzd ?? 0, colour: '#4a8fd4' },
         { key: 'crypto', name: 'Crypto', value: summary.cryptoNzd ?? 0, colour: '#9a6ad4' },
-        { key: 'gomining', name: 'GoMining', value: summary.gominingMinersNzd ?? 0, colour: '#c47a2c' },
+        { key: 'gomining', name: 'Crypto mining', value: summary.gominingMinersNzd ?? 0, colour: '#c47a2c' },
         { key: 'art', name: 'Art', value: summary.artNzd ?? 0, colour: '#d45a7a' },
         { key: 'metals', name: 'Metals', value: summary.metalsNzd ?? 0, colour: '#d4b84a' },
         { key: 'stones', name: 'Stones', value: summary.stonesNzd ?? 0, colour: '#a07050' },
@@ -2924,7 +2992,33 @@ export function Portfolio() {
       >
         <InlineAddDetails label="Add miner" id={ADD_DETAILS_ID.miner}>
           <form className="form-grid" onSubmit={onAddMiner}>
-            <h4>Add GoMining miner</h4>
+            <h4>Add a miner</h4>
+            <label>
+              Type
+              <select value={form.miningType} onChange={(e) => setForm({ ...form, miningType: e.target.value as MiningType })}>
+                {MINING_TYPES.map((t) => (
+                  <option key={t} value={t}>{MINING_TYPE_LABEL[t]}</option>
+                ))}
+              </select>
+              <span className="muted small">{form.miningType === 'hardware' ? 'A rig you own and run.' : 'A hosted or cloud mining plan.'}</span>
+            </label>
+            {form.miningType === 'cloud' ? (
+              <label>
+                Provider
+                <select value={form.miningProvider} onChange={(e) => setForm({ ...form, miningProvider: e.target.value })}>
+                  {MINING_PROVIDERS.map((p) => (
+                    <option key={p.key} value={p.key}>{p.label}</option>
+                  ))}
+                  <option value={OTHER_PROVIDER}>Other…</option>
+                </select>
+              </label>
+            ) : null}
+            {form.miningType === 'cloud' && form.miningProvider === OTHER_PROVIDER ? (
+              <label>
+                Provider name
+                <input value={form.providerName} maxLength={60} onChange={(e) => setForm({ ...form, providerName: e.target.value })} required />
+              </label>
+            ) : null}
             <label>
               Name / ID
               <input
@@ -2953,9 +3047,11 @@ export function Portfolio() {
                 onChange={(e) =>
                   setForm({ ...form, energyEfficiencyWth: e.target.value })
                 }
-                placeholder="e.g. 15 — from GoMining app"
+                placeholder={form.miningType === 'cloud' && form.miningProvider === GOMINING ? 'e.g. 15 — from the GoMining app' : 'e.g. 21.5 — from the rig’s spec'}
               />
             </label>
+            {form.miningType === 'cloud' && form.miningProvider === GOMINING ? (
+            <>
             <label>
               Rarity
               <input
@@ -2972,6 +3068,8 @@ export function Portfolio() {
                 onChange={(e) => setForm({ ...form, level: e.target.value })}
               />
             </label>
+            </>
+            ) : null}
             <label>
               Cost basis (NZD)
               <input
@@ -2991,7 +3089,9 @@ export function Portfolio() {
               />
             </label>
             <label>
-              Est. market value (NZD, optional manual — or use Refresh marketplace)
+              {form.miningType === 'cloud' && form.miningProvider === GOMINING
+                ? 'Est. market value (NZD, optional manual — or use Refresh marketplace)'
+                : 'Value now (NZD, optional — blank uses cost)'}
               <input
                 type="number"
                 step="any"

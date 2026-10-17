@@ -24,7 +24,7 @@ const GROUP_OF: Partial<Record<string, AssetClassGroupId>> = {
   stone: 'owned',
 };
 
-/** Classes not listed above (stocks, crypto, GoMining, metals, forex, bonds, commodities) are investments. */
+/** Classes not listed above (stocks, crypto, crypto mining, metals, forex, bonds, commodities) are investments. */
 export function assetClassGroup(key: string): AssetClassGroupId {
   return GROUP_OF[key] ?? 'investments';
 }

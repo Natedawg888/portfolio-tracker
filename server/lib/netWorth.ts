@@ -137,7 +137,7 @@ function holdingLabel(h: Record<string, unknown>): string {
     case 'crypto':
       return (typeof h.asset === 'string' && h.asset) || name || 'Crypto';
     case 'gomining_miner':
-      return name || 'GoMining miner';
+      return name || 'Miner';
     case 'metal': {
       const metal = typeof h.metal === 'string' ? h.metal : 'metal';
       const amt = h.metal_amount != null ? Number(h.metal_amount) : null;

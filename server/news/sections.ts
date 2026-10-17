@@ -89,7 +89,7 @@ const CLASS_ORDER_SET = new Set<string>(CLASS_ORDER);
 const CLASS_TITLES: Record<string, string> = {
   stock: 'Stocks',
   crypto: 'Crypto',
-  gomining_miner: 'GoMining',
+  gomining_miner: 'Crypto mining',
   forex: 'Currencies',
   metal: 'Metals',
   real_estate: 'Real estate',
@@ -392,7 +392,7 @@ function metalQuery(rows: NewsHoldingRow[]): { labels: string[]; query: string }
 
 function gominingQuery(rows: NewsHoldingRow[]): { labels: string[]; query: string } {
   const labels = unique(
-    rows.map((row) => searchPhrase(row.miner_name) || searchPhrase(row.name) || 'GoMining miner'),
+    rows.map((row) => searchPhrase(row.miner_name) || searchPhrase(row.name) || 'Miner'),
   );
   // Miner nicknames stay on the page. The public query stays on the topic.
   return {

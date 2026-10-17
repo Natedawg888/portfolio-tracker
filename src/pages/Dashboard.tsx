@@ -337,7 +337,7 @@ export function Dashboard() {
     { key: 'cash', name: 'Cash', value: summary.cashNzd, colour: '#3d9a6a' },
     { key: 'stocks', name: 'Stocks', value: summary.stocksNzd ?? 0, colour: '#4a8fd4' },
     { key: 'crypto', name: 'Crypto', value: summary.cryptoNzd ?? 0, colour: '#9a6ad4' },
-    { key: 'gomining', name: 'GoMining', value: summary.gominingMinersNzd ?? 0, colour: '#c47a2c' },
+    { key: 'gomining', name: 'Crypto mining', value: summary.gominingMinersNzd ?? 0, colour: '#c47a2c' },
     { key: 'art', name: 'Art', value: summary.artNzd ?? 0, colour: '#d45a7a' },
     { key: 'metals', name: 'Metals', value: summary.metalsNzd ?? 0, colour: '#d4b84a' },
     { key: 'stones', name: 'Stones', value: summary.stonesNzd ?? 0, colour: '#a07050' },
@@ -387,7 +387,7 @@ export function Dashboard() {
     cash: 'Cash accounts',
     stock: 'Shares',
     crypto: 'Crypto',
-    gomining: 'GoMining miners',
+    gomining: 'Crypto mining',
     art: 'Art',
     metal: 'Metals',
     stone: 'Stones',
@@ -450,8 +450,8 @@ export function Dashboard() {
           </Bucket>
         ) : null}
         {assetEnabled('gomining') ? (
-          <Bucket {...tile('gomining')} title="GoMining miners" value={summary.gominingMinersNzd} updated={summary.asOf}>
-            GoMining miners you have recorded.
+          <Bucket {...tile('gomining')} title="Crypto mining" value={summary.gominingMinersNzd} updated={summary.asOf}>
+            Your own mining rigs and cloud mining plans you have recorded.
           </Bucket>
         ) : null}
         {assetEnabled('art') ? (

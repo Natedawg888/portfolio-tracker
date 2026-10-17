@@ -14211,6 +14211,9 @@ html:not([data-theme]) .settings-page {
 .commodity-basis legend { padding: 0; margin-bottom: 0.25rem; }
 .commodity-basis label { display: inline-flex; align-items: center; gap: 0.4rem; min-height: 2.75rem; }
 
+/* Crypto mining type and provider tags (KAN-85) */
+.miner-tags { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.15rem 0; }
+
 /* Business (KAN-84) */
 .business-tabs a { text-decoration: none; }
 .business-card-grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); }

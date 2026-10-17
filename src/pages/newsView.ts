@@ -6,13 +6,14 @@
 import { formatNzd } from '../api/client';
 import { displayName, formatAmount, marketValueNzd, type Holding } from '../lib/holdingDisplay';
 import type { NewsSection, NewsStory } from '../types';
+import { MINING_TYPE_LABEL, minerProvider, minerType, providerLabel } from '../lib/miningProviders';
 
 const ZONE = 'Pacific/Auckland';
 
 const CLASS_TABS: Array<{ id: string; label: string; assetClass: string; chip: string }> = [
   { id: 'stock', label: 'Stocks', assetClass: 'stock', chip: 'Stocks' },
   { id: 'crypto', label: 'Crypto', assetClass: 'crypto', chip: 'Crypto' },
-  { id: 'gomining', label: 'GoMining', assetClass: 'gomining_miner', chip: 'GoMining' },
+  { id: 'gomining', label: 'Crypto mining', assetClass: 'gomining_miner', chip: 'Crypto mining' },
   { id: 'metal', label: 'Metals', assetClass: 'metal', chip: 'Metals' },
   { id: 'collectable', label: 'Collectables', assetClass: 'collectable', chip: 'Collectables' },
   { id: 'forex', label: 'Currencies', assetClass: 'forex', chip: 'Currencies' },
@@ -190,7 +191,7 @@ function metalChip(h: Holding): string {
 }
 
 export function chipForHolding(h: Holding): string {
-  if (h.assetClass === 'gomining_miner') return 'GoMining';
+  if (h.assetClass === 'gomining_miner') return minerType(h) === 'hardware' ? MINING_TYPE_LABEL.hardware : (providerLabel(minerProvider(h)) ?? MINING_TYPE_LABEL.cloud);
   if (h.assetClass === 'metal') return metalChip(h);
   if (h.assetClass === 'collectable') return collectableChip(h);
   if (h.assetClass === 'stock') return (h.symbol || h.name || 'Stock').toUpperCase();

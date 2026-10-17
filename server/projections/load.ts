@@ -31,6 +31,7 @@ import { projectMining, type MiningProjection } from '../../src/lib/miningProjec
 import { GOMINING_DEFAULT_KWH_USD } from '../../src/lib/gominingEarnings.ts';
 import type { MiningPlan } from '../../src/lib/projectionClasses.ts';
 import { fetchGoMiningIncome } from '../quotes/gominingIncome.ts';
+import { isGoMiningMiner } from '../../src/lib/miningProviders.ts';
 import { fetchBtcFx } from '../quotes/btc.ts';
 import { goMiningSettingsForUser } from '../routes/settings.ts';
 import { readAssetClassPrefs } from '../lib/userAssetClassPrefs.ts';
@@ -98,11 +99,13 @@ async function loadMining(opts: {
   recordedIncomeMonthly: number;
 }): Promise<ProjectionMining> {
   const plan = { ...opts.plan, rewardsTo: opts.plan.rewardsTo ?? ('crypto' as const) };
-  const miners = queryAll<{ hashrate_ths?: number | null; energy_efficiency_wth?: number | null }>(
+  // GoMining's pool reward and maintenance model only fits GoMining miners (KAN-85).
+  const miners = queryAll<{ hashrate_ths?: number | null; energy_efficiency_wth?: number | null; mining_type?: string | null; mining_provider?: string | null }>(
     opts.db,
-    `SELECT hashrate_ths, energy_efficiency_wth FROM holdings WHERE user_id = ? AND asset_class = 'gomining_miner'`,
+    `SELECT hashrate_ths, energy_efficiency_wth, mining_type, mining_provider FROM holdings WHERE user_id = ? AND asset_class = 'gomining_miner'`,
     [opts.userId],
   )
+    .filter((m) => isGoMiningMiner({ miningType: m.mining_type, miningProvider: m.mining_provider }))
     .map((m) => ({ th: Number(m.hashrate_ths) || 0, wth: m.energy_efficiency_wth == null ? null : Number(m.energy_efficiency_wth) }))
     .filter((m) => m.th > 0);
   if (miners.length === 0) {

@@ -42,6 +42,7 @@ import {
   fetchScryfallCollectionMeta,
 } from '../quotes/cards.ts';
 import { convertToNzd } from '../quotes/fx.ts';
+import { isGoMiningMiner, minerProvider, minerType, parseMiningTag } from '../../src/lib/miningProviders.ts';
 import {
   deletePropertyPhoto,
   photoUrlFromPath,
@@ -320,6 +321,8 @@ function mapHolding(
       return {
         ...base,
         minerName: row.miner_name,
+        miningType: minerType({ miningType: row.mining_type as string | null }),
+        miningProvider: minerProvider({ miningType: row.mining_type as string | null, miningProvider: row.mining_provider as string | null }),
         minerExternalId: row.miner_external_id,
         hashrateThs: row.hashrate_ths,
         energyEfficiencyWth: row.energy_efficiency_wth,
@@ -526,6 +529,8 @@ router.post('/', async (req, res) => {
   if (!assetClass) {
     return res.status(400).json({ error: 'assetClass required' });
   }
+  const miningTag = assetClass === 'gomining_miner' ? parseMiningTag(b.miningType, b.miningProvider) : null;
+  if (miningTag && !miningTag.ok) return res.status(400).json({ error: miningTag.error });
 
   // Manual stock/crypto: ticker required (symbol / asset). Prefill name from ticker when omitted.
   let name = typeof b.name === 'string' ? b.name.trim() : '';
@@ -1245,6 +1250,10 @@ router.post('/', async (req, res) => {
     };
   }
 
+  if (miningTag?.ok) {
+    run(db, 'UPDATE holdings SET mining_type=?, mining_provider=? WHERE id=? AND user_id=?', [miningTag.miningType, miningTag.miningProvider, id, uid(req)]);
+  }
+
   const row = queryOne(db, 'SELECT * FROM holdings WHERE id = ? AND user_id = ?', [id, uid(req)]);
   if (assetClass === 'stock' || assetClass === 'crypto' || assetClass === 'forex') {
     return res.status(201).json(mapHolding(row!, marketOpts));
@@ -1311,6 +1320,14 @@ router.patch('/:id', async (req, res) => {
         est, estAt, estSrc, req.params.id,
       ],
     );
+    if (b.miningType !== undefined || b.miningProvider !== undefined) {
+      const tag = parseMiningTag(
+        b.miningType !== undefined ? b.miningType : minerType({ miningType: existing.mining_type as string | null }),
+        b.miningProvider !== undefined ? b.miningProvider : existing.mining_provider,
+      );
+      if (!tag.ok) return res.status(400).json({ error: tag.error });
+      run(db, `UPDATE holdings SET mining_type=?, mining_provider=? WHERE id=? AND user_id=?`, [tag.miningType, tag.miningProvider, req.params.id, uid(req)]);
+    }
   } else if (existing.asset_class === 'stock') {
     let shares = existing.shares;
     if (b.shares !== undefined) {
@@ -2097,7 +2114,10 @@ router.post('/refresh-forex-values', async (req, res) => {
 /** Refresh all GoMining miners from public primary marketplace USD/TH × BTC FX → NZD. */
 router.post('/refresh-gomining-values', async (req, res) => {
   const db = await getDb();
-  const rows = queryAll(db, "SELECT * FROM holdings WHERE asset_class = 'gomining_miner' AND user_id = ?", [uid(req)]);
+  // Marketplace values are GoMining's; rigs and other providers keep the value the user set (KAN-85).
+  const rows = queryAll(db, "SELECT * FROM holdings WHERE asset_class = 'gomining_miner' AND user_id = ?", [uid(req)]).filter((r) =>
+    isGoMiningMiner({ miningType: r.mining_type as string | null, miningProvider: r.mining_provider as string | null }),
+  );
   const results: Array<Record<string, unknown>> = [];
   let appliedCount = 0;
   let force = true;
@@ -2254,6 +2274,9 @@ router.post('/:id/refresh-value', async (req, res) => {
 
   let assetKey = '';
   if (row.asset_class === 'gomining_miner') {
+    if (!isGoMiningMiner({ miningType: row.mining_type as string | null, miningProvider: row.mining_provider as string | null })) {
+      return res.status(400).json({ error: 'Only GoMining miners have a marketplace value. Set your own value for this miner.' });
+    }
     assetKey = `GOMINING:miner:${row.id}`;
   } else if (row.asset_class === 'crypto') {
     assetKey = `CRYPTO:${row.asset}`;

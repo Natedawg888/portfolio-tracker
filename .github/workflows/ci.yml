@@ -41,6 +41,7 @@ jobs:
       - run: npm run test:crypto
       - run: npm run test:bonds
       - run: npm run test:commodities
+      - run: npm run test:crypto-mining
       - run: npm run test:db-migrations
       - run: npm run test:mortgage
       - run: npm run test:retirement
