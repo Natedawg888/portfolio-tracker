@@ -50,7 +50,8 @@ const links: Array<{
   { to: '/news', label: 'News' },
   { to: '/kiwisaver', label: 'KiwiSaver', requirePref: 'kiwisaver' },
   { to: '/paye', label: 'PAYE' },
-  { to: '/invoices', label: 'Invoices' },
+  // Overview, Invoices and Clients are tabs on the Business pages (KAN-84).
+  { to: '/business', label: 'Business' },
   { to: '/yearly', label: 'History' },
   { to: '/economic-cycle', label: 'Economic cycle' },
   {

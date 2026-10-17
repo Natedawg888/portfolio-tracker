@@ -36,6 +36,7 @@ import cryptoRouter from './routes/crypto.ts';
 import bondsRouter from './routes/bonds.ts';
 import commoditiesRouter from './routes/commodities.ts';
 import rentalsRouter from './routes/rentals.ts';
+import businessRouter from './routes/business.ts';
 import shoppingRouter from './routes/shopping.ts';
 import householdRouter from './routes/household.ts';
 import adsRouter from './routes/ads.ts';
@@ -163,6 +164,7 @@ async function main() {
   app.use('/api/bonds', bondsRouter);
   app.use('/api/commodities', commoditiesRouter);
   app.use('/api/rentals', rentalsRouter);
+  app.use('/api/business', businessRouter);
   app.use('/api/shopping', shoppingRouter);
   app.use('/api/household', householdRouter);
   app.use('/api/ads', adsRouter);

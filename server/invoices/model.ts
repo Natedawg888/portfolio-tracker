@@ -71,7 +71,17 @@ export function parseBusinessProfile(raw: unknown): Parsed<BusinessProfile> {
   };
 }
 
-export type ClientDraft = { name: string; email: string; address: string; reference: string };
+export type ClientDraft = {
+  businessId: string | null;
+  name: string;
+  contactPerson: string;
+  email: string;
+  phone: string;
+  address: string;
+  reference: string;
+  notes: string;
+  status: 'active' | 'inactive';
+};
 
 export function parseClient(raw: unknown): Parsed<ClientDraft> {
   const o = obj(raw);
@@ -82,11 +92,23 @@ export function parseClient(raw: unknown): Parsed<ClientDraft> {
   if (email && !isValidEmail(email)) return { ok: false, error: 'Client email is not valid' };
   return {
     ok: true,
-    value: { name, email, address: longText(o, 'address', 400), reference: text(o, 'reference', 80) },
+    value: {
+      businessId: typeof o.businessId === 'string' && o.businessId.trim() ? o.businessId.trim() : null,
+      name,
+      contactPerson: text(o, 'contactPerson', 120),
+      email,
+      phone: text(o, 'phone', 40),
+      address: longText(o, 'address', 400),
+      reference: text(o, 'reference', 80),
+      notes: longText(o, 'notes', 1000),
+      status: o.status === 'inactive' ? 'inactive' : 'active',
+    },
   };
 }
 
 export type InvoiceDraft = {
+  /** Null → the default business. */
+  businessId?: string | null;
   number: string | null;
   clientId: string | null;
   clientName: string;
@@ -149,6 +171,7 @@ export function parseInvoice(raw: unknown, today: string): Parsed<InvoiceDraft> 
   return {
     ok: true,
     value: {
+      businessId: typeof o.businessId === 'string' && o.businessId.trim() ? o.businessId.trim() : null,
       number,
       clientId: typeof o.clientId === 'string' && o.clientId.trim() ? o.clientId.trim() : null,
       clientName: text(o, 'clientName', 120),

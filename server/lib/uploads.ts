@@ -263,7 +263,7 @@ export function savePayslipFile(payslipId: string, dataUrlOrBase64: string): str
   return rel;
 }
 
-const UPLOAD_FOLDERS = new Set(['properties', 'collectables', 'art', 'avatars', 'receipts', 'warranties', 'payslips']);
+const UPLOAD_FOLDERS = new Set(['properties', 'collectables', 'art', 'avatars', 'receipts', 'warranties', 'payslips', 'business-logos']);
 
 /** Relative path `folder/file` under data/uploads, or null if it is not a single file there. */
 export function normalizeUploadRel(rawPath: string): string | null {
@@ -325,6 +325,10 @@ export function userOwnsUpload(
       `SELECT receipt_path AS p FROM warranties WHERE user_id = ? AND receipt_path IS NOT NULL`,
       [userId],
     );
+    return rows.some((r) => storedPathMatches(r.p, rel));
+  }
+  if (folder === 'business-logos') {
+    const rows = queryAll<{ p: string | null }>(db, `SELECT logo_path AS p FROM businesses WHERE user_id = ? AND logo_path IS NOT NULL`, [userId]);
     return rows.some((r) => storedPathMatches(r.p, rel));
   }
   if (folder === 'payslips') {
@@ -390,6 +394,37 @@ export function uploadsGate() {
       }
     });
   };
+}
+
+export const BUSINESS_LOGOS_DIR = path.join(UPLOADS_DIR, 'business-logos');
+
+/** Business logo (KAN-84); returns relative path business-logos/<businessId><ext>. */
+export function saveBusinessLogo(businessId: string, dataUrlOrBase64: string): string {
+  ensureUploadDirs();
+  fs.mkdirSync(BUSINESS_LOGOS_DIR, { recursive: true });
+  const decoded = decodeImageBase64(dataUrlOrBase64);
+  if (!decoded) {
+    throw new Error('Invalid image — use JPEG/PNG/WebP/GIF data URL or base64 (max 8MB)');
+  }
+  for (const e of ALLOWED_EXT) {
+    const prev = path.join(BUSINESS_LOGOS_DIR, `${businessId}${e}`);
+    if (fs.existsSync(prev)) fs.unlinkSync(prev);
+  }
+  const rel = `business-logos/${businessId}${decoded.ext}`;
+  fs.writeFileSync(path.join(UPLOADS_DIR, rel), decoded.buffer);
+  return rel;
+}
+
+export function deleteBusinessLogo(logoPath: string | null | undefined) {
+  if (!logoPath || !logoPath.startsWith('business-logos/')) return;
+  const abs = path.join(UPLOADS_DIR, logoPath);
+  if (abs.startsWith(BUSINESS_LOGOS_DIR) && fs.existsSync(abs)) {
+    try {
+      fs.unlinkSync(abs);
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 export function deleteCharityReceipt(receiptPath: string | null | undefined) {

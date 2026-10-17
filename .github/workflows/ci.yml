@@ -59,6 +59,7 @@ jobs:
       - run: npm run test:wallets
       - run: npm run test:chain
       - run: npm run test:invoices
+      - run: npm run test:business
       - run: npm run test:bills
       - run: npm run test:rentals
       - run: npm run test:shopping

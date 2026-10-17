@@ -31,6 +31,8 @@ const { default: householdRouter } = await import('../routes/household.ts');
 const { default: payslipsRouter } = await import('../routes/payslips.ts');
 const { default: bondsRouter } = await import('../routes/bonds.ts');
 const { default: commoditiesRouter } = await import('../routes/commodities.ts');
+const { default: businessRouter } = await import('../routes/business.ts');
+const { default: invoicesRouter } = await import('../routes/invoices.ts');
 const { setPlan } = await import('../lib/entitlements.ts');
 const { uploadsGate, UPLOADS_DIR } = await import('../lib/uploads.ts');
 const { applyBtcLink, reverseBtcDelta } = await import('../lib/txnBtcLink.ts');
@@ -52,6 +54,8 @@ app.use('/api/household', householdRouter);
 app.use('/api/payslips', payslipsRouter);
 app.use('/api/bonds', bondsRouter);
 app.use('/api/commodities', commoditiesRouter);
+app.use('/api/business', businessRouter);
+app.use('/api/invoices', invoicesRouter);
 
 const server: Server = await new Promise((resolve) => {
   const s = app.listen(0, '127.0.0.1', () => resolve(s));
@@ -429,7 +433,28 @@ try {
   assert((await req('PUT', `/api/commodities/${cmdId}`, { cookie: b.cookie, body: { ...cmdBody, name: 'x' } })).status === 404, 'B can’t edit it');
   assert((await req('DELETE', `/api/commodities/${cmdId}`, { cookie: b.cookie })).status === 404, 'B can’t delete it');
 
-  console.log('OK: cross-user BTC, income, uploads, settings, households, payslips, bonds, and commodities');
+  // Business (KAN-84): another user can't read or change A's business, its assets or clients.
+  const biz = await req('POST', '/api/business', { cookie: a.cookie, body: { name: 'Alpha Secret Apiary', type: 'sole_trader' } });
+  assert(biz.status === 201, 'A adds a business');
+  const bizId = String((biz.json as { id: string }).id);
+  const hives = await req('POST', `/api/business/${bizId}/assets`, { cookie: a.cookie, body: { category: 'beehives', name: 'Hives', quantity: 40 } });
+  assert(hives.status === 201, 'A adds hives');
+  const hiveId = String((hives.json as { id: string }).id);
+  const client = await req('POST', '/api/invoices/clients', { cookie: a.cookie, body: { businessId: bizId, name: 'Alpha Secret Client' } });
+  assert(client.status === 201, 'A adds a client');
+  const clientId = String((client.json as { id: string }).id);
+  assert(!JSON.stringify((await req('GET', '/api/business', { cookie: b.cookie })).json).includes('Alpha Secret'), 'B can’t list A’s businesses');
+  assert(!JSON.stringify((await req('GET', '/api/invoices/clients', { cookie: b.cookie })).json).includes('Alpha Secret Client'), 'B can’t list A’s clients');
+  assert((await req('GET', `/api/business/${bizId}`, { cookie: b.cookie })).status === 404, 'B can’t open it');
+  assert((await req('PUT', `/api/business/${bizId}`, { cookie: b.cookie, body: { name: 'x' } })).status === 404, 'B can’t edit it');
+  assert((await req('DELETE', `/api/business/${bizId}`, { cookie: b.cookie })).status === 404, 'B can’t delete it');
+  assert((await req('POST', `/api/business/${bizId}/assets`, { cookie: b.cookie, body: { category: 'other', name: 'x', quantity: 1 } })).status === 404, 'B can’t add assets');
+  assert((await req('POST', `/api/business/assets/${hiveId}/movements`, { cookie: b.cookie, body: { kind: 'sale', quantity: 1 } })).status === 404, 'B can’t move A’s stock');
+  assert((await req('DELETE', `/api/business/assets/${hiveId}`, { cookie: b.cookie })).status === 404, 'B can’t delete A’s assets');
+  assert((await req('GET', `/api/business/clients/${clientId}`, { cookie: b.cookie })).status === 404, 'B can’t open A’s client');
+  assert((await req('POST', '/api/invoices/clients', { cookie: b.cookie, body: { businessId: bizId, name: 'x' } })).status === 404, 'B can’t add to A’s business');
+
+  console.log('OK: cross-user BTC, income, uploads, settings, households, payslips, bonds, commodities, and businesses');
 } finally {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 }
