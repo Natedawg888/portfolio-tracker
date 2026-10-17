@@ -178,6 +178,7 @@ export function calcAcc(liableEarnings: number, rates: PayTaxYearRates = payTaxY
 
 export function calcIetc(annualIncome: number, rates: PayTaxYearRates = payTaxYearRates()): number {
   const i = rates.ietc;
+  if (!i) return 0;
   if (annualIncome < i.minIncome || annualIncome >= i.abateEnd) return 0;
   if (annualIncome <= i.fullMaxIncome) return i.fullAnnual;
   return Math.max(0, i.fullAnnual - (annualIncome - i.fullMaxIncome) * i.abateRate);
@@ -228,7 +229,7 @@ export function calculatePaye(input: PayeInput): PayeBreakdown {
   const rates = payTaxYearRates(input.taxYear);
   const { accMaxEarnings, kiwiSaverEmployerMinRate, studentLoanRate, studentLoanAnnualThreshold } = rates;
   const ietcRates = rates.ietc;
-  const notes: string[] = [];
+  const notes: string[] = [...rates.yearNotes];
   const hours = input.hoursPerWeek > 0 ? input.hoursPerWeek : PAYE_DEFAULT_HOURS_PER_WEEK;
   const packageAnnual = Math.max(0, annualise(input.amount, input.frequency, hours));
 
@@ -283,16 +284,21 @@ export function calculatePaye(input: PayeInput): PayeBreakdown {
   const ietcEligible =
     input.employment === 'primary' &&
     input.ietc &&
+    ietcRates != null &&
     annualGross >= ietcRates.minIncome &&
     annualGross < ietcRates.abateEnd;
   const ietcCredit = ietcEligible ? calcIetc(annualGross, rates) : 0;
   const ietcApplied = ietcCredit > 0;
-  if (input.ietc && input.employment === 'primary' && !ietcApplied) {
-    const abateCents = Math.round(ietcRates.abateRate * 10000) / 100;
-    notes.push(
-      `IETC not applied — full credit from $${ietcRates.minIncome.toLocaleString('en-NZ')} to $${ietcRates.fullMaxIncome.toLocaleString('en-NZ')}, ` +
-        `then it abates to $${ietcRates.abateEnd.toLocaleString('en-NZ')} at ${abateCents}c per dollar above $${ietcRates.fullMaxIncome.toLocaleString('en-NZ')}.`,
-    );
+  if (input.ietc && input.employment === 'primary') {
+    if (!ietcRates) {
+      notes.push(`IETC not applied — it is not loaded for ${rates.label}.`);
+    } else if (!ietcApplied) {
+      const abateCents = Math.round(ietcRates.abateRate * 10000) / 100;
+      notes.push(
+        `IETC not applied — full credit from $${ietcRates.minIncome.toLocaleString('en-NZ')} to $${ietcRates.fullMaxIncome.toLocaleString('en-NZ')}, ` +
+          `then it abates to $${ietcRates.abateEnd.toLocaleString('en-NZ')} at ${abateCents}c per dollar above $${ietcRates.fullMaxIncome.toLocaleString('en-NZ')}.`,
+      );
+    }
   }
   if (input.ietc && input.employment === 'secondary') {
     notes.push('IETC applies via primary (ME) tax code only — ignored for secondary.');

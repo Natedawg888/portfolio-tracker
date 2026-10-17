@@ -282,6 +282,14 @@ export function ietcCreditTip(figures: IetcTipFigures, money: (n: number) => str
   );
 }
 
+/** IETC wording for a tax year whose IETC figures are not loaded. */
+export function ietcNotLoadedTip(yearLabel: string): string {
+  return (
+    `Independent earner tax credit. Not loaded for ${yearLabel}: ` +
+    `IRD's figures for that year have not been confirmed, so no credit is estimated.`
+  );
+}
+
 export function charityDonationTip(creditRate: number): string {
   return (
     `Donations to approved donees outside payroll giving. ` +

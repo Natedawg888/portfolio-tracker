@@ -78,7 +78,7 @@ try {
   // Nothing shared yet.
   let r = await call('GET', '/paye', C.olive);
   assert(r.status === 200 && r.json.includedCount === 0 && r.json.members.length === 0 && r.json.totals.netNzd === 0, 'empty to start');
-  assert(r.json.taxYear === 2026 && r.json.years.map((y: Json) => y.startYear).join() === '2026,2025', 'years offered');
+  assert(r.json.taxYear === 2026 && r.json.years.map((y: Json) => y.startYear).join() === '2026,2025,2024', 'years offered');
   assert((await call('GET', '/paye', C.sam)).status === 404, 'a stranger sees nothing');
 
   // Validation.

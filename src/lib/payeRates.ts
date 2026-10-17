@@ -387,6 +387,22 @@ export const WFF_2026: WffRates = {
  * (2026 = 1 April 2026 – 31 March 2027). Add a new entry when IRD / Employment NZ publish
  * the next year's figures; the calculators read only from here (KAN-22 / KAN-70).
  */
+/** Ietc thresholds for a year (or part of one). */
+export type IetcRates = { minIncome: number; fullMaxIncome: number; abateEnd: number; fullAnnual: number; abateRate: number };
+
+/**
+ * Rates in force for pay days from `from` to `to` (inclusive), when a rule changed part way
+ * through a tax year. Only a single pay uses these (see ratesForPayDate); a whole-year
+ * calculation uses the year's own fields.
+ */
+export type PayDatePeriod = {
+  from: string;
+  to: string;
+  incomeTaxBrackets: readonly TaxBracket[];
+  secondaryTaxCodes: readonly { code: string; upTo: number; rate: number }[];
+  ietc: IetcRates;
+};
+
 export type PayTaxYearRates = {
   startYear: number;
   label: string;
@@ -407,12 +423,17 @@ export type PayTaxYearRates = {
   kiwiSaverEmployerMinRate: number;
   studentLoanRate: number;
   studentLoanAnnualThreshold: number;
-  ietc: { minIncome: number; fullMaxIncome: number; abateEnd: number; fullAnnual: number; abateRate: number };
+  /** null = not loaded for this year (the IETC switch is disabled and says so). */
+  ietc: IetcRates | null;
   /** Working for Families (KAN-79). null = not loaded for this year (the estimate shows a dash). */
   wff: WffRates | null;
   schedularActivities: readonly SchedularActivity[];
   schedularElectedMinRate: number;
   schedularNoNotificationRate: number;
+  /** Shown with every PAYE result for this year, e.g. where a mid-year change is simplified. */
+  yearNotes: readonly string[];
+  /** Mid-year changes, by pay date. Empty when the year's rates held all year. */
+  payDatePeriods: readonly PayDatePeriod[];
 };
 
 export const PAY_TAX_YEARS: Readonly<Record<number, PayTaxYearRates>> = {
@@ -440,6 +461,8 @@ export const PAY_TAX_YEARS: Readonly<Record<number, PayTaxYearRates>> = {
     schedularActivities: SCHEDULAR_ACTIVITIES,
     schedularElectedMinRate: SCHEDULAR_ELECTED_MIN_RATE,
     schedularNoNotificationRate: SCHEDULAR_NO_NOTIFICATION_RATE,
+    yearNotes: [],
+    payDatePeriods: [],
   },
   /**
    * 1 April 2025 – 31 March 2026 (KAN-79). Sources (checked 15 Oct 2026), also in docs/PAYE_RATES.md:
@@ -475,6 +498,90 @@ export const PAY_TAX_YEARS: Readonly<Record<number, PayTaxYearRates>> = {
     schedularActivities: SCHEDULAR_ACTIVITIES,
     schedularElectedMinRate: SCHEDULAR_ELECTED_MIN_RATE,
     schedularNoNotificationRate: SCHEDULAR_NO_NOTIFICATION_RATE,
+    yearNotes: [],
+    payDatePeriods: [],
+  },
+  /**
+   * 1 April 2024 – 31 March 2025 (KAN-96). Sources (checked 18 Oct 2026), also in docs/PAYE_RATES.md:
+   * - Income tax: the brackets changed on 31 July 2024, so IRD's annual assessment uses the composite
+   *   rates in its "From 1 April 2024 to 31 March 2025" table (IRD tax rates for individuals).
+   * - Secondary codes: there is no composite table. The codes from 31 July 2024 are used for the
+   *   whole year; pay days before then used $14,000 / $48,000 / $70,000 / $180,000. See yearNotes.
+   * - ACC earners' levy 1 Apr 2024 – 31 Mar 2025: 1.60%, max earnings $142,283, max levy $2,276.52.
+   * - KiwiSaver: default / employer minimum 3%.
+   * - Student loan: threshold $24,128 from 1 April 2024, 12%.
+   * - IETC: not loaded for the whole year. IRD works 2024/25 with a transitional calculation for
+   *   the 31 July 2024 threshold change and its figures could not be confirmed.
+   * - Single pays (payDatePeriods): pay days to 30 July 2024 used brackets $14,000 / $48,000 /
+   *   $70,000 / $180,000 and IETC $24,000–$44,000 abating to $48,000; pay days from 31 July 2024
+   *   used the current brackets and IETC $24,000–$66,000 abating to $70,000 (TIB Vol 36 No 7).
+   * - Minimum wage from 1 April 2024: adult $23.15, starting-out $18.52 (Employment NZ).
+   */
+  2024: {
+    startYear: 2024,
+    label: '1 April 2024 – 31 March 2025',
+    start: '2024-04-01',
+    end: '2025-03-31',
+    minimumWageAdultHourly: 23.15,
+    minimumWageStartingOutHourly: 18.52,
+    holidayPayPaygRate: HOLIDAY_PAY_PAYG_RATE,
+    gstRate: GST_RATE,
+    incomeTaxBrackets: [
+      { upTo: 14_000, rate: 0.105 },
+      { upTo: 15_600, rate: 0.1282 },
+      { upTo: 48_000, rate: 0.175 },
+      { upTo: 53_500, rate: 0.2164 },
+      { upTo: 70_000, rate: 0.3 },
+      { upTo: 78_100, rate: 0.3099 },
+      { upTo: 180_000, rate: 0.33 },
+      { upTo: Number.POSITIVE_INFINITY, rate: 0.39 },
+    ],
+    secondaryTaxCodes: SECONDARY_TAX_CODES,
+    accRate: 0.016,
+    accMaxEarnings: 142_283,
+    accMaxLevy: 2_276.52,
+    kiwiSaverEmployeeRates: [3, 4, 6, 8, 10],
+    kiwiSaverDefaultEmployeeRate: 3,
+    kiwiSaverEmployerMinRate: 3,
+    studentLoanRate: STUDENT_LOAN_RATE,
+    studentLoanAnnualThreshold: STUDENT_LOAN_ANNUAL_THRESHOLD,
+    ietc: null,
+    wff: null,
+    schedularActivities: SCHEDULAR_ACTIVITIES,
+    schedularElectedMinRate: SCHEDULAR_ELECTED_MIN_RATE,
+    schedularNoNotificationRate: SCHEDULAR_NO_NOTIFICATION_RATE,
+    yearNotes: [
+      'Income tax for 2024/25 uses IRD’s composite rates, because the brackets changed on 31 July 2024.',
+      'Secondary tax codes use the thresholds from 31 July 2024. Pay days before then used $14,000 / $48,000 / $70,000 / $180,000.',
+    ],
+    payDatePeriods: [
+      {
+        from: '2024-04-01',
+        to: '2024-07-30',
+        incomeTaxBrackets: [
+          { upTo: 14_000, rate: 0.105 },
+          { upTo: 48_000, rate: 0.175 },
+          { upTo: 70_000, rate: 0.3 },
+          { upTo: 180_000, rate: 0.33 },
+          { upTo: Number.POSITIVE_INFINITY, rate: 0.39 },
+        ],
+        secondaryTaxCodes: [
+          { code: 'SB', upTo: 14_000, rate: 0.105 },
+          { code: 'S', upTo: 48_000, rate: 0.175 },
+          { code: 'SH', upTo: 70_000, rate: 0.3 },
+          { code: 'ST', upTo: 180_000, rate: 0.33 },
+          { code: 'SA', upTo: Number.POSITIVE_INFINITY, rate: 0.39 },
+        ],
+        ietc: { minIncome: 24_000, fullMaxIncome: 44_000, abateEnd: 48_000, fullAnnual: 520, abateRate: 0.13 },
+      },
+      {
+        from: '2024-07-31',
+        to: '2025-03-31',
+        incomeTaxBrackets: INCOME_TAX_BRACKETS,
+        secondaryTaxCodes: SECONDARY_TAX_CODES,
+        ietc: IETC_2024,
+      },
+    ],
   },
 };
 
@@ -488,6 +595,19 @@ export function taxYearForDate(ymd: string): number {
 }
 
 export const CURRENT_PAY_TAX_YEAR = 2026;
+
+/**
+ * Rates for a single pay on this date: its tax year, with any mid-year change in force that day.
+ * null when that tax year isn't loaded.
+ */
+export function ratesForPayDate(ymd: string): PayTaxYearRates | null {
+  const rates = PAY_TAX_YEARS[taxYearForDate(ymd)];
+  if (!rates) return null;
+  const period = rates.payDatePeriods.find((p) => p.from <= ymd && ymd <= p.to);
+  return period
+    ? { ...rates, incomeTaxBrackets: period.incomeTaxBrackets, secondaryTaxCodes: period.secondaryTaxCodes, ietc: period.ietc }
+    : rates;
+}
 
 /** Rates for a tax year, or the current year when that year has no config yet. */
 export function payTaxYearRates(startYear: number = CURRENT_PAY_TAX_YEAR): PayTaxYearRates {
