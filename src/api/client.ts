@@ -982,6 +982,8 @@ export const api = {
     update: (id: string, body: BusinessWriteBody) =>
       req<Business>(`/business/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
     remove: (id: string) => req<{ ok: boolean; id: string }>(`/business/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    archive: (id: string) => req<Business>(`/business/${encodeURIComponent(id)}/archive`, { method: 'POST' }),
+    restore: (id: string) => req<Business>(`/business/${encodeURIComponent(id)}/restore`, { method: 'POST' }),
     setLogo: (id: string, image: string) =>
       req<Business>(`/business/${encodeURIComponent(id)}/logo`, { method: 'POST', body: JSON.stringify({ image }) }),
     removeLogo: (id: string) => req<Business>(`/business/${encodeURIComponent(id)}/logo`, { method: 'DELETE' }),
@@ -1003,6 +1005,9 @@ export const api = {
     updateEmployee: (id: string, body: BusinessEmployeeWriteBody) =>
       req<BusinessEmployee>(`/business/employees/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
     removeEmployee: (id: string) => req<{ ok: boolean; id: string }>(`/business/employees/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    uploadContract: (id: string, fileBase64: string, fileName: string) =>
+      req<BusinessEmployee>(`/business/employees/${encodeURIComponent(id)}/contract`, { method: 'POST', body: JSON.stringify({ fileBase64, fileName }) }),
+    removeContract: (id: string) => req<BusinessEmployee>(`/business/employees/${encodeURIComponent(id)}/contract`, { method: 'DELETE' }),
     produceCandidates: () => req<BusinessDetail['produce']>('/business/produce/candidates'),
     linkProduce: (commodityId: string, businessId: string | null) =>
       req<{ ok: true }>('/business/produce/link', { method: 'POST', body: JSON.stringify({ commodityId, businessId }) }),

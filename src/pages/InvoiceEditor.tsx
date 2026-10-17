@@ -145,13 +145,16 @@ export function InvoiceEditor() {
         // A new invoice goes to ?business=, else the default business (none yet → made on save).
         const inv = editingId ? await api.invoices.get(editingId) : null;
         if (cancelled) return;
-        const chosen =
-          owned.find((b) => b.id === (inv?.businessId ?? wantedBusiness)) ?? owned.find((b) => b.isDefault) ?? owned[0] ?? null;
-        const biz = chosen ? profileOf(chosen) : fallback;
+        // A draft of an archived business (not in the picker) keeps its business and its details.
+        const archivedOwner = inv?.businessId && !owned.some((b) => b.id === inv.businessId) ? inv.businessId : null;
+        const chosen = archivedOwner
+          ? null
+          : (owned.find((b) => b.id === (inv?.businessId ?? wantedBusiness)) ?? owned.find((b) => b.isDefault) ?? owned[0] ?? null);
+        const biz = archivedOwner && inv ? inv.business : chosen ? profileOf(chosen) : fallback;
         const list = inv ? null : await api.invoices.list(chosen ? { businessId: chosen.id } : {});
         if (cancelled) return;
-        setBusinesses(owned);
-        setBusinessId(chosen?.id ?? '');
+        setBusinesses(archivedOwner ? [] : owned);
+        setBusinessId(archivedOwner ?? chosen?.id ?? '');
         setBusiness(biz);
         setClients(cl);
         setContractSources(sources.filter((s) => s.inputs?.payType === 'schedular'));

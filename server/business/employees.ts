@@ -1,7 +1,8 @@
 /**
  * Employees of one of the user's businesses: contact details, the bank account they're paid
- * into, pay rate and when they're paid. Every query filters on user_id; another user's id behaves
- * like a missing row. Records only: the app doesn't pay anyone or work out PAYE.
+ * into, pay rate and when they're paid, and their employment contract (a stored file). Every
+ * query filters on user_id; another user's id behaves like a missing row. Records only: the app
+ * doesn't pay anyone or work out PAYE.
  */
 import type { Database } from 'sql.js';
 import type { BusinessEmployee } from '../../src/types/index.ts';
@@ -10,6 +11,7 @@ import { formatBankAccount } from '../../src/lib/businessForm.ts';
 import { isValidEmail, isYmd } from '../../src/lib/invoiceCalc.ts';
 import { roundMoney } from '../../src/lib/debtModel.ts';
 import { newId, queryAll, queryOne, run } from '../db/index.ts';
+import { deleteEmployeeContract, saveEmployeeContract } from '../lib/uploads.ts';
 import { businessRow } from './profile.ts';
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -109,6 +111,9 @@ type Row = {
   start_date: string | null;
   status: string;
   notes: string;
+  contract_path: string | null;
+  contract_name: string | null;
+  contract_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -132,6 +137,9 @@ function present(r: Row, today: string): BusinessEmployee {
     startDate: r.start_date,
     status: r.status === 'inactive' ? 'inactive' : 'active',
     notes: r.notes ?? '',
+    contract: r.contract_path
+      ? { url: `/api/uploads/${r.contract_path}`, name: r.contract_name || 'Contract', uploadedAt: r.contract_at ?? r.updated_at }
+      : null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -176,9 +184,45 @@ export function updateEmployee(db: Database, userId: string, id: string, d: Empl
 }
 
 export function deleteEmployee(db: Database, userId: string, id: string): boolean {
-  if (!row(db, userId, id)) return false;
+  const r = row(db, userId, id);
+  if (!r) return false;
+  deleteEmployeeContract(r.contract_path);
   run(db, `DELETE FROM business_employees WHERE id = ? AND user_id = ?`, [id, userId]);
   return true;
+}
+
+/** A display name for the stored file: the uploaded name without any folder, or "Contract". */
+function contractName(raw: unknown): string {
+  const last = typeof raw === 'string' ? raw.split(/[\\/]/).pop()! : '';
+  const base = [...last].filter((c) => c >= ' ').join('').trim();
+  return base.slice(0, 120) || 'Contract';
+}
+
+/** Save (or replace) the employee's contract: a PDF, Word document or photo, up to 8 MB. */
+export function setEmployeeContract(db: Database, userId: string, id: string, data: unknown, fileName: unknown, today: string): Result<BusinessEmployee> {
+  if (!row(db, userId, id)) return fail(404, 'Employee not found');
+  if (typeof data !== 'string' || !data) return fail(400, 'Choose a file');
+  let rel: string;
+  try {
+    rel = saveEmployeeContract(id, data);
+  } catch (e) {
+    return fail(400, e instanceof Error ? e.message : 'Invalid file');
+  }
+  const now = new Date().toISOString();
+  run(db, `UPDATE business_employees SET contract_path = ?, contract_name = ?, contract_at = ?, updated_at = ? WHERE id = ? AND user_id = ?`, [
+    rel, contractName(fileName), now, now, id, userId,
+  ]);
+  return { ok: true, value: present(row(db, userId, id)!, today) };
+}
+
+export function clearEmployeeContract(db: Database, userId: string, id: string, today: string): Result<BusinessEmployee> {
+  const r = row(db, userId, id);
+  if (!r) return fail(404, 'Employee not found');
+  deleteEmployeeContract(r.contract_path);
+  run(db, `UPDATE business_employees SET contract_path = NULL, contract_name = '', contract_at = NULL, updated_at = ? WHERE id = ? AND user_id = ?`, [
+    new Date().toISOString(), id, userId,
+  ]);
+  return { ok: true, value: present(row(db, userId, id)!, today) };
 }
 
 export function activeEmployeeCount(db: Database, userId: string, businessId: string): number {

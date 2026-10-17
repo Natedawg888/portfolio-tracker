@@ -14274,8 +14274,10 @@ html:not([data-theme]) .assets-page .portfolio-tab.active {
 .business-type-chip { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 999px; border: 1px solid var(--border); font-size: 0.78rem; font-weight: 600; color: var(--text); background: var(--surface-2); }
 .business-detail-actions { display: flex; align-items: center; gap: 0.4rem; }
 /* + Invoice is a link (a.btn is inline-block): flex centres its label; same height as the ⋯ toggle beside it. */
-.business-detail-actions .btn,
-.business-card-actions .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 1.9rem; }
+.business-detail-actions .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 1.9rem; }
+/* Employee contract: current file, picker and help stacked. */
+.employee-contract-field { display: grid; gap: 0.35rem; justify-items: start; }
+.employee-contract-field p { margin: 0; overflow-wrap: anywhere; }
 .business-mark--slot { border: 2px dashed var(--border); background: transparent; color: var(--muted); cursor: pointer; display: grid; place-items: center; font-weight: 700; font-size: 1.1rem; padding: 0; }
 .business-mark--slot:hover:not(:disabled), .business-mark--slot:focus-visible { border-color: var(--accent); color: var(--accent); }
 .more-menu-body .business-menu-danger { color: var(--danger); }
@@ -14387,3 +14389,12 @@ html .business-page .more-menu-body .business-menu-item:disabled { color: var(--
 }
 .business-employee-bank { white-space: nowrap; }
 .business-employee .rental-entry-what > span { overflow-wrap: anywhere; }
+/* Archived businesses */
+.business-archived summary { cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 0.35rem; min-height: 44px; }
+.business-archived summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+.business-archived .rental-entry-actions .btn.small { min-height: 44px; }
+.business-archived-confirm { grid-column: 1 / -1; }
+.business-archived-note { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; border-left: 3px solid var(--warn); }
+.business-archived-note p { margin: 0; }
+.business-archived-note .btn.small { min-height: 44px; }
+.business-card .security-confirm { margin-top: 0.25rem; }

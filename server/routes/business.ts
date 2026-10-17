@@ -5,6 +5,7 @@
  *   GET    /:id?taxYear=             one business: totals, assets, clients, invoices, tagged money
  *   PUT    /:id | DELETE /:id        edit | delete (not while it has invoices)
  *   POST   /:id/logo { image } | DELETE /:id/logo
+ *   POST   /:id/archive | /:id/restore   archive hides it (kept with its invoices); restore brings it back
  *   POST   /:id/assets               { category, name, quantity, … }
  *   PUT    /assets/:assetId | DELETE /assets/:assetId
  *   POST   /assets/:assetId/movements { date, kind, quantity, amountNzd?, notes? }
@@ -15,7 +16,9 @@
  *                                   commodities held as a business's produce (KAN-81)
  *   GET    /clients/:clientId        client view: invoices, billed, outstanding, last payment
  *   POST   /:id/employees            { name, role?, email?, phone?, address?, bankAccount?, payRateNzd?, payUnit?, payFrequency?, payDate?, startDate?, status?, notes? }
- *   PUT    /employees/:employeeId | DELETE /employees/:employeeId
+ *   PUT    /employees/:employeeId | DELETE /employees/:employeeId (also removes the contract file)
+ *   POST   /employees/:employeeId/contract  { fileBase64, fileName? }  PDF, Word (.docx/.doc) or photo, max 8MB; replaces any earlier one
+ *   DELETE /employees/:employeeId/contract
  *
  * Clients are created and edited through /api/invoices/clients with a businessId.
  */
@@ -27,6 +30,8 @@ import { aucklandToday } from '../debts/model.ts';
 import { taxYearOf, taxYearRange } from '../../src/lib/business.ts';
 import {
   addMovement,
+  archiveBusiness,
+  restoreBusiness,
   createAsset,
   createBusiness,
   deleteAsset,
@@ -47,7 +52,7 @@ import {
   updateAsset,
   updateBusiness,
 } from '../business/store.ts';
-import { createEmployee, deleteEmployee, parseEmployee, updateEmployee } from '../business/employees.ts';
+import { clearEmployeeContract, createEmployee, deleteEmployee, parseEmployee, setEmployeeContract, updateEmployee } from '../business/employees.ts';
 
 const router = Router();
 
@@ -144,6 +149,16 @@ router.put('/employees/:employeeId', async (req, res) => {
   reply(res, updateEmployee(db, uid(req), req.params.employeeId, parsed.value, aucklandToday()));
 });
 
+router.post('/employees/:employeeId/contract', async (req, res) => {
+  const db = await getDb();
+  reply(res, setEmployeeContract(db, uid(req), req.params.employeeId, req.body?.fileBase64, req.body?.fileName, aucklandToday()));
+});
+
+router.delete('/employees/:employeeId/contract', async (req, res) => {
+  const db = await getDb();
+  reply(res, clearEmployeeContract(db, uid(req), req.params.employeeId, aucklandToday()));
+});
+
 router.delete('/employees/:employeeId', async (req, res) => {
   const db = await getDb();
   if (!deleteEmployee(db, uid(req), req.params.employeeId)) {
@@ -220,6 +235,16 @@ router.delete('/:id', async (req, res) => {
     return;
   }
   res.json({ ok: true, id: req.params.id });
+});
+
+router.post('/:id/archive', async (req, res) => {
+  const db = await getDb();
+  reply(res, archiveBusiness(db, uid(req), req.params.id));
+});
+
+router.post('/:id/restore', async (req, res) => {
+  const db = await getDb();
+  reply(res, restoreBusiness(db, uid(req), req.params.id));
 });
 
 router.post('/:id/logo', async (req, res) => {

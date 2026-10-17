@@ -1323,11 +1323,13 @@ export interface Business {
   countInNetWorth: boolean;
   /** Existing invoices and clients were attached to this one; it is used when none is picked. */
   isDefault: boolean;
+  /** Archived: hidden from Business, net worth and pickers, kept with its invoices. */
+  archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
-export type BusinessWriteBody = Omit<Business, 'id' | 'logoUrl' | 'isDefault' | 'createdAt' | 'updatedAt'>;
+export type BusinessWriteBody = Omit<Business, 'id' | 'logoUrl' | 'isDefault' | 'archivedAt' | 'createdAt' | 'updatedAt'>;
 
 export interface BusinessTotals {
   incomeNzd: number;
@@ -1356,7 +1358,20 @@ export interface BusinessListResponse {
   /** Tax year named by the year it ends in (2027 = 1 Apr 2026 – 31 Mar 2027). */
   taxYear: number;
   taxYears: number[];
+  /** Active businesses. */
   businesses: BusinessCard[];
+  /** Archived businesses, newest first. */
+  archived: ArchivedBusiness[];
+}
+
+export interface ArchivedBusiness {
+  id: string;
+  name: string;
+  type: BusinessTypeValue;
+  logoUrl: string | null;
+  archivedAt: string;
+  /** A business with invoices stays archived; one without can be deleted. */
+  invoiceCount: number;
 }
 
 export interface BusinessAssetMovement {
@@ -1473,11 +1488,13 @@ export interface BusinessEmployee {
   startDate: string | null;
   status: 'active' | 'inactive';
   notes: string;
+  /** Their employment contract, stored privately (opened through /api/uploads). */
+  contract: { url: string; name: string; uploadedAt: string } | null;
   createdAt: string;
   updatedAt: string;
 }
 
-export type BusinessEmployeeWriteBody = Omit<BusinessEmployee, 'id' | 'businessId' | 'nextPayDate' | 'createdAt' | 'updatedAt'>;
+export type BusinessEmployeeWriteBody = Omit<BusinessEmployee, 'id' | 'businessId' | 'nextPayDate' | 'contract' | 'createdAt' | 'updatedAt'>;
 
 export interface BusinessClientView {
   client: InvoiceClient;

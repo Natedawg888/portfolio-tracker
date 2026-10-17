@@ -263,7 +263,66 @@ export function savePayslipFile(payslipId: string, dataUrlOrBase64: string): str
   return rel;
 }
 
-const UPLOAD_FOLDERS = new Set(['properties', 'collectables', 'art', 'avatars', 'receipts', 'warranties', 'payslips', 'business-logos']);
+export const EMPLOYEE_CONTRACTS_DIR = path.join(UPLOADS_DIR, 'employee-contracts');
+
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const CONTRACT_EXT = new Set([...RECEIPT_EXT, '.docx', '.doc']);
+const CONTRACT_MIMES = new Set(['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']);
+
+/**
+ * Decode an employment contract: a photo, a PDF or a Word document (max 8MB). PDFs and Word files
+ * must start with their file signature, so another kind of file can't be stored under that name.
+ */
+export function decodeContractBase64(input: string): { buffer: Buffer; ext: string } | null {
+  const m = input.trim().match(/^data:([a-zA-Z0-9.+/-]*);base64,(.+)$/s);
+  const mime = (m?.[1] ?? '').toLowerCase();
+  const word = mime === DOCX_MIME ? '.docx' : mime === 'application/msword' ? '.doc' : null;
+  // The receipt decoder files unknown types as .jpg; a contract must say what it is.
+  if (!word && !CONTRACT_MIMES.has(mime)) return null;
+  if (!word) {
+    const decoded = decodeReceiptBase64(input);
+    if (!decoded) return null;
+    if (decoded.ext === '.pdf' && decoded.buffer.subarray(0, 5).toString('latin1') !== '%PDF-') return null;
+    return { buffer: decoded.buffer, ext: decoded.ext };
+  }
+  try {
+    const buffer = Buffer.from(m![2].replace(/\s/g, ''), 'base64');
+    if (buffer.length < 32 || buffer.length > 8 * 1024 * 1024) return null;
+    const sig = buffer.subarray(0, 4).toString('hex');
+    if (word === '.docx' && sig !== '504b0304') return null;
+    if (word === '.doc' && sig !== 'd0cf11e0') return null;
+    return { buffer, ext: word };
+  } catch {
+    return null;
+  }
+}
+
+/** Save an employee's contract; returns relative path employee-contracts/<employeeId><ext>. */
+export function saveEmployeeContract(employeeId: string, dataUrlOrBase64: string): string {
+  fs.mkdirSync(EMPLOYEE_CONTRACTS_DIR, { recursive: true });
+  const decoded = decodeContractBase64(dataUrlOrBase64);
+  if (!decoded) throw new Error('Invalid file — use a PDF, a Word document (.docx or .doc) or a photo (max 8MB)');
+  const safeId = employeeId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
+  deleteEmployeeContractFiles(safeId);
+  const rel = `employee-contracts/${safeId}${decoded.ext}`;
+  fs.writeFileSync(path.join(UPLOADS_DIR, rel), decoded.buffer);
+  return rel;
+}
+
+function deleteEmployeeContractFiles(safeId: string) {
+  for (const e of CONTRACT_EXT) {
+    const prev = path.join(EMPLOYEE_CONTRACTS_DIR, `${safeId}${e}`);
+    if (fs.existsSync(prev)) fs.unlinkSync(prev);
+  }
+}
+
+/** Remove an employee's stored contract file. */
+export function deleteEmployeeContract(filePath: string | null | undefined) {
+  if (!filePath || !filePath.startsWith('employee-contracts/')) return;
+  deleteCharityReceipt(filePath);
+}
+
+const UPLOAD_FOLDERS = new Set(['properties', 'collectables', 'art', 'avatars', 'receipts', 'warranties', 'payslips', 'business-logos', 'employee-contracts']);
 
 /** Relative path `folder/file` under data/uploads, or null if it is not a single file there. */
 export function normalizeUploadRel(rawPath: string): string | null {
@@ -333,6 +392,14 @@ export function userOwnsUpload(
   }
   if (folder === 'payslips') {
     const rows = queryAll<{ p: string | null }>(db, `SELECT file_path AS p FROM payslips WHERE user_id = ? AND file_path IS NOT NULL`, [userId]);
+    return rows.some((r) => storedPathMatches(r.p, rel));
+  }
+  if (folder === 'employee-contracts') {
+    const rows = queryAll<{ p: string | null }>(
+      db,
+      `SELECT contract_path AS p FROM business_employees WHERE user_id = ? AND contract_path IS NOT NULL`,
+      [userId],
+    );
     return rows.some((r) => storedPathMatches(r.p, rel));
   }
   if (folder === 'properties' || folder === 'collectables' || folder === 'art') {

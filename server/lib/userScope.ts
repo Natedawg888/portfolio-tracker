@@ -6,7 +6,14 @@
 import type { Database } from 'sql.js';
 import type { Response } from 'express';
 import { getDb, queryAll, queryOne, run } from '../db/index.ts';
-import { deleteBusinessLogo, deleteCharityReceipt, deletePayslipFile, deletePropertyPhoto, deleteWarrantyReceipt } from './uploads.ts';
+import {
+  deleteBusinessLogo,
+  deleteCharityReceipt,
+  deleteEmployeeContract,
+  deletePayslipFile,
+  deletePropertyPhoto,
+  deleteWarrantyReceipt,
+} from './uploads.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { priceContributor } from '../shopping/prices.ts';
 import { removeUserFromHouseholds } from '../households/store.ts';
@@ -160,6 +167,11 @@ export function deleteScopedDataForUser(
   // Business logos (KAN-84).
   for (const row of queryAll<{ p: string | null }>(db, `SELECT logo_path AS p FROM businesses WHERE user_id = ? AND logo_path IS NOT NULL`, [userId])) {
     deleteBusinessLogo(row.p);
+  }
+
+  // Employee contracts.
+  for (const row of queryAll<{ p: string | null }>(db, `SELECT contract_path AS p FROM business_employees WHERE user_id = ? AND contract_path IS NOT NULL`, [userId])) {
+    deleteEmployeeContract(row.p);
   }
 
   // Uploaded payslips (KAN-78).

@@ -828,6 +828,7 @@ CREATE TABLE IF NOT EXISTS businesses (
   clients_enabled    INTEGER NOT NULL DEFAULT 1,
   count_in_net_worth INTEGER NOT NULL DEFAULT 1,
   is_default         INTEGER NOT NULL DEFAULT 0,
+  archived_at        TEXT,                  -- archived: hidden from Business and net worth, kept with its invoices
   created_at         TEXT NOT NULL,
   updated_at         TEXT NOT NULL
 );
@@ -890,6 +891,9 @@ CREATE TABLE IF NOT EXISTS business_employees (
   start_date     TEXT,
   status         TEXT NOT NULL DEFAULT 'active',    -- active | inactive
   notes          TEXT NOT NULL DEFAULT '',
+  contract_path  TEXT,                              -- employee-contracts/<id><ext> under data/uploads
+  contract_name  TEXT NOT NULL DEFAULT '',          -- file name as uploaded, for display
+  contract_at    TEXT,                              -- when the contract was uploaded
   created_at     TEXT NOT NULL,
   updated_at     TEXT NOT NULL
 );

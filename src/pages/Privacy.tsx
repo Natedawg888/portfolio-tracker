@@ -59,7 +59,7 @@ export function Privacy() {
             property and others), KiwiSaver balances, debts, savings goals, donations, bills, warranties, rental
             properties and the rooms you let, and pay details used for take-home pay calculations.
           </li>
-          <li>Files you upload: receipts, warranty documents, property photos and your profile picture.</li>
+          <li>Files you upload: receipts, warranty documents, property photos, employee contracts and your profile picture.</li>
           <li>
             Bank and KiwiSaver data from <strong>Akahu</strong>, only if you connect it: account names and numbers,
             balances and transactions. The connection is read-only; the app cannot move money.
@@ -86,7 +86,7 @@ export function Privacy() {
         </p>
         <p>
           You can also keep a record of each business’s employees: name, role, email, phone, address, the bank account they
-          are paid into, pay rate and pay dates. The same applies: the records are yours to keep fairly under the Privacy
+          are paid into, pay rate and pay dates, and a copy of their contract if you upload one. The same applies: the records are yours to keep fairly under the Privacy
           Act 2020, we use them only to show them to you (bank accounts are partly hidden in lists), nothing is paid or sent
           from them, they are never shared with your household, and they are included in your data download and deleted
           with the employee, the business, or your account.
