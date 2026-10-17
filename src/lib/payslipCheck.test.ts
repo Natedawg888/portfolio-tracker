@@ -50,6 +50,11 @@ eq(item(r, 'kiwisaver').label, 'KiwiSaver (4%)', 'given KiwiSaver rate');
 r = checkPayslip({ ...weekly, taxCode: 'S SL', grossNzd: 400, payeNzd: 70, accNzd: 7, kiwiSaverEmployeeNzd: 0, studentLoanNzd: 48 });
 eq(r.status === 'checked' && r.allOk, true, 'secondary S SL passes');
 
+// Temporary rate reduction (KAN-88): 3% of $1,500 = $45 matches the 2026/27 3% rate.
+r = checkPayslip({ ...weekly, kiwiSaverEmployeeNzd: 45 });
+eq(item(r, 'kiwisaver').ok, true, 'KiwiSaver 3% on a temporary reduction matches');
+eq(item(r, 'kiwisaver').expected, 45, 'expected 3% of gross');
+
 // KiwiSaver that matches no rate, and student loan without SL.
 r = checkPayslip({ ...weekly, kiwiSaverEmployeeNzd: 70 });
 eq(item(r, 'kiwisaver').ok, false, 'KiwiSaver $70 on $1,500 matches no rate');

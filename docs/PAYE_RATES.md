@@ -46,12 +46,14 @@ IRD payroll tables include ACC inside "PAYE"; this calculator **splits** income 
 
 | Item | Value |
 | --- | --- |
-| Employee rates | **3.5%**, 4%, 6%, 8%, 10% |
+| Employee rates | **3.5%**, 4%, 6%, 8%, 10%, plus **3%** under a temporary rate reduction |
 | IRD default / minimum employee rate | **3.5%** |
-| Employer minimum | **3.5%** |
+| Employer minimum | **3.5%**; **3%** (match) while the employee is on a temporary rate reduction |
 | Account starting rate (saved per user) | **3.5%** |
 
 The PAYE page offers **3.5%** as the starting employee contribution rate for this account (the statutory minimum from 1 April 2026) and saves the rate the user chooses (`users.preferences_json.kiwiSaverEmployeeRatePct`). A custom rate can still be entered. The contribution shown is still gross pay times the saved rate. The page does not invent a contribution dollar amount.
+
+Temporary rate reduction (KAN-88): from the first pay day on/after 1 April 2026 a member can apply to IRD to stay at **3%** for 3–12 months, renewable back-to-back, but not during a savings suspension. While they're on it the employer may match at 3%; otherwise the employer minimum is 3.5%. The pay tools list 3% as "3% (temporary rate reduction)", and `calculatePaye` lifts an employer rate below 3.5% up to 3.5% (with a note) unless the employee rate is 3%. Sources: [IRD — Temporary rate reduction](https://www.ird.govt.nz/kiwisaver/kiwisaver-individuals/making-changes-to-my-kiwisaver/changing-my-kiwisaver-contribution-rate/temporary-rate-reduction), [IRD — KiwiSaver changes](https://www.ird.govt.nz/kiwisaver-changes), [IRD — Employer contributions](https://www.ird.govt.nz/kiwisaver/kiwisaver-employers/contributions-and-deductions/employer-contributions-to-kiwisaver-and-complying-funds).
 
 Sources:
 - IR340 Apr 2026: https://www.ird.govt.nz/-/media/project/ir/home/documents/forms-and-guides/ir300---ir399/ir340/ir340-apr-2026.pdf
@@ -206,7 +208,7 @@ Checked against the sources below on 15 October 2026. Anything not listed is the
 | --- | --- | --- |
 | Income tax brackets and secondary codes | Same bands ("From 1 April 2025" table) | Same |
 | ACC earners' levy | **1.67%**, max earnings **$152,790**, max levy **$2,551.59** | 1.75%, $156,641, $2,741.22 |
-| KiwiSaver employee rates | **3, 4, 6, 8, 10%**; default and employer minimum **3%** | 3.5, 4, 6, 8, 10%; 3.5% |
+| KiwiSaver employee rates | **3, 4, 6, 8, 10%**; default and employer minimum **3%** | 3.5, 4, 6, 8, 10% (+ 3% temporary rate reduction); 3.5% (3% match on a reduction) |
 | Student loan | 12% over **$24,128** ("2026 tax year") | Same (threshold frozen) |
 | IETC | $520; $24,000–$66,000, abates 13c to $70,000 (from 31 July 2024) | Same |
 | Minimum wage (adult / starting-out) | **$23.50 / $18.80** from 1 April 2025 | $23.95 / $19.16 |

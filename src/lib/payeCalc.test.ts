@@ -60,6 +60,23 @@ eq(y25.kiwiSaverEmployee, 1650, '2025/26 employee KiwiSaver 3%');
 eq(y25.kiwiSaverEmployer, 1650, '2025/26 employer minimum 3%');
 eq(y25.takeHome, 44231, '2025/26 take-home at $55,000');
 eq(calcAcc(200000, payTaxYearRates(2025)), 2551.59, '2025/26 maximum ACC levy');
+// Temporary rate reduction (KAN-88): 3% employee from 1 April 2026; the employer may match at 3% only then.
+{
+  const r26 = payTaxYearRates(2026);
+  eq(r26.kiwiSaverEmployeeRates.includes(3), true, '2026/27 offers 3%');
+  eq(r26.kiwiSaverDefaultEmployeeRate, 3.5, '2026/27 default stays 3.5%');
+  eq(payTaxYearRates(2025).kiwiSaverEmployeeRates.join(), '3,4,6,8,10', '2025/26 rates unchanged');
+  eq(payTaxYearRates(2025).kiwiSaverTemporaryReductionRate, null, '2025/26 has no temporary reduction');
+  const matched = calculatePaye({ ...base, kiwiSaverEmployeeRatePct: 3, kiwiSaverEmployerRatePct: 3, studentLoan: false });
+  eq(matched.kiwiSaverEmployee, 1650, 'employee 3% of $55,000');
+  eq(matched.kiwiSaverEmployer, 1650, 'employer may match at 3%');
+  eq(matched.notes.some((n) => n.includes('raised')), false, 'a 3% match is not raised');
+  eq(calculatePaye({ ...base, kiwiSaverEmployeeRatePct: 3, studentLoan: false }).kiwiSaverEmployer, 1925, 'employer can stay at 3.5%');
+  eq(calculatePaye({ ...base, kiwiSaverEmployeeRatePct: 3, kiwiSaverEmployerRatePct: 0, studentLoan: false }).kiwiSaverEmployer, 1650, 'blank employer rate falls back to 3% on a reduction');
+  const notOnReduction = calculatePaye({ ...base, kiwiSaverEmployeeRatePct: 4, kiwiSaverEmployerRatePct: 3, studentLoan: false });
+  eq(notOnReduction.kiwiSaverEmployer, 1925, 'employer 3% is lifted to 3.5% when the employee is not on 3%');
+  eq(notOnReduction.notes.some((n) => n.includes('raised from 3% to the 3.5%')), true, 'and says so');
+}
 eq(calculatePaye({ ...base, taxYear: 2026, studentLoan: false }).takeHome, off.takeHome, 'taxYear 2026 matches the default');
 eq(calculatePaye({ ...base, taxYear: 2031, studentLoan: false }).takeHome, off.takeHome, 'a year with no rates falls back to the current year');
 eq(PAY_TAX_YEAR_OPTIONS.map((y) => y.startYear).join(), '2026,2025', 'years offered, newest first');
