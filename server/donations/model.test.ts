@@ -90,6 +90,56 @@ eq(empty.count, 0, 'an empty year has no donations');
 eq(empty.totalAmountNzd, 0, 'an empty year totals 0');
 eq(empty.estimatedTaxCreditNzd, 0, 'an empty year estimates 0');
 
+// KAN-91: from 1 April 2027 (the 2028 tax year) eligible donations are capped at $100,000.
+const before = summarizeTaxYear([{ date: '2026-06-01', amountNzd: 150_000 }], 2027);
+eq(before.eligibleAmountNzd, 150_000, '2026/27 eligible amount is the full 150k');
+eq(before.claimableAmountNzd, 150_000, '2026/27 has no dollar cap');
+assert(before.eligibleCapNzd === null, '2026/27 has no cap');
+assert(before.eligibleCapApplied === false, '2026/27 cap is not applied');
+eq(before.estimatedTaxCreditNzd, 50_000, '2026/27 with 150k donations credits 50,000.00');
+
+const over = summarizeTaxYear([{ date: '2027-06-01', amountNzd: 150_000 }], 2028);
+eq(over.eligibleAmountNzd, 150_000, '2027/28 eligible amount still shows the full 150k');
+eq(over.claimableAmountNzd, 100_000, '2027/28 claimable amount is capped at 100k');
+eq(over.eligibleCapNzd, 100_000, '2027/28 cap is 100k');
+assert(over.eligibleCapApplied === true, '2027/28 flags the cap as applied');
+eq(over.estimatedTaxCreditNzd, 33_333.33, '2027/28 with 150k donations credits 33,333.33');
+
+const under = summarizeTaxYear([{ date: '2027-06-01', amountNzd: 90_000 }], 2028);
+eq(under.claimableAmountNzd, 90_000, '2027/28 under the cap is not cut');
+assert(under.eligibleCapApplied === false, '2027/28 under the cap is not flagged');
+eq(under.estimatedTaxCreditNzd, 30_000, '2027/28 with 90k donations credits 30,000.00');
+
+const exact = summarizeTaxYear([{ date: '2027-06-01', amountNzd: 100_000 }], 2028);
+assert(exact.eligibleCapApplied === false, 'exactly 100k is not cut');
+eq(exact.estimatedTaxCreditNzd, 33_333.33, 'exactly 100k credits 33,333.33');
+
+const later = summarizeTaxYear([{ date: '2030-01-01', amountNzd: 250_000 }], 2030);
+eq(later.claimableAmountNzd, 100_000, 'the cap carries on in later years');
+
+const boundary = [
+  { date: '2027-03-31', amountNzd: 150_000 },
+  { date: '2027-04-01', amountNzd: 150_000 },
+];
+const lastUncapped = summarizeTaxYear(boundary, 2027);
+eq(lastUncapped.eligibleAmountNzd, 150_000, '31 March 2027 receipt falls in 2026/27');
+eq(lastUncapped.estimatedTaxCreditNzd, 50_000, '31 March 2027 receipt is not capped');
+const firstCapped = summarizeTaxYear(boundary, 2028);
+eq(firstCapped.eligibleAmountNzd, 150_000, '1 April 2027 receipt falls in 2027/28');
+eq(firstCapped.estimatedTaxCreditNzd, 33_333.33, '1 April 2027 receipt is capped');
+
+const smallOver = summarizeTaxYear(
+  [
+    { date: '2027-05-01', amountNzd: 99_999 },
+    { date: '2027-05-02', amountNzd: 4 },
+    { date: '2027-05-03', amountNzd: 5 },
+  ],
+  2028,
+);
+eq(smallOver.eligibleAmountNzd, 100_004, 'under-$5 gifts stay out of the capped amount');
+eq(smallOver.claimableAmountNzd, 100_000, 'the cap applies to the eligible sum');
+eq(smallOver.totalAmountNzd, 100_008, 'the total is not capped');
+
 const summary = donationSummary(rows, '2026-10-05', null);
 assert(summary.currency === 'NZD', 'summary currency is NZD');
 assert(summary.timezone === 'Pacific/Auckland', 'summary timezone is Pacific/Auckland');

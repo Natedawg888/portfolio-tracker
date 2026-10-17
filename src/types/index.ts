@@ -354,8 +354,17 @@ export interface DonationTaxYearTotals {
   belowMinimumCount: number;
   /** Sum of donations under $5. */
   belowMinimumAmountNzd: number;
+  /** eligibleAmountNzd after the yearly ceiling (eligibleCapNzd). The credit is a third of this. */
+  claimableAmountNzd: number;
   /**
-   * Estimate of the IR526 credit: eligibleAmountNzd / 3, rounded to cents.
+   * Eligible-donation ceiling for this tax year: 100000 from the 2028 tax year
+   * (donations from 1 April 2027), null before.
+   */
+  eligibleCapNzd: number | null;
+  /** True when eligibleAmountNzd was over eligibleCapNzd and was cut to it. */
+  eligibleCapApplied: boolean;
+  /**
+   * Estimate of the IR526 credit: claimableAmountNzd / 3, rounded to cents.
    * Not reduced by the taxable-income cap. See DonationSummary.estimateNote.
    */
   estimatedTaxCreditNzd: number;
