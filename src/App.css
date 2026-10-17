@@ -14238,7 +14238,6 @@ html:not([data-theme]) .assets-page .portfolio-tab.active {
 .business-card-title h3 a:hover, .business-card-title h3 a:focus-visible { text-decoration: underline; }
 .business-card-title p { margin: 0.1rem 0 0; }
 .business-card-actions { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
-.business-card-actions .btn { min-height: 44px; }
 .business-card-owns, .business-card-owed { margin: 0; }
 .business-totals--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .business-totals dd.business-figure-note { margin: 0.1rem 0 0; font-size: 0.75rem; font-weight: 400; color: var(--muted); }
@@ -14275,7 +14274,8 @@ html:not([data-theme]) .assets-page .portfolio-tab.active {
 .business-type-chip { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 999px; border: 1px solid var(--border); font-size: 0.78rem; font-weight: 600; color: var(--text); background: var(--surface-2); }
 .business-detail-actions { display: flex; align-items: center; gap: 0.4rem; }
 /* + Invoice is a link (a.btn is inline-block): flex centres its label; same height as the ⋯ toggle beside it. */
-.business-detail-actions .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 1.9rem; }
+.business-detail-actions .btn,
+.business-card-actions .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 1.9rem; }
 .business-mark--slot { border: 2px dashed var(--border); background: transparent; color: var(--muted); cursor: pointer; display: grid; place-items: center; font-weight: 700; font-size: 1.1rem; padding: 0; }
 .business-mark--slot:hover:not(:disabled), .business-mark--slot:focus-visible { border-color: var(--accent); color: var(--accent); }
 .more-menu-body .business-menu-danger { color: var(--danger); }
