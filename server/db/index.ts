@@ -593,6 +593,9 @@ function migrateSchema(database: Database) {
   const propertyCols = tableColumns(database, 'rental_properties');
   if (propertyCols.size > 0 && !propertyCols.has('let_type')) database.run("ALTER TABLE rental_properties ADD COLUMN let_type TEXT NOT NULL DEFAULT 'whole'");
   if (propertyCols.size > 0 && !propertyCols.has('own_home')) database.run('ALTER TABLE rental_properties ADD COLUMN own_home INTEGER NOT NULL DEFAULT 0');
+  // Airdrops taxable on receipt (KAN-86). Existing airdrops start as not taxable (nil cost, not income).
+  const cryptoTxnCols = tableColumns(database, 'crypto_txns');
+  if (cryptoTxnCols.size > 0 && !cryptoTxnCols.has('taxable_on_receipt')) database.run('ALTER TABLE crypto_txns ADD COLUMN taxable_on_receipt INTEGER NOT NULL DEFAULT 0');
   // Rental income entries mirrored into income (KAN-66).
   if (incomeCols.size > 0 && !incomeCols.has('rental_entry_id')) {
     database.run('ALTER TABLE income_records ADD COLUMN rental_entry_id TEXT');

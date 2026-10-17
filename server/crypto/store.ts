@@ -15,7 +15,7 @@ import { newId, queryAll, queryOne, run } from '../db/index.ts';
 import { aucklandToday, roundMoney } from '../debts/model.ts';
 import { isYmd } from '../../src/lib/invoiceCalc.ts';
 import { hasFeature } from '../lib/entitlements.ts';
-import { CRYPTO_TXN_KINDS, NEEDS_VALUE, computeGains, cryptoTaxYear, suggestKinds, yearSummary, type CostMethod, type CryptoTxnKind, type ImportedTransfer, type LedgerTxn } from '../../src/lib/cryptoGains.ts';
+import { CRYPTO_TXN_KINDS, NEEDS_VALUE, computeGains, needsValue, cryptoTaxYear, suggestKinds, yearSummary, type CostMethod, type CryptoTxnKind, type ImportedTransfer, type LedgerTxn } from '../../src/lib/cryptoGains.ts';
 import { historicalPriceNzd } from './prices.ts';
 import { fetchWalletTokenTransfers, fetchWalletTransactions } from '../chain/index.ts';
 import { formatUnits } from '../chain/networks.ts';
@@ -49,6 +49,7 @@ type TxnRow = {
   external_ref: string | null;
   counterparty: string | null;
   notes: string;
+  taxable_on_receipt: number;
 };
 export type CryptoTxn = {
   id: string;
@@ -65,6 +66,8 @@ export type CryptoTxn = {
   imported: boolean;
   counterparty: string | null;
   notes: string;
+  /** Airdrops only (KAN-86): taxable on receipt, so income at its NZD value; otherwise nil cost. */
+  taxableOnReceipt: boolean;
   needsValue: boolean;
 };
 
@@ -83,7 +86,8 @@ const present = (r: TxnRow): CryptoTxn => ({
   imported: !!r.external_ref,
   counterparty: r.counterparty,
   notes: r.notes,
-  needsValue: NEEDS_VALUE.has(r.kind) && r.nzd_value == null,
+  taxableOnReceipt: r.taxable_on_receipt === 1,
+  needsValue: needsValue({ kind: r.kind, taxableOnReceipt: r.taxable_on_receipt === 1 }) && r.nzd_value == null,
 });
 
 const assetCode = (v: unknown) => (typeof v === 'string' ? v.trim().toUpperCase().replace(/[^A-Z0-9.\-_]/g, '').slice(0, 20) : '');
@@ -136,6 +140,7 @@ export function parseTxn(raw: unknown): { ok: true; value: TxnDraft } | { ok: fa
       toAmount,
       counterparty: typeof o.counterparty === 'string' ? o.counterparty.trim().slice(0, 80) || null : null,
       notes: typeof o.notes === 'string' ? o.notes.trim().slice(0, 300) : '',
+      taxableOnReceipt: kind === 'airdrop' && o.taxableOnReceipt === true,
       priceSource: o.priceSource === 'yahoo+frankfurter' ? 'yahoo+frankfurter' : 'manual',
     },
   };
@@ -146,9 +151,9 @@ function insertTxn(db: Database, userId: string, d: TxnDraft, extra: { walletId?
   const now = new Date().toISOString();
   run(
     db,
-    `INSERT INTO crypto_txns (id, user_id, date, kind, asset, amount, nzd_value, price_source, fee_nzd, to_asset, to_amount, wallet_id, external_ref, counterparty, notes, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, userId, d.date, d.kind, d.asset, d.amount, d.nzdValue, d.priceSource ?? 'manual', d.feeNzd, d.toAsset, d.toAmount, extra.walletId ?? null, extra.externalRef ?? null, d.counterparty, d.notes, now, now],
+    `INSERT INTO crypto_txns (id, user_id, date, kind, asset, amount, nzd_value, price_source, fee_nzd, to_asset, to_amount, wallet_id, external_ref, counterparty, notes, taxable_on_receipt, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, userId, d.date, d.kind, d.asset, d.amount, d.nzdValue, d.priceSource ?? 'manual', d.feeNzd, d.toAsset, d.toAmount, extra.walletId ?? null, extra.externalRef ?? null, d.counterparty, d.notes, d.taxableOnReceipt ? 1 : 0, now, now],
   );
   return id;
 }
@@ -169,8 +174,8 @@ export function updateTxn(db: Database, userId: string, id: string, body: unknow
   const d = p.value;
   run(
     db,
-    `UPDATE crypto_txns SET date=?, kind=?, asset=?, amount=?, nzd_value=?, price_source=?, fee_nzd=?, to_asset=?, to_amount=?, counterparty=?, notes=?, updated_at=? WHERE id=? AND user_id=?`,
-    [d.date, d.kind, d.asset, d.amount, d.nzdValue, d.priceSource ?? 'manual', d.feeNzd, d.toAsset, d.toAmount, d.counterparty, d.notes, new Date().toISOString(), id, userId],
+    `UPDATE crypto_txns SET date=?, kind=?, asset=?, amount=?, nzd_value=?, price_source=?, fee_nzd=?, to_asset=?, to_amount=?, counterparty=?, notes=?, taxable_on_receipt=?, updated_at=? WHERE id=? AND user_id=?`,
+    [d.date, d.kind, d.asset, d.amount, d.nzdValue, d.priceSource ?? 'manual', d.feeNzd, d.toAsset, d.toAmount, d.counterparty, d.notes, d.taxableOnReceipt ? 1 : 0, new Date().toISOString(), id, userId],
   );
   return { ok: true, value: present(queryOne<TxnRow>(db, `SELECT * FROM crypto_txns WHERE id = ?`, [id])!) };
 }
@@ -233,7 +238,7 @@ export async function cryptoSummary(db: Database, userId: string, yearRaw: unkno
   const rows = queryAll<TxnRow>(db, `SELECT * FROM crypto_txns WHERE user_id = ? ORDER BY date, created_at`, [userId]);
   const txns = rows.map(present);
   const method = costMethodOf(db, userId);
-  const ledger: LedgerTxn[] = rows.map((r) => ({ id: r.id, date: r.date, kind: r.kind, asset: r.asset, amount: Number(r.amount), nzdValue: r.nzd_value == null ? null : Number(r.nzd_value), feeNzd: Number(r.fee_nzd), toAsset: r.to_asset, toAmount: r.to_amount == null ? null : Number(r.to_amount) }));
+  const ledger: LedgerTxn[] = rows.map((r) => ({ id: r.id, date: r.date, kind: r.kind, asset: r.asset, amount: Number(r.amount), nzdValue: r.nzd_value == null ? null : Number(r.nzd_value), feeNzd: Number(r.fee_nzd), toAsset: r.to_asset, toAmount: r.to_amount == null ? null : Number(r.to_amount), taxableOnReceipt: r.taxable_on_receipt === 1 }));
   const g = computeGains(ledger, method);
   const current = cryptoTaxYear(aucklandToday());
   const n = Number(yearRaw);
