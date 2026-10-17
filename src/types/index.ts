@@ -11,6 +11,7 @@ import type { MiningProjection } from '../lib/miningProjection';
 import type { Cadence, PossiblePayment, RecurringKind, RecurringStatus, RecurringSuggestion } from '../lib/recurring';
 import type { WarrantyStatus } from '../lib/warranty';
 import type { RentalCategory, RentalEntryKind } from '../lib/rental';
+import type { RentFrequency } from '../lib/rentalRooms';
 import type { CommodityCategory, CommodityUnit, PriceBasis } from '../lib/commodities';
 
 export type CurrencyCode = 'NZD' | 'USD' | 'AUD' | 'EUR' | 'GBP';
@@ -1647,12 +1648,18 @@ export interface WarrantyListResponse {
   totals: { active: number; expiring: number; expired: number };
 }
 
+/** How a rental property is let (KAN-83): the whole place, or room by room. */
+export type RentalLetType = 'whole' | 'rooms';
+
 /** A rental property (KAN-66). */
 export interface RentalProperty {
   id: string;
   name: string;
   address: string;
   notes: string;
+  letType: RentalLetType;
+  /** The user lives here and lets rooms (boarders / flatmates). Only with letType 'rooms'. */
+  ownHome: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -1666,6 +1673,10 @@ export interface RentalEntry {
   category: RentalCategory;
   amountNzd: number;
   description: string;
+  /** Rent received for this room (KAN-83). Income on a property let by room only. */
+  roomId: string | null;
+  /** Expense split across the property's rooms by share; false = an owner cost (KAN-83). */
+  shared: boolean;
   /** User asked for this entry to count in Budget / Income. */
   addToMoney: boolean;
   /**
@@ -1688,6 +1699,40 @@ export interface RentalListResponse {
   properties: RentalProperty[];
   /** Newest first. */
   entries: RentalEntry[];
+  /** Rooms of properties let by room, in the order added. */
+  rooms: RentalRoom[];
+  /** Newest start first. */
+  tenancies: RentalTenancy[];
+}
+
+/** A room let in a property (KAN-83). */
+export interface RentalRoom {
+  id: string;
+  propertyId: string;
+  name: string;
+  /** e.g. ensuite, furnished */
+  note: string;
+  /** Weight for splitting shared expenses across the property's rooms. */
+  share: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Someone renting a room (KAN-83). Display name only; no contact details. */
+export interface RentalTenancy {
+  id: string;
+  roomId: string;
+  tenantLabel: string;
+  rentAmount: number;
+  rentFrequency: RentFrequency;
+  billsIncluded: boolean;
+  startDate: string;
+  endDate: string | null;
+  bondAmount: number;
+  /** Bond lodged with Tenancy Services. */
+  bondLodged: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** Shopping lists (KAN-74). */

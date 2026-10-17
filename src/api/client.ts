@@ -78,6 +78,8 @@ import type {
   ShoppingStore,
   RentalListResponse,
   RentalProperty,
+  RentalRoom,
+  RentalTenancy,
   WarrantyPurchase,
   BusinessProfile,
   Invoice,
@@ -156,7 +158,7 @@ export type WarrantyWriteBody = {
   notes: string;
 };
 
-export type RentalPropertyWriteBody = { name: string; address: string; notes: string };
+export type RentalPropertyWriteBody = { name: string; address: string; notes: string; letType: RentalProperty['letType']; ownHome: boolean };
 
 export type RentalEntryWriteBody = {
   propertyId: string;
@@ -166,7 +168,13 @@ export type RentalEntryWriteBody = {
   amountNzd: number;
   description: string;
   addToMoney: boolean;
+  roomId: string | null;
+  shared: boolean;
 };
+
+export type RentalRoomWriteBody = { propertyId: string; name: string; note: string; share: number };
+
+export type RentalTenancyWriteBody = Omit<RentalTenancy, 'id' | 'createdAt' | 'updatedAt'>;
 
 /** Draft invoice fields sent to the API. Totals are always computed by the server. */
 export type InvoiceWriteBody = {
@@ -908,6 +916,15 @@ export const api = {
     updateEntry: (id: string, body: Partial<RentalEntryWriteBody>) =>
       req<RentalEntry>(`/rentals/entries/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
     removeEntry: (id: string) => req<{ ok: boolean; id: string }>(`/rentals/entries/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    createRoom: (body: RentalRoomWriteBody) => req<RentalRoom>('/rentals/rooms', { method: 'POST', body: JSON.stringify(body) }),
+    updateRoom: (id: string, body: Partial<Omit<RentalRoomWriteBody, 'propertyId'>>) =>
+      req<RentalRoom>(`/rentals/rooms/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    removeRoom: (id: string) => req<{ ok: boolean; id: string }>(`/rentals/rooms/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    createTenancy: (body: RentalTenancyWriteBody) =>
+      req<RentalTenancy>('/rentals/tenancies', { method: 'POST', body: JSON.stringify(body) }),
+    updateTenancy: (id: string, body: Partial<Omit<RentalTenancyWriteBody, 'roomId'>>) =>
+      req<RentalTenancy>(`/rentals/tenancies/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    removeTenancy: (id: string) => req<{ ok: boolean; id: string }>(`/rentals/tenancies/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
   invoices: {
     list: (filters: { status?: string; clientId?: string; businessId?: string; from?: string; to?: string } = {}) => {

@@ -57,7 +57,7 @@ export function Privacy() {
           <li>
             What you enter or import: bank accounts and transactions, budgets, income, holdings (shares, crypto, metals,
             property and others), KiwiSaver balances, debts, savings goals, donations, bills, warranties, rental
-            properties and pay details used for take-home pay calculations.
+            properties and the rooms you let, and pay details used for take-home pay calculations.
           </li>
           <li>Files you upload: receipts, warranty documents, property photos and your profile picture.</li>
           <li>
@@ -73,7 +73,8 @@ export function Privacy() {
         <h3>Information about other people</h3>
         <p>
           Some features hold details about other people that you choose to enter, such as invoice clients (name, email,
-          address), people you owe or who owe you, and payees in your transactions. Please only enter what you are
+          address), people you owe or who owe you, tenants or boarders in rooms you let (a display name, rent, dates
+          and bond; no contact details), and payees in your transactions. Please only enter what you are
           entitled to use, and tell them if the law requires it.
         </p>
         <p>
