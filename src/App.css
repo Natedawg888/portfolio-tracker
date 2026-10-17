@@ -14274,7 +14274,8 @@ html:not([data-theme]) .assets-page .portfolio-tab.active {
 .business-detail-sub { margin: 0.15rem 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.6rem; }
 .business-type-chip { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 999px; border: 1px solid var(--border); font-size: 0.78rem; font-weight: 600; color: var(--text); background: var(--surface-2); }
 .business-detail-actions { display: flex; align-items: center; gap: 0.4rem; }
-.business-detail-actions .btn { min-height: 44px; }
+/* + Invoice is a link (a.btn is inline-block): flex centres its label; same height as the ⋯ toggle beside it. */
+.business-detail-actions .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 1.9rem; }
 .business-mark--slot { border: 2px dashed var(--border); background: transparent; color: var(--muted); cursor: pointer; display: grid; place-items: center; font-weight: 700; font-size: 1.1rem; padding: 0; }
 .business-mark--slot:hover:not(:disabled), .business-mark--slot:focus-visible { border-color: var(--accent); color: var(--accent); }
 .more-menu-body .business-menu-danger { color: var(--danger); }
