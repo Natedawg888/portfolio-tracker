@@ -364,7 +364,8 @@ export interface DonationTaxYearTotals {
   /** True when eligibleAmountNzd was over eligibleCapNzd and was cut to it. */
   eligibleCapApplied: boolean;
   /**
-   * Estimate of the IR526 credit: claimableAmountNzd / 3, rounded to cents.
+   * Estimate of the IR526 credit: claimableAmountNzd / 3, cut to cents without
+   * rounding up, as IRD does ($200 gives 66.66).
    * Not reduced by the taxable-income cap. See DonationSummary.estimateNote.
    */
   estimatedTaxCreditNzd: number;
