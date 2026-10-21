@@ -11444,6 +11444,11 @@ html:not([data-theme]) .warranties-page {
 .rental-totals dt { font-size: 0.74rem; font-weight: 600; color: var(--muted); }
 .rental-totals dd { margin: 0.1rem 0 0; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .rental-totals .rental-net--loss { color: var(--warranty-soon); }
+/* Rental tax rules (KAN-93): taxable rental after ring-fencing, and the bright-line result. */
+.rental-tax { display: grid; gap: 0.4rem; padding-top: 0.4rem; border-top: 1px solid var(--border-soft); }
+.rental-tax p { margin: 0; }
+.rental-bright-line { margin: 0; padding: 0.45rem 0.65rem; border-radius: var(--radius-sm); background: var(--surface-2); }
+.rental-bright-line--inside { border-left: 3px solid var(--warranty-soon); }
 .rental-card-head {
   display: flex;
   flex-wrap: wrap;

@@ -962,6 +962,11 @@ CREATE TABLE IF NOT EXISTS rental_properties (
   notes       TEXT NOT NULL DEFAULT '',
   let_type    TEXT NOT NULL DEFAULT 'whole',  -- whole | rooms (KAN-83)
   own_home    INTEGER NOT NULL DEFAULT 0,     -- 1 = the user lives here and lets rooms
+  purchase_date        TEXT,                  -- settlement / title registration (bright-line start, KAN-93)
+  purchase_price       REAL,
+  sale_agreement_date  TEXT,                  -- binding sale agreement (bright-line end)
+  sale_price           REAL,
+  sale_costs           REAL,                  -- buying, improving and selling costs
   created_at  TEXT NOT NULL,
   updated_at  TEXT NOT NULL
 );

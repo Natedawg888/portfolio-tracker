@@ -86,6 +86,28 @@ try {
   const bach = (await call('POST', '/api/rentals/properties', A, { name: 'Bach' })).json;
   const pid = flat.json.id as string;
 
+  // Purchase and sale for the bright-line test (KAN-93).
+  assert(flat.json.purchaseDate === null && flat.json.salePrice === null, 'no sale fields by default');
+  assert(empty.json.lossBasis === 'portfolio', 'losses pooled by default');
+  const props = (body: Json) => call('PATCH', `/api/rentals/properties/${bach.id}`, A, body);
+  assert((await props({ purchaseDate: '2024-13-01' })).status === 400, 'settlement date checked');
+  assert((await props({ salePrice: -1 })).status === 400, 'no negative sale price');
+  let sold = await props({ purchaseDate: '2024-08-01', purchasePrice: 700000, saleAgreementDate: '2026-07-01', salePrice: 780000, saleCosts: 25000 });
+  assert(sold.status === 200 && sold.json.purchaseDate === '2024-08-01' && sold.json.saleCosts === 25000, `sale saved ${JSON.stringify(sold.json)}`);
+  assert((await props({ saleAgreementDate: '2024-07-01' })).status === 400, 'sale agreement can’t be before settlement');
+  sold = await props({ name: 'Bach' });
+  assert(sold.json.salePrice === 780000, 'a partial edit keeps the sale');
+  sold = await props({ saleAgreementDate: null, salePrice: '' });
+  assert(sold.json.saleAgreementDate === null && sold.json.salePrice === null && sold.json.purchasePrice === 700000, 'null or blank clears one field');
+  assert((await call('POST', '/api/rentals/properties', A, { name: 'X', purchaseDate: '2026-01-01', saleAgreementDate: '2025-01-01' })).status === 400, 'checked on create too');
+
+  // Loss basis is saved per user.
+  assert((await call('PUT', '/api/rentals/settings', A, { lossBasis: 'pooled' })).status === 400, 'basis checked');
+  assert((await call('PUT', '/api/rentals/settings', A, { lossBasis: 'property' })).status === 200, 'basis saved');
+  assert((await call('GET', '/api/rentals', A)).json.lossBasis === 'property', 'basis read back');
+  assert((await call('GET', '/api/rentals', B)).json.lossBasis === 'portfolio', 'B keeps the default');
+  await call('PUT', '/api/rentals/settings', A, { lossBasis: 'portfolio' });
+
   // Validation.
   const entry = (body: Json, cookie = A) =>
     call('POST', '/api/rentals/entries', cookie, { propertyId: pid, date: '2026-10-06', kind: 'income', category: 'rent', amountNzd: 650, ...body });

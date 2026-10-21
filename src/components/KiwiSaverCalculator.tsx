@@ -3,13 +3,15 @@
  * your contributions, your employer's (after ESCT) and the government contribution, growing at
  * a return you choose. Illustrative only; today's rules apply to every year (kiwiSaverRules.ts).
  * Inputs are remembered on this device. Amounts follow Hide amounts through formatNzd.
+ * The government contribution's $180,000 test is on total taxable income (KAN-99): other income
+ * or an entered total can be added; with neither, salary is used and a note says so.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { api, formatNzd } from '../api/client';
 import { AssetLineChart, type LineSeries } from './AssetLineChart';
 import { calculateKiwiSaver } from '../lib/kiwiSaverCalc';
 import { GOVERNMENT_CONTRIBUTION, KIWISAVER_RULES_CHECKED_ON, KIWISAVER_RULES_SOURCES, KIWISAVER_WITHDRAWAL_AGE } from '../lib/kiwiSaverRules';
-import { payTaxYearRates } from '../lib/payeRates';
+import { kiwiSaverEmployeeRateLabel, payTaxYearRates } from '../lib/payeRates';
 import { PAYE_PREFS_STORAGE_KEY, loadPayePrefs } from '../lib/payePrefs';
 import { annualise } from '../lib/payeCalc';
 
@@ -22,6 +24,8 @@ type Fields = {
   employeeRatePct: string;
   employerRatePct: string;
   extraPerYear: string;
+  otherIncome: string;
+  totalIncome: string;
   returnPct: string;
   inflationPct: string;
 };
@@ -34,6 +38,8 @@ const DEFAULTS: Fields = {
   employeeRatePct: String(rates.kiwiSaverDefaultEmployeeRate),
   employerRatePct: String(rates.kiwiSaverEmployerMinRate),
   extraPerYear: '0',
+  otherIncome: '',
+  totalIncome: '',
   returnPct: '5',
   inflationPct: '2',
 };
@@ -122,6 +128,8 @@ export function KiwiSaverCalculator({ balanceNzd }: { balanceNzd: number | null 
         employeeRatePct: num(f.employeeRatePct, 0, 100),
         employerRatePct: num(f.employerRatePct, 0, 100),
         extraPerYear: num(f.extraPerYear, 0, 1e7),
+        otherIncomePerYear: num(f.otherIncome, 0, 1e9),
+        taxableIncomeOverride: f.totalIncome.trim() === '' ? null : num(f.totalIncome, 0, 1e9),
         returnPct: num(f.returnPct, -20, 30),
         inflationPct: num(f.inflationPct, -5, 20),
       }),
@@ -217,6 +225,12 @@ export function KiwiSaverCalculator({ balanceNzd }: { balanceNzd: number | null 
               </li>
             </ul>
             {result.firstYear.governmentNote ? <p className="small">{result.firstYear.governmentNote}</p> : null}
+            {result.firstYear.incomeBasis === 'salary_only' && age >= GOVERNMENT_CONTRIBUTION.minAge && age < GOVERNMENT_CONTRIBUTION.maxAge ? (
+              <p className="muted small">
+                The ${GOVERNMENT_CONTRIBUTION.incomeLimit.toLocaleString('en-NZ')} limit is on all your taxable income, not just pay. This uses your salary
+                only; add other taxable income or your total below to check it.
+              </p>
+            ) : null}
           </div>
         </div>
       ) : (
@@ -247,6 +261,16 @@ export function KiwiSaverCalculator({ balanceNzd }: { balanceNzd: number | null 
           ) : null}
         </label>
         <label>
+          Other taxable income, a year (NZD)
+          <input type="number" min={0} step="any" inputMode="decimal" value={f.otherIncome} placeholder="0" onChange={(e) => set('otherIncome', e.target.value)} />
+          <span className="muted small">Interest, dividends, rental profit, business or a second job. Keeps pace with inflation.</span>
+        </label>
+        <label>
+          Total taxable income this year (optional, NZD)
+          <input type="number" min={0} step="any" inputMode="decimal" value={f.totalIncome} onChange={(e) => set('totalIncome', e.target.value)} />
+          <span className="muted small">If you know it, e.g. after losses. Used instead of salary plus other income for the government contribution.</span>
+        </label>
+        <label>
           Pay rises above inflation (% a year)
           <input type="number" min={0} max={20} step="0.5" inputMode="decimal" value={f.salaryGrowthPct} onChange={(e) => set('salaryGrowthPct', e.target.value)} />
           <span className="muted small">0 keeps your pay in step with inflation.</span>
@@ -259,7 +283,7 @@ export function KiwiSaverCalculator({ balanceNzd }: { balanceNzd: number | null 
               .sort((a, b) => a - b)
               .map((r) => (
                 <option key={r} value={String(r)}>
-                  {r === 0 ? 'Not contributing' : `${r}%`}
+                  {r === 0 ? 'Not contributing' : kiwiSaverEmployeeRateLabel(r, rates.kiwiSaverTemporaryReductionRate)}
                 </option>
               ))}
           </select>
@@ -267,7 +291,10 @@ export function KiwiSaverCalculator({ balanceNzd }: { balanceNzd: number | null 
         <label>
           Employer contribution (%)
           <input type="number" min={0} max={100} step="0.5" inputMode="decimal" value={f.employerRatePct} onChange={(e) => set('employerRatePct', e.target.value)} />
-          <span className="muted small">The minimum is {rates.kiwiSaverEmployerMinRate}% when you contribute. ESCT is taken off it.</span>
+          <span className="muted small">
+            The minimum is {rates.kiwiSaverEmployerMinRate}% when you contribute
+            {rates.kiwiSaverTemporaryReductionRate != null && <>, or {rates.kiwiSaverTemporaryReductionRate}% if you’re on a temporary rate reduction</>}. ESCT is taken off it.
+          </span>
         </label>
         <label>
           Extra you put in, a year (NZD)
@@ -323,7 +350,7 @@ export function KiwiSaverCalculator({ balanceNzd }: { balanceNzd: number | null 
           <li>Your pay rises with inflation (plus any growth you set). You and your employer put in your rates of it each year.</li>
           <li>Your employer’s contribution has ESCT taken off at the rate for your pay plus their contribution (10.5%–39%, IRD bands from 1 April 2025).</li>
           <li>
-            The government adds {GOVERNMENT_CONTRIBUTION.perDollar * 100}c for every $1 you put in, up to ${GOVERNMENT_CONTRIBUTION.maxPerYear} a year, if you’re {GOVERNMENT_CONTRIBUTION.minAge}–{GOVERNMENT_CONTRIBUTION.maxAge} and earn ${GOVERNMENT_CONTRIBUTION.incomeLimit.toLocaleString('en-NZ')} or less (from 1 July 2025).
+            The government adds {GOVERNMENT_CONTRIBUTION.perDollar * 100}c for every $1 you put in, up to ${GOVERNMENT_CONTRIBUTION.maxPerYear} a year, if you’re {GOVERNMENT_CONTRIBUTION.minAge}–{GOVERNMENT_CONTRIBUTION.maxAge} and your annual taxable income (all of it, not just pay) is ${GOVERNMENT_CONTRIBUTION.incomeLimit.toLocaleString('en-NZ')} or less (from 1 July 2025, IRD “Getting the KiwiSaver government contribution”). A total you enter moves with your pay in later years.
           </li>
           <li>Today’s rules are used for every year. The minimum contribution rises to 4% from 1 April 2028; change your rates to see what that does. Thresholds aren’t adjusted for inflation.</li>
           <li>You can usually withdraw at {KIWISAVER_WITHDRAWAL_AGE}, or earlier for a first home or in hardship.</li>
