@@ -14,7 +14,9 @@
  *   eligibleAmountNzd = sum of amountNzd where amountNzd >= 5.
  *   Donations under $5 are not added together to reach $5.
  *   belowMinimumAmountNzd = sum of amountNzd where amountNzd < 5.
- *   estimatedTaxCreditNzd = floor(eligible cents / 3) / 100.
+ *   claimableAmountNzd = eligibleAmountNzd, capped at $100,000 from the 2028
+ *   tax year (see below). Before 2028 there is no dollar cap.
+ *   estimatedTaxCreditNzd = floor(claimable cents / 3) / 100.
  *   IRD works the credit to 2 decimal places without rounding up, so a part
  *   cent is dropped: $200.00 gives $66.66, not $66.67. The division is done
  *   on integer cents so no floating-point error can push it over a cent.
@@ -23,6 +25,12 @@
  *
  * The credit is an estimate of the IRD donation tax credit (IR526):
  *   33.33 cents per dollar (one third) of donations of $5 or more.
+ *   From 1 April 2027 (the 2028 tax year on), eligible donations are capped
+ *   at the lower of $100,000 and taxable income, so the credit is at most
+ *   $33,333.33. Source: Taxation (Budget Measures) Act 2026, IRD commentary
+ *   item 2026/25-001, section LD 1(3) of the Income Tax Act 2007.
+ *   The $100,000 cap is applied here (eligibleCapApplied is true when it
+ *   reduced the amount).
  *   Source: https://www.ird.govt.nz/income-tax/income-tax-for-individuals/individual-tax-credits/donation-tax-credits/about-donation-tax-credits
  *   IRD also caps the credit at one third of taxable income. Taxable income
  *   is not stored here, so that cap is not applied (incomeCapApplied is false).
@@ -40,12 +48,16 @@ import { isIsoDate, roundMoney } from '../debts/model.ts';
 
 export const DONATION_TAX_CREDIT_MINIMUM_NZD = 5;
 export const DONATION_TAX_CREDIT_RATE_LABEL = '1/3' as const;
+/** Eligible-donation ceiling (NZD) from the 2028 tax year (donations from 1 April 2027). */
+export const DONATION_ELIGIBLE_CAP_NZD = 100_000;
+/** First tax year (by end year) the ceiling applies to: 2028 = 2027-04-01 through 2028-03-31. */
+export const DONATION_ELIGIBLE_CAP_FROM_TAX_YEAR = 2028;
 
 export const DONATION_TAX_YEAR_NOTE =
   'An NZ tax year runs from 1 April through 31 March and is labelled by the year it ends. The 2027 tax year is 2026-04-01 through 2027-03-31. A date on or after 1 April belongs to the tax year that ends the following 31 March.';
 
 export const DONATION_TAX_CREDIT_ESTIMATE_NOTE =
-  'Estimate only. The IRD donation tax credit is one third of donations of $5 or more to an approved donee (33.33 cents per $1), claimed after year-end on IR526 with receipts. estimatedTaxCreditNzd is eligibleAmountNzd divided by 3, worked to 2 decimal places without rounding up, as IRD does ($200 gives $66.66). Donations under $5 stay in totalAmountNzd and are not added together to reach $5. IRD also caps the credit at one third of taxable income. Taxable income is not stored here, so that cap is not applied. Payroll giving is already credited each pay and is not part of this estimate. Approved-donee status and whether a receipt is linked are not checked.';
+  'Estimate only. The IRD donation tax credit is one third of donations of $5 or more to an approved donee (33.33 cents per $1), claimed after year-end on IR526 with receipts. estimatedTaxCreditNzd is claimableAmountNzd divided by 3, worked to 2 decimal places without rounding up, as IRD does ($200 gives $66.66). Donations under $5 stay in totalAmountNzd and are not added together to reach $5. From the 2028 tax year (donations made on or after 1 April 2027), eligible donations are capped at the lower of $100,000 and taxable income, so the credit is at most $33,333.33 (Taxation (Budget Measures) Act 2026; see IRD, About donation tax credits). The $100,000 cap is applied here. IRD also caps the credit at one third of taxable income. Taxable income is not stored here, so that cap is not applied. Payroll giving is already credited each pay and is not part of this estimate. Approved-donee status and whether a receipt is linked are not checked.';
 
 export type DonationInput = {
   date: string;
@@ -87,6 +99,11 @@ export function nzTaxYearForDate(iso: string): NzTaxYear | null {
   return nzTaxYearBounds(taxYear);
 }
 
+/** Eligible-donation ceiling (NZD) for this tax year (by end year), or null when there is none. */
+export function donationEligibleCapNzd(taxYear: number): number | null {
+  return taxYear >= DONATION_ELIGIBLE_CAP_FROM_TAX_YEAR ? DONATION_ELIGIBLE_CAP_NZD : null;
+}
+
 export function summarizeTaxYear(rows: DonationAmount[], taxYear: number): DonationTaxYearTotals {
   let totalCents = 0;
   let eligibleCents = 0;
@@ -108,6 +125,8 @@ export function summarizeTaxYear(rows: DonationAmount[], taxYear: number): Donat
       belowCents += amountCents;
     }
   }
+  const capNzd = donationEligibleCapNzd(taxYear);
+  const claimableCents = capNzd == null ? eligibleCents : Math.min(eligibleCents, capNzd * 100);
   return {
     ...nzTaxYearBounds(taxYear),
     count,
@@ -116,7 +135,10 @@ export function summarizeTaxYear(rows: DonationAmount[], taxYear: number): Donat
     eligibleAmountNzd: eligibleCents / 100,
     belowMinimumCount: belowCount,
     belowMinimumAmountNzd: belowCents / 100,
-    estimatedTaxCreditNzd: Math.floor(eligibleCents / 3) / 100,
+    claimableAmountNzd: claimableCents / 100,
+    eligibleCapNzd: capNzd,
+    eligibleCapApplied: claimableCents < eligibleCents,
+    estimatedTaxCreditNzd: Math.floor(claimableCents / 3) / 100,
     estimateLabel: 'estimate',
     minimumDonationNzd: DONATION_TAX_CREDIT_MINIMUM_NZD,
     creditRate: DONATION_TAX_CREDIT_RATE_LABEL,

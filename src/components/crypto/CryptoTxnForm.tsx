@@ -1,6 +1,7 @@
 /**
  * Add / edit a crypto ledger entry (KAN-47). "Look up" fills the NZD value from Yahoo Finance ×
  * Frankfurter for the day (IRD names Yahoo Finance as a source); otherwise you enter it.
+ * Airdrops cost nil and aren't income unless marked taxable on receipt (KAN-86, IRD Airdrops).
  */
 import { useState, type ReactNode } from 'react';
 import { api, formatNzd } from '../../api/client';
@@ -24,6 +25,7 @@ export function Dialog({ title, onClose, children }: { title: string; onClose: (
 }
 
 const s = (n: number | null | undefined) => (n == null ? '' : String(n));
+const IRD_AIRDROPS = 'https://www.ird.govt.nz/cryptoassets/individual/airdrops-and-hard-forks/airdrops';
 
 export function CryptoTxnForm({ txn, onClose, onSave }: { txn: CryptoTxn | null; onClose: () => void; onSave: (body: CryptoTxnBody) => Promise<void> }) {
   const [date, setDate] = useState(txn?.date ?? '');
@@ -36,6 +38,7 @@ export function CryptoTxnForm({ txn, onClose, onSave }: { txn: CryptoTxn | null;
   const [toAsset, setToAsset] = useState(txn?.toAsset ?? '');
   const [toAmount, setToAmount] = useState(s(txn?.toAmount));
   const [notes, setNotes] = useState(txn?.notes ?? '');
+  const [taxable, setTaxable] = useState(!!txn?.taxableOnReceipt);
   const [busy, setBusy] = useState(false);
   const [lookup, setLookup] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +73,7 @@ export function CryptoTxnForm({ txn, onClose, onSave }: { txn: CryptoTxn | null;
         toAsset: kind === 'swap' ? toAsset.trim() : null,
         toAmount: kind === 'swap' ? Number(toAmount) : null,
         notes: notes.trim(),
+        taxableOnReceipt: kind === 'airdrop' && taxable,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save.');
@@ -123,11 +127,29 @@ export function CryptoTxnForm({ txn, onClose, onSave }: { txn: CryptoTxn | null;
                 Look up
               </button>
             </span>
-            {lookup ? <span className="muted small" aria-live="polite">{lookup}</span> : <span className="muted small">Leave blank if you don’t know yet; it’s flagged until you add it.</span>}
+            {lookup ? (
+              <span className="muted small" aria-live="polite">{lookup}</span>
+            ) : kind === 'airdrop' && !taxable ? (
+              <span className="muted small">Optional: not taxable on receipt, so it costs nil.</span>
+            ) : (
+              <span className="muted small">Leave blank if you don’t know yet; it’s flagged until you add it.</span>
+            )}
           </label>
         ) : (
           <p className="span-2 muted small">{kind.startsWith('transfer') ? 'Moving between your own wallets doesn’t change your cost or gains.' : 'Still yours while it’s in the protocol, so cost and gains don’t change.'}</p>
         )}
+        {kind === 'airdrop' ? (
+          <div className="span-2">
+            <label className="payslip-check">
+              <input type="checkbox" checked={taxable} onChange={(e) => setTaxable(e.target.checked)} />
+              <span>Taxable on receipt</span>
+            </label>
+            <p className="muted small">
+              Tick this if you’re in a crypto business, it was part of a profit-making scheme, you did something to get it, or you get airdrops regularly. It then counts as income at its NZD value, which is also its cost. Otherwise receiving it isn’t taxable and it costs nil; selling it later can still be taxable. See IRD’s{' '}
+              <a href={IRD_AIRDROPS} target="_blank" rel="noreferrer">Airdrops</a> page.
+            </p>
+          </div>
+        ) : null}
         {kind === 'buy' || kind === 'sell' || kind === 'swap' || kind === 'spend' ? (
           <label>
             Fees (NZD)

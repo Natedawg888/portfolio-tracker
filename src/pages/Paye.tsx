@@ -40,6 +40,7 @@ import {
   INVESTING_CREDIT_KIND_OPTIONS,
   RATE_SOURCES,
   SCHEDULAR_SOURCES,
+  kiwiSaverEmployerMinRateFor,
   payTaxYearRates,
   type InvestingCreditKind,
   type PayTaxYearRates,
@@ -55,6 +56,7 @@ import {
   convertSalaryHourly,
   formatPayeTaxDay,
   ietcCreditTip,
+  ietcNotLoadedTip,
   incomeBracketRows,
   kiwiSaverEmployeeRateOptions,
   kiwiSaverEmployerTip,
@@ -264,6 +266,7 @@ function WhatsIncluded({ open, rates }: { open: boolean; rates: PayTaxYearRates 
             accountDefaultEmployeeRate: rates.kiwiSaverDefaultEmployeeRate,
             statutoryEmployeeRates: rates.kiwiSaverEmployeeRates,
             statutoryMinimumEmployeeRate: rates.kiwiSaverDefaultEmployeeRate,
+            temporaryReductionRate: rates.kiwiSaverTemporaryReductionRate,
             statutoryFrom: formatPayeTaxDay(rates.start),
             minimumWageAdultHourly: rates.minimumWageAdultHourly,
             holidayPayPaygRate: rates.holidayPayPaygRate,
@@ -470,7 +473,7 @@ export function Paye() {
       otherAnnualGross: Number(otherAnnual) || 0,
       kiwiSaverOptIn,
       kiwiSaverEmployeeRatePct: employeeRatePct,
-      kiwiSaverEmployerRatePct: Number(ksEmployerRate) || rates.kiwiSaverEmployerMinRate,
+      kiwiSaverEmployerRatePct: Number(ksEmployerRate) || kiwiSaverEmployerMinRateFor(rates, employeeRatePct),
       salarySacrifice: kiwiSaverOptIn && salarySacrifice,
       studentLoan,
       ietc,
@@ -530,14 +533,14 @@ export function Paye() {
     return buildTaxCode({
       employment,
       studentLoan,
-      ietcApplied: employment === 'primary' && ietc,
+      ietcApplied: employment === 'primary' && ietc && rates.ietc != null,
       secondaryCode:
         employment === 'secondary' ? pickSecondaryCode(Number(secondaryTotal) || 0, rates).code : null,
     });
   }, [payType, outputPrefs, payeOptions, rates, result, employment, studentLoan, ietc, secondaryTotal]);
 
   const ksRateOptions = [
-    ...kiwiSaverEmployeeRateOptions(rates.kiwiSaverEmployeeRates),
+    ...kiwiSaverEmployeeRateOptions(rates.kiwiSaverEmployeeRates, rates.kiwiSaverTemporaryReductionRate),
     { value: KIWISAVER_CUSTOM_RATE_VALUE, label: 'Custom' },
   ];
   const ksListed = kiwiSaverRateSelection(ksRate, rates.kiwiSaverEmployeeRates);
@@ -798,13 +801,14 @@ export function Paye() {
                   {kiwiSaverEmployerTip({
                     minimumRate: rates.kiwiSaverEmployerMinRate,
                     statutoryFrom: formatPayeTaxDay(rates.start),
+                    temporaryReductionRate: rates.kiwiSaverTemporaryReductionRate,
                   })}
                 </InfoTip>
               </span>
               <input
                 id="paye-ks-employer"
                 type="number"
-                min={0}
+                min={kiwiSaverEmployerMinRateFor(rates, employeeRatePct)}
                 max={100}
                 step={0.1}
                 value={ksEmployerRate}
@@ -870,19 +874,23 @@ export function Paye() {
             label="IETC"
             pressed={ietc}
             onChange={setIetc}
-            disabled={employment === 'secondary'}
-            note={employment === 'secondary' ? 'Main job only' : undefined}
+            disabled={employment === 'secondary' || !rates.ietc}
+            note={!rates.ietc ? 'Not loaded for this year' : employment === 'secondary' ? 'Main job only' : undefined}
             tipLabel="About the independent earner tax credit"
-            tip={ietcCreditTip(
-              {
-                minIncome: rates.ietc.minIncome,
-                fullMaxIncome: rates.ietc.fullMaxIncome,
-                abateEnd: rates.ietc.abateEnd,
-                fullAnnual: rates.ietc.fullAnnual,
-                abateRate: rates.ietc.abateRate,
-              },
-              bandMoney,
-            )}
+            tip={
+              rates.ietc
+                ? ietcCreditTip(
+                    {
+                      minIncome: rates.ietc.minIncome,
+                      fullMaxIncome: rates.ietc.fullMaxIncome,
+                      abateEnd: rates.ietc.abateEnd,
+                      fullAnnual: rates.ietc.fullAnnual,
+                      abateRate: rates.ietc.abateRate,
+                    },
+                    bandMoney,
+                  )
+                : ietcNotLoadedTip(rates.label)
+            }
           />
           <PayeToggle
             label="Charity donations"

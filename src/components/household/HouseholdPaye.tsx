@@ -8,7 +8,7 @@ import { useCallback, useEffect, useId, useState, type FormEvent } from 'react';
 import { api, formatNzd } from '../../api/client';
 import type { HouseholdPayFigures, HouseholdPayInputs, HouseholdPayeView, HouseholdWhatIfChange, HouseholdWhatIfResult } from '../../types';
 import { PAYE_PREFS_STORAGE_KEY, loadPayePrefs } from '../../lib/payePrefs';
-import { payTaxYearRates } from '../../lib/payeRates';
+import { kiwiSaverEmployeeRateLabel, payTaxYearRates } from '../../lib/payeRates';
 import { HouseholdFamily } from './HouseholdFamily';
 
 const errText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
@@ -101,7 +101,8 @@ function MyPay({ view, onSaved, onNote }: { view: HouseholdPayeView; onSaved: (v
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const deviceInputs = fromPayePage();
-  const ksRates = payTaxYearRates().kiwiSaverEmployeeRates;
+  const ksYear = payTaxYearRates();
+  const ksRates = ksYear.kiwiSaverEmployeeRates;
   const set = (k: keyof HouseholdPayInputs, v: string | boolean) => setD((prev) => ({ ...prev, [k]: v }));
 
   async function save(e: FormEvent) {
@@ -223,7 +224,7 @@ function MyPay({ view, onSaved, onNote }: { view: HouseholdPayeView; onSaved: (v
                 <label htmlFor={`${id}-ks`}>My contribution</label>
                 <select id={`${id}-ks`} value={String(d.kiwiSaverEmployeeRatePct)} onChange={(e) => set('kiwiSaverEmployeeRatePct', e.target.value)}>
                   {[...new Set([...ksRates, Number(d.kiwiSaverEmployeeRatePct)])].filter((r) => r > 0).sort((a, b) => a - b).map((r) => (
-                    <option key={r} value={String(r)}>{r}%</option>
+                    <option key={r} value={String(r)}>{kiwiSaverEmployeeRateLabel(r, ksYear.kiwiSaverTemporaryReductionRate)}</option>
                   ))}
                 </select>
               </div>
@@ -261,7 +262,8 @@ function WhatIf({ view }: { view: HouseholdPayeView }) {
   const [value, setValue] = useState('');
   const [result, setResult] = useState<HouseholdWhatIfResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const ksRates = payTaxYearRates(view.taxYear).kiwiSaverEmployeeRates;
+  const ksYear = payTaxYearRates(view.taxYear);
+  const ksRates = ksYear.kiwiSaverEmployeeRates;
   if (!view.members.length) return null;
 
   async function run(e: FormEvent) {
@@ -312,7 +314,7 @@ function WhatIf({ view }: { view: HouseholdPayeView }) {
             <select id={`${id}-value`} required value={value} onChange={(e) => setValue(e.target.value)}>
               <option value="">Choose</option>
               {ksRates.map((r) => (
-                <option key={r} value={String(r)}>{r}%</option>
+                <option key={r} value={String(r)}>{kiwiSaverEmployeeRateLabel(r, ksYear.kiwiSaverTemporaryReductionRate)}</option>
               ))}
               <option value="0">None (not contributing)</option>
             </select>

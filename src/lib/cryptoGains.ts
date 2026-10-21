@@ -6,13 +6,21 @@
  * cost − transaction fees; crypto received as payment (mining, staking here) costs its value when
  * received; unrealised gains aren't taxable. This is an estimate for records, not tax advice.
  *
+ * IRD (Airdrops, QB 21/06): receiving an airdrop usually isn't taxable. It is only when you're in
+ * a crypto business, it was part of a profit-making scheme, you did something to get it, or you
+ * get airdrops regularly. So an airdrop costs nil and isn't income unless it's marked taxable on
+ * receipt; then it's income at its NZD value, which is also its cost. Selling it later is still
+ * counted as a disposal either way.
+ *
  * What each kind does to the asset's holdings:
- *   buy, swap (receive leg), staking_reward, airdrop, income → acquire at their NZD value (+ fee on buys)
+ *   buy, swap (receive leg), staking_reward, income       → acquire at their NZD value (+ fee on buys)
+ *   airdrop                                                → acquire at nil cost, or at its NZD value
+ *                                                            when taxable on receipt
  *   sell, swap (give leg), spend, gift_out, fee            → dispose (sell / spend: proceeds = NZD
  *       value − fee; gift and fee: proceeds = NZD value, usually 0 for a fee)
  *   transfer_in / transfer_out (between your own wallets), defi_deposit / defi_withdraw
  *                                                          → no change (still yours)
- * Staking rewards, airdrops and income are also counted as income at their NZD value.
+ * Staking rewards, income and airdrops taxable on receipt are also counted as income at their NZD value.
  */
 
 export const CRYPTO_TXN_KINDS = [
@@ -48,11 +56,16 @@ export const KIND_LABEL: Record<CryptoTxnKind, string> = {
   defi_withdraw: 'DeFi withdrawal',
 };
 
-/** Kinds that need an NZD value to work out cost or proceeds. */
+/** Kinds that need an NZD value to work out cost or proceeds (an airdrop only when taxable on receipt; see needsValue). */
 export const NEEDS_VALUE: ReadonlySet<CryptoTxnKind> = new Set(['buy', 'sell', 'swap', 'staking_reward', 'airdrop', 'income', 'spend', 'gift_out']);
 const ACQUIRE: ReadonlySet<CryptoTxnKind> = new Set(['buy', 'staking_reward', 'airdrop', 'income']);
 const DISPOSE: ReadonlySet<CryptoTxnKind> = new Set(['sell', 'spend', 'gift_out', 'fee']);
 const INCOME: ReadonlySet<CryptoTxnKind> = new Set(['staking_reward', 'airdrop', 'income']);
+
+/** Counted as income at receipt: staking and pay always; an airdrop only when marked taxable on receipt. */
+export const isIncomeOnReceipt = (t: { kind: CryptoTxnKind; taxableOnReceipt?: boolean | null }) => INCOME.has(t.kind) && (t.kind !== 'airdrop' || !!t.taxableOnReceipt);
+/** Needs an NZD value for the money figures. A non-taxable airdrop costs nil, so it doesn't. */
+export const needsValue = (t: { kind: CryptoTxnKind; taxableOnReceipt?: boolean | null }) => NEEDS_VALUE.has(t.kind) && (t.kind !== 'airdrop' || !!t.taxableOnReceipt);
 
 export type CostMethod = 'fifo' | 'wac';
 
@@ -69,6 +82,8 @@ export type LedgerTxn = {
   /** Swap only: what was received. */
   toAsset?: string | null;
   toAmount?: number | null;
+  /** Airdrop only: taxable on receipt (business, profit-making scheme, received for services, or regular airdrops). */
+  taxableOnReceipt?: boolean;
 };
 
 export type Disposal = {
@@ -97,7 +112,7 @@ export type GainsResult = {
   method: CostMethod;
   disposals: Disposal[];
   positions: AssetPosition[];
-  /** Income at receipt (staking, airdrops, paid in crypto), by txn. */
+  /** Income at receipt (staking, paid in crypto, airdrops taxable on receipt), by txn. */
   income: { txnId: string; date: string; asset: string; kind: CryptoTxnKind; amount: number; nzdValue: number }[];
   /** Txns that need an NZD value and don't have one (left out of the money figures). */
   missingValue: string[];
@@ -163,15 +178,17 @@ export function computeGains(ledger: LedgerTxn[], method: CostMethod): GainsResu
 
   for (const t of ordered) {
     const value = t.nzdValue;
-    if (NEEDS_VALUE.has(t.kind) && value == null) {
+    if (needsValue(t) && value == null) {
       missingValue.push(t.id);
       // Still move the units so later quantities stay right; money figures skip this txn.
     }
     const fee = Math.max(0, t.feeNzd || 0);
-    if (ACQUIRE.has(t.kind)) {
+    if (t.kind === 'airdrop' && !t.taxableOnReceipt) {
+      acquire(t.asset, t.amount, 0);
+    } else if (ACQUIRE.has(t.kind)) {
       if (value == null) incomplete.add(up(t.asset));
       acquire(t.asset, t.amount, (value ?? 0) + (t.kind === 'buy' ? fee : 0));
-      if (INCOME.has(t.kind) && value != null) income.push({ txnId: t.id, date: t.date, asset: up(t.asset), kind: t.kind, amount: t.amount, nzdValue: r2(value) });
+      if (isIncomeOnReceipt(t) && value != null) income.push({ txnId: t.id, date: t.date, asset: up(t.asset), kind: t.kind, amount: t.amount, nzdValue: r2(value) });
     } else if (DISPOSE.has(t.kind) || t.kind === 'swap') {
       const { cost, shortfall } = remove(t.asset, t.amount);
       if (shortfall > 0) shortfalls.add(up(t.asset));

@@ -112,4 +112,12 @@ eq(two.weekly.ftc, 37, 'two earners: FTC a week');
 eq(two.weekly.iwtc, 147, 'two earners: full IWTC');
 eq(two.weekly.total, 184, 'two earners: total a week');
 
+// The temporary IWTC note follows IRD's wording (KAN-103): "petrol", not "91 petrol", and "may".
+const iwtcNote = two.notes.find((n) => n.includes('$147 a week'));
+eq(typeof iwtcNote, 'string', 'the temporary IWTC is noted');
+eq(iwtcNote?.includes('may reduce back to $97 a week if the cost of petrol drops below $3 a litre for four weeks'), true, 'IWTC note uses IRD’s petrol wording');
+eq(iwtcNote?.includes('91'), false, 'IWTC note does not name a petrol grade');
+eq(iwtcNote?.includes('IRD'), true, 'IWTC note names IRD');
+eq(estimateWff({ ...base(60000, 2), inPaidWork: false }, rates).notes.some((n) => n.includes('petrol')), false, 'no paid work, no IWTC note');
+
 console.log('wffCalc.test.ts ok');

@@ -354,8 +354,17 @@ export interface DonationTaxYearTotals {
   belowMinimumCount: number;
   /** Sum of donations under $5. */
   belowMinimumAmountNzd: number;
+  /** eligibleAmountNzd after the yearly ceiling (eligibleCapNzd). The credit is a third of this. */
+  claimableAmountNzd: number;
   /**
-   * Estimate of the IR526 credit: eligibleAmountNzd / 3, cut to cents without
+   * Eligible-donation ceiling for this tax year: 100000 from the 2028 tax year
+   * (donations from 1 April 2027), null before.
+   */
+  eligibleCapNzd: number | null;
+  /** True when eligibleAmountNzd was over eligibleCapNzd and was cut to it. */
+  eligibleCapApplied: boolean;
+  /**
+   * Estimate of the IR526 credit: claimableAmountNzd / 3, cut to cents without
    * rounding up, as IRD does ($200 gives 66.66).
    * Not reduced by the taxable-income cap. See DonationSummary.estimateNote.
    */
@@ -1730,6 +1739,14 @@ export interface RentalProperty {
   letType: RentalLetType;
   /** The user lives here and lets rooms (boarders / flatmates). Only with letType 'rooms'. */
   ownHome: boolean;
+  /** Bright-line (KAN-93): settlement date, usually when the title was registered to you. */
+  purchaseDate: string | null;
+  purchasePrice: number | null;
+  /** Date of the binding sale agreement; set once the property is sold. */
+  saleAgreementDate: string | null;
+  salePrice: number | null;
+  /** Costs of buying, improving and selling. */
+  saleCosts: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1773,6 +1790,8 @@ export interface RentalListResponse {
   rooms: RentalRoom[];
   /** Newest start first. */
   tenancies: RentalTenancy[];
+  /** How ring-fenced losses are pooled (KAN-93): across all properties or per property. */
+  lossBasis: 'portfolio' | 'property';
 }
 
 /** A room let in a property (KAN-83). */
@@ -2167,6 +2186,8 @@ export interface CryptoTxnBody {
   toAmount?: number | null;
   counterparty?: string | null;
   notes: string;
+  /** Airdrops only (KAN-86): taxable on receipt (business, scheme, services, regular airdrops). */
+  taxableOnReceipt?: boolean;
 }
 export interface CryptoTxn extends CryptoTxnBody {
   id: string;

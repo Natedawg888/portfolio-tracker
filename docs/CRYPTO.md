@@ -8,12 +8,14 @@ A ledger of crypto transactions, each with the NZD value at the time (never gues
 
 | Kind | Effect |
 | --- | --- |
-| Buy, staking reward, airdrop, paid in crypto | Acquire at the NZD value (buys add their fee) |
+| Buy, staking reward, paid in crypto | Acquire at the NZD value (buys add their fee) |
+| Airdrop | Acquire at nil cost, not income. If marked **taxable on receipt**: income at the NZD value, which is also its cost |
 | Sell, spend, gift sent, network fee | Dispose: proceeds = NZD value (less fees on sells and spends) |
 | Swap | Dispose of what was given at its NZD value; acquire what was received at the same value |
 | Transfer in / out (own wallets), DeFi deposit / withdrawal | No change: still yours |
 
 - **Cost basis:** first-in first-out (default) or weighted average cost, per user. These are the two methods IRD lists ([Calculating cryptoasset income](https://www.ird.govt.nz/cryptoassets/taxing/income-expenses/calculating-cryptoasset-income)). Income = sale price − purchase cost − transaction fees. Crypto received as payment costs its value when received. Unrealised gains aren't taxable.
+- **Airdrops (KAN-86):** IRD ([Airdrops](https://www.ird.govt.nz/cryptoassets/individual/airdrops-and-hard-forks/airdrops), QB 21/06) says receiving an airdrop is usually not taxable. It is taxable only if you carry on a crypto business, got it as part of a profit-making scheme, provided services to get it, or receive airdrops regularly. Each airdrop has a "Taxable on receipt" option (`crypto_txns.taxable_on_receipt`, off by default). Off: nil cost, no income, no NZD value needed. On: the old behaviour (income at the NZD value, which is its cost). Selling airdropped coins is always a disposal in the gains. Airdrops saved before this change start with the option off. IRD's page doesn't say what a non-taxable airdrop costs; nil is the likely reading (check QB 21/06).
 - **Realised gains and income** are reported for each NZ tax year (1 April – 31 March).
 - **Unrealised gains** use today's crypto quotes. They're left blank for any coin whose cost isn't fully known.
 - **Flags:** selling more than the ledger shows you held is flagged; the missing units cost 0.

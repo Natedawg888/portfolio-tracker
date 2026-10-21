@@ -95,6 +95,15 @@ try {
   assert(r.json.totals.valueNzd === 29800 && r.json.totals.bondsNzd === 9800 && r.json.totals.termDepositsNzd === 20000, 'totals');
   assert(r.json.plus && r.json.calendar.length >= 2 && r.json.calendar[0].date === '2026-11-15', 'Plus: calendar');
 
+  // RWT 45% (no IRD number) and 28% (company) are accepted (KAN-95).
+  for (const rwtPct of [45, 28]) {
+    r = await call('POST', '/', P, { ...govt, name: `RWT ${rwtPct}`, rwtPct });
+    assert(r.status === 201, `RWT ${rwtPct}% accepted ${JSON.stringify(r.json)}`);
+    const saved = r.json.bonds.find((b: Json) => b.name === `RWT ${rwtPct}`);
+    assert(saved.rwtPct === rwtPct && saved.nextCoupon.net === (rwtPct === 45 ? 123.75 : 162), `next coupon after ${rwtPct}% RWT`);
+    assert((await call('DELETE', `/${saved.id}`, P)).status < 300, `remove the RWT ${rwtPct} bond`);
+  }
+
   // A recorded value replaces cost; never an estimate.
   r = await call('PUT', `/${g.id}`, P, { ...govt, valueAmount: 9950, valueOn: '2026-10-10' });
   assert(r.json.bonds.find((b: Json) => b.id === g.id).value === 9950, 'recorded value');
