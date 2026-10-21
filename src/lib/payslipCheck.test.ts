@@ -2,6 +2,7 @@
  * Payslip check (KAN-78). Expected figures are worked by hand from the 2026/27 rates.
  * Run: npm run test:payslips
  */
+import { nonDeclarationRate, PAY_TAX_YEARS } from './payeRates.ts';
 import { checkPayslip, missingPeriods, parseTaxCode, type PayslipFigures } from './payslipCheck.ts';
 
 function eq(actual: unknown, expected: unknown, msg: string): void {
@@ -64,6 +65,26 @@ eq(item(r, 'student_loan').ok, false, 'student loan taken without SL is flagged'
 // 2025/26 uses that year's ACC (1.67%): $1,500 a week → $25.05.
 eq(item(checkPayslip({ ...weekly, payDate: '2026-03-20' }), 'acc').expected, 25.05, '2025/26 ACC');
 
+// KAN-97: tax code ND is 45% tax + the ACC earners' levy, not 45% in all.
+// Weekly $1,000 in 2026/27: tax 45% = $450, ACC 1.75% = $17.50, so $467.50 in all.
+const nd: PayslipFigures = { ...weekly, taxCode: 'ND', grossNzd: 1000, payeNzd: 450, accNzd: 17.5, kiwiSaverEmployeeNzd: 0, studentLoanNzd: 0 };
+r = checkPayslip(nd);
+eq(r.status === 'checked' && r.allOk, true, 'ND $1,000 week passes');
+eq(item(r, 'paye').expected, 450, 'ND income tax is 45%');
+eq(item(r, 'acc').expected, 17.5, 'ND ACC component is 1.75% on top');
+r = checkPayslip({ ...nd, payeNzd: 467.5, accNzd: null });
+eq(item(r, 'paye_acc').expected, 467.5, 'ND on $1,000 is $467.50 including ACC');
+eq(item(r, 'paye_acc').ok, true, 'and it matches');
+eq(item(checkPayslip({ ...nd, payeNzd: 450, accNzd: null }), 'paye_acc').ok, false, 'ND at 45% with no ACC is flagged as under-deducted');
+eq(nonDeclarationRate(PAY_TAX_YEARS[2026]), 0.4675, 'ND rate is 46.75% in 2026/27');
+eq(nonDeclarationRate(PAY_TAX_YEARS[2025]), 0.4667, 'ND rate is 46.67% in 2025/26');
+// 2025/26 ACC is 1.67%: $1,000 → $16.70.
+eq(item(checkPayslip({ ...nd, payDate: '2026-03-20' }), 'acc').expected, 16.7, '2025/26 ND ACC');
+// No ACC earnings cap on ND: $5,000 a week ($260,000 a year, over the $156,641 cap) still pays 1.75% = $87.50.
+eq(item(checkPayslip({ ...nd, grossNzd: 5000, payeNzd: 2250, accNzd: 87.5 }), 'acc').expected, 87.5, 'ND ACC is not capped');
+eq(item(checkPayslip({ ...weekly, taxCode: 'M', grossNzd: 5000 }), 'acc').expected, 52.72, 'M ACC is capped at $2,741.22 a year');
+eq(parseTaxCode(' nd ')?.base, 'ND', 'parse ND');
+eq(parseTaxCode('ND SL'), null, 'ND has no SL variant');
 // 2024/25 (KAN-96): a single pay uses the rates in force on its pay day, not the year's composite.
 // Weekly $1,000 → yearly $52,000. ACC 1.60% → $16.00.
 // To 30 July 2024: 14,000 × 10.5% + 34,000 × 17.5% + 4,000 × 30% = 8,620 → $165.77.
@@ -84,7 +105,7 @@ eq(item(checkPayslip({ ...w24, payDate: '2024-06-06', taxCode: 'ME', grossNzd: 9
 eq(item(checkPayslip({ ...w24, payDate: '2024-06-06', taxCode: 'S' }), 'paye').expected, 175, '2024/25 secondary S at 17.5%');
 
 // Not checked.
-eq(checkPayslip({ ...weekly, taxCode: 'ND' }).status, 'not_checked', 'unsupported tax code');
+eq(checkPayslip({ ...weekly, taxCode: 'CAE' }).status, 'not_checked', 'unsupported tax code');
 eq(checkPayslip({ ...weekly, taxCode: '' }).status, 'not_checked', 'no tax code');
 eq(checkPayslip({ ...weekly, frequency: 'other' }).status, 'not_checked', 'irregular pay');
 eq(checkPayslip({ ...weekly, payDate: '2024-03-28' }).status, 'not_checked', 'no rates for 2023/24');

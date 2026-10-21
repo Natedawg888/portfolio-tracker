@@ -127,8 +127,13 @@ export const PAYROLL_GIVING_CREDIT_RATE = 1 / 3;
  */
 export const DONATION_TAX_CREDIT_RATE = 1 / 3;
 
-/** Non-declaration / no-notification rate (not used in UI by default). */
-export const NON_DECLARATION_RATE = 0.45;
+/**
+ * Non-declaration (ND) tax code: the income tax part only (KAN-97). Payroll also takes the
+ * year's ACC earners' levy on every dollar, with no maximum liable earnings (squared up at year
+ * end), so the whole ND deduction is 45% + ACC: 46.75% in 2026/27, 46.67% in 2025/26.
+ * Use nonDeclarationRate(rates) for the whole deduction. Source: IRD IR335 Employer's guide.
+ */
+export const NON_DECLARATION_TAX_RATE = 0.45;
 
 export const RATE_SOURCES = [
   {
@@ -555,6 +560,7 @@ export const PAY_TAX_YEARS: Readonly<Record<number, PayTaxYearRates>> = {
     kiwiSaverEmployeeRates: [3, 4, 6, 8, 10],
     kiwiSaverDefaultEmployeeRate: 3,
     kiwiSaverEmployerMinRate: 3,
+    kiwiSaverTemporaryReductionRate: null,
     studentLoanRate: STUDENT_LOAN_RATE,
     studentLoanAnnualThreshold: STUDENT_LOAN_ANNUAL_THRESHOLD,
     ietc: null,
@@ -624,6 +630,11 @@ export function ratesForPayDate(ymd: string): PayTaxYearRates | null {
 /** Rates for a tax year, or the current year when that year has no config yet. */
 export function payTaxYearRates(startYear: number = CURRENT_PAY_TAX_YEAR): PayTaxYearRates {
   return PAY_TAX_YEARS[startYear] ?? PAY_TAX_YEARS[CURRENT_PAY_TAX_YEAR];
+}
+
+/** Whole ND deduction rate for a tax year: 45% income tax + that year's ACC earners' levy. */
+export function nonDeclarationRate(rates: PayTaxYearRates = payTaxYearRates()): number {
+  return NON_DECLARATION_TAX_RATE + rates.accRate;
 }
 
 type KiwiSaverYearRates = Pick<PayTaxYearRates, 'kiwiSaverEmployerMinRate' | 'kiwiSaverTemporaryReductionRate'>;
