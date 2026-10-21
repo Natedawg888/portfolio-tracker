@@ -51,6 +51,11 @@ eq(item(r, 'kiwisaver').label, 'KiwiSaver (4%)', 'given KiwiSaver rate');
 r = checkPayslip({ ...weekly, taxCode: 'S SL', grossNzd: 400, payeNzd: 70, accNzd: 7, kiwiSaverEmployeeNzd: 0, studentLoanNzd: 48 });
 eq(r.status === 'checked' && r.allOk, true, 'secondary S SL passes');
 
+// Temporary rate reduction (KAN-88): 3% of $1,500 = $45 matches the 2026/27 3% rate.
+r = checkPayslip({ ...weekly, kiwiSaverEmployeeNzd: 45 });
+eq(item(r, 'kiwisaver').ok, true, 'KiwiSaver 3% on a temporary reduction matches');
+eq(item(r, 'kiwisaver').expected, 45, 'expected 3% of gross');
+
 // KiwiSaver that matches no rate, and student loan without SL.
 r = checkPayslip({ ...weekly, kiwiSaverEmployeeNzd: 70 });
 eq(item(r, 'kiwisaver').ok, false, 'KiwiSaver $70 on $1,500 matches no rate');
@@ -80,12 +85,30 @@ eq(item(checkPayslip({ ...nd, grossNzd: 5000, payeNzd: 2250, accNzd: 87.5 }), 'a
 eq(item(checkPayslip({ ...weekly, taxCode: 'M', grossNzd: 5000 }), 'acc').expected, 52.72, 'M ACC is capped at $2,741.22 a year');
 eq(parseTaxCode(' nd ')?.base, 'ND', 'parse ND');
 eq(parseTaxCode('ND SL'), null, 'ND has no SL variant');
+// 2024/25 (KAN-96): a single pay uses the rates in force on its pay day, not the year's composite.
+// Weekly $1,000 → yearly $52,000. ACC 1.60% → $16.00.
+// To 30 July 2024: 14,000 × 10.5% + 34,000 × 17.5% + 4,000 × 30% = 8,620 → $165.77.
+// From 31 July 2024: 15,600 × 10.5% + 36,400 × 17.5% = 8,008 → $154.00; with ME, (8,008 − 520) → $144.00.
+const w24: PayslipFigures = { ...weekly, taxCode: 'M', grossNzd: 1000, payeNzd: 0, accNzd: 0, kiwiSaverEmployeeNzd: 0, studentLoanNzd: 0 };
+r = checkPayslip({ ...w24, payDate: '2024-07-30' });
+eq(r.status === 'checked' && r.taxYear, 2024, '30 July 2024 is in 2024/25');
+eq(item(r, 'paye').expected, 165.77, 'pay day 30 July 2024 uses the old brackets');
+eq(item(r, 'acc').expected, 16, '2024/25 ACC 1.60%');
+eq(item(checkPayslip({ ...w24, payDate: '2024-07-31' }), 'paye').expected, 154, 'pay day 31 July 2024 uses the new brackets');
+eq(item(checkPayslip({ ...w24, payDate: '2025-03-27' }), 'paye').expected, 154, 'March 2025 uses the new brackets');
+eq(item(checkPayslip({ ...w24, payDate: '2024-08-08', taxCode: 'ME' }), 'paye').expected, 144, 'ME from 31 July 2024: full IETC at $52,000');
+r = checkPayslip({ ...w24, payDate: '2024-06-06', taxCode: 'ME' });
+eq(item(r, 'paye').expected, 165.77, 'ME before 31 July 2024: no IETC above $48,000');
+eq(r.status === 'checked' && r.notes.some((n) => n.includes('$24,000–$48,000')), true, 'ME note names the old IETC range');
+// Weekly $900 → $46,800: 1,470 + 32,800 × 17.5% = 7,210; IETC 520 − 2,800 × 13c = 156 → (7,210 − 156) / 52 = $135.65.
+eq(item(checkPayslip({ ...w24, payDate: '2024-06-06', taxCode: 'ME', grossNzd: 900 }), 'paye').expected, 135.65, 'ME before 31 July 2024 abates from $44,000');
+eq(item(checkPayslip({ ...w24, payDate: '2024-06-06', taxCode: 'S' }), 'paye').expected, 175, '2024/25 secondary S at 17.5%');
 
 // Not checked.
 eq(checkPayslip({ ...weekly, taxCode: 'CAE' }).status, 'not_checked', 'unsupported tax code');
 eq(checkPayslip({ ...weekly, taxCode: '' }).status, 'not_checked', 'no tax code');
 eq(checkPayslip({ ...weekly, frequency: 'other' }).status, 'not_checked', 'irregular pay');
-eq(checkPayslip({ ...weekly, payDate: '2024-06-01' }).status, 'not_checked', 'no rates for 2024/25');
+eq(checkPayslip({ ...weekly, payDate: '2024-03-28' }).status, 'not_checked', 'no rates for 2023/24');
 eq(parseTaxCode('sh sl')?.base, 'SH', 'parse SH SL');
 
 // Missing pay periods.

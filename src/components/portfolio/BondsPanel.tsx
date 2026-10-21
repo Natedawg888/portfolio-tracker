@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { api, formatNzd } from '../../api/client';
 import type { Bond, BondPayment, BondWriteBody, BondsView, BondKind, CouponFrequency } from '../../types';
-import { BOND_KIND_LABEL, FREQUENCY_LABEL, RWT_CHOICES, bondSchedule } from '../../lib/bondSchedule';
+import { BOND_KIND_LABEL, FREQUENCY_LABEL, RWT_CHOICES, RWT_SOURCE_URL, bondSchedule, rwtChoiceLabel } from '../../lib/bondSchedule';
 import { longDate } from '../../pages/warrantiesView';
 import { ClassHeading } from './ClassHeading';
 import { InfoTip } from '../InfoTip';
@@ -154,10 +154,12 @@ function BondForm({ view, mode, onClose, onSaved }: { view: BondsView; mode: For
           <select value={rwt} onChange={(e) => setRwt(e.target.value)}>
             <option value="">Not set (show before tax)</option>
             {RWT_CHOICES.map((r) => (
-              <option key={r} value={String(r)}>{r}%</option>
+              <option key={r} value={String(r)}>{rwtChoiceLabel(r)}</option>
             ))}
           </select>
-          <span className="muted small">Resident withholding tax taken from the interest (IRD rates).</span>
+          <span className="muted small">
+            Resident withholding tax taken from the interest (<a href={RWT_SOURCE_URL} target="_blank" rel="noreferrer">IRD rates</a>).
+          </span>
         </label>
         {preview.length ? (
           <p className="span-2 small" aria-live="polite">

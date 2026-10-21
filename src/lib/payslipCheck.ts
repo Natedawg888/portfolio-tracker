@@ -1,7 +1,7 @@
 /**
  * Payslip check (KAN-78): what the PAYE calculator expects for one payslip's period and tax code,
- * compared with what the payslip shows. Rates come from payeRates.ts for the tax year of the pay
- * date; a year without loaded rates isn't checked. Educational only: payroll uses IRD's period
+ * compared with what the payslip shows. Rates come from payeRates.ts for the pay date, including a
+ * mid-year change in force that day; a year without loaded rates isn't checked. Educational only: payroll uses IRD's period
  * tables, which round, so small differences are expected and allowed for.
  *
  * Checked: PAYE (income tax after IETC), ACC earners' levy (or PAYE including ACC, when the
@@ -9,7 +9,7 @@
  * Tax code ND is 45% tax plus ACC on every dollar, with no ACC earnings cap (IR335).
  */
 import { calcAcc, calcIetc, calcIncomeTax } from './payeCalc';
-import { NON_DECLARATION_TAX_RATE, PAY_TAX_YEARS, taxYearForDate } from './payeRates';
+import { NON_DECLARATION_TAX_RATE, ratesForPayDate, taxYearForDate } from './payeRates';
 
 export type PayslipFrequency = 'weekly' | 'fortnightly' | 'four_weekly' | 'monthly' | 'other';
 export const PERIODS_PER_YEAR: Record<Exclude<PayslipFrequency, 'other'>, number> = { weekly: 52, fortnightly: 26, four_weekly: 13, monthly: 12 };
@@ -56,7 +56,7 @@ export function checkPayslip(p: PayslipFigures): PayslipCheck {
   const code = parseTaxCode(p.taxCode);
   if (!code) return { status: 'not_checked', reason: p.taxCode.trim() ? `Tax code ${p.taxCode.trim().toUpperCase()} isn’t covered by the check (M, ME, SB, S, SH, ST and SA, with or without SL, and ND are).` : 'Add the tax code to check this payslip.' };
   const taxYear = taxYearForDate(p.payDate);
-  const rates = PAY_TAX_YEARS[taxYear];
+  const rates = ratesForPayDate(p.payDate);
   if (!rates) return { status: 'not_checked', reason: 'PAYE rates for that tax year aren’t loaded.' };
   if (!(p.grossNzd > 0)) return { status: 'not_checked', reason: 'Add the gross pay to check this payslip.' };
 
@@ -67,7 +67,13 @@ export function checkPayslip(p: PayslipFigures): PayslipCheck {
   if (code.base === 'M' || code.base === 'ME') {
     const ietc = code.base === 'ME' ? calcIetc(annual, rates) : 0;
     tax = Math.max(0, calcIncomeTax(annual, rates) - ietc) / ppy;
-    if (code.base === 'ME' && ietc === 0) notes.push('Tax code ME gives the independent earner tax credit only on yearly pay of $24,000–$70,000; at this pay it adds nothing.');
+    if (code.base === 'ME' && ietc === 0) {
+      notes.push(
+        rates.ietc
+          ? `Tax code ME gives the independent earner tax credit only on yearly pay of $${rates.ietc.minIncome.toLocaleString('en-NZ')}–$${rates.ietc.abateEnd.toLocaleString('en-NZ')}; at this pay it adds nothing.`
+          : `The independent earner tax credit isn’t loaded for ${rates.label}, so none is included.`,
+      );
+    }
   } else if (code.base === 'ND') {
     tax = p.grossNzd * NON_DECLARATION_TAX_RATE;
     notes.push(`Tax code ND takes 45% tax plus the ACC earners’ levy (${r2(rates.accRate * 100)}%) on all pay, with no ACC earnings cap (IRD IR335 Employer’s guide).`);

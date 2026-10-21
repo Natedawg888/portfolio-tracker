@@ -24,8 +24,20 @@ export const FREQUENCY_LABEL: Record<CouponFrequency, string> = {
 const STEP_MONTHS: Record<Exclude<CouponFrequency, 'maturity'>, number> = { monthly: 1, quarterly: 3, half_yearly: 6, yearly: 12 };
 const PER_YEAR: Record<Exclude<CouponFrequency, 'maturity'>, number> = { monthly: 12, quarterly: 4, half_yearly: 2, yearly: 1 };
 
-/** IRD RWT rates on interest (payeRates.ts RWT_INTEREST_RATES), as percentages. */
-export const RWT_CHOICES = [10.5, 17.5, 30, 33, 39] as const;
+/**
+ * IRD RWT rates on interest, as percentages: the individual rates (payeRates.ts RWT_INTEREST_RATES),
+ * 28% a company can elect, and 45% when no IRD number is given to the payer (RWT_NO_IRD_RATE) (KAN-95).
+ * Source: IRD "Using the right RWT rate".
+ */
+export const RWT_CHOICES = [10.5, 17.5, 28, 30, 33, 39, 45] as const;
+export const RWT_SOURCE_URL = 'https://www.ird.govt.nz/income-tax/withholding-taxes/resident-withholding-tax-rwt/using-the-right-rwt-tax-rate';
+const RWT_NOTE: Partial<Record<number, string>> = { 28: 'company', 45: 'no IRD number' };
+
+/** "28% (company)", "45% (no IRD number)", else "33%". */
+export function rwtChoiceLabel(pct: number): string {
+  const note = RWT_NOTE[pct];
+  return note ? `${pct}% (${note})` : `${pct}%`;
+}
 
 export type BondTerms = {
   kind: BondKind;
