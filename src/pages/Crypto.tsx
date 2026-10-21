@@ -17,6 +17,7 @@ import { DefiPositions } from '../components/crypto/DefiPositions';
 
 const IRD_CALC = 'https://www.ird.govt.nz/cryptoassets/taxing/income-expenses/calculating-cryptoasset-income';
 const IRD_CONVERT = 'https://www.ird.govt.nz/cryptoassets/taxing/income-expenses/convert-currency';
+const IRD_AIRDROPS = 'https://www.ird.govt.nz/cryptoassets/individual/airdrops-and-hard-forks/airdrops';
 const qty = (n: number) => n.toLocaleString('en-NZ', { maximumFractionDigits: 8 });
 const signed = (n: number) => (n < 0 ? `−${formatNzd(-n)}` : formatNzd(n));
 
@@ -27,7 +28,7 @@ function Upsell() {
       <p className="muted">Pro adds a crypto ledger with cost basis and gains for your tax return:</p>
       <ul className="crypto-upsell">
         <li>Realised and unrealised gains, by NZ tax year, using FIFO or weighted average cost</li>
-        <li>Staking rewards and airdrops as income at their value when received</li>
+        <li>Staking rewards as income at their value when received; airdrops only when they’re taxable on receipt</li>
         <li>Import transactions from your wallets, with each one classified</li>
         <li>DeFi positions (lending, pools, vaults, borrowing) in your net worth</li>
       </ul>
@@ -121,7 +122,7 @@ export function Crypto() {
                 <dd className={'money' + (y.realisedNzd < 0 ? ' hh-owes' : '')}>{signed(y.realisedNzd)}</dd>
               </div>
               <div>
-                <dt>Staking, airdrops and pay</dt>
+                <dt>Staking, pay and taxable airdrops</dt>
                 <dd className="money">{formatNzd(y.incomeNzd)}</dd>
               </div>
               <div>
@@ -152,9 +153,10 @@ export function Crypto() {
             {view.missingValue ? <p className="small hh-over">{view.missingValue === 1 ? '1 transaction needs' : `${view.missingValue} transactions need`} an NZD value. Until then it’s left out of the money figures.</p> : null}
             {view.shortfalls.length ? <p className="small hh-over">You sold more {view.shortfalls.join(', ')} than the ledger shows you had. Add the earlier buys or transfers.</p> : null}
             <p className="muted small">
-              IRD accepts first-in-first-out or weighted average cost; use one consistently. Unrealised gains aren’t taxed. An estimate for your records, not tax advice. See IRD:{' '}
+              IRD accepts first-in-first-out or weighted average cost; use one consistently. Unrealised gains aren’t taxed. Receiving an airdrop usually isn’t taxable, so it costs nil unless you mark it taxable on receipt. An estimate for your records, not tax advice. See IRD:{' '}
               <a href={IRD_CALC} target="_blank" rel="noreferrer">calculating cryptoasset income</a> ·{' '}
-              <a href={IRD_CONVERT} target="_blank" rel="noreferrer">converting to NZD</a>.
+              <a href={IRD_CONVERT} target="_blank" rel="noreferrer">converting to NZD</a> ·{' '}
+              <a href={IRD_AIRDROPS} target="_blank" rel="noreferrer">airdrops</a>.
             </p>
             {view.disposals.length ? (
               <details className="proj-fold">
@@ -264,6 +266,7 @@ export function Crypto() {
                       {t.kind === 'swap' && t.toAsset ? ` → ${qty(t.toAmount ?? 0)} ${t.toAsset}` : ''}
                       <span className="muted small">
                         {' '}· {longDate(t.date)}
+                        {t.kind === 'airdrop' ? (t.taxableOnReceipt ? ' · taxable on receipt' : ' · not taxable on receipt') : ''}
                         {t.imported ? ' · imported' : ''}
                       </span>
                     </span>

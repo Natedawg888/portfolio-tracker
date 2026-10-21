@@ -123,6 +123,30 @@ try {
   assert((await call('PUT', `/txns/${sale.id}`, F, { date: '2025-11-01', kind: 'sell', asset: 'ETH', amount: 1, nzdValue: 1 })).status === 402, 'free can’t edit');
   assert((await call('DELETE', `/txns/${noValue.id}`, P)).status === 200, 'delete');
 
+  // Airdrops (KAN-86): not income and nil cost by default; "taxable on receipt" counts it as income.
+  const drop = await add({ date: '2023-06-01', kind: 'airdrop', asset: 'ARB', amount: 100, nzdValue: 150 });
+  assert(drop.taxableOnReceipt === false && drop.needsValue === false, 'airdrop starts not taxable');
+  assert((await add({ date: '2023-06-02', kind: 'airdrop', asset: 'OP', amount: 5 })).needsValue === false, 'non-taxable airdrop needs no value');
+  await add({ date: '2024-02-01', kind: 'sell', asset: 'ARB', amount: 100, nzdValue: 400, feeNzd: 5 });
+  s = await cryptoSummary(db, 'pia', 2023, priceOf);
+  if (!s.ok) throw new Error('summary');
+  assert(s.value.year.incomeNzd === 0 && s.value.year.realisedNzd === 395, `airdrop off ${JSON.stringify(s.value.year)}`);
+  const flagged = await call('PUT', `/txns/${drop.id}`, P, { date: '2023-06-01', kind: 'airdrop', asset: 'ARB', amount: 100, nzdValue: 150, taxableOnReceipt: true });
+  assert(flagged.status === 200 && flagged.json.taxableOnReceipt === true, 'mark taxable on receipt');
+  s = await cryptoSummary(db, 'pia', 2023, priceOf);
+  if (!s.ok) throw new Error('summary');
+  assert(s.value.year.incomeNzd === 150 && s.value.year.realisedNzd === 245, `airdrop on ${JSON.stringify(s.value.year)}`);
+  const notDrop = await add({ date: '2023-06-03', kind: 'staking_reward', asset: 'SOL', amount: 1, nzdValue: 10, taxableOnReceipt: false });
+  assert(notDrop.taxableOnReceipt === false, 'the option is for airdrops only');
+  s = await cryptoSummary(db, 'pia', 2023, priceOf);
+  if (!s.ok) throw new Error('summary');
+  assert(s.value.year.incomeNzd === 160, 'staking still income');
+  // Rows saved before the column existed (no value given) read as not taxable.
+  run(db, `INSERT INTO crypto_txns (id, user_id, date, kind, asset, amount, nzd_value, created_at, updated_at) VALUES ('ctx_old','pia','2023-07-01','airdrop','UNI',1,20,?,?)`, [now, now]);
+  s = await cryptoSummary(db, 'pia', 2023, priceOf);
+  if (!s.ok) throw new Error('summary');
+  assert(s.value.txns.find((x) => x.id === 'ctx_old')?.taxableOnReceipt === false && s.value.year.incomeNzd === 160, 'existing airdrops not taxable');
+
   // Historical prices: Yahoo daily close × Frankfurter, nearest earlier day; nothing guessed.
   clearPriceCacheForTest();
   const fake = async (url: string) => {

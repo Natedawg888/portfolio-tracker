@@ -1306,6 +1306,8 @@ CREATE TABLE IF NOT EXISTS crypto_txns (
   external_ref  TEXT,
   counterparty  TEXT,
   notes         TEXT NOT NULL DEFAULT '',
+  -- Airdrops only (KAN-86): 1 = taxable on receipt, income at nzd_value; 0 = nil cost, not income.
+  taxable_on_receipt INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT NOT NULL,
   updated_at    TEXT NOT NULL
 );
