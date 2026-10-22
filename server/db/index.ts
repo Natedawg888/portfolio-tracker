@@ -245,6 +245,25 @@ export function migrateBusinesses(database: Database) {
   }
 }
 
+/**
+ * Stock, suppliers, sales and the business budget (KAN-107). New tables come from schema.sql;
+ * this adds the columns old databases lack. No backfill. The index is made here, not in
+ * schema.sql, because schema.sql runs before this ALTER on an old database.
+ */
+export function migrateBusinessStock(database: Database) {
+  const txnCols = tableColumns(database, 'transactions');
+  if (txnCols.size > 0 && !txnCols.has('business_category_id')) {
+    database.run('ALTER TABLE transactions ADD COLUMN business_category_id TEXT');
+  }
+  const bizCols = tableColumns(database, 'businesses');
+  if (bizCols.size > 0 && !bizCols.has('receipt_prefix')) {
+    database.run("ALTER TABLE businesses ADD COLUMN receipt_prefix TEXT NOT NULL DEFAULT 'RCT-'");
+  }
+  database.run(
+    `CREATE INDEX IF NOT EXISTS idx_transactions_user_business_category ON transactions(user_id, business_category_id) WHERE business_category_id IS NOT NULL`,
+  );
+}
+
 /** Runtime migration for existing sql.js DBs (CREATE TABLE IF NOT EXISTS won't add columns). */
 function migrateSchema(database: Database) {
   const cols = tableColumns(database, 'holdings');
@@ -635,6 +654,8 @@ function migrateSchema(database: Database) {
 
   // Business page (KAN-84): invoices, clients, transactions and income belong to a business.
   migrateBusinesses(database);
+  // Stock, suppliers, sales and business budget (KAN-107).
+  migrateBusinessStock(database);
 
   // Savings goal → savings account link (KAN-20).
   const goalCols = tableColumns(database, 'savings_goals');

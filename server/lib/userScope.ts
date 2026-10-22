@@ -17,6 +17,7 @@ import {
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { priceContributor } from '../shopping/prices.ts';
 import { removeUserFromHouseholds } from '../households/store.ts';
+import { BUSINESS_STOCK_TABLES } from '../business/stockTables.ts';
 
 export const SCOPED_TABLES = [
   'holdings',
@@ -41,6 +42,7 @@ export const SCOPED_TABLES = [
   'business_assets',
   'business_asset_movements',
   'business_employees',
+  ...BUSINESS_STOCK_TABLES,
   'invoice_clients',
   'invoices',
   'invoice_lines',
@@ -218,6 +220,7 @@ export function deleteScopedDataForUser(
     'business_asset_movements',
     'business_assets',
     'business_employees',
+    ...BUSINESS_STOCK_TABLES,
     'businesses',
     'business_profiles',
     'income_records',

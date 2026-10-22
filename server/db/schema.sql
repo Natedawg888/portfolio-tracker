@@ -824,6 +824,7 @@ CREATE TABLE IF NOT EXISTS businesses (
   phone              TEXT NOT NULL DEFAULT '',
   bank_account       TEXT NOT NULL DEFAULT '',
   invoice_prefix     TEXT NOT NULL DEFAULT 'INV-',
+  receipt_prefix     TEXT NOT NULL DEFAULT 'RCT-',
   logo_path          TEXT,
   clients_enabled    INTEGER NOT NULL DEFAULT 1,
   count_in_net_worth INTEGER NOT NULL DEFAULT 1,
@@ -898,6 +899,230 @@ CREATE TABLE IF NOT EXISTS business_employees (
   updated_at     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_business_employees_user ON business_employees(user_id, business_id);
+
+-- Stock, suppliers, sales, wages and the business budget (KAN-107). Every table, children
+-- included, carries user_id and business_id so deleting a business or an account is one
+-- statement per table (BUSINESS_STOCK_TABLES, server/business/stockTables.ts).
+-- Nothing derived is stored: on-hand, average cost, COGS, sale totals, paid/overdue, reorder
+-- status and budget actuals are computed on read. Quantities are REAL because kg and L are
+-- fractional.
+
+-- archived_at hides the item from the stock chart and new sales; its history keeps counting.
+CREATE TABLE IF NOT EXISTS business_stock_items (
+  id              TEXT PRIMARY KEY,
+  user_id         TEXT NOT NULL,
+  business_id     TEXT NOT NULL,
+  name            TEXT NOT NULL,
+  sku             TEXT NOT NULL DEFAULT '',
+  unit            TEXT NOT NULL DEFAULT 'each' CHECK (unit IN ('each', 'kg', 'L')),
+  sell_price_nzd  REAL CHECK (sell_price_nzd IS NULL OR sell_price_nzd >= 0),  -- NULL: not set, margin unknown
+  reorder_level   REAL CHECK (reorder_level IS NULL OR reorder_level >= 0),    -- NULL: never amber or red
+  photo_path      TEXT,                     -- stock-photos/<id><ext> under data/uploads
+  notes           TEXT NOT NULL DEFAULT '',
+  archived_at     TEXT,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_business_stock_items_user ON business_stock_items(user_id, business_id);
+-- Archived items keep their SKU so restoring one never collides.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_business_stock_items_sku ON business_stock_items(business_id, lower(sku)) WHERE sku != '';
+
+CREATE TABLE IF NOT EXISTS business_stock_batches (
+  id             TEXT PRIMARY KEY,
+  user_id        TEXT NOT NULL,
+  business_id    TEXT NOT NULL,
+  item_id        TEXT NOT NULL,
+  date           TEXT NOT NULL,
+  quantity       REAL NOT NULL CHECK (quantity > 0),
+  unit_cost_nzd  REAL NOT NULL CHECK (unit_cost_nzd >= 0),  -- before delivery; landed cost is derived
+  notes          TEXT NOT NULL DEFAULT '',
+  created_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_business_stock_batches_item ON business_stock_batches(user_id, item_id, date);
+CREATE INDEX IF NOT EXISTS idx_business_stock_batches_user ON business_stock_batches(user_id, business_id);
+
+-- A recount stores what was counted, not the difference, so a back-dated sale or batch entered
+-- later can't make an old stocktake wrong.
+CREATE TABLE IF NOT EXISTS business_stock_adjustments (
+  id                TEXT PRIMARY KEY,
+  user_id           TEXT NOT NULL,
+  business_id       TEXT NOT NULL,
+  item_id           TEXT NOT NULL,
+  date              TEXT NOT NULL,
+  kind              TEXT NOT NULL CHECK (kind IN ('damage', 'recount')),
+  quantity_lost     REAL,
+  counted_quantity  REAL,
+  reason            TEXT NOT NULL CHECK (length(trim(reason)) > 0),
+  created_at        TEXT NOT NULL,
+  -- IS NOT NULL because a NULL comparison would let the CHECK pass.
+  CHECK (
+    (kind = 'damage'  AND quantity_lost IS NOT NULL AND quantity_lost > 0 AND counted_quantity IS NULL) OR
+    (kind = 'recount' AND counted_quantity IS NOT NULL AND counted_quantity >= 0 AND quantity_lost IS NULL)
+  )
+);
+CREATE INDEX IF NOT EXISTS idx_business_stock_adjustments_item ON business_stock_adjustments(user_id, item_id, date);
+CREATE INDEX IF NOT EXISTS idx_business_stock_adjustments_user ON business_stock_adjustments(user_id, business_id);
+
+CREATE TABLE IF NOT EXISTS business_suppliers (
+  id              TEXT PRIMARY KEY,
+  user_id         TEXT NOT NULL,
+  business_id     TEXT NOT NULL,
+  name            TEXT NOT NULL,
+  contact_person  TEXT NOT NULL DEFAULT '',
+  email           TEXT NOT NULL DEFAULT '',
+  phone           TEXT NOT NULL DEFAULT '',
+  address         TEXT NOT NULL DEFAULT '',
+  nzbn            TEXT NOT NULL DEFAULT '',
+  gst_number      TEXT NOT NULL DEFAULT '',
+  notes           TEXT NOT NULL DEFAULT '',
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_business_suppliers_user ON business_suppliers(user_id, business_id);
+
+-- A bill for goods ('stock') or freight ('delivery'). delivery_nzd is the freight part of
+-- amount_nzd, all of it on a delivery bill. delivery_treatment decides where that part lands:
+-- 'capitalise' spreads it over the linked batches' cost so it reaches COGS when the stock
+-- sells, 'expense' books it as an operating expense. paid_on NULL means unpaid.
+-- transaction_id is the bank debit that paid it; one debit can pay several bills.
+CREATE TABLE IF NOT EXISTS business_supplier_invoices (
+  id                  TEXT PRIMARY KEY,
+  user_id             TEXT NOT NULL,
+  business_id         TEXT NOT NULL,
+  supplier_id         TEXT NOT NULL,
+  kind                TEXT NOT NULL CHECK (kind IN ('stock', 'delivery')),
+  reference           TEXT NOT NULL DEFAULT '',   -- the supplier's invoice number
+  invoice_date        TEXT NOT NULL,
+  due_date            TEXT NOT NULL,
+  amount_nzd          REAL NOT NULL CHECK (amount_nzd >= 0),
+  delivery_nzd        REAL NOT NULL DEFAULT 0 CHECK (delivery_nzd >= 0 AND delivery_nzd <= amount_nzd),
+  delivery_treatment  TEXT NOT NULL DEFAULT 'capitalise' CHECK (delivery_treatment IN ('capitalise', 'expense')),
+  budget_category_id  TEXT,                       -- goods part; NULL: the role default
+  paid_on             TEXT,
+  transaction_id      TEXT,
+  file_path           TEXT,                       -- supplier-invoices/<id><ext>, PDF or image, signature-checked
+  file_name           TEXT NOT NULL DEFAULT '',
+  file_at             TEXT,
+  notes               TEXT NOT NULL DEFAULT '',
+  created_at          TEXT NOT NULL,
+  updated_at          TEXT NOT NULL,
+  CHECK (kind = 'stock' OR delivery_nzd = amount_nzd),
+  CHECK (transaction_id IS NULL OR paid_on IS NOT NULL)
+);
+CREATE INDEX IF NOT EXISTS idx_business_supplier_invoices_user ON business_supplier_invoices(user_id, business_id, paid_on);
+CREATE INDEX IF NOT EXISTS idx_business_supplier_invoices_supplier ON business_supplier_invoices(user_id, supplier_id);
+CREATE INDEX IF NOT EXISTS idx_business_supplier_invoices_txn ON business_supplier_invoices(user_id, transaction_id) WHERE transaction_id IS NOT NULL;
+
+-- Many-to-many: a freight bill covers a whole truck, and a batch can carry a goods bill and
+-- one or more freight bills.
+CREATE TABLE IF NOT EXISTS business_supplier_invoice_batches (
+  user_id      TEXT NOT NULL,
+  business_id  TEXT NOT NULL,
+  invoice_id   TEXT NOT NULL,
+  batch_id     TEXT NOT NULL,
+  PRIMARY KEY (invoice_id, batch_id)
+);
+CREATE INDEX IF NOT EXISTS idx_business_supplier_invoice_batches_batch ON business_supplier_invoice_batches(user_id, batch_id);
+CREATE INDEX IF NOT EXISTS idx_business_supplier_invoice_batches_user ON business_supplier_invoice_batches(user_id, business_id);
+
+-- A sale billed on an invoice (invoice_id) counts its money through the invoice's payments and
+-- only moves stock here. transaction_id is the deposit that carried the money; several sales
+-- can share one, like a day's EFTPOS settlement.
+-- Receipt: uploaded (receipt_path) or generated (receipt_number and a snapshot), never both.
+CREATE TABLE IF NOT EXISTS business_sales (
+  id                     TEXT PRIMARY KEY,
+  user_id                TEXT NOT NULL,
+  business_id            TEXT NOT NULL,
+  date                   TEXT NOT NULL,
+  client_id              TEXT,                    -- invoice_clients.id of the same business
+  invoice_id             TEXT,
+  transaction_id         TEXT,
+  notes                  TEXT NOT NULL DEFAULT '',
+  receipt_path           TEXT,                    -- sale-receipts/<id><ext>
+  receipt_name           TEXT NOT NULL DEFAULT '',
+  receipt_number         TEXT,
+  receipt_number_key     TEXT,
+  receipt_issued_at      TEXT,
+  receipt_snapshot_json  TEXT,                    -- business and client as issued, like invoices.business_json
+  created_at             TEXT NOT NULL,
+  updated_at             TEXT NOT NULL,
+  CHECK (receipt_path IS NULL OR receipt_number IS NULL),
+  CHECK ((receipt_number IS NULL) = (receipt_number_key IS NULL) AND (receipt_number IS NULL) = (receipt_issued_at IS NULL)),
+  CHECK (invoice_id IS NULL OR transaction_id IS NULL)
+);
+CREATE INDEX IF NOT EXISTS idx_business_sales_user ON business_sales(user_id, business_id, date);
+CREATE INDEX IF NOT EXISTS idx_business_sales_txn ON business_sales(user_id, transaction_id) WHERE transaction_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_business_sales_invoice ON business_sales(user_id, invoice_id) WHERE invoice_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_business_sales_receipt_number ON business_sales(user_id, receipt_number_key) WHERE receipt_number_key IS NOT NULL;
+
+-- description snapshots the item name so renaming the item doesn't rewrite a receipt.
+CREATE TABLE IF NOT EXISTS business_sale_lines (
+  id              TEXT PRIMARY KEY,
+  user_id         TEXT NOT NULL,
+  business_id     TEXT NOT NULL,
+  sale_id         TEXT NOT NULL,
+  item_id         TEXT NOT NULL,
+  position        INTEGER NOT NULL,
+  description     TEXT NOT NULL DEFAULT '',
+  quantity        REAL NOT NULL CHECK (quantity > 0),
+  unit_price_nzd  REAL NOT NULL CHECK (unit_price_nzd >= 0)
+);
+CREATE INDEX IF NOT EXISTS idx_business_sale_lines_sale ON business_sale_lines(user_id, sale_id, position);
+CREATE INDEX IF NOT EXISTS idx_business_sale_lines_item ON business_sale_lines(user_id, item_id);
+CREATE INDEX IF NOT EXISTS idx_business_sale_lines_user ON business_sale_lines(user_id, business_id);
+
+-- Wages the user records as paid (gross). employee_name keeps the record readable after the
+-- employee is deleted and employee_id goes NULL.
+CREATE TABLE IF NOT EXISTS business_wage_payments (
+  id              TEXT PRIMARY KEY,
+  user_id         TEXT NOT NULL,
+  business_id     TEXT NOT NULL,
+  employee_id     TEXT,
+  employee_name   TEXT NOT NULL DEFAULT '',
+  date            TEXT NOT NULL,
+  amount_nzd      REAL NOT NULL CHECK (amount_nzd > 0),
+  transaction_id  TEXT,
+  notes           TEXT NOT NULL DEFAULT '',
+  created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_business_wage_payments_user ON business_wage_payments(user_id, business_id, date);
+CREATE INDEX IF NOT EXISTS idx_business_wage_payments_txn ON business_wage_payments(user_id, transaction_id) WHERE transaction_id IS NOT NULL;
+
+-- Separate from the personal budget_categories. role marks where automatic actuals land
+-- (sales and other_income are income; stock, delivery and wages are expenses); a category
+-- with no role is filled only by tagged bank transactions.
+CREATE TABLE IF NOT EXISTS business_budget_categories (
+  id            TEXT PRIMARY KEY,
+  user_id       TEXT NOT NULL,
+  business_id   TEXT NOT NULL,
+  name          TEXT NOT NULL,
+  kind          TEXT NOT NULL CHECK (kind IN ('income', 'expense')),
+  role          TEXT CHECK (role IN ('sales', 'other_income', 'stock', 'delivery', 'wages')),
+  plan_cadence  TEXT NOT NULL DEFAULT 'month' CHECK (plan_cadence IN ('month', 'year')),
+  sort_order    INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL,
+  CHECK (role IS NULL
+    OR (role IN ('sales', 'other_income') AND kind = 'income')
+    OR (role IN ('stock', 'delivery', 'wages') AND kind = 'expense'))
+);
+CREATE INDEX IF NOT EXISTS idx_business_budget_categories_user ON business_budget_categories(user_id, business_id, sort_order);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_business_budget_categories_role ON business_budget_categories(business_id, role) WHERE role IS NOT NULL;
+
+-- period is 'YYYY-MM' for a month-planned category, or the year the tax year ends ('2027' is
+-- Apr 2026 to Mar 2027) for a year-planned one.
+CREATE TABLE IF NOT EXISTS business_budget_plans (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL,
+  business_id  TEXT NOT NULL,
+  category_id  TEXT NOT NULL,
+  period       TEXT NOT NULL CHECK (period GLOB '[0-9][0-9][0-9][0-9]' OR period GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]'),
+  amount_nzd   REAL NOT NULL CHECK (amount_nzd >= 0),
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_business_budget_plans_period ON business_budget_plans(category_id, period);
+CREATE INDEX IF NOT EXISTS idx_business_budget_plans_user ON business_budget_plans(user_id, business_id);
 
 -- Bills and subscriptions (KAN-26). Saved items (confirmed from detection or added by hand).
 -- next_due is an anchor; reads roll it forward to the first due date on or after today.
