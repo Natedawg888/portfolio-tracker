@@ -19,6 +19,7 @@ import {
   BusinessPage,
   BusinessDetailPage,
   BusinessClientsPage,
+  BusinessStockPage,
   CalendarPage,
   InvoicesPage,
   InvoiceEditorPage,
@@ -108,6 +109,7 @@ export default function App() {
                   <Route path="business/clients" element={<BusinessClientsPage />} />
                   <Route path="business/clients/:clientId" element={<BusinessClientsPage />} />
                   <Route path="calendar" element={<CalendarPage />} />
+                  <Route path="business/:id/stock" element={<BusinessStockPage />} />
                   <Route path="business/:id" element={<BusinessDetailPage />} />
                   <Route path="invoices/*" element={<InvoicesMoved />} />
                   <Route path="value-search" element={<ValueSearchPage />} />
