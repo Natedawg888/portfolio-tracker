@@ -95,6 +95,7 @@ export function InvoiceEditor() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const wantedBusiness = searchParams.get('business');
+  const wantedClient = searchParams.get('client');
   const editingId = id ?? null;
   const navError = (location.state as { sendError?: string } | null)?.sendError ?? null;
   const actionReasonId = useId();
@@ -191,6 +192,16 @@ export function InvoiceEditor() {
           );
         } else {
           if (biz.gstRegistered) setGstMode('exclusive');
+          // From a client card or a meeting: start with that client, if it belongs to this business.
+          const pre = cl.find((c) => c.id === wantedClient && (!chosen || c.businessId === chosen.id));
+          if (pre) {
+            setClientId(pre.id);
+            setClientName(pre.name);
+            setClientEmail(pre.email);
+            setClientAddress(pre.address);
+            setClientReference(pre.reference);
+            if (pre.email.trim() || pre.address.trim() || pre.reference.trim()) setClientExtraOpen(true);
+          }
           if (prefill.on && prefill.ratePct != null) {
             setWithholdingOn(true);
             setWithholdingPct(String(prefill.ratePct));
@@ -205,7 +216,7 @@ export function InvoiceEditor() {
     return () => {
       cancelled = true;
     };
-  }, [editingId, navigate, navError, wantedBusiness]);
+  }, [editingId, navigate, navError, wantedBusiness, wantedClient]);
 
   /** Another business: its details and GST, its clients, and (for a new invoice) its next number. */
   function chooseBusiness(nextId: string) {

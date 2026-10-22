@@ -899,6 +899,40 @@ CREATE TABLE IF NOT EXISTS business_employees (
 );
 CREATE INDEX IF NOT EXISTS idx_business_employees_user ON business_employees(user_id, business_id);
 
+-- Client meetings (Calendar). starts_at is a UTC instant ('…Z'); the app enters and shows it in
+-- NZ time (src/lib/nzTime.ts). client_id is an invoice_clients row of the same business, or NULL.
+-- Cancelling is a status, not a delete, so the client card keeps the history.
+CREATE TABLE IF NOT EXISTS business_meetings (
+  id                TEXT PRIMARY KEY,
+  user_id           TEXT NOT NULL,
+  business_id       TEXT NOT NULL,
+  client_id         TEXT,
+  title             TEXT NOT NULL,
+  starts_at         TEXT NOT NULL,
+  duration_minutes  INTEGER NOT NULL DEFAULT 60 CHECK (duration_minutes > 0 AND duration_minutes <= 1440),
+  location          TEXT NOT NULL DEFAULT '',          -- a place, or a video link (shown as a link when it is one)
+  notes             TEXT NOT NULL DEFAULT '',
+  status            TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'done', 'cancelled')),
+  created_at        TEXT NOT NULL,
+  updated_at        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_business_meetings_user_start ON business_meetings(user_id, starts_at);
+CREATE INDEX IF NOT EXISTS idx_business_meetings_client ON business_meetings(user_id, client_id) WHERE client_id IS NOT NULL;
+
+-- One in-app reminder per meeting per lead time (e.g. 1440 and 60 minutes before). shown_at is
+-- set when the app hands it out, so it is shown once. Rebuilt when the time or lead times change.
+CREATE TABLE IF NOT EXISTS business_meeting_reminders (
+  id              TEXT PRIMARY KEY,
+  user_id         TEXT NOT NULL,
+  business_id     TEXT NOT NULL,
+  meeting_id      TEXT NOT NULL,
+  offset_minutes  INTEGER NOT NULL CHECK (offset_minutes > 0),
+  remind_at       TEXT NOT NULL,
+  shown_at        TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_business_meeting_reminders_offset ON business_meeting_reminders(meeting_id, offset_minutes);
+CREATE INDEX IF NOT EXISTS idx_business_meeting_reminders_due ON business_meeting_reminders(user_id, remind_at) WHERE shown_at IS NULL;
+
 -- Bills and subscriptions (KAN-26). Saved items (confirmed from detection or added by hand).
 -- next_due is an anchor; reads roll it forward to the first due date on or after today.
 -- merchant_key links a confirmed item to its transactions (src/lib/recurring.ts merchantKey).

@@ -34,6 +34,7 @@ const { default: bondsRouter } = await import('../routes/bonds.ts');
 const { default: rentalsRouter } = await import('../routes/rentals.ts');
 const { default: commoditiesRouter } = await import('../routes/commodities.ts');
 const { default: businessRouter } = await import('../routes/business.ts');
+const { default: calendarRouter } = await import('../routes/calendar.ts');
 const { default: invoicesRouter } = await import('../routes/invoices.ts');
 const { setPlan } = await import('../lib/entitlements.ts');
 const { uploadsGate, UPLOADS_DIR } = await import('../lib/uploads.ts');
@@ -58,6 +59,7 @@ app.use('/api/bonds', bondsRouter);
 app.use('/api/rentals', rentalsRouter);
 app.use('/api/commodities', commoditiesRouter);
 app.use('/api/business', businessRouter);
+app.use('/api/calendar', calendarRouter);
 app.use('/api/invoices', invoicesRouter);
 
 const server: Server = await new Promise((resolve) => {
@@ -457,6 +459,17 @@ try {
   assert((await req('GET', `/api/business/clients/${clientId}`, { cookie: b.cookie })).status === 404, 'B can’t open A’s client');
   assert((await req('POST', '/api/invoices/clients', { cookie: b.cookie, body: { businessId: bizId, name: 'x' } })).status === 404, 'B can’t add to A’s business');
 
+  // Client meetings (Calendar): another user can't see, open, change or cancel A's meetings.
+  const meeting = await req('POST', '/api/calendar/meetings', { cookie: a.cookie, body: { businessId: bizId, clientId, title: 'Alpha Secret Meeting', date: '2027-02-01', time: '10:00' } });
+  assert(meeting.status === 201, 'A adds a meeting');
+  const meetingId = String((meeting.json as { id: string }).id);
+  assert(!JSON.stringify((await req('GET', '/api/calendar?from=2027-01-01&to=2027-12-31', { cookie: b.cookie })).json).includes('Alpha Secret'), 'B can’t see A’s meetings');
+  assert((await req('GET', `/api/calendar/meetings/${meetingId}`, { cookie: b.cookie })).status === 404, 'B can’t open A’s meeting');
+  assert((await req('PUT', `/api/calendar/meetings/${meetingId}`, { cookie: b.cookie, body: { businessId: bizId, title: 'x', date: '2027-02-01', time: '10:00' } })).status === 404, 'B can’t edit A’s meeting');
+  assert((await req('POST', `/api/calendar/meetings/${meetingId}/status`, { cookie: b.cookie, body: { status: 'cancelled' } })).status === 404, 'B can’t cancel A’s meeting');
+  assert((await req('POST', '/api/calendar/meetings', { cookie: b.cookie, body: { businessId: bizId, title: 'x', date: '2027-02-01', time: '10:00' } })).status === 404, 'B can’t add a meeting to A’s business');
+  assert(!JSON.stringify((await req('POST', '/api/calendar/reminders/due', { cookie: b.cookie })).json).includes('Alpha Secret'), 'B gets none of A’s reminders');
+
   // Employee contracts: another user can't add, open or remove A's employee's contract.
   const worker = await req('POST', `/api/business/${bizId}/employees`, { cookie: a.cookie, body: { name: 'Alpha Secret Worker' } });
   assert(worker.status === 201, 'A adds an employee');
@@ -507,7 +520,7 @@ try {
     'B can’t record rent against A’s room',
   );
 
-  console.log('OK: cross-user BTC, income, uploads, settings, households, payslips, bonds, commodities, businesses, employee contracts, and rental rooms');
+  console.log('OK: cross-user BTC, income, uploads, settings, households, payslips, bonds, commodities, businesses, client meetings, employee contracts, and rental rooms');
 } finally {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 }

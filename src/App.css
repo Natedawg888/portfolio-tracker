@@ -14403,3 +14403,86 @@ html .business-page .more-menu-body .business-menu-item:disabled { color: var(--
 .business-archived-note p { margin: 0; }
 .business-archived-note .btn.small { min-height: 44px; }
 .business-card .security-confirm { margin-top: 0.25rem; }
+
+/* Calendar: client meetings as a month grid or an agenda list. */
+.calendar-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.calendar-nav { display: flex; align-items: center; gap: var(--space-1); }
+.calendar-month { margin: 0 var(--space-1); min-width: 9.5rem; text-align: center; font-size: 1rem; }
+.calendar-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
+  padding: 0;
+  overflow: hidden;
+  background: var(--border-soft);
+}
+.calendar-weekday { padding: var(--space-1) var(--space-2); background: var(--surface); text-align: left; }
+.calendar-day {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 6.25rem;
+  min-width: 0;
+  padding: var(--space-1);
+  background: var(--surface);
+}
+.calendar-day--other { background: var(--surface-2); }
+.calendar-day--other .calendar-day-num { color: var(--muted); }
+.calendar-day-num {
+  align-self: flex-start;
+  min-width: 1.6rem;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.calendar-day-num:hover:not(:disabled) { border-color: var(--border); }
+.calendar-day-num:disabled { cursor: default; }
+.calendar-day-num:focus-visible, .calendar-chip:focus-visible, .calendar-link-button:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.calendar-day--today .calendar-day-num { background: var(--accent); color: var(--btn-primary-text); }
+.calendar-chip {
+  display: block;
+  width: 100%;
+  padding: 0.1rem 0.35rem;
+  overflow: hidden;
+  border: 0;
+  border-left: 3px solid var(--accent-2);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent-2) 14%, var(--surface));
+  color: var(--text);
+  font: inherit;
+  font-size: 0.74rem;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.calendar-chip-time { color: var(--muted); }
+.calendar-chip--done { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.calendar-chip--cancelled { border-left-color: var(--border); background: var(--surface-2); color: var(--muted); text-decoration: line-through; }
+.calendar-link-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.calendar-agenda-item--cancelled .calendar-link-button { color: var(--muted); text-decoration: line-through; }
+.meeting-reminders { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); margin: 0; padding: var(--space-2) 0 0; border: 0; }
+.meeting-reminders legend { padding: 0; font-size: 0.85rem; }
+.form-grid label.meeting-reminder-choice { display: inline-flex; flex-direction: row; align-items: center; gap: 0.35rem; color: var(--text); }
+.meeting-actions { flex-wrap: wrap; margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border-soft); }
+@media (max-width: 640px) {
+  .calendar-day { min-height: 3.75rem; padding: 2px; }
+  .calendar-weekday { padding: var(--space-1) 2px; text-align: center; }
+  .calendar-chip { padding: 0 2px; font-size: 0.66rem; }
+  .calendar-chip-time { display: none; }
+}
