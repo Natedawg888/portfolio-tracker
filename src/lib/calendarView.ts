@@ -2,7 +2,7 @@
  * Calendar page helpers: the month grid (weeks start on Monday, as in NZ), meetings grouped by
  * their NZ date, the agenda list, and the words the page uses for reminders and links.
  */
-import type { BusinessMeeting, MeetingKind, MeetingWriteBody } from '../types';
+import type { BusinessMeeting, EarningsEvent, MeetingKind, MeetingWriteBody } from '../types';
 import { addDays, formatTime12 } from './nzTime.ts';
 
 export type CalendarDay = { date: string; inMonth: boolean };
@@ -150,4 +150,107 @@ export function toggleLayer(on: ReadonlySet<CalendarLayer>, layer: CalendarLayer
   if (next.has(layer)) next.delete(layer);
   else next.add(layer);
   return next;
+}
+
+const SHORT_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** 'Wed 28 Oct' */
+export function shortDayLabel(date: string): string {
+  const [y, m, d] = date.split('-').map(Number);
+  const weekday = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7;
+  return `${SHORT_DAYS[weekday]} ${d} ${SHORT_MONTHS[m - 1]}`;
+}
+
+/** One thing on a calendar day: a meeting (business or personal) or an earnings report. */
+export type CalendarItem = { kind: 'meeting'; key: string; meeting: BusinessMeeting } | { kind: 'earnings'; key: string; earnings: EarningsEvent };
+
+export function itemLayer(item: CalendarItem): CalendarLayer {
+  return item.kind === 'earnings' ? 'earnings' : meetingLayer(item.meeting);
+}
+
+export function itemDate(item: CalendarItem): string {
+  return item.kind === 'earnings' ? item.earnings.nzDate : item.meeting.date;
+}
+
+/**
+ * Each day's items in the shown layers. Earnings reports have no time, so they lead the day;
+ * meetings follow by start time.
+ */
+export function itemsByDate(meetings: BusinessMeeting[], earnings: EarningsEvent[], layers: ReadonlySet<CalendarLayer>): Map<string, CalendarItem[]> {
+  const items: CalendarItem[] = [
+    ...earnings.map((e): CalendarItem => ({ kind: 'earnings', key: `e:${e.symbol}:${e.usDate}`, earnings: e })),
+    ...meetings.map((m): CalendarItem => ({ kind: 'meeting', key: `m:${m.id}`, meeting: m })),
+  ].filter((i) => layers.has(itemLayer(i)));
+  const rank = (i: CalendarItem) => (i.kind === 'earnings' ? `0${i.earnings.symbol}` : `1${i.meeting.startsAt}`);
+  const map = new Map<string, CalendarItem[]>();
+  for (const i of items.sort((a, b) => itemDate(a).localeCompare(itemDate(b)) || rank(a).localeCompare(rank(b)))) {
+    map.set(itemDate(i), [...(map.get(itemDate(i)) ?? []), i]);
+  }
+  return map;
+}
+
+/** At most `max` chips in a day cell; the rest are "+N more". */
+export function chipOverflow<T>(items: T[], max = 3): { shown: T[]; more: number } {
+  return items.length <= max ? { shown: items, more: 0 } : { shown: items.slice(0, max), more: items.length - max };
+}
+
+/** A stable colour slot (0–5) per business, from its id, so a business keeps its colour. */
+export function businessColourSlot(businessId: string): number {
+  let h = 0;
+  for (const ch of businessId) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h % 6;
+}
+
+/** 'Q4 FY2026' (Finnhub's quarter and fiscal year), or null when it doesn't give them. */
+export function quarterLabel(e: Pick<EarningsEvent, 'quarter' | 'year'>): string | null {
+  if (e.quarter == null) return null;
+  return `Q${e.quarter}${e.year != null ? ` FY${e.year}` : ''}`;
+}
+
+/** When, in words. Finnhub never gives an exact time, so the time is always to be confirmed. */
+export function earningsTiming(e: Pick<EarningsEvent, 'session' | 'nzDateKnown'>): string {
+  switch (e.session) {
+    case 'amc':
+      return 'After the US market closes (NZ morning) · time to be confirmed';
+    case 'dmh':
+      return 'During US market hours (NZ early morning) · time to be confirmed';
+    case 'bmo':
+      return 'Before the US market opens · NZ day and time to be confirmed';
+    default:
+      return 'Time to be confirmed';
+  }
+}
+
+/** The date line: the NZ day, or the US date when the NZ day can't be known. */
+export function earningsDateLine(e: Pick<EarningsEvent, 'nzDate' | 'nzDateKnown' | 'usDate'>): string {
+  return e.nzDateKnown ? `${dayLabel(e.nzDate)} (NZ)` : `${dayLabel(e.usDate)} (US date)`;
+}
+
+export function itemTitle(item: CalendarItem): string {
+  if (item.kind === 'earnings') return `${item.earnings.symbol} earnings call`;
+  const m = item.meeting;
+  return `${formatTime12(m.time)} ${m.title}${m.clientName ? ` with ${m.clientName}` : ''}${m.status === 'cancelled' ? ' (cancelled)' : ''}`;
+}
+
+/** Accessible name for a grid cell: 'Wed 28 Oct, Labour Day, MSFT earnings call, 10am Review with Tui Ltd'. */
+export function cellLabel(date: string, holiday: string | null, items: CalendarItem[]): string {
+  const parts = [shortDayLabel(date), holiday, ...items.map(itemTitle)].filter(Boolean);
+  return items.length || holiday ? parts.join(', ') : `${parts[0]}, nothing on`;
+}
+
+/** Agenda: from `from` on, days with items or a holiday, headed 'Today · Fri 23 Oct' for today. */
+export function agendaDays(
+  byDay: Map<string, CalendarItem[]>,
+  holidays: Map<string, string>,
+  from: string,
+  today: string,
+): { date: string; heading: string; holiday: string | null; items: CalendarItem[] }[] {
+  const dates = [...new Set([...byDay.keys(), ...holidays.keys()])].filter((d) => d >= from).sort();
+  return dates.map((date) => ({
+    date,
+    heading: date === today ? `Today · ${shortDayLabel(date)}` : date === addDays(today, 1) ? `Tomorrow · ${shortDayLabel(date)}` : shortDayLabel(date),
+    holiday: holidays.get(date) ?? null,
+    items: byDay.get(date) ?? [],
+  }));
 }
