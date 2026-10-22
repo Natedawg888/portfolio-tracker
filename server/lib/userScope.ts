@@ -12,12 +12,14 @@ import {
   deleteEmployeeContract,
   deletePayslipFile,
   deletePropertyPhoto,
+  deleteStockPhoto,
   deleteWarrantyReceipt,
 } from './uploads.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { priceContributor } from '../shopping/prices.ts';
 import { removeUserFromHouseholds } from '../households/store.ts';
 import { BUSINESS_STOCK_TABLES } from '../business/stockTables.ts';
+import { stockPhotoPaths } from '../business/stock.ts';
 
 export const SCOPED_TABLES = [
   'holdings',
@@ -175,6 +177,9 @@ export function deleteScopedDataForUser(
   for (const row of queryAll<{ p: string | null }>(db, `SELECT contract_path AS p FROM business_employees WHERE user_id = ? AND contract_path IS NOT NULL`, [userId])) {
     deleteEmployeeContract(row.p);
   }
+
+  // Stock item photos (KAN-107).
+  for (const p of stockPhotoPaths(db, userId, null)) deleteStockPhoto(p);
 
   // Uploaded payslips (KAN-78).
   for (const row of queryAll<{ p: string | null }>(db, `SELECT file_path AS p FROM payslips WHERE user_id = ? AND file_path IS NOT NULL`, [userId])) {
