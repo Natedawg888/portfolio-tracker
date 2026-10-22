@@ -37,6 +37,7 @@ export function parseYearMonth(input: unknown): string | null {
 }
 
 function linkedIncomeTransactionIds(db: Database, userId: string): Set<string> {
+  // Business records count too: an invoice deposit must not reappear as personal income.
   const rows = queryAll<{ transaction_id?: string | null }>(
     db,
     `SELECT transaction_id FROM income_records
@@ -61,7 +62,7 @@ function receivedIncomeNzd(
     db,
     `SELECT COALESCE(SUM(amount_nzd), 0) AS total
      FROM income_records
-     WHERE user_id = ? AND date >= ? AND date <= ?`,
+     WHERE user_id = ? AND business_id IS NULL AND date >= ? AND date <= ?`,
     [userId, from, to],
   );
   let total = Number(records?.total ?? 0);
@@ -74,7 +75,7 @@ function receivedIncomeNzd(
      FROM transactions t
      INNER JOIN budget_categories c ON c.id = t.category_id AND c.user_id = t.user_id
        AND (c.type = 'income' OR (c.type IS NULL AND c.is_income = 1))
-     WHERE t.user_id = ? AND t.date >= ? AND t.date <= ? AND t.amount > 0`,
+     WHERE t.user_id = ? AND t.business_id IS NULL AND t.date >= ? AND t.date <= ? AND t.amount > 0`,
     [userId, from, to],
   );
   for (const credit of credits) {
@@ -128,7 +129,7 @@ function spentNzd(
      FROM transactions t
      LEFT JOIN budget_categories c
        ON c.id = t.category_id AND c.user_id = t.user_id
-     WHERE t.user_id = ? AND t.date >= ? AND t.date <= ?`,
+     WHERE t.user_id = ? AND t.business_id IS NULL AND t.date >= ? AND t.date <= ?`,
     [userId, from, to],
   );
 

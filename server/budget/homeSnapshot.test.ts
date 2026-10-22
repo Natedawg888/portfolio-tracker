@@ -150,6 +150,15 @@ for (const [id, amount] of [['shop_a', -60], ['shop_b', -50], ['shop_c', -40], [
 txn('shop_a_again', userA, 'acct_a', '2026-08-16', -5, null);
 run(db, `UPDATE transactions SET description = 'shop_a' WHERE id = 'shop_a_again'`);
 
+// Business money (KAN-107) lives on the Business page, never in personal income or spending.
+txn('txn_biz_spend', userA, 'acct_a', '2026-10-14', -700, salaryA.aFood);
+txn('txn_biz_credit', userA, 'acct_a', '2026-10-15', 400, salaryA.aSalary);
+income('inc_biz', userA, '2026-10-16', 3000, salaryA.aSalary, null);
+txn('txn_invoice_deposit', userA, 'acct_a', '2026-10-17', 600, salaryA.aSalary);
+income('inc_invoice', userA, '2026-10-17', 600, salaryA.aSalary, 'txn_invoice_deposit');
+run(db, `UPDATE transactions SET business_id = 'biz_a' WHERE id IN ('txn_biz_spend', 'txn_biz_credit')`);
+run(db, `UPDATE income_records SET business_id = 'biz_a' WHERE id IN ('inc_biz', 'inc_invoice')`);
+
 run(
   db,
   `INSERT INTO debt_people (id, user_id, name, kind, outstanding_nzd, created_at, updated_at)
@@ -229,8 +238,8 @@ try {
 
   const october = homeMonthSnapshot(db, userA, '2026-10');
   assert(october != null, 'October snapshot exists');
-  eq(october!.incomeNzd, 5000, 'October income is records plus the unlinked credit, once');
-  eq(october!.spendingNzd, 2000, 'October spending is food, uncategorised, debt, and the open repayment');
+  eq(october!.incomeNzd, 5000, 'October income is records plus the unlinked credit, once, without business income or the invoice deposit');
+  eq(october!.spendingNzd, 2000, 'October spending is food, uncategorised, debt, and the open repayment, without business spend');
   eq(october!.savingsNzd, 3000, 'October savings is income minus spending');
   eq(october!.savingsRate, 0.6, 'October savings rate is 3000/5000');
   assert(october!.yearMonth === '2026-10', 'October yearMonth');

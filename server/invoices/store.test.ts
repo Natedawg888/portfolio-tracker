@@ -212,7 +212,7 @@ try {
   );
   assert(income.length === 1 && income[0].amount_nzd === 400, 'payment added to income');
   const month = today.slice(0, 7);
-  eq(homeMonthSnapshot(db, userA, month)?.incomeNzd, 400, 'home snapshot counts the payment');
+  eq(homeMonthSnapshot(db, userA, month)?.incomeNzd, 0, 'the payment is business money, not personal income');
 
   // The same money arrives by bank sync as an income-category credit: linked, not double counted.
   const incomeCat = queryOne<{ id: string }>(db, `SELECT id FROM budget_categories WHERE user_id = ? AND type = 'income' ORDER BY sort_order LIMIT 1`, [userA]);
@@ -223,7 +223,7 @@ try {
     [userA, today, incomeCat?.id ?? null, now],
   );
   assert(linkMirroredIncomeToBankCredits(db, userA) === 1, 'deposit linked to the invoice payment');
-  eq(homeMonthSnapshot(db, userA, month)?.incomeNzd, 400, 'deposit not counted twice');
+  eq(homeMonthSnapshot(db, userA, month)?.incomeNzd, 0, 'the linked deposit is not personal income either');
 
   const full = await call('POST', `/api/invoices/${id1}/payments`, A, { date: today, amountNzd: 500, addToIncome: false });
   assert(full.json.status === 'paid', 'fully paid');
