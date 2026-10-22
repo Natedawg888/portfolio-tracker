@@ -131,6 +131,7 @@ function mapCategoryTxnAsIncome(r: Record<string, unknown>) {
  * are skipped so records + extras never double-count the same dollars.
  */
 function linkedIncomeTransactionIds(db: Db, userId: string): Set<string> {
+  // Business records count too: an invoice deposit must not reappear as personal income.
   const rows = queryAll<{ transaction_id?: string }>(
     db,
     `SELECT transaction_id FROM income_records
@@ -160,7 +161,7 @@ function unlinkedIncomeCategoryCredits(
      LEFT JOIN bank_accounts a ON a.id = t.account_id AND a.user_id = t.user_id
      INNER JOIN budget_categories c ON c.id = t.category_id AND c.user_id = t.user_id
        AND (c.type = 'income' OR (c.type IS NULL AND c.is_income = 1))
-     WHERE t.user_id = ? AND t.date >= ? AND t.date <= ? AND t.amount > 0
+     WHERE t.user_id = ? AND t.business_id IS NULL AND t.date >= ? AND t.date <= ? AND t.amount > 0
      ORDER BY t.date DESC, t.created_at DESC`,
     [userId, start, end],
   );
@@ -361,7 +362,7 @@ router.get('/', async (req, res) => {
     LEFT JOIN bank_accounts a ON a.id = i.account_id
     LEFT JOIN holdings h ON h.id = i.holding_id
     LEFT JOIN budget_categories c ON c.id = COALESCE(i.category_id, 'cat-income')
-    WHERE i.user_id = ? AND i.date >= ?`;
+    WHERE i.user_id = ? AND i.business_id IS NULL AND i.date >= ?`;
   params.unshift(uid(req));
   if (to) {
     sql += ` AND i.date <= ?`;
@@ -413,7 +414,7 @@ router.get('/summary', async (req, res) => {
             COALESCE(SUM(amount_nzd), 0) AS total,
             COUNT(*) AS cnt
      FROM income_records
-     WHERE user_id = ? AND date >= ? AND date <= ?
+     WHERE user_id = ? AND business_id IS NULL AND date >= ? AND date <= ?
      GROUP BY COALESCE(category_id, ?)`,
     [resolveIncomeCategoryId(db, uid(req), 'cash'), uid(req), start, end, resolveIncomeCategoryId(db, uid(req), 'cash')],
   );

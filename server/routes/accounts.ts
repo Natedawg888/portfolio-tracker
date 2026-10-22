@@ -155,14 +155,14 @@ router.get('/transactions', async (req: AuthedRequest, res) => {
      FROM transactions t
      LEFT JOIN bank_accounts a ON a.id = t.account_id
      LEFT JOIN holdings h ON h.id = t.btc_holding_id AND h.user_id = t.user_id
-     WHERE t.user_id = ? AND t.date >= ? AND t.date <= ?
+     WHERE t.user_id = ? AND t.business_id IS NULL AND t.date >= ? AND t.date <= ?
      ORDER BY t.date DESC, t.created_at DESC
      LIMIT 1000`
       : `SELECT t.*, a.name AS account_name, h.name AS btc_holding_name
      FROM transactions t
      LEFT JOIN bank_accounts a ON a.id = t.account_id
      LEFT JOIN holdings h ON h.id = t.btc_holding_id AND h.user_id = t.user_id
-     WHERE t.user_id = ? AND t.date >= ?
+     WHERE t.user_id = ? AND t.business_id IS NULL AND t.date >= ?
      ORDER BY t.date DESC, t.created_at DESC
      LIMIT 1000`,
     to ? [userId, from, to] : [userId, from],
@@ -188,7 +188,7 @@ router.get('/transactions/suggestions', async (req: AuthedRequest, res) => {
   const rows = queryAll<{ id: string; merchant: string | null; description: string | null; amount: number }>(
     db,
     `SELECT id, merchant, description, amount FROM transactions
-     WHERE user_id = ? AND category_id IS NULL AND date >= ? AND date <= ?
+     WHERE user_id = ? AND business_id IS NULL AND category_id IS NULL AND date >= ? AND date <= ?
      ORDER BY date DESC
      LIMIT 500`,
     [userId, from, to],
