@@ -264,6 +264,55 @@ export function migrateBusinessStock(database: Database) {
   );
 }
 
+/**
+ * Rebuilds `table` with `column` nullable, the same way as the transactions and holdings
+ * rebuilds above: from the live CREATE statement, copying every row and recreating the indexes.
+ * No-op once the column is nullable (or the table doesn't exist).
+ */
+function relaxNotNull(database: Database, table: string, column: string) {
+  const cols = database.exec(`PRAGMA table_info(${table})`)[0];
+  if (!cols) return;
+  const nameIdx = cols.columns.indexOf('name');
+  const notNullIdx = cols.columns.indexOf('notnull');
+  const col = cols.values.find((r) => r[nameIdx] === column);
+  if (!col || Number(col[notNullIdx]) !== 1) return;
+
+  const createSql = String(database.exec(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?`, [table])[0].values[0][0]);
+  const tmp = `${table}_relax_${column}`;
+  const notNull = new RegExp(`(\\b${column}\\s+TEXT)\\s+NOT NULL`, 'i');
+  const relaxed = createSql.replace(new RegExp(`CREATE TABLE\\s+(IF NOT EXISTS\\s+)?"?${table}"?`, 'i'), `CREATE TABLE ${tmp}`).replace(notNull, '$1');
+  if (relaxed === createSql || notNull.test(relaxed)) throw new Error(`${table} migration: could not relax ${column} NOT NULL`);
+  const indexSql = (database.exec(`SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL`, [table])[0]?.values ?? []).map((r) =>
+    String(r[0]),
+  );
+
+  database.run('BEGIN');
+  try {
+    database.run(relaxed);
+    database.run(`INSERT INTO ${tmp} SELECT * FROM ${table}`);
+    database.run(`DROP TABLE ${table}`);
+    database.run(`ALTER TABLE ${tmp} RENAME TO ${table}`);
+    for (const sql of indexSql) database.run(sql);
+    database.run('COMMIT');
+  } catch (err) {
+    database.run('ROLLBACK');
+    throw err;
+  }
+}
+
+/**
+ * Calendar entries without a business: personal meetings and events. Old databases have
+ * business_id NOT NULL on both meeting tables and no kind column.
+ */
+export function migratePersonalCalendar(database: Database) {
+  relaxNotNull(database, 'business_meetings', 'business_id');
+  relaxNotNull(database, 'business_meeting_reminders', 'business_id');
+  const cols = tableColumns(database, 'business_meetings');
+  if (cols.size > 0 && !cols.has('kind')) {
+    database.run(`ALTER TABLE business_meetings ADD COLUMN kind TEXT NOT NULL DEFAULT 'meeting' CHECK (kind IN ('meeting', 'event'))`);
+  }
+}
+
 /** Runtime migration for existing sql.js DBs (CREATE TABLE IF NOT EXISTS won't add columns). */
 function migrateSchema(database: Database) {
   const cols = tableColumns(database, 'holdings');
@@ -656,6 +705,8 @@ function migrateSchema(database: Database) {
   migrateBusinesses(database);
   // Stock, suppliers, sales and business budget (KAN-107).
   migrateBusinessStock(database);
+  // Personal meetings and events on the Calendar.
+  migratePersonalCalendar(database);
 
   // Savings goal → savings account link (KAN-20).
   const goalCols = tableColumns(database, 'savings_goals');

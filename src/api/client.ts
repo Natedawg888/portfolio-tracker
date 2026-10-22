@@ -1043,6 +1043,7 @@ export const api = {
   calendar: {
     range: (from: string, to: string, businessId?: string | null) =>
       req<CalendarResponse>(`/calendar?${new URLSearchParams({ from, to, ...(businessId ? { businessId } : {}) })}`),
+    getMeeting: (id: string) => req<BusinessMeeting>(`/calendar/meetings/${encodeURIComponent(id)}`),
     createMeeting: (body: MeetingWriteBody) => req<BusinessMeeting>('/calendar/meetings', { method: 'POST', body: JSON.stringify(body) }),
     updateMeeting: (id: string, body: MeetingWriteBody) =>
       req<BusinessMeeting>(`/calendar/meetings/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),

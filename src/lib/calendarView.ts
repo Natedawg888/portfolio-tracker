@@ -2,7 +2,7 @@
  * Calendar page helpers: the month grid (weeks start on Monday, as in NZ), meetings grouped by
  * their NZ date, the agenda list, and the words the page uses for reminders and links.
  */
-import type { BusinessMeeting, MeetingWriteBody } from '../types';
+import type { BusinessMeeting, MeetingKind, MeetingWriteBody } from '../types';
 import { addDays, formatTime12 } from './nzTime.ts';
 
 export type CalendarDay = { date: string; inMonth: boolean };
@@ -95,6 +95,7 @@ export function meetingBody(m: BusinessMeeting): MeetingWriteBody {
   return {
     businessId: m.businessId,
     clientId: m.clientId,
+    kind: m.kind,
     title: m.title,
     date: m.date,
     time: m.time,
@@ -105,10 +106,12 @@ export function meetingBody(m: BusinessMeeting): MeetingWriteBody {
   };
 }
 
-export function newMeetingBody(o: { businessId: string; clientId?: string | null; date: string; title?: string }): MeetingWriteBody {
+/** A business meeting when businessId is given; otherwise a personal meeting or event. */
+export function newMeetingBody(o: { businessId: string | null; clientId?: string | null; kind?: MeetingKind; date: string; title?: string }): MeetingWriteBody {
   return {
     businessId: o.businessId,
-    clientId: o.clientId ?? null,
+    clientId: o.businessId ? (o.clientId ?? null) : null,
+    kind: o.businessId ? 'meeting' : (o.kind ?? 'meeting'),
     title: o.title ?? '',
     date: o.date,
     time: '10:00',

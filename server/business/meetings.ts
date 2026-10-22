@@ -1,6 +1,7 @@
 /**
- * Client meetings for the Calendar: a meeting belongs to one of the user's businesses and
- * optionally to one of that business's clients. Times are entered in NZ time (or a given zone)
+ * Calendar entries. A business meeting belongs to one of the user's businesses and optionally to
+ * one of that business's clients; it is set up on the business page. A personal entry has no
+ * business and no client, and is a meeting or an event; it is set up on the Calendar page. Times are entered in NZ time (or a given zone)
  * and stored as UTC instants. Every query filters on user_id; another user's id behaves like a
  * missing row.
  *
@@ -9,7 +10,7 @@
  * saved is never shown (a "1 day before" for a meeting in an hour would only be noise).
  */
 import type { Database } from 'sql.js';
-import type { BusinessMeeting, CalendarResponse, MeetingReminder, MeetingStatus } from '../../src/types/index.ts';
+import type { BusinessMeeting, CalendarResponse, MeetingKind, MeetingReminder, MeetingStatus } from '../../src/types/index.ts';
 import { isYmd } from '../../src/lib/invoiceCalc.ts';
 import { NZ_TZ, addDays, isTimeZone, localDateRangeUtc, localToUtc, utcToLocal } from '../../src/lib/nzTime.ts';
 import { newId, queryAll, queryOne, run } from '../db/index.ts';
@@ -25,8 +26,10 @@ const MAX_REMINDERS = 4;
 const MAX_RANGE_DAYS = 400;
 
 export type MeetingDraft = {
-  businessId: string;
+  /** null: a personal meeting or event. */
+  businessId: string | null;
   clientId: string | null;
+  kind: MeetingKind;
   title: string;
   startsAtMs: number;
   durationMinutes: number;
@@ -59,8 +62,13 @@ function parseOffsets(raw: unknown): Parsed<number[]> {
 export function parseMeeting(raw: unknown): Parsed<MeetingDraft> {
   const o = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
   if (!o) return { ok: false, error: 'Body is required' };
-  const businessId = text(o, 'businessId', 80);
-  if (!businessId) return { ok: false, error: 'Choose a business' };
+  const businessId = text(o, 'businessId', 80) || null;
+  const clientId = text(o, 'clientId', 80) || null;
+  if (clientId && !businessId) return { ok: false, error: 'A meeting with a client belongs to a business' };
+  const kind = o.kind == null || o.kind === '' ? 'meeting' : o.kind;
+  if (kind !== 'meeting' && kind !== 'event') return { ok: false, error: 'Kind must be meeting or event' };
+  // Events are personal; a business books meetings.
+  if (kind === 'event' && businessId) return { ok: false, error: 'Events are personal; a business books meetings' };
   const title = text(o, 'title', 120);
   if (!title) return { ok: false, error: 'Title is required' };
   const timeZone = o.timeZone == null || o.timeZone === '' ? NZ_TZ : o.timeZone;
@@ -88,7 +96,8 @@ export function parseMeeting(raw: unknown): Parsed<MeetingDraft> {
     ok: true,
     value: {
       businessId,
-      clientId: text(o, 'clientId', 80) || null,
+      clientId,
+      kind,
       title,
       startsAtMs: start.utcMs,
       durationMinutes,
@@ -101,8 +110,9 @@ export function parseMeeting(raw: unknown): Parsed<MeetingDraft> {
 
 type Row = {
   id: string;
-  business_id: string;
+  business_id: string | null;
   client_id: string | null;
+  kind: string;
   title: string;
   starts_at: string;
   duration_minutes: number;
@@ -140,6 +150,7 @@ function present(rows: Row[], offsets: Map<string, number[]>): BusinessMeeting[]
       businessName: r.business_name ?? '',
       clientId: r.client_id,
       clientName: r.client_name ?? '',
+      kind: r.kind === 'event' ? 'event' : 'meeting',
       title: r.title,
       startsAt: r.starts_at,
       date: local.date,
@@ -188,6 +199,7 @@ export function clientMeetings(db: Database, userId: string, clientId: string, n
 
 /** The business must be the user's; a client must be the user's and belong to that business. */
 function checkOwners(db: Database, userId: string, d: MeetingDraft): Result<true> {
+  if (!d.businessId) return { ok: true, value: true };
   if (!businessRow(db, userId, d.businessId)) return fail(404, 'Business not found');
   if (d.clientId) {
     const c = queryOne<{ business_id: string | null }>(db, `SELECT business_id FROM invoice_clients WHERE id = ? AND user_id = ?`, [d.clientId, userId]);
@@ -198,7 +210,7 @@ function checkOwners(db: Database, userId: string, d: MeetingDraft): Result<true
 }
 
 /** Replaces the meeting's reminders. Lead times already past at nowMs are stored as shown. */
-function resetReminders(db: Database, userId: string, businessId: string, meetingId: string, startsAtMs: number, offsets: number[], nowMs: number) {
+function resetReminders(db: Database, userId: string, businessId: string | null, meetingId: string, startsAtMs: number, offsets: number[], nowMs: number) {
   run(db, `DELETE FROM business_meeting_reminders WHERE user_id = ? AND meeting_id = ?`, [userId, meetingId]);
   const now = new Date(nowMs).toISOString();
   for (const off of offsets) {
@@ -218,9 +230,9 @@ export function createMeeting(db: Database, userId: string, d: MeetingDraft, now
   const now = new Date(nowMs).toISOString();
   run(
     db,
-    `INSERT INTO business_meetings (id, user_id, business_id, client_id, title, starts_at, duration_minutes, location, notes, status, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?, 'scheduled', ?, ?)`,
-    [id, userId, d.businessId, d.clientId, d.title, new Date(d.startsAtMs).toISOString(), d.durationMinutes, d.location, d.notes, now, now],
+    `INSERT INTO business_meetings (id, user_id, business_id, client_id, kind, title, starts_at, duration_minutes, location, notes, status, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?, 'scheduled', ?, ?)`,
+    [id, userId, d.businessId, d.clientId, d.kind, d.title, new Date(d.startsAtMs).toISOString(), d.durationMinutes, d.location, d.notes, now, now],
   );
   resetReminders(db, userId, d.businessId, id, d.startsAtMs, d.reminderOffsets, nowMs);
   return { ok: true, value: getMeeting(db, userId, id)! };
@@ -235,9 +247,9 @@ export function updateMeeting(db: Database, userId: string, id: string, d: Meeti
   const startsAt = new Date(d.startsAtMs).toISOString();
   run(
     db,
-    `UPDATE business_meetings SET business_id=?, client_id=?, title=?, starts_at=?, duration_minutes=?, location=?, notes=?, updated_at=?
+    `UPDATE business_meetings SET business_id=?, client_id=?, kind=?, title=?, starts_at=?, duration_minutes=?, location=?, notes=?, updated_at=?
      WHERE id=? AND user_id=?`,
-    [d.businessId, d.clientId, d.title, startsAt, d.durationMinutes, d.location, d.notes, new Date(nowMs).toISOString(), id, userId],
+    [d.businessId, d.clientId, d.kind, d.title, startsAt, d.durationMinutes, d.location, d.notes, new Date(nowMs).toISOString(), id, userId],
   );
   const sameReminders = before.startsAt === startsAt && before.reminderOffsets.join() === d.reminderOffsets.join();
   if (!sameReminders) resetReminders(db, userId, d.businessId, id, d.startsAtMs, d.reminderOffsets, nowMs);

@@ -1124,14 +1124,17 @@ CREATE TABLE IF NOT EXISTS business_budget_plans (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_business_budget_plans_period ON business_budget_plans(category_id, period);
 CREATE INDEX IF NOT EXISTS idx_business_budget_plans_user ON business_budget_plans(user_id, business_id);
 
--- Client meetings (Calendar). starts_at is a UTC instant ('…Z'); the app enters and shows it in
--- NZ time (src/lib/nzTime.ts). client_id is an invoice_clients row of the same business, or NULL.
--- Cancelling is a status, not a delete, so the client card keeps the history.
+-- Calendar entries. starts_at is a UTC instant ('…Z'); the app enters and shows it in NZ time
+-- (src/lib/nzTime.ts). A business meeting has business_id (set up on the business page), and
+-- client_id is an invoice_clients row of that business or NULL. business_id NULL is a personal
+-- meeting or event (set up on the Calendar page), with no client. Cancelling is a status, not a
+-- delete, so the client card keeps the history.
 CREATE TABLE IF NOT EXISTS business_meetings (
   id                TEXT PRIMARY KEY,
   user_id           TEXT NOT NULL,
-  business_id       TEXT NOT NULL,
+  business_id       TEXT,
   client_id         TEXT,
+  kind              TEXT NOT NULL DEFAULT 'meeting' CHECK (kind IN ('meeting', 'event')),
   title             TEXT NOT NULL,
   starts_at         TEXT NOT NULL,
   duration_minutes  INTEGER NOT NULL DEFAULT 60 CHECK (duration_minutes > 0 AND duration_minutes <= 1440),
@@ -1149,7 +1152,7 @@ CREATE INDEX IF NOT EXISTS idx_business_meetings_client ON business_meetings(use
 CREATE TABLE IF NOT EXISTS business_meeting_reminders (
   id              TEXT PRIMARY KEY,
   user_id         TEXT NOT NULL,
-  business_id     TEXT NOT NULL,
+  business_id     TEXT,                    -- the meeting's business; NULL for a personal entry
   meeting_id      TEXT NOT NULL,
   offset_minutes  INTEGER NOT NULL CHECK (offset_minutes > 0),
   remind_at       TEXT NOT NULL,
