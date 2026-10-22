@@ -254,3 +254,29 @@ export function agendaDays(
     items: byDay.get(date) ?? [],
   }));
 }
+
+/** '10 am', '1:30 pm' (spaced, for the booking summary line). */
+export function spacedTime(time: string): string {
+  return formatTime12(time).replace(/(am|pm)$/, ' $1');
+}
+
+/** 'Fri 23 Oct, 10 am – 11 am'. A meeting past midnight ends on the next day's clock. */
+export function meetingSummary(date: string, time: string, durationMinutes: number): string {
+  const [h, m] = time.split(':').map(Number);
+  const end = (h * 60 + m + durationMinutes) % 1440;
+  const endTime = `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`;
+  return `${shortDayLabel(date)}, ${spacedTime(time)} – ${spacedTime(endTime)}`;
+}
+
+/** '30 min', '1 hr', '1.5 hrs', '2 hrs', '45 min', '2 hr 15 min'. */
+export function durationLabel(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  if (minutes % 30 === 0) {
+    const hrs = minutes / 60;
+    return `${hrs} hr${hrs === 1 ? '' : 's'}`;
+  }
+  return `${Math.floor(minutes / 60)} hr ${minutes % 60} min`;
+}
+
+/** Booking lengths offered as buttons on the business page. */
+export const MEETING_LENGTHS = [30, 60, 90, 120];

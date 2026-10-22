@@ -2,7 +2,7 @@
  * Calendar page helpers. Run: node --import tsx src/lib/calendarView.test.ts
  */
 import type { BusinessMeeting, EarningsEvent } from '../types';
-import { agendaDays, businessColourSlot, cellLabel, chipOverflow, earningsDateLine, earningsTiming, itemsByDate, quarterLabel, shortDayLabel, agenda, byDate, dayLabel, gridRange, layerCounts, meetingLayer, monthGrid, newMeetingBody, reminderLabel, reminderMessage, shiftMonth, timeSpan, toggleLayer, videoLink } from './calendarView.ts';
+import { durationLabel, meetingSummary, agendaDays, businessColourSlot, cellLabel, chipOverflow, earningsDateLine, earningsTiming, itemsByDate, quarterLabel, shortDayLabel, agenda, byDate, dayLabel, gridRange, layerCounts, meetingLayer, monthGrid, newMeetingBody, reminderLabel, reminderMessage, shiftMonth, timeSpan, toggleLayer, videoLink } from './calendarView.ts';
 
 function assert(cond: unknown, msg: string): void {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -83,3 +83,10 @@ const ag = agendaDays(days, new Map([['2026-10-26', 'Labour Day'], ['2026-10-20'
 assert(ag.map((d) => d.heading).join('|') === 'Mon 26 Oct|Wed 28 Oct' && ag[0].holiday === 'Labour Day', 'agenda from today on, with holidays');
 assert(agendaDays(new Map([['2026-10-23', []]]), new Map(), '2026-10-23', '2026-10-23')[0].heading === 'Today · Fri 23 Oct', 'today is headed Today');
 console.log('calendar items: ok');
+
+// Booking summary line and lengths.
+assert(meetingSummary('2026-10-23', '10:00', 60) === 'Fri 23 Oct, 10 am – 11 am', `summary (got ${meetingSummary('2026-10-23', '10:00', 60)})`);
+assert(meetingSummary('2026-10-23', '13:30', 90) === 'Fri 23 Oct, 1:30 pm – 3 pm', 'summary with minutes');
+assert(meetingSummary('2026-10-23', '23:30', 60) === 'Fri 23 Oct, 11:30 pm – 12:30 am', 'summary past midnight');
+assert(['30 min', '1 hr', '1.5 hrs', '2 hrs', '45 min', '2 hr 15 min'].join() === [30, 60, 90, 120, 45, 135].map(durationLabel).join(), 'length labels');
+console.log('booking summary: ok');

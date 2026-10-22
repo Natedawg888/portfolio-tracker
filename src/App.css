@@ -14613,7 +14613,39 @@ html .business-page .more-menu-body .business-menu-item:disabled { color: var(--
 .meeting-kind { display: grid; gap: 0.35rem; margin: 0; padding: 0; border: 0; min-width: 0; }
 .meeting-kind legend { padding: 0; font-size: 0.85rem; }
 .meeting-kind .segmented { align-self: start; }
-.business-meetings h4 { margin: var(--space-2) 0 0; font-weight: 500; }
+/* Client meetings on a business's page (phase 3): inline booking form and the list. */
+.client-meetings .rental-card-head p { margin: 0.15rem 0 0; }
+.client-meeting-add,
+.client-meeting-form .btn,
+.client-meeting-suggestions .btn,
+.client-meeting-actions .btn,
+.client-meeting-past-toggle { min-height: 44px; }
+.client-meeting-form { display: grid; gap: var(--space-2); margin: var(--space-2) 0; padding: var(--space-3); border: 1px solid var(--border); border-radius: 10px; background: var(--surface-3); }
+.client-meeting-form h4 { margin: 0; font-size: 0.95rem; }
+.client-meeting-suggestions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.client-meeting-lengths { margin: 0; padding: 0; border: 0; min-width: 0; }
+.client-meeting-lengths legend { padding: 0 0 0.35rem; font-size: 0.85rem; }
+.client-meeting-lengths .segmented { display: inline-flex; flex-wrap: wrap; }
+.client-meeting-lengths .segmented-btn { min-height: 44px; min-width: 4.5rem; padding: 0 0.9rem; }
+.client-meeting-summary { margin: 0; }
+.client-meeting-daynote { color: var(--warn); }
+.client-meeting-form-actions { flex-wrap: wrap; align-items: center; }
+.client-meeting-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.client-meeting-row { display: grid; grid-template-columns: 9rem minmax(0, 1fr) auto; gap: var(--space-2); align-items: center; padding: var(--space-2) 0; border-bottom: 1px solid var(--border-soft); }
+.client-meeting-when,
+.client-meeting-what { display: grid; gap: 0.1rem; min-width: 0; }
+.client-meeting-date { font-weight: 600; }
+.client-meeting-what > span { overflow-wrap: anywhere; }
+.client-meeting-actions { display: flex; align-items: center; gap: var(--space-1); }
+.client-meeting-row--cancelled .client-meeting-date,
+.client-meeting-row--cancelled .client-meeting-what > span:first-child { color: var(--muted); text-decoration: line-through; }
+.client-meeting-past-toggle { margin-top: var(--space-2); }
+.business-card-next { margin: 0; }
+.business-card-next a { display: inline-flex; align-items: center; min-height: 44px; }
+@media (max-width: 560px) {
+  .client-meeting-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .client-meeting-what { grid-column: 1 / -1; grid-row: 2; }
+}
 .meeting-actions { flex-wrap: wrap; margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border-soft); }
 @media (max-width: 640px) {
   .calendar-day { min-height: 3.75rem; padding: 2px; }
