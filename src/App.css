@@ -14427,7 +14427,7 @@ html .business-page .more-menu-body .business-menu-item:disabled { color: var(--
   padding: var(--space-1);
   background: var(--surface);
 }
-.calendar-day--other { background: var(--surface-2); }
+.calendar-day--other { background: var(--surface-3); }
 .calendar-day--other .calendar-day-num { color: var(--muted); }
 .calendar-day-num {
   align-self: flex-start;
@@ -14465,7 +14465,7 @@ html .business-page .more-menu-body .business-menu-item:disabled { color: var(--
 }
 .calendar-chip-time { color: var(--muted); }
 .calendar-chip--done { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
-.calendar-chip--cancelled { border-left-color: var(--border); background: var(--surface-2); color: var(--muted); text-decoration: line-through; }
+.calendar-chip--cancelled { border-left-color: var(--border); background: var(--surface-3); color: var(--muted); text-decoration: line-through; }
 .calendar-link-button {
   padding: 0;
   border: 0;
