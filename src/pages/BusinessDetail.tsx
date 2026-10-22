@@ -17,6 +17,7 @@ import { maskBankAccount, payFrequencyLabel, payRateText } from '../lib/employee
 import { AssetForm, MovementForm, assetDraft } from '../components/business/AssetForms';
 import { WhatItOwns } from '../components/business/WhatItOwns';
 import { BusinessActivity } from '../components/business/BusinessActivity';
+import { StockCard } from '../components/business/StockCard';
 import { MoreMenu } from '../components/MoreMenu';
 import { showQuietToast } from '../lib/quietToast';
 import { formatInvoiceDate } from './invoicesView';
@@ -453,6 +454,8 @@ export function BusinessDetail() {
         onLinkExisting={() => setDialog({ mode: 'produce' })}
         onChanged={(note) => void saved(note)}
       />
+
+      <StockCard businessId={id} archived={b.archivedAt != null} />
 
       <BusinessActivity
         businessId={id}

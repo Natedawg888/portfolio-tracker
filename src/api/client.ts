@@ -4,6 +4,7 @@ import type {
   PublicKeyCredentialRequestOptionsJSON,
   RegistrationResponseJSON,
 } from '@simplewebauthn/browser';
+import type { StockItemView } from '../lib/stock.ts';
 import { isMoneyHidden, MONEY_MASK } from '../lib/privacy';
 import type { AdsConfig } from '../lib/ads';
 import type { EconomicCycleResponse, EconomicScenarioResult, PhaseNewsResponse } from '../types/economy.ts';
@@ -18,6 +19,9 @@ import type {
   Business,
   BusinessEmployee,
   BusinessEmployeeWriteBody,
+  StockAdjustmentWriteBody,
+  StockBatchWriteBody,
+  StockItemWriteBody,
   BusinessAsset,
   BusinessAssetWriteBody,
   BusinessClientView,
@@ -1021,6 +1025,20 @@ export const api = {
     produceCandidates: () => req<BusinessDetail['produce']>('/business/produce/candidates'),
     linkProduce: (commodityId: string, businessId: string | null) =>
       req<{ ok: true }>('/business/produce/link', { method: 'POST', body: JSON.stringify({ commodityId, businessId }) }),
+    stock: (businessId: string, includeArchived = false) =>
+      req<StockItemView[]>(`/business/${encodeURIComponent(businessId)}/stock${includeArchived ? '?includeArchived=1' : ''}`),
+    createStockItem: (businessId: string, body: StockItemWriteBody) =>
+      req<StockItemView>(`/business/${encodeURIComponent(businessId)}/stock`, { method: 'POST', body: JSON.stringify(body) }),
+    updateStockItem: (id: string, body: StockItemWriteBody) =>
+      req<StockItemView>(`/business/stock/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    archiveStockItem: (id: string) => req<StockItemView>(`/business/stock/${encodeURIComponent(id)}/archive`, { method: 'POST' }),
+    restoreStockItem: (id: string) => req<StockItemView>(`/business/stock/${encodeURIComponent(id)}/restore`, { method: 'POST' }),
+    addStockBatch: (itemId: string, body: StockBatchWriteBody) =>
+      req<StockItemView>(`/business/stock/${encodeURIComponent(itemId)}/batches`, { method: 'POST', body: JSON.stringify(body) }),
+    removeStockBatch: (id: string) => req<StockItemView>(`/business/stock/batches/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    addStockAdjustment: (itemId: string, body: StockAdjustmentWriteBody) =>
+      req<StockItemView>(`/business/stock/${encodeURIComponent(itemId)}/adjustments`, { method: 'POST', body: JSON.stringify(body) }),
+    removeStockAdjustment: (id: string) => req<StockItemView>(`/business/stock/adjustments/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
   calendar: {
     range: (from: string, to: string, businessId?: string | null) =>

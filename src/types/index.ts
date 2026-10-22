@@ -2385,3 +2385,18 @@ export interface CommoditiesView {
   commodities: Commodity[];
   totals: { valueNzd: number; costNzd: number; returnNzd: number; unvalued: number; stale: number };
 }
+
+/** Stock (KAN-107). Quantities are in the item's unit; money is NZD per unit. */
+export type StockItemWriteBody = {
+  name: string;
+  sku: string;
+  unit: 'each' | 'kg' | 'L';
+  sellPriceNzd: number | null;
+  reorderLevel: number | null;
+  notes: string;
+};
+export type StockBatchWriteBody = { date: string; quantity: number; unitCostNzd: number; notes: string };
+export type StockAdjustmentWriteBody = { date: string; reason: string } & (
+  | { kind: 'damage'; quantityLost: number }
+  | { kind: 'recount'; countedQuantity: number }
+);
