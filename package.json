@@ -43,7 +43,7 @@
     "test:payslips": "node --import tsx src/lib/payslipCheck.test.ts && node --import tsx server/payslips/store.test.ts",
     "test:paye-page": "node --import tsx src/lib/payeView.test.ts",
     "test:pay-sources": "node --import tsx server/paySources/store.test.ts",
-    "test:business": "node --import tsx server/business/store.test.ts && node --import tsx server/business/meetings.test.ts && node --import tsx server/business/stockSchema.test.ts && node --import tsx server/business/stock.test.ts && node --import tsx src/lib/stock.test.ts && node --import tsx src/lib/nzTime.test.ts && node --import tsx src/lib/calendarView.test.ts && node --import tsx src/lib/business.test.ts && node --import tsx src/lib/employees.test.ts",
+    "test:business": "node --import tsx server/business/store.test.ts && node --import tsx server/business/meetings.test.ts && node --import tsx server/business/stockSchema.test.ts && node --import tsx server/business/stock.test.ts && node --import tsx server/business/suppliers.test.ts && node --import tsx src/lib/stock.test.ts && node --import tsx src/lib/nzTime.test.ts && node --import tsx src/lib/calendarView.test.ts && node --import tsx src/lib/business.test.ts && node --import tsx src/lib/employees.test.ts",
     "test:invoices": "node --import tsx src/lib/invoiceCalc.test.ts && node --import tsx src/lib/businessForm.test.ts && node --import tsx server/invoices/store.test.ts && node --import tsx src/pages/invoicesView.test.ts",
     "test:bills": "node --import tsx src/lib/recurring.test.ts && node --import tsx server/recurring/store.test.ts && node --import tsx src/pages/billsView.test.ts",
     "test:ads": "node --import tsx src/lib/ads.test.ts && node --import tsx server/routes/ads.test.ts",

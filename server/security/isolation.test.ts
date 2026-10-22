@@ -522,6 +522,37 @@ try {
   const ownStock = (await req('GET', `/api/business/${bizId}/stock`, { cookie: a.cookie })).json as { position: { onHand: number }; photoUrl: string | null }[];
   assert(ownStock.length === 1 && ownStock[0].position.onHand === 4 && ownStock[0].photoUrl === stockPhotoUrl, 'A’s stock is unchanged');
 
+  // Suppliers and bills (KAN-107): another user can't list, change, delete, attach files to or
+  // link batches through A's suppliers and bills, or open a bill's file.
+  const supplier = await req('POST', `/api/business/${bizId}/suppliers`, { cookie: a.cookie, body: { name: 'Alpha Secret Supplier' } });
+  assert(supplier.status === 201, 'A adds a supplier');
+  const supplierId = String((supplier.json as { id: string }).id);
+  const billBody = { supplierId, kind: 'stock', invoiceDate: '2026-01-05', dueDate: '2026-01-20', amountNzd: 99 };
+  const bill = await req('POST', `/api/business/${bizId}/bills`, { cookie: a.cookie, body: billBody });
+  assert(bill.status === 201, 'A adds a bill');
+  const billId = String((bill.json as { id: string }).id);
+  const billPdf = `data:application/pdf;base64,${Buffer.concat([Buffer.from('%PDF-1.7\nSECRET_SUPPLIER_BILL'), Buffer.alloc(40, 0x20)]).toString('base64')}`;
+  const billFile = await req('POST', `/api/business/bills/${billId}/file`, { cookie: a.cookie, body: { fileBase64: billPdf } });
+  assert(billFile.status === 200, 'A attaches the bill');
+  const billFileUrl = String((billFile.json as { file: { url: string } }).file.url);
+  const bSuppliers = await req('GET', `/api/business/${bizId}/suppliers`, { cookie: b.cookie });
+  assert(bSuppliers.status === 404 && !JSON.stringify(bSuppliers.json).includes('Alpha Secret'), 'B can’t list A’s suppliers');
+  assert((await req('POST', `/api/business/${bizId}/suppliers`, { cookie: b.cookie, body: { name: 'x' } })).status === 404, 'B can’t add a supplier to A’s business');
+  assert((await req('PUT', `/api/business/suppliers/${supplierId}`, { cookie: b.cookie, body: { name: 'x' } })).status === 404, 'B can’t edit A’s supplier');
+  assert((await req('DELETE', `/api/business/suppliers/${supplierId}`, { cookie: b.cookie })).status === 404, 'B can’t delete A’s supplier');
+  assert((await req('GET', `/api/business/${bizId}/bills`, { cookie: b.cookie })).status === 404, 'B can’t list A’s bills');
+  assert((await req('POST', `/api/business/${bizId}/bills`, { cookie: b.cookie, body: billBody })).status === 404, 'B can’t add a bill to A’s business');
+  assert((await req('PUT', `/api/business/bills/${billId}`, { cookie: b.cookie, body: billBody })).status === 404, 'B can’t edit A’s bill');
+  assert((await req('POST', `/api/business/bills/${billId}/file`, { cookie: b.cookie, body: { fileBase64: billPdf } })).status === 404, 'B can’t replace its file');
+  assert((await req('DELETE', `/api/business/bills/${billId}/file`, { cookie: b.cookie })).status === 404, 'B can’t remove its file');
+  assert((await req('POST', `/api/business/bills/${billId}/batches`, { cookie: b.cookie, body: { batchId } })).status === 404, 'B can’t link a batch to it');
+  assert((await req('DELETE', `/api/business/bills/${billId}/batches/${batchId}`, { cookie: b.cookie })).status === 404, 'B can’t unlink one');
+  assert((await req('DELETE', `/api/business/bills/${billId}`, { cookie: b.cookie })).status === 404, 'B can’t delete A’s bill');
+  const otherBill = await req('GET', billFileUrl, { cookie: b.cookie, raw: true });
+  assert(otherBill.status === 404 && !otherBill.text.includes('SECRET_SUPPLIER_BILL'), 'B can’t open the bill file');
+  const ownBills = (await req('GET', `/api/business/${bizId}/bills`, { cookie: a.cookie })).json as { amountNzd: number; file: { url: string } | null }[];
+  assert(ownBills.length === 1 && ownBills[0].amountNzd === 99 && ownBills[0].file?.url === billFileUrl, 'A’s bill is unchanged');
+
   // Rental rooms (KAN-83): another user can't see, change or delete A's rooms or tenancies,
   // or record rent against A's room.
   const home = await req('POST', '/api/rentals/properties', { cookie: a.cookie, body: { name: 'Alpha Secret Home', letType: 'rooms', ownHome: true } });
@@ -551,7 +582,7 @@ try {
     'B can’t record rent against A’s room',
   );
 
-  console.log('OK: cross-user BTC, income, uploads, settings, households, payslips, bonds, commodities, businesses, client meetings, employee contracts, stock, and rental rooms');
+  console.log('OK: cross-user BTC, income, uploads, settings, households, payslips, bonds, commodities, businesses, client meetings, employee contracts, stock, suppliers and bills, and rental rooms');
 } finally {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 }
