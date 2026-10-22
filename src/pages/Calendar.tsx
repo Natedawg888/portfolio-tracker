@@ -106,7 +106,7 @@ export function Calendar() {
   const active = businesses ?? [];
 
   return (
-    <div className="stack calendar-page">
+    <div className="stack bills-page warranties-page rentals-page calendar-page">
       <header className="warranties-header">
         <div>
           <h2 className="page-title">Calendar</h2>
