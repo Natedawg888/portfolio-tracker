@@ -73,6 +73,7 @@ export function exportAccountData(db: Database, userId: string, now = new Date()
     ...queryAll<{ p: string }>(db, `SELECT file_path AS p FROM payslips WHERE user_id = ? AND file_path IS NOT NULL`, [userId]).map((r) => r.p),
     ...queryAll<{ p: string }>(db, `SELECT contract_path AS p FROM business_employees WHERE user_id = ? AND contract_path IS NOT NULL`, [userId]).map((r) => r.p),
     ...queryAll<{ p: string }>(db, `SELECT photo_path AS p FROM business_stock_items WHERE user_id = ? AND photo_path IS NOT NULL`, [userId]).map((r) => r.p),
+    ...queryAll<{ p: string }>(db, `SELECT file_path AS p FROM business_supplier_invoices WHERE user_id = ? AND file_path IS NOT NULL`, [userId]).map((r) => r.p),
   ].filter((p): p is string => Boolean(p));
 
   const membership = queryOne<{ household_id: string; role: string; joined_at: string }>(
