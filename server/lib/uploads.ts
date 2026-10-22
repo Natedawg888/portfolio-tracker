@@ -322,7 +322,7 @@ export function deleteEmployeeContract(filePath: string | null | undefined) {
   deleteCharityReceipt(filePath);
 }
 
-const UPLOAD_FOLDERS = new Set(['properties', 'collectables', 'art', 'avatars', 'receipts', 'warranties', 'payslips', 'business-logos', 'employee-contracts', 'stock-photos']);
+const UPLOAD_FOLDERS = new Set(['properties', 'collectables', 'art', 'avatars', 'receipts', 'warranties', 'payslips', 'business-logos', 'employee-contracts', 'stock-photos', 'supplier-invoices']);
 
 /** Relative path `folder/file` under data/uploads, or null if it is not a single file there. */
 export function normalizeUploadRel(rawPath: string): string | null {
@@ -392,6 +392,10 @@ export function userOwnsUpload(
   }
   if (folder === 'stock-photos') {
     const rows = queryAll<{ p: string | null }>(db, `SELECT photo_path AS p FROM business_stock_items WHERE user_id = ? AND photo_path IS NOT NULL`, [userId]);
+    return rows.some((r) => storedPathMatches(r.p, rel));
+  }
+  if (folder === 'supplier-invoices') {
+    const rows = queryAll<{ p: string | null }>(db, `SELECT file_path AS p FROM business_supplier_invoices WHERE user_id = ? AND file_path IS NOT NULL`, [userId]);
     return rows.some((r) => storedPathMatches(r.p, rel));
   }
   if (folder === 'payslips') {
@@ -529,6 +533,38 @@ export function saveStockPhoto(itemId: string, dataUrlOrBase64: string): string 
 export function deleteStockPhoto(photoPath: string | null | undefined) {
   if (!photoPath || !photoPath.startsWith('stock-photos/')) return;
   deleteCharityReceipt(photoPath);
+}
+
+export const SUPPLIER_INVOICES_DIR = path.join(UPLOADS_DIR, 'supplier-invoices');
+const BILL_EXT = ['.pdf', ...ALLOWED_EXT];
+
+/** A PDF or an image, typed by its bytes (max 8MB); the data URL's type is only a claim. */
+export function decodeBillFile(input: string): { buffer: Buffer; ext: string } | null {
+  const decoded = decodeReceiptBase64(input);
+  if (!decoded) return null;
+  if (decoded.buffer.subarray(0, 5).toString('latin1') === '%PDF-') return { buffer: decoded.buffer, ext: '.pdf' };
+  const ext = imageExtFromBytes(decoded.buffer);
+  return ext ? { buffer: decoded.buffer, ext } : null;
+}
+
+/** A supplier or delivery bill (KAN-107); returns relative path supplier-invoices/<billId><ext>. */
+export function saveSupplierInvoiceFile(billId: string, dataUrlOrBase64: string): string {
+  const decoded = decodeBillFile(dataUrlOrBase64);
+  if (!decoded) throw new Error('Invalid file — use a PDF or a photo (JPEG, PNG, WebP or GIF, max 8MB)');
+  fs.mkdirSync(SUPPLIER_INVOICES_DIR, { recursive: true });
+  const safeId = billId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
+  for (const e of BILL_EXT) {
+    const prev = path.join(SUPPLIER_INVOICES_DIR, `${safeId}${e}`);
+    if (fs.existsSync(prev)) fs.unlinkSync(prev);
+  }
+  const rel = `supplier-invoices/${safeId}${decoded.ext}`;
+  fs.writeFileSync(path.join(UPLOADS_DIR, rel), decoded.buffer);
+  return rel;
+}
+
+export function deleteSupplierInvoiceFile(filePath: string | null | undefined) {
+  if (!filePath || !filePath.startsWith('supplier-invoices/')) return;
+  deleteCharityReceipt(filePath);
 }
 
 export function deleteCharityReceipt(receiptPath: string | null | undefined) {

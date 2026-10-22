@@ -93,12 +93,14 @@ export default function App() {
                   <Route path="household" element={<HouseholdPage />} />
                   <Route path="debts" element={<DebtsPage />} />
                   <Route path="yearly" element={<YearlyReportPage />} />
-                  <Route path="economic-cycle" element={<EconomicCyclePage />} />
+                  {/* Economic cycle is a tab on the PAYE page; the old address still works. */}
+                  <Route path="economic-cycle" element={<Navigate replace to="/paye/economic-cycle" />} />
                   <Route path="portfolio" element={<PortfolioPage />} />
                   <Route path="projections" element={<ProjectionsPage />} />
                   <Route path="news" element={<NewsPage />} />
                   <Route path="kiwisaver" element={<KiwiSaverPage />} />
                   <Route path="paye" element={<PayePage />} />
+                  <Route path="paye/economic-cycle" element={<EconomicCyclePage />} />
                   <Route path="business" element={<BusinessPage />} />
                   <Route path="business/invoices" element={<InvoicesPage />} />
                   <Route path="business/invoices/new" element={<InvoiceEditorPage />} />

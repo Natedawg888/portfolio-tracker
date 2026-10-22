@@ -10,6 +10,7 @@ import { PhaseExplorer } from '../components/economy/PhaseExplorer';
 import { PhaseHistory } from '../components/economy/PhaseHistory';
 import { ScenarioSimulator } from '../components/economy/ScenarioSimulator';
 import type { MixState } from '../components/economy/YourMix';
+import { PayeTabs } from '../components/PayeTabs';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import { cycleMix, type NetWorthTotals } from '../lib/cycleMix';
 import type { EconomicCycleResponse } from '../types/economy';
@@ -79,7 +80,17 @@ function useMixState(): MixState {
   return failed ? { status: 'error' } : { status: 'loading' };
 }
 
+/** The Economic cycle tab on the PAYE pages. */
 export function EconomicCycle() {
+  return (
+    <div className="stack">
+      <PayeTabs />
+      <EconomicCycleContent />
+    </div>
+  );
+}
+
+function EconomicCycleContent() {
   const [country, setCountry] = useState('NZ');
   const initialCycle = readPageCache<EconomicCycleResponse>(economyKey('NZ'));
   const cachedCycle = usePageCacheValue<EconomicCycleResponse>(economyKey(country));

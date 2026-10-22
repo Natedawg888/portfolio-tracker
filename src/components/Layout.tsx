@@ -52,12 +52,12 @@ const links: Array<{
   { to: '/projections', label: 'Projections' },
   { to: '/news', label: 'News' },
   { to: '/kiwisaver', label: 'KiwiSaver', requirePref: 'kiwisaver' },
+  // Take-home pay and Economic cycle are tabs on the PAYE pages.
   { to: '/paye', label: 'PAYE' },
   // Overview, Invoices and Clients are tabs on the Business pages (KAN-84).
   { to: '/business', label: 'Business' },
   { to: '/calendar', label: 'Calendar' },
   { to: '/yearly', label: 'History' },
-  { to: '/economic-cycle', label: 'Economic cycle' },
   {
     to: '/value-search',
     label: 'Value search',

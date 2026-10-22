@@ -157,7 +157,7 @@ const NAV_PAGES: Record<string, PageName> = {
   '/household': 'household',
   '/value-search': 'valueSearch',
   '/settings': 'settings',
-  '/economic-cycle': 'economicCycle',
+  '/paye/economic-cycle': 'economicCycle',
 };
 
 /** Start the dynamic import once. Safe to call from hover, focus, and idle. */

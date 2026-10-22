@@ -70,6 +70,7 @@ import {
   salaryHourlySwitch,
   studentLoanTip,
 } from '../lib/payeView';
+import { PayeTabs } from '../components/PayeTabs';
 
 const PAY_TYPES: { value: PayePayType; label: string }[] = [
   { value: 'salary', label: 'Salary' },
@@ -585,6 +586,7 @@ export function Paye() {
 
   return (
     <div className="stack paye-page">
+      <PayeTabs />
       <header className="paye-intro">
         <h2 className="page-title">Take-home pay</h2>
         <p className="paye-subtitle">{payePageSubtitle(rates.start, rates.end)}</p>
