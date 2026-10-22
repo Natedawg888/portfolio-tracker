@@ -322,7 +322,7 @@ export function deleteEmployeeContract(filePath: string | null | undefined) {
   deleteCharityReceipt(filePath);
 }
 
-const UPLOAD_FOLDERS = new Set(['properties', 'collectables', 'art', 'avatars', 'receipts', 'warranties', 'payslips', 'business-logos', 'employee-contracts']);
+const UPLOAD_FOLDERS = new Set(['properties', 'collectables', 'art', 'avatars', 'receipts', 'warranties', 'payslips', 'business-logos', 'employee-contracts', 'stock-photos']);
 
 /** Relative path `folder/file` under data/uploads, or null if it is not a single file there. */
 export function normalizeUploadRel(rawPath: string): string | null {
@@ -388,6 +388,10 @@ export function userOwnsUpload(
   }
   if (folder === 'business-logos') {
     const rows = queryAll<{ p: string | null }>(db, `SELECT logo_path AS p FROM businesses WHERE user_id = ? AND logo_path IS NOT NULL`, [userId]);
+    return rows.some((r) => storedPathMatches(r.p, rel));
+  }
+  if (folder === 'stock-photos') {
+    const rows = queryAll<{ p: string | null }>(db, `SELECT photo_path AS p FROM business_stock_items WHERE user_id = ? AND photo_path IS NOT NULL`, [userId]);
     return rows.some((r) => storedPathMatches(r.p, rel));
   }
   if (folder === 'payslips') {
@@ -492,6 +496,39 @@ export function deleteBusinessLogo(logoPath: string | null | undefined) {
       /* ignore */
     }
   }
+}
+
+export const STOCK_PHOTOS_DIR = path.join(UPLOADS_DIR, 'stock-photos');
+
+/** The image type the bytes say they are; the data URL's type is only a claim. */
+function imageExtFromBytes(buffer: Buffer): string | null {
+  const hex = buffer.subarray(0, 12).toString('hex');
+  if (hex.startsWith('ffd8ff')) return '.jpg';
+  if (hex.startsWith('89504e470d0a1a0a')) return '.png';
+  if (hex.startsWith('47494638')) return '.gif';
+  if (hex.startsWith('52494646') && hex.slice(16, 24) === '57454250') return '.webp';
+  return null;
+}
+
+/** Stock item photo (KAN-107); returns relative path stock-photos/<itemId><ext>. */
+export function saveStockPhoto(itemId: string, dataUrlOrBase64: string): string {
+  const decoded = decodeImageBase64(dataUrlOrBase64);
+  const ext = decoded && imageExtFromBytes(decoded.buffer);
+  if (!decoded || !ext) throw new Error('Invalid image — use a JPEG, PNG, WebP or GIF photo (max 8MB)');
+  fs.mkdirSync(STOCK_PHOTOS_DIR, { recursive: true });
+  const safeId = itemId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
+  for (const e of ALLOWED_EXT) {
+    const prev = path.join(STOCK_PHOTOS_DIR, `${safeId}${e}`);
+    if (fs.existsSync(prev)) fs.unlinkSync(prev);
+  }
+  const rel = `stock-photos/${safeId}${ext}`;
+  fs.writeFileSync(path.join(UPLOADS_DIR, rel), decoded.buffer);
+  return rel;
+}
+
+export function deleteStockPhoto(photoPath: string | null | undefined) {
+  if (!photoPath || !photoPath.startsWith('stock-photos/')) return;
+  deleteCharityReceipt(photoPath);
 }
 
 export function deleteCharityReceipt(receiptPath: string | null | undefined) {

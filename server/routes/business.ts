@@ -19,6 +19,15 @@
  *   PUT    /employees/:employeeId | DELETE /employees/:employeeId (also removes the contract file)
  *   POST   /employees/:employeeId/contract  { fileBase64, fileName? }  PDF, Word (.docx/.doc) or photo, max 8MB; replaces any earlier one
  *   DELETE /employees/:employeeId/contract
+ *   GET    /:id/stock?includeArchived=1   items with on-hand, average cost, margin and level (KAN-107)
+ *   POST   /:id/stock               { name, sku?, unit?, sellPriceNzd?, reorderLevel?, notes? }
+ *   PUT    /stock/:itemId           same body; SKU is unique per business (409)
+ *   POST   /stock/:itemId/archive | /stock/:itemId/restore   archive is the only delete; history is kept
+ *   POST   /stock/:itemId/photo { image } | DELETE /stock/:itemId/photo
+ *   POST   /stock/:itemId/batches   { date?, quantity, unitCostNzd, notes? }  refused while archived
+ *   PUT    /stock/batches/:batchId | DELETE /stock/batches/:batchId
+ *   POST   /stock/:itemId/adjustments { kind: damage, quantityLost | recount, countedQuantity; reason, date? }
+ *   DELETE /stock/adjustments/:id
  *
  * Clients are created and edited through /api/invoices/clients with a businessId.
  */
@@ -52,6 +61,22 @@ import {
   updateAsset,
   updateBusiness,
 } from '../business/store.ts';
+import {
+  addAdjustment,
+  addBatch,
+  createItem,
+  deleteAdjustment,
+  deleteBatch,
+  listStock,
+  parseStockAdjustment,
+  parseStockBatch,
+  parseStockItem,
+  removeItemPhoto,
+  setItemArchived,
+  setItemPhoto,
+  updateBatch,
+  updateItem,
+} from '../business/stock.ts';
 import { clearEmployeeContract, createEmployee, deleteEmployee, parseEmployee, setEmployeeContract, updateEmployee } from '../business/employees.ts';
 
 const router = Router();
@@ -168,6 +193,75 @@ router.delete('/employees/:employeeId', async (req, res) => {
   res.json({ ok: true, id: req.params.employeeId });
 });
 
+function parsedOr400<T>(res: Response, parsed: { ok: true; value: T } | { ok: false; error: string }): T | null {
+  if (parsed.ok) return parsed.value;
+  res.status(400).json({ error: parsed.error });
+  return null;
+}
+
+router.put('/stock/batches/:batchId', async (req, res) => {
+  const draft = parsedOr400(res, parseStockBatch(req.body, aucklandToday()));
+  if (!draft) return;
+  const db = await getDb();
+  reply(res, updateBatch(db, uid(req), req.params.batchId, draft));
+});
+
+router.delete('/stock/batches/:batchId', async (req, res) => {
+  const db = await getDb();
+  reply(res, deleteBatch(db, uid(req), req.params.batchId));
+});
+
+router.delete('/stock/adjustments/:id', async (req, res) => {
+  const db = await getDb();
+  reply(res, deleteAdjustment(db, uid(req), req.params.id));
+});
+
+router.put('/stock/:itemId', async (req, res) => {
+  const draft = parsedOr400(res, parseStockItem(req.body));
+  if (!draft) return;
+  const db = await getDb();
+  reply(res, updateItem(db, uid(req), req.params.itemId, draft));
+});
+
+router.post('/stock/:itemId/archive', async (req, res) => {
+  const db = await getDb();
+  reply(res, setItemArchived(db, uid(req), req.params.itemId, true));
+});
+
+router.post('/stock/:itemId/restore', async (req, res) => {
+  const db = await getDb();
+  reply(res, setItemArchived(db, uid(req), req.params.itemId, false));
+});
+
+router.post('/stock/:itemId/photo', async (req, res) => {
+  const image = (req.body as { image?: unknown } | undefined)?.image;
+  if (typeof image !== 'string' || !image) {
+    res.status(400).json({ error: 'image is required' });
+    return;
+  }
+  const db = await getDb();
+  reply(res, setItemPhoto(db, uid(req), req.params.itemId, image));
+});
+
+router.delete('/stock/:itemId/photo', async (req, res) => {
+  const db = await getDb();
+  reply(res, removeItemPhoto(db, uid(req), req.params.itemId));
+});
+
+router.post('/stock/:itemId/batches', async (req, res) => {
+  const draft = parsedOr400(res, parseStockBatch(req.body, aucklandToday()));
+  if (!draft) return;
+  const db = await getDb();
+  reply(res, addBatch(db, uid(req), req.params.itemId, draft), true);
+});
+
+router.post('/stock/:itemId/adjustments', async (req, res) => {
+  const draft = parsedOr400(res, parseStockAdjustment(req.body, aucklandToday()));
+  if (!draft) return;
+  const db = await getDb();
+  reply(res, addAdjustment(db, uid(req), req.params.itemId, draft), true);
+});
+
 router.put('/assets/:assetId', async (req, res) => {
   const parsed = parseAsset(req.body, aucklandToday());
   if (!parsed.ok) {
@@ -270,6 +364,18 @@ router.post('/:id/employees', async (req, res) => {
   }
   const db = await getDb();
   reply(res, createEmployee(db, uid(req), req.params.id, parsed.value, aucklandToday()), true);
+});
+
+router.get('/:id/stock', async (req, res) => {
+  const db = await getDb();
+  reply(res, listStock(db, uid(req), req.params.id, { includeArchived: req.query.includeArchived === '1' || req.query.includeArchived === 'true' }));
+});
+
+router.post('/:id/stock', async (req, res) => {
+  const draft = parsedOr400(res, parseStockItem(req.body));
+  if (!draft) return;
+  const db = await getDb();
+  reply(res, createItem(db, uid(req), req.params.id, draft), true);
 });
 
 router.post('/:id/assets', async (req, res) => {

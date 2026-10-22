@@ -49,12 +49,13 @@ import {
 import { isValidEmail, isYmd } from '../../src/lib/invoiceCalc.ts';
 import { roundMoney } from '../../src/lib/debtModel.ts';
 import { newId, queryAll, queryOne, run } from '../db/index.ts';
-import { deleteBusinessLogo, deleteEmployeeContract, saveBusinessLogo } from '../lib/uploads.ts';
+import { deleteBusinessLogo, deleteEmployeeContract, deleteStockPhoto, saveBusinessLogo } from '../lib/uploads.ts';
 import { getClient, listClients, summary } from '../invoices/store.ts';
 import { listCommodities } from '../commodities/store.ts';
 import { businessRow, presentBusiness, type BusinessRow } from './profile.ts';
 import { activeEmployeeCount, listEmployees } from './employees.ts';
 import { BUSINESS_STOCK_TABLES } from './stockTables.ts';
+import { stockPhotoPaths, stockValue } from './stock.ts';
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 type Result<T> = { ok: true; value: T } | { ok: false; status: number; error: string };
@@ -332,6 +333,7 @@ export function deleteBusiness(db: Database, userId: string, id: string): Result
     deleteEmployeeContract(e.p);
   }
   run(db, `DELETE FROM business_employees WHERE user_id = ? AND business_id = ?`, [userId, id]);
+  for (const p of stockPhotoPaths(db, userId, id)) deleteStockPhoto(p);
   for (const table of BUSINESS_STOCK_TABLES) run(db, `DELETE FROM ${table} WHERE user_id = ? AND business_id = ?`, [userId, id]);
   run(db, `UPDATE transactions SET business_id = NULL, business_category_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
   run(db, `UPDATE income_records SET business_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
@@ -541,13 +543,16 @@ function assetsTotal(assets: BusinessAsset[]): number | null {
 }
 
 /**
- * What a business is worth from what it owns: its assets (equipment, livestock, hives, stock …)
- * plus the produce linked to it, at the values the user entered. null when nothing has a value.
+ * What a business is worth from what it owns: its assets (equipment, livestock, hives …) and the
+ * produce linked to it at the values the user entered, plus stock on hand at average cost.
+ * null when nothing has a value.
  */
 export function businessValue(db: Database, userId: string, businessId: string, today: string): number | null {
-  const parts = [assetsTotal(listAssets(db, userId, businessId)), ...businessProduce(db, userId, businessId, today).map((p) => p.valueNzd)].filter(
-    (n): n is number => n != null,
-  );
+  const parts = [
+    assetsTotal(listAssets(db, userId, businessId)),
+    stockValue(db, userId, businessId),
+    ...businessProduce(db, userId, businessId, today).map((p) => p.valueNzd),
+  ].filter((n): n is number => n != null);
   return parts.length ? roundMoney(parts.reduce((s, n) => s + n, 0)) : null;
 }
 
