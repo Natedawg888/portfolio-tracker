@@ -1514,6 +1514,60 @@ export interface BusinessClientView {
   billedNzd: number;
   outstandingNzd: number;
   lastPayment: { date: string; amountNzd: number; invoiceNumber: string } | null;
+  /** Upcoming scheduled meetings, soonest first, and the most recent past ones, newest first. */
+  meetings: { next: BusinessMeeting[]; past: BusinessMeeting[] };
+}
+
+export type MeetingStatus = 'scheduled' | 'done' | 'cancelled';
+
+/** A client meeting (Calendar). Stored as a UTC instant; date and time are NZ time. */
+export interface BusinessMeeting {
+  id: string;
+  businessId: string;
+  businessName: string;
+  clientId: string | null;
+  clientName: string;
+  title: string;
+  startsAt: string;
+  date: string;
+  time: string;
+  durationMinutes: number;
+  location: string;
+  notes: string;
+  status: MeetingStatus;
+  /** Minutes before the start that an in-app reminder shows (e.g. 1440 and 60). */
+  reminderOffsets: number[];
+}
+
+export interface MeetingWriteBody {
+  businessId: string;
+  clientId: string | null;
+  title: string;
+  /** NZ date and time unless timeZone says otherwise. */
+  date: string;
+  time: string;
+  timeZone?: string;
+  durationMinutes: number;
+  location: string;
+  notes: string;
+  reminderOffsets: number[];
+}
+
+export interface CalendarResponse {
+  from: string;
+  to: string;
+  meetings: BusinessMeeting[];
+}
+
+export interface MeetingReminder {
+  meetingId: string;
+  title: string;
+  clientName: string;
+  businessName: string;
+  startsAt: string;
+  date: string;
+  time: string;
+  offsetMinutes: number;
 }
 
 export interface InvoiceLine {

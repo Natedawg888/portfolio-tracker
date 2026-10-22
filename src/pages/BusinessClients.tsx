@@ -13,7 +13,26 @@ import { BusinessTabs, errorText } from '../components/business/BusinessUi';
 import { ClientForm, clientBody } from '../components/business/ClientForm';
 import { InvoiceStatusBadge } from '../components/InvoicePreview';
 import { formatInvoiceDate } from './invoicesView';
-import type { BusinessCard, BusinessClientView, InvoiceClient } from '../types';
+import { dayLabel, timeSpan } from '../lib/calendarView';
+import type { BusinessCard, BusinessClientView, BusinessMeeting, InvoiceClient } from '../types';
+
+function MeetingRows({ meetings }: { meetings: BusinessMeeting[] }) {
+  return (
+    <ul className="rental-entries">
+      {meetings.map((m) => (
+        <li key={m.id} className="rental-entry">
+          <div className="rental-entry-what">
+            <span>{m.title}</span>
+            <span className="muted small">
+              {dayLabel(m.date)} · {timeSpan(m)}
+              {m.status !== 'scheduled' ? ` · ${m.status === 'done' ? 'Done' : 'Cancelled'}` : ''}
+            </span>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 function ClientView({ clientId, businesses }: { clientId: string; businesses: BusinessCard[] }) {
   const [view, setView] = useState<BusinessClientView | null>(null);
@@ -57,9 +76,14 @@ function ClientView({ clientId, businesses }: { clientId: string; businesses: Bu
             Edit
           </button>
           {c.businessId ? (
-            <Link className="btn small primary" to={`/business/invoices/new?business=${encodeURIComponent(c.businessId)}`}>
-              + Invoice
-            </Link>
+            <>
+              <Link className="btn small" to={`/calendar?new=1&business=${encodeURIComponent(c.businessId)}&client=${encodeURIComponent(c.id)}`}>
+                + Meeting
+              </Link>
+              <Link className="btn small primary" to={`/business/invoices/new?business=${encodeURIComponent(c.businessId)}&client=${encodeURIComponent(c.id)}`}>
+                + Invoice
+              </Link>
+            </>
           ) : null}
         </div>
       </header>
@@ -86,6 +110,27 @@ function ClientView({ clientId, businesses }: { clientId: string; businesses: Bu
         {c.address ? <p className="small business-pre">{c.address}</p> : null}
         {c.reference ? <p className="muted small">Reference on invoices: {c.reference}</p> : null}
         {c.notes ? <p className="muted small business-pre">{c.notes}</p> : null}
+      </section>
+      <section className="panel warranty-card">
+        <h3>Meetings</h3>
+        {view.meetings.next.length === 0 && view.meetings.past.length === 0 ? (
+          <p className="muted small">No meetings with this client yet.</p>
+        ) : null}
+        {view.meetings.next.length > 0 ? (
+          <>
+            <p className="muted small">Next</p>
+            <MeetingRows meetings={view.meetings.next} />
+          </>
+        ) : null}
+        {view.meetings.past.length > 0 ? (
+          <>
+            <p className="muted small">Past</p>
+            <MeetingRows meetings={view.meetings.past} />
+          </>
+        ) : null}
+        <p className="small">
+          <Link to="/calendar">Open the calendar</Link>
+        </p>
       </section>
       <section className="panel warranty-card">
         <h3>Invoices</h3>

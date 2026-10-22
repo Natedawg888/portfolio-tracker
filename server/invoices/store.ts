@@ -247,6 +247,7 @@ export function updateClient(db: Database, userId: string, id: string, c: Client
 export function deleteClient(db: Database, userId: string, id: string): boolean {
   if (!getClient(db, userId, id)) return false;
   run(db, `UPDATE invoices SET client_id = NULL WHERE client_id = ? AND user_id = ?`, [id, userId]);
+  run(db, `UPDATE business_meetings SET client_id = NULL WHERE client_id = ? AND user_id = ?`, [id, userId]);
   run(db, `DELETE FROM invoice_clients WHERE id = ? AND user_id = ?`, [id, userId]);
   return true;
 }

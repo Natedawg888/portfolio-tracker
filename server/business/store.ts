@@ -54,6 +54,7 @@ import { getClient, listClients, summary } from '../invoices/store.ts';
 import { listCommodities } from '../commodities/store.ts';
 import { businessRow, presentBusiness, type BusinessRow } from './profile.ts';
 import { activeEmployeeCount, listEmployees } from './employees.ts';
+import { clientMeetings, deleteBusinessMeetings } from './meetings.ts';
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 type Result<T> = { ok: true; value: T } | { ok: false; status: number; error: string };
@@ -313,7 +314,7 @@ export function updateBusiness(db: Database, userId: string, id: string, d: Busi
 }
 
 /**
- * Deletes the business, its assets, movements and clients, and untags its transactions and
+ * Deletes the business, its assets, movements, clients and meetings, and untags its transactions and
  * income (they stay in Budget and Income). A business with invoices can't be deleted: sent
  * invoices are kept on record.
  */
@@ -331,6 +332,7 @@ export function deleteBusiness(db: Database, userId: string, id: string): Result
     deleteEmployeeContract(e.p);
   }
   run(db, `DELETE FROM business_employees WHERE user_id = ? AND business_id = ?`, [userId, id]);
+  deleteBusinessMeetings(db, userId, id);
   run(db, `UPDATE transactions SET business_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
   run(db, `UPDATE income_records SET business_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
   run(db, `UPDATE commodities SET business_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
@@ -809,7 +811,7 @@ export function linkProduce(db: Database, userId: string, commodityId: string, b
   return { ok: true, value: true };
 }
 
-export function getClientView(db: Database, userId: string, clientId: string, today: string): BusinessClientView | null {
+export function getClientView(db: Database, userId: string, clientId: string, today: string, nowMs = Date.now()): BusinessClientView | null {
   const client: InvoiceClient | null = getClient(db, userId, clientId);
   if (!client) return null;
   const f = clientFigures(db, userId, clientId, today);
@@ -826,6 +828,7 @@ export function getClientView(db: Database, userId: string, clientId: string, to
     billedNzd: f.billedNzd,
     outstandingNzd: f.outstandingNzd,
     lastPayment: last ? { date: last.date, amountNzd: roundMoney(Number(last.amount_nzd)), invoiceNumber: last.number } : null,
+    meetings: clientMeetings(db, userId, clientId, nowMs),
   };
 }
 

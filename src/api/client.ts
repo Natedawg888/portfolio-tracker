@@ -21,6 +21,11 @@ import type {
   BusinessAsset,
   BusinessAssetWriteBody,
   BusinessClientView,
+  BusinessMeeting,
+  CalendarResponse,
+  MeetingReminder,
+  MeetingStatus,
+  MeetingWriteBody,
   BusinessDetail,
   BusinessListResponse,
   BusinessMoneyItem,
@@ -1016,6 +1021,16 @@ export const api = {
     produceCandidates: () => req<BusinessDetail['produce']>('/business/produce/candidates'),
     linkProduce: (commodityId: string, businessId: string | null) =>
       req<{ ok: true }>('/business/produce/link', { method: 'POST', body: JSON.stringify({ commodityId, businessId }) }),
+  },
+  calendar: {
+    range: (from: string, to: string, businessId?: string | null) =>
+      req<CalendarResponse>(`/calendar?${new URLSearchParams({ from, to, ...(businessId ? { businessId } : {}) })}`),
+    createMeeting: (body: MeetingWriteBody) => req<BusinessMeeting>('/calendar/meetings', { method: 'POST', body: JSON.stringify(body) }),
+    updateMeeting: (id: string, body: MeetingWriteBody) =>
+      req<BusinessMeeting>(`/calendar/meetings/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    setStatus: (id: string, status: MeetingStatus) =>
+      req<BusinessMeeting>(`/calendar/meetings/${encodeURIComponent(id)}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
+    dueReminders: () => req<MeetingReminder[]>('/calendar/reminders/due', { method: 'POST' }),
   },
   paySources: {
     list: () => req<PaySource[]>('/pay-sources'),

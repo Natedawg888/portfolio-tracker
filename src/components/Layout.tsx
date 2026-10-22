@@ -14,6 +14,7 @@ import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
 import { ProfileMenu } from './ProfileMenu';
 import { QuietToast } from './QuietToast';
+import { useMeetingReminders } from '../lib/useMeetingReminders';
 import { PageAds } from './PageAds';
 import { api } from '../api/client';
 import { metalProviderFooter } from '../lib/metalSpotCopy';
@@ -54,6 +55,7 @@ const links: Array<{
   { to: '/paye', label: 'PAYE' },
   // Overview, Invoices and Clients are tabs on the Business pages (KAN-84).
   { to: '/business', label: 'Business' },
+  { to: '/calendar', label: 'Calendar' },
   { to: '/yearly', label: 'History' },
   { to: '/economic-cycle', label: 'Economic cycle' },
   {
@@ -115,6 +117,7 @@ export function Layout({ children }: { children?: ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const navigate = useNavigate();
+  useMeetingReminders();
 
   // Back to a household invite that was opened before signing in (KAN-77).
   useEffect(() => {
