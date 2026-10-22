@@ -49,11 +49,13 @@ import {
 import { isValidEmail, isYmd } from '../../src/lib/invoiceCalc.ts';
 import { roundMoney } from '../../src/lib/debtModel.ts';
 import { newId, queryAll, queryOne, run } from '../db/index.ts';
-import { deleteBusinessLogo, deleteEmployeeContract, saveBusinessLogo } from '../lib/uploads.ts';
+import { deleteBusinessLogo, deleteEmployeeContract, deleteStockPhoto, saveBusinessLogo } from '../lib/uploads.ts';
 import { getClient, listClients, summary } from '../invoices/store.ts';
 import { listCommodities } from '../commodities/store.ts';
 import { businessRow, presentBusiness, type BusinessRow } from './profile.ts';
 import { activeEmployeeCount, listEmployees } from './employees.ts';
+import { BUSINESS_STOCK_TABLES } from './stockTables.ts';
+import { stockPhotoPaths, stockValue } from './stock.ts';
 import { clientMeetings, deleteBusinessMeetings } from './meetings.ts';
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -314,9 +316,9 @@ export function updateBusiness(db: Database, userId: string, id: string, d: Busi
 }
 
 /**
- * Deletes the business, its assets, movements, clients and meetings, and untags its transactions and
- * income (they stay in Budget and Income). A business with invoices can't be deleted: sent
- * invoices are kept on record.
+ * Deletes the business, its assets, movements, clients, meetings, employees and stock, supplier,
+ * sales and budget rows, and untags its transactions and income (they stay in Budget and Income).
+ * A business with invoices can't be deleted: sent invoices are kept on record.
  */
 export function deleteBusiness(db: Database, userId: string, id: string): Result<true> {
   const r = businessRow(db, userId, id);
@@ -332,8 +334,10 @@ export function deleteBusiness(db: Database, userId: string, id: string): Result
     deleteEmployeeContract(e.p);
   }
   run(db, `DELETE FROM business_employees WHERE user_id = ? AND business_id = ?`, [userId, id]);
+  for (const p of stockPhotoPaths(db, userId, id)) deleteStockPhoto(p);
+  for (const table of BUSINESS_STOCK_TABLES) run(db, `DELETE FROM ${table} WHERE user_id = ? AND business_id = ?`, [userId, id]);
   deleteBusinessMeetings(db, userId, id);
-  run(db, `UPDATE transactions SET business_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
+  run(db, `UPDATE transactions SET business_id = NULL, business_category_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
   run(db, `UPDATE income_records SET business_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
   run(db, `UPDATE commodities SET business_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
   deleteBusinessLogo(r.logo_path);
@@ -541,13 +545,16 @@ function assetsTotal(assets: BusinessAsset[]): number | null {
 }
 
 /**
- * What a business is worth from what it owns: its assets (equipment, livestock, hives, stock …)
- * plus the produce linked to it, at the values the user entered. null when nothing has a value.
+ * What a business is worth from what it owns: its assets (equipment, livestock, hives …) and the
+ * produce linked to it at the values the user entered, plus stock on hand at average cost.
+ * null when nothing has a value.
  */
 export function businessValue(db: Database, userId: string, businessId: string, today: string): number | null {
-  const parts = [assetsTotal(listAssets(db, userId, businessId)), ...businessProduce(db, userId, businessId, today).map((p) => p.valueNzd)].filter(
-    (n): n is number => n != null,
-  );
+  const parts = [
+    assetsTotal(listAssets(db, userId, businessId)),
+    stockValue(db, userId, businessId),
+    ...businessProduce(db, userId, businessId, today).map((p) => p.valueNzd),
+  ].filter((n): n is number => n != null);
   return parts.length ? roundMoney(parts.reduce((s, n) => s + n, 0)) : null;
 }
 
@@ -878,7 +885,13 @@ export function tagMoney(db: Database, userId: string, kind: 'transaction' | 'in
   if (businessId && !businessRow(db, userId, businessId)) return fail(404, 'Business not found');
   if (kind === 'transaction') {
     if (!queryOne(db, `SELECT id FROM transactions WHERE id = ? AND user_id = ?`, [id, userId])) return fail(404, 'Transaction not found');
-    run(db, `UPDATE transactions SET business_id = ? WHERE id = ? AND user_id = ?`, [businessId, id, userId]);
+    // A budget category belongs to one business, so untagging or moving the transaction drops it.
+    run(
+      db,
+      `UPDATE transactions SET business_category_id = CASE WHEN business_id IS ? THEN business_category_id END, business_id = ?
+       WHERE id = ? AND user_id = ?`,
+      [businessId, businessId, id, userId],
+    );
     return { ok: true, value: true };
   }
   const inc = queryOne<{ invoice_payment_id: string | null }>(db, `SELECT invoice_payment_id FROM income_records WHERE id = ? AND user_id = ?`, [id, userId]);

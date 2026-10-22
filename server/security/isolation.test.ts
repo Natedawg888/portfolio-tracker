@@ -491,6 +491,37 @@ try {
   assert((await req('PUT', `/api/business/employees/${staffId}`, { cookie: b.cookie, body: { name: 'x' } })).status === 404, 'B can’t edit A’s employee');
   assert((await req('DELETE', `/api/business/employees/${staffId}`, { cookie: b.cookie })).status === 404, 'B can’t delete A’s employee');
 
+  // Stock (KAN-107): another user can't list, change, archive or photograph A's stock items,
+  // touch their batches or adjustments, or open the photo.
+  const item = await req('POST', `/api/business/${bizId}/stock`, { cookie: a.cookie, body: { name: 'Alpha Secret Jar', sku: 'SECRET-1' } });
+  assert(item.status === 201, 'A adds a stock item');
+  const itemId = String((item.json as { id: string }).id);
+  const withBatch = await req('POST', `/api/business/stock/${itemId}/batches`, { cookie: a.cookie, body: { quantity: 5, unitCostNzd: 4 } });
+  const batchId = String((withBatch.json as { batches: { id: string }[] }).batches[0].id);
+  const withAdj = await req('POST', `/api/business/stock/${itemId}/adjustments`, { cookie: a.cookie, body: { kind: 'damage', quantityLost: 1, reason: 'x' } });
+  const adjId = String((withAdj.json as { adjustments: { id: string }[] }).adjustments[0].id);
+  const stockPng = `data:image/png;base64,${Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.from('SECRET_STOCK_PHOTO'), Buffer.alloc(40, 1)]).toString('base64')}`;
+  const stockPhoto = await req('POST', `/api/business/stock/${itemId}/photo`, { cookie: a.cookie, body: { image: stockPng } });
+  assert(stockPhoto.status === 200, 'A adds a stock photo');
+  const stockPhotoUrl = String((stockPhoto.json as { photoUrl: string }).photoUrl);
+  const bStock = await req('GET', `/api/business/${bizId}/stock?includeArchived=1`, { cookie: b.cookie });
+  assert(bStock.status === 404 && !JSON.stringify(bStock.json).includes('Alpha Secret'), 'B can’t list A’s stock');
+  assert((await req('POST', `/api/business/${bizId}/stock`, { cookie: b.cookie, body: { name: 'x' } })).status === 404, 'B can’t add stock to A’s business');
+  assert((await req('PUT', `/api/business/stock/${itemId}`, { cookie: b.cookie, body: { name: 'x' } })).status === 404, 'B can’t edit A’s stock item');
+  assert((await req('POST', `/api/business/stock/${itemId}/archive`, { cookie: b.cookie })).status === 404, 'B can’t archive it');
+  assert((await req('POST', `/api/business/stock/${itemId}/restore`, { cookie: b.cookie })).status === 404, 'B can’t restore it');
+  assert((await req('POST', `/api/business/stock/${itemId}/photo`, { cookie: b.cookie, body: { image: stockPng } })).status === 404, 'B can’t replace its photo');
+  assert((await req('DELETE', `/api/business/stock/${itemId}/photo`, { cookie: b.cookie })).status === 404, 'B can’t remove its photo');
+  assert((await req('POST', `/api/business/stock/${itemId}/batches`, { cookie: b.cookie, body: { quantity: 1, unitCostNzd: 1 } })).status === 404, 'B can’t add a batch');
+  assert((await req('PUT', `/api/business/stock/batches/${batchId}`, { cookie: b.cookie, body: { quantity: 1, unitCostNzd: 1 } })).status === 404, 'B can’t edit a batch');
+  assert((await req('DELETE', `/api/business/stock/batches/${batchId}`, { cookie: b.cookie })).status === 404, 'B can’t delete a batch');
+  assert((await req('POST', `/api/business/stock/${itemId}/adjustments`, { cookie: b.cookie, body: { kind: 'damage', quantityLost: 1, reason: 'x' } })).status === 404, 'B can’t adjust');
+  assert((await req('DELETE', `/api/business/stock/adjustments/${adjId}`, { cookie: b.cookie })).status === 404, 'B can’t delete an adjustment');
+  const otherStockPhoto = await req('GET', stockPhotoUrl, { cookie: b.cookie, raw: true });
+  assert(otherStockPhoto.status === 404 && !otherStockPhoto.text.includes('SECRET_STOCK_PHOTO'), 'B can’t open the stock photo');
+  const ownStock = (await req('GET', `/api/business/${bizId}/stock`, { cookie: a.cookie })).json as { position: { onHand: number }; photoUrl: string | null }[];
+  assert(ownStock.length === 1 && ownStock[0].position.onHand === 4 && ownStock[0].photoUrl === stockPhotoUrl, 'A’s stock is unchanged');
+
   // Rental rooms (KAN-83): another user can't see, change or delete A's rooms or tenancies,
   // or record rent against A's room.
   const home = await req('POST', '/api/rentals/properties', { cookie: a.cookie, body: { name: 'Alpha Secret Home', letType: 'rooms', ownHome: true } });
@@ -520,7 +551,7 @@ try {
     'B can’t record rent against A’s room',
   );
 
-  console.log('OK: cross-user BTC, income, uploads, settings, households, payslips, bonds, commodities, businesses, client meetings, employee contracts, and rental rooms');
+  console.log('OK: cross-user BTC, income, uploads, settings, households, payslips, bonds, commodities, businesses, client meetings, employee contracts, stock, and rental rooms');
 } finally {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 }

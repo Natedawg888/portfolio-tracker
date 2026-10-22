@@ -12,11 +12,14 @@ import {
   deleteEmployeeContract,
   deletePayslipFile,
   deletePropertyPhoto,
+  deleteStockPhoto,
   deleteWarrantyReceipt,
 } from './uploads.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { priceContributor } from '../shopping/prices.ts';
 import { removeUserFromHouseholds } from '../households/store.ts';
+import { BUSINESS_STOCK_TABLES } from '../business/stockTables.ts';
+import { stockPhotoPaths } from '../business/stock.ts';
 
 export const SCOPED_TABLES = [
   'holdings',
@@ -41,6 +44,7 @@ export const SCOPED_TABLES = [
   'business_assets',
   'business_asset_movements',
   'business_employees',
+  ...BUSINESS_STOCK_TABLES,
   'business_meetings',
   'business_meeting_reminders',
   'invoice_clients',
@@ -176,6 +180,9 @@ export function deleteScopedDataForUser(
     deleteEmployeeContract(row.p);
   }
 
+  // Stock item photos (KAN-107).
+  for (const p of stockPhotoPaths(db, userId, null)) deleteStockPhoto(p);
+
   // Uploaded payslips (KAN-78).
   for (const row of queryAll<{ p: string | null }>(db, `SELECT file_path AS p FROM payslips WHERE user_id = ? AND file_path IS NOT NULL`, [userId])) {
     deletePayslipFile(row.p);
@@ -220,6 +227,7 @@ export function deleteScopedDataForUser(
     'business_asset_movements',
     'business_assets',
     'business_employees',
+    ...BUSINESS_STOCK_TABLES,
     'business_meeting_reminders',
     'business_meetings',
     'businesses',
