@@ -1,7 +1,8 @@
 /**
- * Calendar for the signed-in user. Client meetings for now; earnings and dividend dates join later.
+ * Calendar for the signed-in user: business meetings and personal meetings and events. Earnings
+ * and dividend dates join later.
  *   GET    /?from=YYYY-MM-DD&to=YYYY-MM-DD&businessId=   meetings starting on those NZ dates
- *   POST   /meetings                 { businessId, clientId?, title, date, time, timeZone?, durationMinutes?, location?, notes?, reminderOffsets? }
+ *   POST   /meetings                 { businessId? (none: personal), clientId?, kind? (meeting | event, events personal), title, date, time, timeZone?, durationMinutes?, location?, notes?, reminderOffsets? }
  *   GET    /meetings/:id | PUT /meetings/:id
  *   POST   /meetings/:id/status      { status: scheduled | done | cancelled }   cancel is a status, not a delete
  *   POST   /reminders/due            reminders due now, each handed out once (POST: it marks them shown)

@@ -14427,7 +14427,7 @@ html .business-page .more-menu-body .business-menu-item:disabled { color: var(--
   padding: var(--space-1);
   background: var(--surface);
 }
-.calendar-day--other { background: var(--surface-2); }
+.calendar-day--other { background: var(--surface-3); }
 .calendar-day--other .calendar-day-num { color: var(--muted); }
 .calendar-day-num {
   align-self: flex-start;
@@ -14464,8 +14464,9 @@ html .business-page .more-menu-body .business-menu-item:disabled { color: var(--
   cursor: pointer;
 }
 .calendar-chip-time { color: var(--muted); }
+.calendar-chip--personal { border-left-color: var(--muted); background: color-mix(in srgb, var(--muted) 14%, var(--surface)); }
 .calendar-chip--done { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
-.calendar-chip--cancelled { border-left-color: var(--border); background: var(--surface-2); color: var(--muted); text-decoration: line-through; }
+.calendar-chip--cancelled { border-left-color: var(--border); background: var(--surface-3); color: var(--muted); text-decoration: line-through; }
 .calendar-link-button {
   padding: 0;
   border: 0;
@@ -14479,6 +14480,10 @@ html .business-page .more-menu-body .business-menu-item:disabled { color: var(--
 .meeting-reminders { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); margin: 0; padding: var(--space-2) 0 0; border: 0; }
 .meeting-reminders legend { padding: 0; font-size: 0.85rem; }
 .form-grid label.meeting-reminder-choice { display: inline-flex; flex-direction: row; align-items: center; gap: 0.35rem; color: var(--text); }
+.meeting-kind { display: grid; gap: 0.35rem; margin: 0; padding: 0; border: 0; min-width: 0; }
+.meeting-kind legend { padding: 0; font-size: 0.85rem; }
+.meeting-kind .segmented { align-self: start; }
+.business-meetings h4 { margin: var(--space-2) 0 0; font-weight: 500; }
 .meeting-actions { flex-wrap: wrap; margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border-soft); }
 @media (max-width: 640px) {
   .calendar-day { min-height: 3.75rem; padding: 2px; }

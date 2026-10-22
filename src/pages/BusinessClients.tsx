@@ -77,7 +77,7 @@ function ClientView({ clientId, businesses }: { clientId: string; businesses: Bu
           </button>
           {c.businessId ? (
             <>
-              <Link className="btn small" to={`/calendar?new=1&business=${encodeURIComponent(c.businessId)}&client=${encodeURIComponent(c.id)}`}>
+              <Link className="btn small" to={`/business/${encodeURIComponent(c.businessId)}?meeting=new&client=${encodeURIComponent(c.id)}`}>
                 + Meeting
               </Link>
               <Link className="btn small primary" to={`/business/invoices/new?business=${encodeURIComponent(c.businessId)}&client=${encodeURIComponent(c.id)}`}>

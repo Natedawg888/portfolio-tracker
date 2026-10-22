@@ -28,6 +28,8 @@ const { deleteScopedDataForUser, SCOPED_TABLES } = await import('../lib/userScop
 const { createSession, SESSION_COOKIE } = await import('../auth/sessions.ts');
 const { attachUser, requireAuth, isPublicApiPath } = await import('../middleware/requireAuth.ts');
 const { createMeeting, parseMeeting, setMeetingStatus, takeDueReminders, updateMeeting } = await import('./meetings.ts');
+const { migratePersonalCalendar } = await import('../db/index.ts');
+const { default: initSqlJs } = await import('sql.js');
 const { default: invoicesRouter } = await import('../routes/invoices.ts');
 const { default: businessRouter } = await import('../routes/business.ts');
 const { default: calendarRouter } = await import('../routes/calendar.ts');
@@ -199,6 +201,33 @@ try {
   const after = (await call('GET', `/api/calendar/meetings/${tm.json.id}`, A)).json;
   assert(after.title === 'One-off' && after.clientId === null, 'its meeting stays, without the client');
 
+  // Personal meetings and events: no business, no client, set up on the Calendar page.
+  const ev = await call('POST', '/api/calendar/meetings', A, { kind: 'event', title: 'Dentist', date: '2026-12-03', time: '15:00', durationMinutes: 30 });
+  assert(ev.status === 201 && ev.json.businessId === null && ev.json.kind === 'event' && ev.json.businessName === '', `personal event created (${ev.status} ${ev.json.error ?? ''})`);
+  const pm = await call('POST', '/api/calendar/meetings', A, { title: 'Accountant', date: '2026-12-04', time: '09:00' });
+  assert(pm.status === 201 && pm.json.businessId === null && pm.json.kind === 'meeting', 'a personal meeting defaults to kind meeting');
+  assert(m.kind === 'meeting', 'business meetings are kind meeting');
+  assert((await call('POST', '/api/calendar/meetings', A, { clientId: client, title: 'x', date: '2026-12-01', time: '10:00' })).status === 400, 'a client needs a business');
+  assert((await call('POST', '/api/calendar/meetings', A, { businessId: biz, kind: 'event', title: 'x', date: '2026-12-01', time: '10:00' })).status === 400, 'a business books meetings, not events');
+  assert((await call('POST', '/api/calendar/meetings', A, { kind: 'party', title: 'x', date: '2026-12-01', time: '10:00' })).status === 400, 'unknown kind refused');
+  const decAll = (await call('GET', '/api/calendar?from=2026-12-01&to=2026-12-31', A)).json.meetings as Json[];
+  assert(decAll.some((x) => x.id === ev.json.id) && decAll.some((x) => x.id === m.id), 'personal and business entries share the calendar');
+  assert(!(await call('GET', `/api/calendar?from=2026-12-01&to=2026-12-31&businessId=${biz}`, A)).json.meetings.some((x: Json) => x.id === ev.json.id), 'a business filter leaves personal entries out');
+  assert((await call('GET', `/api/calendar/meetings/${ev.json.id}`, B)).status === 404, "B can't open A's personal event");
+  assert(!(await call('GET', '/api/calendar?from=2026-12-01&to=2026-12-31', B)).json.meetings.some((x: Json) => x.id === ev.json.id), "B's calendar has none of A's personal entries");
+  const evMoved = await call('PUT', `/api/calendar/meetings/${ev.json.id}`, A, { ...ev.json, time: '16:00' });
+  assert(evMoved.status === 200 && evMoved.json.time === '16:00' && evMoved.json.kind === 'event', 'a personal event is edited in place');
+  const toBiz = await call('PUT', `/api/calendar/meetings/${pm.json.id}`, A, { ...pm.json, businessId: biz });
+  assert(toBiz.status === 200 && toBiz.json.businessId === biz, 'a personal meeting can be moved onto a business');
+  await call('PUT', `/api/calendar/meetings/${pm.json.id}`, A, { ...pm.json, businessId: null });
+  const evT = Date.parse('2027-04-01T01:00:00.000Z');
+  const evR = createMeeting(db, userA, draft({ kind: 'event', title: 'Flight', date: '2027-04-01', time: '14:00', reminderOffsets: [60] }), evT - 1440 * 60_000);
+  assert(evR.ok, 'personal event with a reminder made');
+  const evDue = takeDueReminders(db, userA, evT - 59 * 60_000).filter((r) => evR.ok && r.meetingId === evR.value.id);
+  assert(evDue.length === 1 && evDue[0].businessName === '' && evDue[0].clientName === '', 'a personal event reminds, with no business or client');
+  const personalCount = queryAll(db, `SELECT id FROM business_meetings WHERE user_id = ? AND business_id IS NULL`, [userA]).length;
+  assert(personalCount === 3, `three personal entries (got ${personalCount})`);
+
   // Deleting a business removes its meetings and reminders, nothing else.
   const countFor = (table: string, userId: string, businessId?: string) =>
     queryAll(db, `SELECT id FROM ${table} WHERE user_id = ?${businessId ? ' AND business_id = ?' : ''}`, businessId ? [userId, businessId] : [userId]).length;
@@ -207,13 +236,45 @@ try {
   assert((await call('DELETE', `/api/business/${biz2}`, A)).status === 200, 'business deleted');
   assert(countFor('business_meetings', userA, biz2) === 0 && countFor('business_meeting_reminders', userA, biz2) === 0, "the business's meetings and reminders go with it");
   assert(countFor('business_meetings', userA, biz) === kept, "another business's meetings stay");
+  assert(queryAll(db, `SELECT id FROM business_meetings WHERE user_id = ? AND business_id IS NULL`, [userA]).length === personalCount, 'personal entries stay');
 
   // Account delete.
   await call('POST', '/api/calendar/meetings', B, { businessId: bizB, clientId: clientB, title: 'B meeting', date: '2026-12-01', time: '10:00' });
   const wiped = deleteScopedDataForUser(db, userA);
-  assert(wiped.tables.business_meetings === kept && wiped.tables.business_meeting_reminders > 0, 'meetings and reminders removed with the account');
+  assert(wiped.tables.business_meetings === kept + personalCount && wiped.tables.business_meeting_reminders > 0, 'meetings, personal entries and reminders removed with the account');
   assert(countFor('business_meetings', userA) === 0 && countFor('business_meeting_reminders', userA) === 0, 'none left for A');
   assert(countFor('business_meetings', userB) === 1 && countFor('business_meeting_reminders', userB) === 2, 'B untouched');
+
+  // Old databases: business_id NOT NULL on both tables and no kind. The rebuild keeps every row,
+  // column and index, and is a no-op the second time.
+  const SQL = await initSqlJs();
+  const old = new SQL.Database();
+  old.run(`CREATE TABLE business_meetings (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, business_id TEXT NOT NULL, client_id TEXT, title TEXT NOT NULL,
+    starts_at TEXT NOT NULL, duration_minutes INTEGER NOT NULL DEFAULT 60, location TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'scheduled', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+  old.run(`CREATE INDEX idx_business_meetings_user_start ON business_meetings(user_id, starts_at)`);
+  old.run(`CREATE TABLE business_meeting_reminders (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, business_id TEXT NOT NULL, meeting_id TEXT NOT NULL,
+    offset_minutes INTEGER NOT NULL, remind_at TEXT NOT NULL, shown_at TEXT)`);
+  old.run(`INSERT INTO business_meetings (id, user_id, business_id, title, starts_at, created_at, updated_at) VALUES ('m1','u','b','Old','2026-01-01T00:00:00.000Z','t','t')`);
+  old.run(`INSERT INTO business_meeting_reminders (id, user_id, business_id, meeting_id, offset_minutes, remind_at) VALUES ('r1','u','b','m1',60,'2025-12-31T23:00:00.000Z')`);
+  migratePersonalCalendar(old);
+  migratePersonalCalendar(old);
+  const info = (t: string) => old.exec(`PRAGMA table_info(${t})`)[0].values.map((r) => ({ name: String(r[1]), notNull: Number(r[3]) }));
+  assert(info('business_meetings').find((c) => c.name === 'business_id')?.notNull === 0, 'meetings.business_id is nullable after migrating');
+  assert(info('business_meeting_reminders').find((c) => c.name === 'business_id')?.notNull === 0, 'reminders.business_id is nullable after migrating');
+  assert(info('business_meetings').some((c) => c.name === 'kind'), 'kind column added');
+  assert(String(old.exec(`SELECT title || '/' || kind FROM business_meetings WHERE id = 'm1'`)[0].values[0][0]) === 'Old/meeting', 'old rows kept, as meetings');
+  assert(Number(old.exec(`SELECT COUNT(*) FROM business_meeting_reminders`)[0].values[0][0]) === 1, 'old reminders kept');
+  assert(old.exec(`SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_business_meetings_user_start'`).length === 1, 'indexes recreated');
+  old.run(`INSERT INTO business_meetings (id, user_id, business_id, title, starts_at, created_at, updated_at) VALUES ('m2','u',NULL,'Personal','2026-01-02T00:00:00.000Z','t','t')`);
+  let badKind = false;
+  try {
+    old.run(`INSERT INTO business_meetings (id, user_id, kind, title, starts_at, created_at, updated_at) VALUES ('m3','u','party','x','2026-01-02T00:00:00.000Z','t','t')`);
+  } catch {
+    badKind = true;
+  }
+  assert(badKind, 'the kind CHECK holds on a migrated database');
+  old.close();
 
   console.log('meetings tests passed');
 } finally {

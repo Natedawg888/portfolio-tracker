@@ -1,71 +1,86 @@
 /**
- * Calendar: client meetings from the user's businesses, as a month grid or an agenda list, in NZ
- * time. ?new=1&business=&client= opens the add form (the client card links here). Earnings and
- * dividend dates for holdings join this page later.
+ * Calendar: business meetings and the user's own meetings and events, as a month grid or an
+ * agenda list, in NZ time. Business meetings are set up on each business's page; opening one
+ * here goes to its business. This page adds personal meetings and events, which need no
+ * business. Earnings and dividend dates for holdings join this page later.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { errorText } from '../components/business/BusinessUi';
 import { MeetingForm } from '../components/calendar/MeetingForm';
 import { agenda, byDate, dayLabel, gridRange, meetingBody, monthGrid, monthLabel, newMeetingBody, shiftMonth, timeSpan, videoLink } from '../lib/calendarView';
 import { utcToLocal } from '../lib/nzTime';
-import type { BusinessCard, BusinessMeeting, InvoiceClient, MeetingStatus, MeetingWriteBody } from '../types';
+import type { BusinessCard, BusinessMeeting, MeetingStatus, MeetingWriteBody } from '../types';
 
 type Editing = { meeting: BusinessMeeting | null; initial: MeetingWriteBody; n: number };
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+/** Filter value for entries with no business. */
+const PERSONAL = 'personal';
 
 function MeetingChip({ m, onOpen }: { m: BusinessMeeting; onOpen: (m: BusinessMeeting) => void }) {
+  const owner = m.businessId ? m.businessName || 'Business' : m.kind === 'event' ? 'Event' : 'Personal';
   return (
-    <button type="button" className={`calendar-chip calendar-chip--${m.status}`} onClick={() => onOpen(m)} title={`${timeSpan(m)} ${m.title}`}>
+    <button
+      type="button"
+      className={`calendar-chip calendar-chip--${m.status}${m.businessId ? '' : ' calendar-chip--personal'}`}
+      onClick={() => onOpen(m)}
+      title={`${timeSpan(m)} ${m.title} · ${owner}`}
+    >
       <span className="calendar-chip-time">{timeSpan(m).split('–')[0]}</span> {m.title}
     </button>
   );
 }
 
 export function Calendar() {
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [today] = useState(() => utcToLocal(Date.now()).date);
   const [month, setMonth] = useState(today.slice(0, 7));
   const [view, setView] = useState<'month' | 'agenda'>('month');
   const [businessFilter, setBusinessFilter] = useState('');
   const [businesses, setBusinesses] = useState<BusinessCard[] | null>(null);
-  const [clients, setClients] = useState<InvoiceClient[]>([]);
   const [meetings, setMeetings] = useState<BusinessMeeting[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [reload, setReload] = useState(0);
 
-  // The client card's "+ Meeting" link arrives as ?new=1&business=&client=; read once on load.
-  const [wanted] = useState(() => (params.get('new') === '1' ? { businessId: params.get('business'), clientId: params.get('client') } : null));
+  // Older links (?new=1&business=&client=) booked business meetings here; they now belong on the
+  // business page. Without a business, ?new=1 opens a personal entry.
+  useEffect(() => {
+    if (params.get('new') !== '1') return;
+    const business = params.get('business');
+    if (business) {
+      const client = params.get('client');
+      navigate(`/business/${encodeURIComponent(business)}?meeting=new${client ? `&client=${encodeURIComponent(client)}` : ''}`, { replace: true });
+      return;
+    }
+    setEditing({ meeting: null, initial: newMeetingBody({ businessId: null, date: today }), n: 0 });
+    setParams({}, { replace: true });
+  }, [params, navigate, setParams, today]);
+
   useEffect(() => {
     let cancelled = false;
-    Promise.all([api.business.list(), api.invoices.clients()])
-      .then(([l, c]) => {
-        if (cancelled) return;
-        setBusinesses(l.businesses);
-        setClients(c);
-        const fallback = l.businesses.find((b) => b.isDefault)?.id ?? l.businesses[0]?.id ?? '';
-        if (wanted && fallback) {
-          setEditing({ meeting: null, initial: newMeetingBody({ businessId: wanted.businessId || fallback, clientId: wanted.clientId, date: today }), n: 0 });
-          setParams({}, { replace: true });
-        }
+    api.business
+      .list()
+      .then((l) => {
+        if (!cancelled) setBusinesses(l.businesses);
       })
-      .catch((e: unknown) => {
-        if (!cancelled) setError(errorText(e, 'Could not load your businesses.'));
+      .catch(() => {
+        if (!cancelled) setBusinesses([]);
       });
     return () => {
       cancelled = true;
     };
-  }, [wanted, today, setParams]);
+  }, []);
 
   const range = useMemo(() => gridRange(month), [month]);
   useEffect(() => {
     let cancelled = false;
     api.calendar
-      .range(range.from, range.to, businessFilter || null)
+      .range(range.from, range.to, businessFilter && businessFilter !== PERSONAL ? businessFilter : null)
       .then((r) => {
-        if (!cancelled) setMeetings(r.meetings);
+        if (!cancelled) setMeetings(businessFilter === PERSONAL ? r.meetings.filter((m) => !m.businessId) : r.meetings);
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(errorText(e, 'Could not load the calendar.'));
@@ -75,14 +90,13 @@ export function Calendar() {
     };
   }, [range, businessFilter, reload]);
 
-  const defaultBusiness = businessFilter || businesses?.find((b) => b.isDefault)?.id || businesses?.[0]?.id || '';
-  const openNew = (o: { date?: string; businessId?: string; clientId?: string | null; title?: string } = {}) =>
-    setEditing((prev) => ({
-      meeting: null,
-      initial: newMeetingBody({ businessId: o.businessId || defaultBusiness, clientId: o.clientId, date: o.date ?? today, title: o.title }),
-      n: (prev?.n ?? 0) + 1,
-    }));
-  const open = (m: BusinessMeeting) => setEditing((prev) => ({ meeting: m, initial: meetingBody(m), n: (prev?.n ?? 0) + 1 }));
+  const openNew = (o: { date?: string } = {}) =>
+    setEditing((prev) => ({ meeting: null, initial: newMeetingBody({ businessId: null, date: o.date ?? today }), n: (prev?.n ?? 0) + 1 }));
+  // A business meeting is edited on its business's page; personal entries open here.
+  const open = (m: BusinessMeeting) => {
+    if (m.businessId) navigate(`/business/${encodeURIComponent(m.businessId)}?meeting=${encodeURIComponent(m.id)}`);
+    else setEditing((prev) => ({ meeting: m, initial: meetingBody(m), n: (prev?.n ?? 0) + 1 }));
+  };
   const done = () => {
     setEditing(null);
     setReload((n) => n + 1);
@@ -106,30 +120,23 @@ export function Calendar() {
   const active = businesses ?? [];
 
   return (
-    <div className="stack calendar-page">
+    <div className="stack bills-page warranties-page rentals-page calendar-page">
       <header className="warranties-header">
         <div>
           <h2 className="page-title">Calendar</h2>
-          <p className="muted small">Client meetings across your businesses, in NZ time.</p>
+          <p className="muted small">
+            Your meetings and events, and your businesses’ meetings, in NZ time. Business meetings are set up on each{' '}
+            <Link to="/business">business’s page</Link>.
+          </p>
         </div>
-        {active.length > 0 ? (
-          <div className="warranties-header-actions">
-            <button type="button" className="btn small primary" onClick={() => openNew()}>
-              + Meeting
-            </button>
-          </div>
-        ) : null}
+        <div className="warranties-header-actions">
+          <button type="button" className="btn small primary" onClick={() => openNew()}>
+            + Meeting or event
+          </button>
+        </div>
       </header>
 
       {error ? <p className="auth-error" role="alert">{error}</p> : null}
-      {businesses && active.length === 0 ? (
-        <section className="panel warranties-empty">
-          <h3>No business yet</h3>
-          <p>
-            Meetings belong to a business. <Link to="/business">Add a business</Link> to start booking client meetings.
-          </p>
-        </section>
-      ) : null}
 
       <div className="calendar-toolbar">
         <div className="calendar-nav">
@@ -147,9 +154,10 @@ export function Calendar() {
           ) : null}
         </div>
         <div className="calendar-filters">
-          {active.length > 1 ? (
-            <select aria-label="Business" value={businessFilter} onChange={(e) => setBusinessFilter(e.target.value)}>
-              <option value="">All businesses</option>
+          {active.length > 0 ? (
+            <select aria-label="Show" value={businessFilter} onChange={(e) => setBusinessFilter(e.target.value)}>
+              <option value="">Everything</option>
+              <option value={PERSONAL}>Personal only</option>
               {active.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name || 'Unnamed business'}
@@ -186,8 +194,7 @@ export function Calendar() {
                 <button
                   type="button"
                   className="calendar-day-num"
-                  aria-label={`Add a meeting on ${dayLabel(day.date)}`}
-                  disabled={active.length === 0}
+                  aria-label={`Add a meeting or event on ${dayLabel(day.date)}`}
                   onClick={() => openNew({ date: day.date })}
                 >
                   {Number(day.date.slice(8))}
@@ -204,7 +211,7 @@ export function Calendar() {
       {meetings && view === 'agenda' ? (
         list.length === 0 ? (
           <section className="panel warranties-empty">
-            <p className="muted">No meetings in {monthLabel(month)}.</p>
+            <p className="muted">Nothing in {monthLabel(month)}.</p>
           </section>
         ) : (
           list.map((day) => (
@@ -229,7 +236,7 @@ export function Calendar() {
                           {[
                             timeSpan(m),
                             m.clientName,
-                            businesses && businesses.length > 1 ? m.businessName : '',
+                            m.businessId ? m.businessName : m.kind === 'event' ? 'Event' : 'Personal',
                           ]
                             .filter(Boolean)
                             .join(' · ')}
@@ -254,16 +261,15 @@ export function Calendar() {
         )
       ) : null}
 
-      {editing && businesses ? (
+      {editing ? (
         <MeetingForm
           key={`${editing.meeting?.id ?? 'new'}-${editing.n}`}
           meeting={editing.meeting}
           initial={editing.initial}
-          businesses={active}
-          clients={clients}
+          business={null}
+          clients={[]}
           onSave={save}
           onStatus={setStatus}
-          onFollowUp={(m) => openNew({ businessId: m.businessId, clientId: m.clientId, title: `Follow-up: ${m.title}` })}
           onClose={() => setEditing(null)}
         />
       ) : null}

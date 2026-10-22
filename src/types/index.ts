@@ -1519,14 +1519,20 @@ export interface BusinessClientView {
 }
 
 export type MeetingStatus = 'scheduled' | 'done' | 'cancelled';
+/** A business books meetings; personal entries are meetings or events. */
+export type MeetingKind = 'meeting' | 'event';
 
-/** A client meeting (Calendar). Stored as a UTC instant; date and time are NZ time. */
+/**
+ * A calendar entry. Stored as a UTC instant; date and time are NZ time. businessId is set for a
+ * business meeting (booked on the business page) and null for a personal meeting or event.
+ */
 export interface BusinessMeeting {
   id: string;
-  businessId: string;
+  businessId: string | null;
   businessName: string;
   clientId: string | null;
   clientName: string;
+  kind: MeetingKind;
   title: string;
   startsAt: string;
   date: string;
@@ -1540,8 +1546,9 @@ export interface BusinessMeeting {
 }
 
 export interface MeetingWriteBody {
-  businessId: string;
+  businessId: string | null;
   clientId: string | null;
+  kind: MeetingKind;
   title: string;
   /** NZ date and time unless timeZone says otherwise. */
   date: string;
