@@ -56,6 +56,7 @@ import { businessRow, presentBusiness, type BusinessRow } from './profile.ts';
 import { activeEmployeeCount, listEmployees } from './employees.ts';
 import { BUSINESS_STOCK_TABLES } from './stockTables.ts';
 import { stockPhotoPaths, stockValue } from './stock.ts';
+import { clientMeetings, deleteBusinessMeetings } from './meetings.ts';
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 type Result<T> = { ok: true; value: T } | { ok: false; status: number; error: string };
@@ -315,8 +316,8 @@ export function updateBusiness(db: Database, userId: string, id: string, d: Busi
 }
 
 /**
- * Deletes the business, its assets, movements, clients, employees and stock, supplier, sales
- * and budget rows, and untags its transactions and income (they stay in Budget and Income).
+ * Deletes the business, its assets, movements, clients, meetings, employees and stock, supplier,
+ * sales and budget rows, and untags its transactions and income (they stay in Budget and Income).
  * A business with invoices can't be deleted: sent invoices are kept on record.
  */
 export function deleteBusiness(db: Database, userId: string, id: string): Result<true> {
@@ -335,6 +336,7 @@ export function deleteBusiness(db: Database, userId: string, id: string): Result
   run(db, `DELETE FROM business_employees WHERE user_id = ? AND business_id = ?`, [userId, id]);
   for (const p of stockPhotoPaths(db, userId, id)) deleteStockPhoto(p);
   for (const table of BUSINESS_STOCK_TABLES) run(db, `DELETE FROM ${table} WHERE user_id = ? AND business_id = ?`, [userId, id]);
+  deleteBusinessMeetings(db, userId, id);
   run(db, `UPDATE transactions SET business_id = NULL, business_category_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
   run(db, `UPDATE income_records SET business_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
   run(db, `UPDATE commodities SET business_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
@@ -816,7 +818,7 @@ export function linkProduce(db: Database, userId: string, commodityId: string, b
   return { ok: true, value: true };
 }
 
-export function getClientView(db: Database, userId: string, clientId: string, today: string): BusinessClientView | null {
+export function getClientView(db: Database, userId: string, clientId: string, today: string, nowMs = Date.now()): BusinessClientView | null {
   const client: InvoiceClient | null = getClient(db, userId, clientId);
   if (!client) return null;
   const f = clientFigures(db, userId, clientId, today);
@@ -833,6 +835,7 @@ export function getClientView(db: Database, userId: string, clientId: string, to
     billedNzd: f.billedNzd,
     outstandingNzd: f.outstandingNzd,
     lastPayment: last ? { date: last.date, amountNzd: roundMoney(Number(last.amount_nzd)), invoiceNumber: last.number } : null,
+    meetings: clientMeetings(db, userId, clientId, nowMs),
   };
 }
 
