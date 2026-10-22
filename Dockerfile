@@ -1,7 +1,7 @@
 # Portfolio Tracker — production image (Railway / Fly / Render)
 # Serves Vite build + Express API from one process. SQLite on a persistent volume at /app/data.
 
-FROM node:22-bookworm-slim AS deps
+FROM node:24-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -11,7 +11,7 @@ COPY . .
 # Do not copy local .env / data into the image (see .dockerignore)
 RUN npm run build
 
-FROM node:22-bookworm-slim AS runner
+FROM node:24-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
