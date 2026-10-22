@@ -28,6 +28,16 @@
  *   PUT    /stock/batches/:batchId | DELETE /stock/batches/:batchId
  *   POST   /stock/:itemId/adjustments { kind: damage, quantityLost | recount, countedQuantity; reason, date? }
  *   DELETE /stock/adjustments/:id
+ *   GET    /:id/suppliers           suppliers with bill count and unpaid total
+ *   POST   /:id/suppliers           { name, contactPerson?, email?, phone?, address?, nzbn?, gstNumber?, notes? }
+ *   PUT    /suppliers/:supplierId | DELETE /suppliers/:supplierId (409 while it has bills)
+ *   GET    /:id/bills?supplierId=   supplier and delivery bills, newest first, with paid/unpaid/overdue
+ *   POST   /:id/bills               { supplierId, kind?, reference?, invoiceDate, dueDate, amountNzd, deliveryNzd?,
+ *                                     deliveryTreatment?, paidOn?, transactionId?, notes? }
+ *   PUT    /bills/:billId | DELETE /bills/:billId (also removes its file and batch links)
+ *   POST   /bills/:billId/file { fileBase64, fileName? }  PDF or photo, checked by its signature, max 8MB
+ *   DELETE /bills/:billId/file
+ *   POST   /bills/:billId/batches { batchId } | DELETE /bills/:billId/batches/:batchId   batches of the same business
  *
  * Clients are created and edited through /api/invoices/clients with a businessId.
  */
@@ -77,6 +87,22 @@ import {
   updateBatch,
   updateItem,
 } from '../business/stock.ts';
+import {
+  clearBillFile,
+  createBill,
+  createSupplier,
+  deleteBill,
+  deleteSupplier,
+  linkBillBatch,
+  listBills,
+  listSuppliers,
+  parseBill,
+  parseSupplier,
+  setBillFile,
+  unlinkBillBatch,
+  updateBill,
+  updateSupplier,
+} from '../business/suppliers.ts';
 import { clearEmployeeContract, createEmployee, deleteEmployee, parseEmployee, setEmployeeContract, updateEmployee } from '../business/employees.ts';
 
 const router = Router();
@@ -262,6 +288,55 @@ router.post('/stock/:itemId/adjustments', async (req, res) => {
   reply(res, addAdjustment(db, uid(req), req.params.itemId, draft), true);
 });
 
+router.put('/suppliers/:supplierId', async (req, res) => {
+  const draft = parsedOr400(res, parseSupplier(req.body));
+  if (!draft) return;
+  const db = await getDb();
+  reply(res, updateSupplier(db, uid(req), req.params.supplierId, draft, aucklandToday()));
+});
+
+router.delete('/suppliers/:supplierId', async (req, res) => {
+  const db = await getDb();
+  reply(res, deleteSupplier(db, uid(req), req.params.supplierId));
+});
+
+router.put('/bills/:billId', async (req, res) => {
+  const draft = parsedOr400(res, parseBill(req.body));
+  if (!draft) return;
+  const db = await getDb();
+  reply(res, updateBill(db, uid(req), req.params.billId, draft, aucklandToday()));
+});
+
+router.delete('/bills/:billId', async (req, res) => {
+  const db = await getDb();
+  reply(res, deleteBill(db, uid(req), req.params.billId));
+});
+
+router.post('/bills/:billId/file', async (req, res) => {
+  const db = await getDb();
+  reply(res, setBillFile(db, uid(req), req.params.billId, req.body?.fileBase64, req.body?.fileName, aucklandToday()));
+});
+
+router.delete('/bills/:billId/file', async (req, res) => {
+  const db = await getDb();
+  reply(res, clearBillFile(db, uid(req), req.params.billId, aucklandToday()));
+});
+
+router.post('/bills/:billId/batches', async (req, res) => {
+  const batchId = (req.body as { batchId?: unknown } | undefined)?.batchId;
+  if (typeof batchId !== 'string' || !batchId) {
+    res.status(400).json({ error: 'batchId is required' });
+    return;
+  }
+  const db = await getDb();
+  reply(res, linkBillBatch(db, uid(req), req.params.billId, batchId, aucklandToday()));
+});
+
+router.delete('/bills/:billId/batches/:batchId', async (req, res) => {
+  const db = await getDb();
+  reply(res, unlinkBillBatch(db, uid(req), req.params.billId, req.params.batchId, aucklandToday()));
+});
+
 router.put('/assets/:assetId', async (req, res) => {
   const parsed = parseAsset(req.body, aucklandToday());
   if (!parsed.ok) {
@@ -376,6 +451,31 @@ router.post('/:id/stock', async (req, res) => {
   if (!draft) return;
   const db = await getDb();
   reply(res, createItem(db, uid(req), req.params.id, draft), true);
+});
+
+router.get('/:id/suppliers', async (req, res) => {
+  const db = await getDb();
+  reply(res, listSuppliers(db, uid(req), req.params.id, aucklandToday()));
+});
+
+router.post('/:id/suppliers', async (req, res) => {
+  const draft = parsedOr400(res, parseSupplier(req.body));
+  if (!draft) return;
+  const db = await getDb();
+  reply(res, createSupplier(db, uid(req), req.params.id, draft, aucklandToday()), true);
+});
+
+router.get('/:id/bills', async (req, res) => {
+  const supplierId = typeof req.query.supplierId === 'string' && req.query.supplierId ? req.query.supplierId : null;
+  const db = await getDb();
+  reply(res, listBills(db, uid(req), req.params.id, aucklandToday(), supplierId));
+});
+
+router.post('/:id/bills', async (req, res) => {
+  const draft = parsedOr400(res, parseBill(req.body));
+  if (!draft) return;
+  const db = await getDb();
+  reply(res, createBill(db, uid(req), req.params.id, draft, aucklandToday()), true);
 });
 
 router.post('/:id/assets', async (req, res) => {
