@@ -2,7 +2,7 @@
  * Calendar page helpers. Run: node --import tsx src/lib/calendarView.test.ts
  */
 import type { BusinessMeeting } from '../types';
-import { agenda, byDate, dayLabel, gridRange, monthGrid, newMeetingBody, reminderLabel, reminderMessage, shiftMonth, timeSpan, videoLink } from './calendarView.ts';
+import { agenda, byDate, dayLabel, gridRange, layerCounts, meetingLayer, monthGrid, newMeetingBody, reminderLabel, reminderMessage, shiftMonth, timeSpan, toggleLayer, videoLink } from './calendarView.ts';
 
 function assert(cond: unknown, msg: string): void {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -46,3 +46,16 @@ const personal = newMeetingBody({ businessId: null, clientId: 'c', kind: 'event'
 assert(personal.businessId === null && personal.clientId === null && personal.kind === 'event', 'a personal entry has no client and keeps its kind');
 assert(newMeetingBody({ businessId: null, date: '2026-12-01' }).kind === 'meeting', 'personal entries default to a meeting');
 console.log('calendar new entries: ok');
+
+// Layers and their pill counts.
+const entries = [
+  { businessId: 'b', date: '2026-12-01' },
+  { businessId: 'b', date: '2026-12-09' },
+  { businessId: null, date: '2026-12-02' },
+  { businessId: 'b', date: '2026-11-30' },
+];
+assert(meetingLayer({ businessId: 'b' }) === 'business' && meetingLayer({ businessId: null }) === 'personal', 'business and personal layers');
+assert(JSON.stringify(layerCounts(entries, '2026-12', 2)) === JSON.stringify({ earnings: 2, business: 2, personal: 1 }), 'counts are for the month only');
+const off = toggleLayer(new Set(['earnings', 'business', 'personal'] as const), 'business');
+assert(!off.has('business') && off.has('personal') && toggleLayer(off, 'business').has('business'), 'pills toggle a layer off and on');
+console.log('calendar layers: ok');

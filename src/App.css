@@ -14407,8 +14407,56 @@ html .business-page .more-menu-body .business-menu-item:disabled { color: var(--
 /* Calendar: client meetings as a month grid or an agenda list. */
 .calendar-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .calendar-nav { display: flex; align-items: center; gap: var(--space-1); }
-.calendar-month { margin: 0 var(--space-1); min-width: 9.5rem; text-align: center; font-size: 1rem; }
-.calendar-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.calendar-month { margin: 0 var(--space-1); min-width: 9.5rem; text-align: center; font-size: 1.05rem; }
+/* Every calendar control is at least 44px (WCAG 2.5.5). */
+.calendar-page .calendar-step,
+.calendar-page .calendar-today { min-height: 44px; min-width: 44px; padding: 0 0.75rem; }
+.calendar-page .calendar-step { padding: 0; font-size: 1.25rem; line-height: 1; }
+.calendar-page .calendar-view-toggle .segmented-btn { min-height: 44px; min-width: 5.5rem; padding: 0 1rem; }
+.calendar-layers { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.calendar-pills { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.calendar-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 44px;
+  padding: 0 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+.calendar-pill:hover { color: var(--text); background: var(--hover-row); }
+.calendar-pill:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.calendar-pill.active { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.calendar-pill-icon { display: inline-grid; place-items: center; width: 1.1rem; font-size: 0.85rem; }
+.calendar-pill--business .calendar-pill-icon { color: var(--accent-2); }
+.calendar-pill--personal .calendar-pill-icon { color: var(--muted); }
+/* Off: the label is struck through so the state shows without relying on colour. */
+.calendar-pill:not(.active) { text-decoration: line-through; text-decoration-color: var(--muted); }
+.calendar-pill-count {
+  min-width: 1.5rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  text-decoration: none;
+}
+.calendar-book-link { display: inline-flex; align-items: center; min-height: 44px; font-size: 0.9rem; }
+@media (max-width: 480px) {
+  .calendar-toolbar { flex-direction: column; align-items: stretch; }
+  .calendar-nav { justify-content: space-between; }
+  .calendar-month { min-width: 0; flex: 1; }
+  .calendar-view-toggle { display: flex; }
+  .calendar-page .calendar-view-toggle .segmented-btn { flex: 1; min-width: 0; }
+  .calendar-pill { flex: 1 1 auto; justify-content: center; }
+}
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));

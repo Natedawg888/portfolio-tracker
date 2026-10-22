@@ -1,22 +1,39 @@
 /**
- * Calendar: business meetings and the user's own meetings and events, as a month grid or an
- * agenda list, in NZ time. Business meetings are set up on each business's page; opening one
- * here goes to its business. This page adds personal meetings and events, which need no
- * business. Earnings and dividend dates for holdings join this page later.
+ * Calendar: what's coming up, as a month grid or an agenda list, in NZ time. Three layers, each
+ * toggled by a filter pill: earnings calls for stocks the user holds, client meetings from their
+ * businesses, and their own meetings and events. Client meetings are booked on each business's
+ * page (opening one here goes there); this page books personal meetings and events, which need
+ * no business.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { errorText } from '../components/business/BusinessUi';
 import { MeetingForm } from '../components/calendar/MeetingForm';
-import { agenda, byDate, dayLabel, gridRange, meetingBody, monthGrid, monthLabel, newMeetingBody, shiftMonth, timeSpan, videoLink } from '../lib/calendarView';
+import {
+  CALENDAR_LAYERS,
+  agenda,
+  byDate,
+  dayLabel,
+  gridRange,
+  layerCounts,
+  meetingBody,
+  meetingLayer,
+  monthGrid,
+  monthLabel,
+  newMeetingBody,
+  shiftMonth,
+  timeSpan,
+  toggleLayer,
+  videoLink,
+  type CalendarLayer,
+} from '../lib/calendarView';
 import { utcToLocal } from '../lib/nzTime';
-import type { BusinessCard, BusinessMeeting, MeetingStatus, MeetingWriteBody } from '../types';
+import type { BusinessMeeting, MeetingStatus, MeetingWriteBody } from '../types';
 
 type Editing = { meeting: BusinessMeeting | null; initial: MeetingWriteBody; n: number };
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-/** Filter value for entries with no business. */
-const PERSONAL = 'personal';
+const ALL_LAYERS = new Set<CalendarLayer>(CALENDAR_LAYERS.map((l) => l.id));
 
 function MeetingChip({ m, onOpen }: { m: BusinessMeeting; onOpen: (m: BusinessMeeting) => void }) {
   const owner = m.businessId ? m.businessName || 'Business' : m.kind === 'event' ? 'Event' : 'Personal';
@@ -38,8 +55,7 @@ export function Calendar() {
   const [today] = useState(() => utcToLocal(Date.now()).date);
   const [month, setMonth] = useState(today.slice(0, 7));
   const [view, setView] = useState<'month' | 'agenda'>('month');
-  const [businessFilter, setBusinessFilter] = useState('');
-  const [businesses, setBusinesses] = useState<BusinessCard[] | null>(null);
+  const [layers, setLayers] = useState<Set<CalendarLayer>>(ALL_LAYERS);
   const [meetings, setMeetings] = useState<BusinessMeeting[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
@@ -59,28 +75,13 @@ export function Calendar() {
     setParams({}, { replace: true });
   }, [params, navigate, setParams, today]);
 
-  useEffect(() => {
-    let cancelled = false;
-    api.business
-      .list()
-      .then((l) => {
-        if (!cancelled) setBusinesses(l.businesses);
-      })
-      .catch(() => {
-        if (!cancelled) setBusinesses([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const range = useMemo(() => gridRange(month), [month]);
   useEffect(() => {
     let cancelled = false;
     api.calendar
-      .range(range.from, range.to, businessFilter && businessFilter !== PERSONAL ? businessFilter : null)
+      .range(range.from, range.to)
       .then((r) => {
-        if (!cancelled) setMeetings(businessFilter === PERSONAL ? r.meetings.filter((m) => !m.businessId) : r.meetings);
+        if (!cancelled) setMeetings(r.meetings);
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(errorText(e, 'Could not load the calendar.'));
@@ -88,7 +89,7 @@ export function Calendar() {
     return () => {
       cancelled = true;
     };
-  }, [range, businessFilter, reload]);
+  }, [range, reload]);
 
   const openNew = (o: { date?: string } = {}) =>
     setEditing((prev) => ({ meeting: null, initial: newMeetingBody({ businessId: null, date: o.date ?? today }), n: (prev?.n ?? 0) + 1 }));
@@ -115,19 +116,17 @@ export function Calendar() {
     done();
   }
 
-  const grouped = useMemo(() => byDate(meetings ?? []), [meetings]);
-  const list = useMemo(() => agenda((meetings ?? []).filter((m) => m.date.startsWith(month)), `${month}-01`), [meetings, month]);
-  const active = businesses ?? [];
+  const counts = useMemo(() => layerCounts(meetings ?? [], month), [meetings, month]);
+  const shown = useMemo(() => (meetings ?? []).filter((m) => layers.has(meetingLayer(m))), [meetings, layers]);
+  const grouped = useMemo(() => byDate(shown), [shown]);
+  const list = useMemo(() => agenda(shown.filter((m) => m.date.startsWith(month)), `${month}-01`), [shown, month]);
 
   return (
     <div className="stack bills-page warranties-page rentals-page calendar-page">
       <header className="warranties-header">
         <div>
           <h2 className="page-title">Calendar</h2>
-          <p className="muted small">
-            Your meetings and events, and your businesses’ meetings, in NZ time. Business meetings are set up on each{' '}
-            <Link to="/business">business’s page</Link>.
-          </p>
+          <p className="muted small">Earnings calls for stocks you hold, client meetings from your businesses, and your own meetings and events · NZ time</p>
         </div>
         <div className="warranties-header-actions">
           <button type="button" className="btn small primary" onClick={() => openNew()}>
@@ -140,39 +139,56 @@ export function Calendar() {
 
       <div className="calendar-toolbar">
         <div className="calendar-nav">
-          <button type="button" className="btn small" aria-label="Previous month" onClick={() => setMonth((m) => shiftMonth(m, -1))}>
+          <button type="button" className="btn calendar-today" disabled={month === today.slice(0, 7)} onClick={() => setMonth(today.slice(0, 7))}>
+            Today
+          </button>
+          <button type="button" className="btn calendar-step" aria-label="Previous month" onClick={() => setMonth((m) => shiftMonth(m, -1))}>
             ‹
           </button>
-          <h3 className="calendar-month">{monthLabel(month)}</h3>
-          <button type="button" className="btn small" aria-label="Next month" onClick={() => setMonth((m) => shiftMonth(m, 1))}>
+          <h3 className="calendar-month" aria-live="polite">
+            {monthLabel(month)}
+          </h3>
+          <button type="button" className="btn calendar-step" aria-label="Next month" onClick={() => setMonth((m) => shiftMonth(m, 1))}>
             ›
           </button>
-          {month !== today.slice(0, 7) ? (
-            <button type="button" className="btn small" onClick={() => setMonth(today.slice(0, 7))}>
-              Today
+        </div>
+        <div className="segmented calendar-view-toggle" role="group" aria-label="Calendar view">
+          {(['month', 'agenda'] as const).map((v) => (
+            <button key={v} type="button" className={`segmented-btn${view === v ? ' active' : ''}`} aria-pressed={view === v} onClick={() => setView(v)}>
+              {v === 'month' ? 'Month' : 'Agenda'}
             </button>
-          ) : null}
+          ))}
         </div>
-        <div className="calendar-filters">
-          {active.length > 0 ? (
-            <select aria-label="Show" value={businessFilter} onChange={(e) => setBusinessFilter(e.target.value)}>
-              <option value="">Everything</option>
-              <option value={PERSONAL}>Personal only</option>
-              {active.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name || 'Unnamed business'}
-                </option>
-              ))}
-            </select>
-          ) : null}
-          <div className="segmented" role="group" aria-label="Calendar view">
-            {(['month', 'agenda'] as const).map((v) => (
-              <button key={v} type="button" className={`segmented-btn${view === v ? ' active' : ''}`} aria-pressed={view === v} onClick={() => setView(v)}>
-                {v === 'month' ? 'Month' : 'Agenda'}
+      </div>
+
+      <div className="calendar-layers">
+        <div className="calendar-pills" role="group" aria-label="Show on the calendar">
+          {CALENDAR_LAYERS.map((l) => {
+            const on = layers.has(l.id);
+            return (
+              <button
+                key={l.id}
+                type="button"
+                className={`calendar-pill calendar-pill--${l.id}${on ? ' active' : ''}`}
+                aria-pressed={on}
+                onClick={() => setLayers((s) => toggleLayer(s, l.id))}
+              >
+                <span className="calendar-pill-icon" aria-hidden="true">
+                  {l.icon}
+                </span>
+                {l.label}
+                <span className="calendar-pill-count">
+                  <span className="sr-only">, </span>
+                  {counts[l.id]}
+                  <span className="sr-only"> in {monthLabel(month)}</span>
+                </span>
               </button>
-            ))}
-          </div>
+            );
+          })}
         </div>
+        <Link className="calendar-book-link" to="/business">
+          Book meetings on the Business page ›
+        </Link>
       </div>
 
       {meetings == null && !error ? <p className="muted">Loading…</p> : null}

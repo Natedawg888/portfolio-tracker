@@ -121,3 +121,33 @@ export function newMeetingBody(o: { businessId: string | null; clientId?: string
     reminderOffsets: [1440, 60],
   };
 }
+
+/**
+ * Calendar layers, each toggled by a filter pill: earnings calls for holdings, client meetings
+ * from businesses, and the user's own meetings and events. Each has its own icon so the layers
+ * differ by shape as well as colour.
+ */
+export type CalendarLayer = 'earnings' | 'business' | 'personal';
+export const CALENDAR_LAYERS: { id: CalendarLayer; label: string; icon: string }[] = [
+  { id: 'earnings', label: 'Earnings calls', icon: '📈' },
+  { id: 'business', label: 'Client meetings', icon: '●' },
+  { id: 'personal', label: 'My meetings & events', icon: '◆' },
+];
+
+export function meetingLayer(m: Pick<BusinessMeeting, 'businessId'>): CalendarLayer {
+  return m.businessId ? 'business' : 'personal';
+}
+
+/** Meetings in the month (not the grid's spill-over days), counted per layer. */
+export function layerCounts(meetings: Pick<BusinessMeeting, 'businessId' | 'date'>[], month: string, earnings = 0): Record<CalendarLayer, number> {
+  const counts: Record<CalendarLayer, number> = { earnings, business: 0, personal: 0 };
+  for (const m of meetings) if (m.date.startsWith(month)) counts[meetingLayer(m)]++;
+  return counts;
+}
+
+export function toggleLayer(on: ReadonlySet<CalendarLayer>, layer: CalendarLayer): Set<CalendarLayer> {
+  const next = new Set(on);
+  if (next.has(layer)) next.delete(layer);
+  else next.add(layer);
+  return next;
+}
