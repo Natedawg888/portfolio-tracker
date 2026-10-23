@@ -14739,3 +14739,69 @@ html .business-page .more-menu-body .business-menu-item:disabled { color: var(--
 /* KoruLedger Business plan note (KAN-125). */
 .business-plan-note h3 { margin: 0 0 0.35rem; }
 .business-plan-list { margin: 0.5rem 0 0; padding-left: 1.2rem; display: grid; gap: 0.25rem; }
+
+/* Profit & loss (KAN-126). Chart colours validated for both themes with the dataviz checks:
+   light aqua #1baf7a / orange #eb6834 on #f7f3ec (below 3:1, so the chart has a table view);
+   dark #199e70 / #d95926 on #1c2822 and #161d26 (all pass). */
+html[data-theme="light"] { --chart-income: #1baf7a; --chart-expenses: #eb6834; }
+html[data-theme="dark"],
+html:not([data-theme]) { --chart-income: #199e70; --chart-expenses: #d95926; }
+.pnl-period { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.pnl-period .segmented-btn { min-height: 2.25rem; }
+.pnl-custom { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-2); }
+.pnl-custom label { display: grid; gap: 0.2rem; font-size: 0.8rem; color: var(--muted); }
+.pnl-columns { display: grid; gap: var(--space-3); }
+@media (min-width: 860px) { .pnl-columns { grid-template-columns: 1fr 1fr; align-items: start; } }
+.pnl-table { width: 100%; border-collapse: collapse; }
+.pnl-table th,
+.pnl-table td { padding: 0.5rem 0; border-bottom: 1px solid var(--border-soft); text-align: left; vertical-align: top; }
+.pnl-table th { font-weight: 500; }
+.pnl-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: var(--space-2); }
+.pnl-line-note { display: block; font-weight: 400; }
+.pnl-overdue { color: var(--danger); }
+.business-invoice-figures { display: flex; flex-wrap: wrap; gap: 0.35rem 1.25rem; margin: var(--space-2) 0 0; }
+.money-chart { margin: 0; }
+.money-chart-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-2); }
+.money-chart-title { font-weight: 600; }
+.money-chart-legend { display: inline-flex; flex-wrap: wrap; gap: var(--space-3); color: var(--muted); font-size: 0.85rem; }
+.money-chart-key { display: inline-flex; align-items: center; gap: 0.4rem; }
+.money-chart-swatch { width: 0.75rem; height: 0.75rem; border-radius: 2px; }
+.money-chart-swatch--income { background: var(--chart-income); }
+.money-chart-swatch--expenses { background: var(--chart-expenses); }
+.money-chart-toggle { min-height: 2.25rem; }
+.money-chart-plot { position: relative; }
+.money-chart-plot svg { display: block; width: 100%; height: auto; overflow: visible; }
+.money-chart-grid { stroke: var(--border-soft); stroke-width: 1; }
+.money-chart-baseline { stroke: var(--border); stroke-width: 1; }
+.money-chart-axis { fill: var(--muted); font-size: 12px; }
+.money-chart-band { fill: transparent; }
+.money-chart-hit { outline: none; cursor: default; }
+.money-chart-hit:hover .money-chart-band,
+.money-chart-hit:focus-visible .money-chart-band { fill: var(--hover-row); }
+.money-chart-hit:focus-visible .money-chart-band { stroke: var(--accent-2); stroke-width: 2; }
+.money-chart-bar--income { fill: var(--chart-income); }
+.money-chart-bar--expenses { fill: var(--chart-expenses); }
+.money-chart-tip {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  display: grid;
+  gap: 0.1rem;
+  min-width: 9rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  color: var(--text);
+  font-size: 0.82rem;
+  pointer-events: none;
+  z-index: 2;
+}
+.money-chart-tip--left { transform: translateX(-100%); }
+.money-chart-tip-month { color: var(--muted); }
+.money-chart-table-wrap { overflow-x: auto; }
+.money-chart-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.money-chart-table th,
+.money-chart-table td { padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border-soft); text-align: left; }
+.money-chart-table .num { text-align: right; font-variant-numeric: tabular-nums; }

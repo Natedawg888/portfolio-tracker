@@ -21,6 +21,7 @@ import type {
   BusinessEmployeeWriteBody,
   StockAdjustmentWriteBody,
   EarningsResponse,
+  ProfitLoss,
   HolidaysResponse,
   StockBatchWriteBody,
   StockItemWriteBody,
@@ -1027,6 +1028,11 @@ export const api = {
     produceCandidates: () => req<BusinessDetail['produce']>('/business/produce/candidates'),
     linkProduce: (commodityId: string, businessId: string | null) =>
       req<{ ok: true }>('/business/produce/link', { method: 'POST', body: JSON.stringify({ commodityId, businessId }) }),
+    /** P&L for a tax year, or a custom from/to period (KAN-126). Business plan only: 402 otherwise. */
+    profitLoss: (businessId: string, period: { taxYear?: number | null } | { from: string; to: string }) => {
+      const q = 'from' in period ? new URLSearchParams({ from: period.from, to: period.to }) : new URLSearchParams(period.taxYear ? { taxYear: String(period.taxYear) } : {});
+      return req<ProfitLoss>(`/business/${encodeURIComponent(businessId)}/profit-loss${q.size ? `?${q}` : ''}`);
+    },
     stock: (businessId: string, includeArchived = false) =>
       req<StockItemView[]>(`/business/${encodeURIComponent(businessId)}/stock${includeArchived ? '?includeArchived=1' : ''}`),
     createStockItem: (businessId: string, body: StockItemWriteBody) =>
