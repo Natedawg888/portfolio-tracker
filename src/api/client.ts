@@ -20,6 +20,8 @@ import type {
   BusinessEmployee,
   BusinessEmployeeWriteBody,
   StockAdjustmentWriteBody,
+  EarningsResponse,
+  HolidaysResponse,
   StockBatchWriteBody,
   StockItemWriteBody,
   BusinessAsset,
@@ -1050,6 +1052,8 @@ export const api = {
     setStatus: (id: string, status: MeetingStatus) =>
       req<BusinessMeeting>(`/calendar/meetings/${encodeURIComponent(id)}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
     dueReminders: () => req<MeetingReminder[]>('/calendar/reminders/due', { method: 'POST' }),
+    earnings: (from: string, to: string) => req<EarningsResponse>(`/calendar/earnings?${new URLSearchParams({ from, to })}`),
+    holidays: (from: string, to: string) => req<HolidaysResponse>(`/calendar/holidays?${new URLSearchParams({ from, to })}`),
   },
   paySources: {
     list: () => req<PaySource[]>('/pay-sources'),

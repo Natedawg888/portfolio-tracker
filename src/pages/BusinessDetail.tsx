@@ -17,7 +17,7 @@ import { maskBankAccount, payFrequencyLabel, payRateText } from '../lib/employee
 import { AssetForm, MovementForm, assetDraft } from '../components/business/AssetForms';
 import { WhatItOwns } from '../components/business/WhatItOwns';
 import { BusinessActivity } from '../components/business/BusinessActivity';
-import { BusinessMeetings } from '../components/business/BusinessMeetings';
+import { ClientMeetings } from '../components/business/ClientMeetings';
 import { StockCard } from '../components/business/StockCard';
 import { MoreMenu } from '../components/MoreMenu';
 import { showQuietToast } from '../lib/quietToast';
@@ -458,6 +458,8 @@ export function BusinessDetail() {
 
       <StockCard businessId={id} archived={b.archivedAt != null} />
 
+      <ClientMeetings businessId={id} businessName={b.name} archived={b.archivedAt != null} clients={data.clients} onClientsChanged={load} />
+
       <BusinessActivity
         businessId={id}
         businessName={b.name}
@@ -468,8 +470,6 @@ export function BusinessDetail() {
         act={act}
         onTag={() => setDialog({ mode: 'tag' })}
       />
-
-      <BusinessMeetings businessId={id} businessName={b.name} archived={b.archivedAt != null} clients={data.clients} />
 
       {b.clientsEnabled ? (
         <section className="panel warranty-card" aria-labelledby="biz-clients">

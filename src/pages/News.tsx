@@ -4,11 +4,12 @@
  * Prices and story counts come from holdings and those feeds. Nothing is filled in.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { abandonPageRead, beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import { usePageCacheValue } from '../lib/usePageCache';
 import { showQuietToast } from '../lib/quietToast';
-import type { Holding } from '../lib/holdingDisplay';
+import { displayName, type Holding } from '../lib/holdingDisplay';
 import {
   applyNewsUserPatch,
   defaultNewsUserState,
@@ -84,6 +85,9 @@ function noticesFor(sections: NewsSection[], tab: string, hasStories: boolean): 
 }
 
 export function News() {
+  // ?holding=<id> (the Calendar's "News" action) narrows the feed to that holding's stories.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const holdingFilter = searchParams.get('holding');
   const initial = readPageCache<NewsFeedResponse>(NEWS_PAGE) ?? null;
   const cached = usePageCacheValue<NewsFeedResponse>(NEWS_PAGE);
   const [data, setData] = useState<NewsFeedResponse | null>(initial);
@@ -211,7 +215,16 @@ export function News() {
   const read = useMemo(() => new Set(prefs.readUrls), [prefs.readUrls]);
   const saved = useMemo(() => new Set(prefs.savedUrls), [prefs.savedUrls]);
   const unread = countUnread(stories, read, 'all', saved);
-  const visible = useMemo(() => selectStories(stories, activeTab, saved), [stories, activeTab, saved]);
+  const visible = useMemo(() => {
+    const list = selectStories(stories, activeTab, saved);
+    return holdingFilter ? list.filter((story) => story.rowKeys.includes(`holding:${holdingFilter}`)) : list;
+  }, [stories, activeTab, saved, holdingFilter]);
+  const filteredHolding = holdingFilter ? (shownHoldings.find((h) => h.id === holdingFilter) ?? null) : null;
+  const clearHoldingFilter = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('holding');
+    setSearchParams(next, { replace: true });
+  };
   const groups = useMemo(
     () => groupByDay(visible, now, prefs.groupDailyPriceUpdates),
     [visible, now, prefs.groupDailyPriceUpdates],
@@ -379,6 +392,14 @@ export function News() {
             </p>
           ) : null}
           {pending ? <p className="muted">Loading headlines from Google News and BBC News.</p> : null}
+          {holdingFilter ? (
+            <p className="news-holding-filter" role="status">
+              Showing news for <strong>{filteredHolding ? displayName(filteredHolding) : 'one holding'}</strong>.{' '}
+              <button type="button" className="link-btn" onClick={clearHoldingFilter}>
+                Show all news
+              </button>
+            </p>
+          ) : null}
           {notices.map((notice) => (
             <p key={notice.text} className={notice.error ? 'news-status' : 'muted small'} role={notice.error ? 'alert' : undefined}>
               {notice.text}

@@ -12,7 +12,7 @@ import { REMINDER_CHOICES, reminderLabel } from '../../lib/calendarView';
 
 const DURATIONS = [15, 30, 45, 60, 90, 120, 180, 240, 480, 720, 1440];
 
-export function entryWord(kind: MeetingKind): string {
+function entryWord(kind: MeetingKind): string {
   return kind === 'event' ? 'event' : 'meeting';
 }
 

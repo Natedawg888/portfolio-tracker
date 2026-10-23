@@ -2407,3 +2407,28 @@ export type StockAdjustmentWriteBody = { date: string; reason: string } & (
   | { kind: 'damage'; quantityLost: number }
   | { kind: 'recount'; countedQuantity: number }
 );
+
+/** An earnings report date for a held US-listed stock (Finnhub). See server/calendar/earnings.ts. */
+export interface EarningsEvent {
+  symbol: string;
+  usDate: string;
+  /** bmo: before the US open; dmh: during market hours; amc: after the close; null: not given. */
+  session: 'bmo' | 'dmh' | 'amc' | null;
+  /** NZ day; the US date when nzDateKnown is false. */
+  nzDate: string;
+  nzDateKnown: boolean;
+  quarter: number | null;
+  year: number | null;
+}
+
+export interface EarningsResponse {
+  status: 'ok' | 'not_configured' | 'unavailable';
+  events: EarningsEvent[];
+  uncovered: string[];
+  failed: string[];
+}
+
+export interface HolidaysResponse {
+  available: boolean;
+  holidays: { date: string; name: string }[];
+}

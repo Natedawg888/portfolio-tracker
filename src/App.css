@@ -14407,8 +14407,56 @@ html .business-page .more-menu-body .business-menu-item:disabled { color: var(--
 /* Calendar: client meetings as a month grid or an agenda list. */
 .calendar-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .calendar-nav { display: flex; align-items: center; gap: var(--space-1); }
-.calendar-month { margin: 0 var(--space-1); min-width: 9.5rem; text-align: center; font-size: 1rem; }
-.calendar-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.calendar-month { margin: 0 var(--space-1); min-width: 9.5rem; text-align: center; font-size: 1.05rem; }
+/* Every calendar control is at least 44px (WCAG 2.5.5). */
+.calendar-page .calendar-step,
+.calendar-page .calendar-today { min-height: 44px; min-width: 44px; padding: 0 0.75rem; }
+.calendar-page .calendar-step { padding: 0; font-size: 1.25rem; line-height: 1; }
+.calendar-page .calendar-view-toggle .segmented-btn { min-height: 44px; min-width: 5.5rem; padding: 0 1rem; }
+.calendar-layers { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.calendar-pills { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.calendar-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 44px;
+  padding: 0 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+.calendar-pill:hover { color: var(--text); background: var(--hover-row); }
+.calendar-pill:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.calendar-pill.active { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.calendar-pill-icon { display: inline-grid; place-items: center; width: 1.1rem; font-size: 0.85rem; }
+.calendar-pill--business .calendar-pill-icon { color: var(--accent-2); }
+.calendar-pill--personal .calendar-pill-icon { color: var(--muted); }
+/* Off: the label is struck through so the state shows without relying on colour. */
+.calendar-pill:not(.active) { text-decoration: line-through; text-decoration-color: var(--muted); }
+.calendar-pill-count {
+  min-width: 1.5rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  text-decoration: none;
+}
+.calendar-book-link { display: inline-flex; align-items: center; min-height: 44px; font-size: 0.9rem; }
+@media (max-width: 480px) {
+  .calendar-toolbar { flex-direction: column; align-items: stretch; }
+  .calendar-nav { justify-content: space-between; }
+  .calendar-month { min-width: 0; flex: 1; }
+  .calendar-view-toggle { display: flex; }
+  .calendar-page .calendar-view-toggle .segmented-btn { flex: 1; min-width: 0; }
+  .calendar-pill { flex: 1 1 auto; justify-content: center; }
+}
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -14477,19 +14525,141 @@ html .business-page .more-menu-body .business-menu-item:disabled { color: var(--
   cursor: pointer;
 }
 .calendar-agenda-item--cancelled .calendar-link-button { color: var(--muted); text-decoration: line-through; }
+/* Calendar redesign, phase 2: grid cells, chips by layer, holidays, day panel, agenda. */
+.calendar-grid-row { display: contents; }
+.calendar-day { position: relative; cursor: pointer; outline: none; }
+.calendar-day:hover { background: color-mix(in srgb, var(--hover-row) 100%, var(--surface)); }
+.calendar-day:focus-visible { box-shadow: inset 0 0 0 2px var(--accent-2); z-index: 1; }
+.calendar-day--selected { box-shadow: inset 0 0 0 2px var(--accent); }
+.calendar-day--selected:focus-visible { box-shadow: inset 0 0 0 2px var(--accent), inset 0 0 0 4px var(--accent-2); }
+.calendar-day .calendar-day-num { cursor: inherit; border: 0; }
+/* A public holiday: its name in the cell and a subtle top border. */
+.calendar-day--holiday { border-top: 3px solid color-mix(in srgb, var(--warn) 55%, transparent); }
+.calendar-holiday-name { overflow: hidden; color: var(--warn); font-size: 0.68rem; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.calendar-chip-icon { font-size: 0.7rem; }
+/* Earnings: outlined, with the 📈 icon. Meetings: filled in their business's colour, with ●. Personal: ◆. */
+.calendar-chip--earnings { border: 1px solid var(--accent-2); border-radius: 999px; background: transparent; }
+.calendar-chip--biz { border-left: 4px solid var(--biz); background: color-mix(in srgb, var(--biz) 26%, var(--surface)); }
+.calendar-chip--biz .calendar-chip-icon,
+.calendar-biz-dot { color: var(--biz); }
+.calendar-biz-0 { --biz: var(--accent); }
+.calendar-biz-1 { --biz: var(--accent-2); }
+.calendar-biz-2 { --biz: var(--warn); }
+.calendar-biz-3 { --biz: var(--danger); }
+.calendar-biz-4 { --biz: color-mix(in srgb, var(--accent) 55%, var(--accent-2)); }
+.calendar-biz-5 { --biz: color-mix(in srgb, var(--warn) 55%, var(--danger)); }
+.calendar-more { color: var(--muted); font-size: 0.7rem; }
+.calendar-source-note { margin: 0; }
+.calendar-pill--setup { text-decoration: none; color: var(--accent-2); border-style: dashed; }
+.calendar-body { display: grid; gap: var(--space-3); align-items: start; }
+@media (min-width: 960px) {
+  .calendar-body { grid-template-columns: minmax(0, 1fr) 20rem; }
+  .calendar-panel { position: sticky; top: var(--space-3); }
+}
+.calendar-panel { display: grid; gap: var(--space-2); align-content: start; }
+.calendar-panel-day,
+.calendar-panel-title { margin: 0; font-size: 1.05rem; }
+.calendar-panel-day:focus,
+.calendar-panel h2:focus { outline: none; }
+.calendar-panel-holiday { margin: 0; color: var(--warn); }
+.calendar-panel-list,
+.calendar-agenda-list { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+.calendar-panel-item,
+.calendar-agenda-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.calendar-panel-item:hover,
+.calendar-agenda-row:hover,
+.calendar-agenda-row.active { background: var(--hover-row); border-color: var(--border); }
+.calendar-panel-item:focus-visible,
+.calendar-agenda-row:focus-visible,
+.calendar-back:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.calendar-panel-item--earnings { border-color: var(--accent-2); border-style: dashed; }
+.calendar-panel-item--biz { border-left: 4px solid var(--biz); }
+.calendar-panel-item--cancelled .calendar-panel-text > span:first-child { text-decoration: line-through; color: var(--muted); }
+.calendar-panel-icon { flex: 0 0 1.25rem; text-align: center; }
+.calendar-panel-item--biz .calendar-panel-icon { color: var(--biz); }
+.calendar-panel-text { display: grid; gap: 0.1rem; min-width: 0; }
+.calendar-back { justify-self: start; min-height: 44px; }
+.calendar-details { display: grid; gap: var(--space-2); margin: 0; }
+.calendar-details > div { display: grid; gap: 0.1rem; }
+.calendar-details dt { color: var(--muted); font-size: 0.8rem; }
+.calendar-details dd { margin: 0; overflow-wrap: anywhere; }
+.calendar-notes { white-space: pre-wrap; }
+.calendar-panel-actions { flex-wrap: wrap; }
+.calendar-panel-actions .btn,
+.calendar-panel-add,
+.calendar-page .calendar-add { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+.calendar-agenda { display: grid; gap: var(--space-2); }
+.calendar-agenda-day { display: grid; gap: var(--space-2); }
+.calendar-agenda-heading { margin: 0; font-size: 0.95rem; }
+.calendar-agenda-holiday { color: var(--warn); font-weight: 400; }
+.calendar-agenda-time { flex: 0 0 3.5rem; color: var(--muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
 .meeting-reminders { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); margin: 0; padding: var(--space-2) 0 0; border: 0; }
 .meeting-reminders legend { padding: 0; font-size: 0.85rem; }
 .form-grid label.meeting-reminder-choice { display: inline-flex; flex-direction: row; align-items: center; gap: 0.35rem; color: var(--text); }
 .meeting-kind { display: grid; gap: 0.35rem; margin: 0; padding: 0; border: 0; min-width: 0; }
 .meeting-kind legend { padding: 0; font-size: 0.85rem; }
 .meeting-kind .segmented { align-self: start; }
-.business-meetings h4 { margin: var(--space-2) 0 0; font-weight: 500; }
+/* Client meetings on a business's page (phase 3): inline booking form and the list. */
+.client-meetings .rental-card-head p { margin: 0.15rem 0 0; }
+.client-meeting-add,
+.client-meeting-form .btn,
+.client-meeting-suggestions .btn,
+.client-meeting-actions .btn,
+.client-meeting-past-toggle { min-height: 44px; }
+.client-meeting-form { display: grid; gap: var(--space-2); margin: var(--space-2) 0; padding: var(--space-3); border: 1px solid var(--border); border-radius: 10px; background: var(--surface-3); }
+.client-meeting-form h4 { margin: 0; font-size: 0.95rem; }
+.client-meeting-suggestions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.client-meeting-lengths { margin: 0; padding: 0; border: 0; min-width: 0; }
+.client-meeting-lengths legend { padding: 0 0 0.35rem; font-size: 0.85rem; }
+.client-meeting-lengths .segmented { display: inline-flex; flex-wrap: wrap; }
+.client-meeting-lengths .segmented-btn { min-height: 44px; min-width: 4.5rem; padding: 0 0.9rem; }
+.client-meeting-summary { margin: 0; }
+.client-meeting-daynote { color: var(--warn); }
+.client-meeting-form-actions { flex-wrap: wrap; align-items: center; }
+.client-meeting-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.client-meeting-row { display: grid; grid-template-columns: 9rem minmax(0, 1fr) auto; gap: var(--space-2); align-items: center; padding: var(--space-2) 0; border-bottom: 1px solid var(--border-soft); }
+.client-meeting-when,
+.client-meeting-what { display: grid; gap: 0.1rem; min-width: 0; }
+.client-meeting-date { font-weight: 600; }
+.client-meeting-what > span { overflow-wrap: anywhere; }
+.client-meeting-actions { display: flex; align-items: center; gap: var(--space-1); }
+.client-meeting-row--cancelled .client-meeting-date,
+.client-meeting-row--cancelled .client-meeting-what > span:first-child { color: var(--muted); text-decoration: line-through; }
+.client-meeting-past-toggle { margin-top: var(--space-2); }
+.business-card-next { margin: 0; }
+.business-card-next a { display: inline-flex; align-items: center; min-height: 44px; }
+@media (max-width: 560px) {
+  .client-meeting-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .client-meeting-what { grid-column: 1 / -1; grid-row: 2; }
+}
 .meeting-actions { flex-wrap: wrap; margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border-soft); }
 @media (max-width: 640px) {
   .calendar-day { min-height: 3.75rem; padding: 2px; }
   .calendar-weekday { padding: var(--space-1) 2px; text-align: center; }
   .calendar-chip { padding: 0 2px; font-size: 0.66rem; }
   .calendar-chip-time { display: none; }
+  .calendar-holiday-name { font-size: 0.6rem; }
+}
+/* At 320–375px a month cell is ~44px wide: chips become coloured marks, and the day panel lists them. */
+@media (max-width: 420px) {
+  .calendar-day { min-height: 3.25rem; }
+  .calendar-chip { height: 0.5rem; padding: 0; font-size: 0; overflow: hidden; }
+  .calendar-chip--earnings { height: 0.5rem; }
+  .calendar-holiday-name, .calendar-more { display: none; }
 }
 
 /* Business stock (KAN-119): on-hand bars, history and the stock take. */

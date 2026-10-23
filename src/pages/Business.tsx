@@ -18,12 +18,16 @@ import { InfoTip } from '../components/InfoTip';
 import { DeleteBusinessConfirm } from '../components/business/DeleteBusiness';
 import { formatInvoiceDate } from './invoicesView';
 import { aucklandToday } from '../lib/debtModel';
-import type { ArchivedBusiness, BusinessCard, BusinessListResponse } from '../types';
+import { shortDayLabel, spacedTime } from '../lib/calendarView';
+import { addDays } from '../lib/nzTime';
+import type { ArchivedBusiness, BusinessCard, BusinessListResponse, BusinessMeeting } from '../types';
 
 const BUSINESS_KEY = 'business-list';
 
-function Card({ b, onEdit, onType, onRemoved }: {
+function Card({ b, next, onEdit, onType, onRemoved }: {
   b: BusinessCard;
+  /** Its next scheduled meeting, if any. */
+  next: BusinessMeeting | null;
   onEdit: () => void;
   onType: (type: BusinessType) => Promise<void>;
   /** Deleted or archived. */
@@ -94,6 +98,14 @@ function Card({ b, onEdit, onType, onRemoved }: {
       ) : (
         <BusinessFigures totals={b.totals} assetsLabel="Business value" assetsNote={netWorthNote(b.countInNetWorth)} />
       )}
+      {next ? (
+        <p className="small business-card-next">
+          <Link to={`/business/${encodeURIComponent(b.id)}?meeting=${encodeURIComponent(next.id)}`}>
+            Next: {shortDayLabel(next.date)}, {spacedTime(next.time)}
+            {next.clientName ? ` · ${next.clientName}` : ''}
+          </Link>
+        </p>
+      ) : null}
       {b.totals.outstandingNzd > 0 ? <p className="muted small business-card-owed">{formatNzd(b.totals.outstandingNzd)} still owed on sent invoices</p> : null}
       <TypeNote type={b.type} name={name} onChange={onType} />
     </article>
@@ -217,6 +229,28 @@ export function Business() {
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<BusinessCard | null>(null);
+  const [nextMeetings, setNextMeetings] = useState<Map<string, BusinessMeeting>>(new Map());
+
+  // Each card's next meeting: the soonest scheduled one in the coming year, per business.
+  useEffect(() => {
+    let cancelled = false;
+    const today = aucklandToday();
+    const now = new Date().toISOString();
+    api.calendar
+      .range(today, addDays(today, 365))
+      .then((r) => {
+        if (cancelled) return;
+        const map = new Map<string, BusinessMeeting>();
+        for (const m of r.meetings) if (m.businessId && m.status === 'scheduled' && m.startsAt >= now && !map.has(m.businessId)) map.set(m.businessId, m);
+        setNextMeetings(map);
+      })
+      .catch(() => {
+        if (!cancelled) setNextMeetings(new Map());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reload]);
   const addRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -330,6 +364,7 @@ export function Business() {
             <Card
               key={b.id}
               b={b}
+              next={nextMeetings.get(b.id) ?? null}
               onEdit={() => setEditing(b)}
               onType={changeType(b)}
               onRemoved={(message) => {
