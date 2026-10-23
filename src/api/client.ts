@@ -5,6 +5,7 @@ import type {
   RegistrationResponseJSON,
 } from '@simplewebauthn/browser';
 import type { StockItemView } from '../lib/stock.ts';
+import type { UsageMode } from '../lib/usageMode.ts';
 import { isMoneyHidden, MONEY_MASK } from '../lib/privacy';
 import type { AdsConfig } from '../lib/ads';
 import type { EconomicCycleResponse, EconomicScenarioResult, PhaseNewsResponse } from '../types/economy.ts';
@@ -245,6 +246,10 @@ export type AuthUser = {
     budgetCategoriesDone: boolean;
     akahuStepDone: boolean;
   };
+  /** What the account uses KoruLedger for (KAN-124); personal when never chosen. */
+  usageMode: UsageMode;
+  /** False until signup (or Settings) has asked; the signup flow shows the question. */
+  usageModeChosen: boolean;
   /** New email waiting for its confirmation link to be opened. */
   pendingEmail?: string | null;
   /** True when changing email sends a confirmation link (email is set up on the server). */
@@ -1627,6 +1632,12 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify(body),
       }),
+    setUsageMode: (mode: UsageMode) =>
+      req<{
+        usageMode: UsageMode;
+        onboardingComplete: boolean;
+        onboarding: { assetClassesDone: boolean; budgetCategoriesDone: boolean; akahuStepDone: boolean };
+      }>('/settings/usage-mode', { method: 'PUT', body: JSON.stringify({ mode }) }),
   },
   quotes: {
     resolveTicker: (

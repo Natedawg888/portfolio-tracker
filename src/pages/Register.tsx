@@ -23,6 +23,7 @@ import {
 } from '../api/akahuClient';
 import { akahuOnboardingRequiredForEmail } from '../lib/onboardingPrefs';
 import { stepLabel, type OnboardingStep } from '../lib/onboardingSteps';
+import { USAGE_MODES, type UsageMode } from '../lib/usageMode';
 import { BudgetCategoriesStep } from '../components/onboarding/BudgetCategoriesStep';
 
 type Step = OnboardingStep;
@@ -30,6 +31,7 @@ type Step = OnboardingStep;
 function stepFromOnboarding(user: {
   email?: string | null;
   onboardingComplete: boolean;
+  usageModeChosen: boolean;
   onboarding: {
     assetClassesDone: boolean;
     budgetCategoriesDone: boolean;
@@ -37,6 +39,8 @@ function stepFromOnboarding(user: {
   };
 }): Step | 'done' {
   if (user.onboardingComplete) return 'done';
+  // What the account is for comes first (KAN-124); accounts mid-signup before it existed are asked too.
+  if (!user.usageModeChosen) return 'usage';
   if (!user.onboarding.assetClassesDone) return 'assets';
   if (!user.onboarding.budgetCategoriesDone) return 'budgets';
   // Only Nathan is offered the Akahu checkpoint. Everyone else is already skipped.
@@ -55,6 +59,7 @@ export function Register() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [prefs, setPrefs] = useState<AssetClassPrefs>(() => defaultAssetClassPrefs());
+  const [usageMode, setUsageMode] = useState<UsageMode>('personal');
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -204,7 +209,7 @@ export function Register() {
     setBusy(true);
     midSignupRef.current = true;
     // Advance UI immediately so the post-register user state cannot redirect away.
-    setStep('assets');
+    setStep('usage');
     try {
       const res = await register(email, password, { firstName: first, lastName: last });
       if (res.claimedExistingData) setInfo(res.message);
@@ -212,6 +217,29 @@ export function Register() {
       midSignupRef.current = false;
       setStep('credentials');
       setError(err instanceof ApiError ? err.message : 'Could not create account');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Save what the account is for. Business only skips the personal steps and sets up a business. */
+  const onUsage = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    midSignupRef.current = true;
+    try {
+      const r = await api.settings.setUsageMode(usageMode);
+      if (user) setUser({ ...user, usageMode: r.usageMode, usageModeChosen: true, onboardingComplete: r.onboardingComplete, onboarding: r.onboarding });
+      await refresh();
+      if (usageMode === 'business') {
+        midSignupRef.current = false;
+        navigate('/business?setup=1', { replace: true });
+        return;
+      }
+      setStep('assets');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save your choice');
     } finally {
       setBusy(false);
     }
@@ -349,8 +377,9 @@ export function Register() {
   };
 
   // Crypto adds the wallets step: the choice on the asset step, the saved preference after it.
-  const stepText = step === 'credentials' ? null : stepLabel(step, { crypto: step === 'assets' ? prefs.crypto : assetEnabled('crypto'), offerAkahu });
-  const wide = step === 'assets' || step === 'wallets' || step === 'budgets' || step === 'connect';
+  const stepText =
+    step === 'credentials' ? null : stepLabel(step, { crypto: step === 'assets' ? prefs.crypto : assetEnabled('crypto'), offerAkahu, mode: step === 'usage' ? usageMode : (user?.usageMode ?? 'personal') });
+  const wide = step === 'usage' || step === 'assets' || step === 'wallets' || step === 'budgets' || step === 'connect';
 
   if (loading || !resumed) {
     return (
@@ -480,6 +509,30 @@ export function Register() {
                 Already have an account? <Link to="/login">Sign in</Link>
               </p>
             ) : null}
+          </>
+        ) : step === 'usage' ? (
+          <>
+            <h2>What will you use KoruLedger for?</h2>
+            <p className="page-lead">This sets what you see first. You can change it any time in Settings, and nothing is deleted when you do.</p>
+            {info ? <p className="auth-info" role="status">{info}</p> : null}
+            <form className="auth-form" onSubmit={onUsage}>
+              <fieldset className="usage-mode-choices">
+                <legend className="sr-only">What will you use KoruLedger for?</legend>
+                {USAGE_MODES.map((m) => (
+                  <label key={m.value} className={`usage-mode-choice${usageMode === m.value ? ' active' : ''}`}>
+                    <input type="radio" name="usage-mode" value={m.value} checked={usageMode === m.value} disabled={busy} onChange={() => setUsageMode(m.value)} />
+                    <span className="usage-mode-text">
+                      <strong>{m.label}</strong>
+                      <span className="muted small">{m.blurb}</span>
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
+              {error ? <p className="auth-error" role="alert">{error}</p> : null}
+              <button type="submit" className="btn primary" disabled={busy}>
+                {busy ? 'Saving…' : usageMode === 'business' ? 'Continue to business setup' : 'Continue'}
+              </button>
+            </form>
           </>
         ) : step === 'assets' ? (
           <>

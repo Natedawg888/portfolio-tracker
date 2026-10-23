@@ -17,7 +17,7 @@
     "auth:reset-2fa": "node --import tsx scripts/reset-2fa.ts",
     "test:metals": "node --import tsx server/quotes/metals.public.test.ts",
     "test:cash-sync": "node --import tsx server/akahu/sync.cash.test.ts && node --import tsx server/lib/txnBtcLink.test.ts && node --import tsx server/lib/categoryPredict.test.ts",
-    "test:onboarding": "node --import tsx server/auth/registerAkahuOnboarding.test.ts",
+    "test:onboarding": "node --import tsx server/auth/registerAkahuOnboarding.test.ts && node --import tsx src/lib/usageMode.test.ts",
     "test:2fa": "node --import tsx server/auth/twoFactor.test.ts && node --import tsx server/auth/accounts.test.ts && node --import tsx server/auth/sso.test.ts",
     "test:security-page": "node --import tsx src/lib/securityView.test.ts && node --import tsx server/auth/securityPage.test.ts",
     "test:passkeys": "node --import tsx server/auth/passkeys.test.ts && node --import tsx src/lib/passkeys.test.ts",

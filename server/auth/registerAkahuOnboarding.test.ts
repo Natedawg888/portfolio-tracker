@@ -189,6 +189,34 @@ try {
   assert(nathanAssets.json.onboardingComplete === false, 'Nathan cannot pass setup while Akahu is still open');
   passed += 1;
 
+  // Usage mode (KAN-124): new accounts haven't chosen; Business only skips the personal steps.
+  const biz = await post('/api/auth/register', { email: 'books@example.com', password, firstName: 'Book', lastName: 'Keeper' });
+  assert(biz.status === 201 && biz.cookie, 'business user registered');
+  const bizUser = biz.json.user as { usageMode?: string; usageModeChosen?: boolean };
+  assert(bizUser.usageMode === 'personal' && bizUser.usageModeChosen === false, 'a new account starts as personal, not yet chosen');
+  assert((await put('/api/settings/usage-mode', { mode: 'accountant' }, biz.cookie!)).status === 400, 'an unknown mode is refused');
+  assert((await put('/api/settings/usage-mode', {}, biz.cookie!)).status === 400, 'a mode is required');
+  const noAuth = await fetch(`${base}/api/settings/usage-mode`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'business' }) });
+  assert(noAuth.status === 401, 'signed out is refused');
+  const chosen = await put('/api/settings/usage-mode', { mode: 'business' }, biz.cookie!);
+  assert(chosen.status === 200 && chosen.json.usageMode === 'business', 'business saved');
+  assert(chosen.json.onboardingComplete === true, 'business only finishes signup without the personal steps');
+  assert(chosen.json.onboarding?.assetClassesDone === true && chosen.json.onboarding?.budgetCategoriesDone === true, 'asset and budget steps marked not needed');
+  // Signing in returns the same user object the app keeps (this harness has no attachUser for /me).
+  const signIn = await post('/api/auth/login', { email: 'books@example.com', password });
+  const signedIn = signIn.json.user as { usageMode?: string; usageModeChosen?: boolean } | undefined;
+  assert(signedIn?.usageMode === 'business' && signedIn?.usageModeChosen === true, `the signed-in user carries the mode (${JSON.stringify(signIn.json)})`);
+
+  const both = await post('/api/auth/register', { email: 'both@example.com', password, firstName: 'Both', lastName: 'Ways' });
+  const bothChosen = await put('/api/settings/usage-mode', { mode: 'both' }, both.cookie!);
+  assert(bothChosen.json.usageMode === 'both' && bothChosen.json.onboardingComplete === false, 'both keeps the personal steps');
+  assert(bothChosen.json.onboarding?.budgetCategoriesDone === false, 'both still asks for budget categories');
+
+  // Changing the mode later (Settings) after signup: flags stay done, the mode changes.
+  const back = await put('/api/settings/usage-mode', { mode: 'personal' }, biz.cookie!);
+  assert(back.json.usageMode === 'personal' && back.json.onboardingComplete === true, 'switching back to personal keeps signup finished');
+  passed += 1;
+
   console.log(`OK: register Akahu onboarding (${passed} groups)`);
 } finally {
   await new Promise<void>((resolve, reject) => {
