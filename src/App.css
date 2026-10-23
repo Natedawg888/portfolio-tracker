@@ -6284,11 +6284,19 @@ html:not([data-theme]) .projections-page :focus-visible {
 }
 .proj-tagline { margin: 0.25rem 0 0; max-width: 36rem; }
 .projections-page .proj-header .segmented-btn.active,
-.projections-page .proj-chart-card .segmented-btn.active {
+.projections-page .proj-chart-card .segmented-btn.active,
+.paye-tabs .segmented-btn.active {
   background: var(--accent);
   border-color: transparent;
   color: var(--btn-primary-text);
 }
+/* Take-home pay / Economic cycle: the Projections mode switch, as links. The PAYE page colours
+   every link (html[data-theme] .paye-page a:visited), so the pill colours are scoped above that. */
+.paye-tabs { align-self: flex-start; }
+.paye-tabs .segmented-btn { display: inline-flex; align-items: center; text-decoration: none; }
+.paye-tabs.segmented .segmented-btn:not(.active) { color: var(--muted); }
+.paye-tabs.segmented .segmented-btn:not(.active):hover { color: var(--text); }
+.paye-tabs.segmented .segmented-btn.active { color: var(--btn-primary-text); }
 .proj-chart-top {
   display: flex;
   align-items: center;
