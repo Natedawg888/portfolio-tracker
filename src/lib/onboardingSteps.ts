@@ -1,13 +1,21 @@
 /**
- * The signup steps that apply to this account, for "Step 3 of 3". Creating the account is step 1
- * (also for Google / Apple / Microsoft sign-ups, who skip the password form). Crypto wallets only
- * appear with Crypto turned on, and the Akahu connect step only for the account that is offered it.
+ * The signup steps that apply to this account, for "Step 3 of 4". Creating the account is step 1
+ * (also for Google / Apple / Microsoft sign-ups, who skip the password form). Step 2 asks what
+ * the account is for (KAN-124). Personal and Both then set up asset classes, crypto wallets
+ * (only with Crypto turned on), budget categories and, for the account that is offered it,
+ * Akahu. Business only skips those personal steps and ends at setting up the first business.
  */
-export type OnboardingStep = 'credentials' | 'assets' | 'wallets' | 'budgets' | 'connect';
+import type { UsageMode } from './usageMode.ts';
 
-export function onboardingSteps(opts: { crypto: boolean; offerAkahu: boolean }): OnboardingStep[] {
+export type OnboardingStep = 'credentials' | 'usage' | 'assets' | 'wallets' | 'budgets' | 'connect' | 'business';
+
+export type StepOptions = { crypto: boolean; offerAkahu: boolean; mode?: UsageMode };
+
+export function onboardingSteps(opts: StepOptions): OnboardingStep[] {
+  if (opts.mode === 'business') return ['credentials', 'usage', 'business'];
   return [
     'credentials',
+    'usage',
     'assets',
     ...(opts.crypto ? (['wallets'] as const) : []),
     'budgets',
@@ -15,8 +23,8 @@ export function onboardingSteps(opts: { crypto: boolean; offerAkahu: boolean }):
   ];
 }
 
-/** "Step 3 of 3", or null for a step outside the list. */
-export function stepLabel(step: OnboardingStep, opts: { crypto: boolean; offerAkahu: boolean }): string | null {
+/** "Step 3 of 4", or null for a step outside the list. */
+export function stepLabel(step: OnboardingStep, opts: StepOptions): string | null {
   const steps = onboardingSteps(opts);
   const i = steps.indexOf(step);
   return i < 0 ? null : `Step ${i + 1} of ${steps.length}`;

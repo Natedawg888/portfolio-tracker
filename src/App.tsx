@@ -2,6 +2,7 @@
 import { Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
+import { HomeRoute } from './components/HomeRoute';
 import { Dashboard } from './pages/Dashboard';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
@@ -79,7 +80,9 @@ export default function App() {
             <Route element={<HomeGate />}>
               <Route element={<RequireAuth />}>
                 <Route element={<Layout />}>
-                  <Route index element={<Dashboard />} />
+                  <Route index element={<HomeRoute />} />
+                  {/* The Dashboard by address too, for Business only accounts whose "/" is the business dashboard. */}
+                  <Route path="dashboard" element={<Dashboard />} />
                   <Route path="spending" element={<SpendingPage />} />
                   {/* Bills & subscriptions: opened from Budget, not in the nav bar (KAN-27). */}
                   <Route path="bills" element={<BillsPage />} />

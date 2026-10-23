@@ -12,6 +12,7 @@ import { readAssetClassPrefs } from '../lib/userAssetClassPrefs.ts';
 import { getDb, queryAll, queryOne, run } from '../db/index.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { isDataOwner } from '../lib/userScope.ts';
+import { isUsageMode, mergeUsageModeIntoPreferencesJson, parseUsageMode } from '../../src/lib/usageMode.ts';
 import {
   ASSET_CLASS_PREF_OPTIONS,
   normalizeAssetClassPrefs,
@@ -739,6 +740,38 @@ router.put('/onboarding', async (req: AuthedRequest, res) => {
       budgetCategoriesDone: true,
       akahuStepDone: true,
     },
+  });
+});
+
+/**
+ * What the account uses KoruLedger for (KAN-124): personal, business (Business only) or both.
+ * Asked at signup and changeable in Settings. Choosing Business only during signup marks the
+ * personal setup steps (asset classes, budget categories, Akahu) done: they don't apply, and the
+ * next stop is setting up the first business. Nothing is deleted when the mode changes.
+ */
+router.put('/usage-mode', async (req: AuthedRequest, res) => {
+  if (!req.user) {
+    res.status(401).json({ error: 'Authentication required', code: 'UNAUTHORIZED' });
+    return;
+  }
+  const mode = (req.body ?? {}).mode;
+  if (!isUsageMode(mode)) {
+    res.status(400).json({ error: 'Mode must be personal, business or both', code: 'INVALID_BODY' });
+    return;
+  }
+  const db = await getDb();
+  const row = queryOne<{ preferences_json: string | null; email: string }>(db, `SELECT preferences_json, email FROM users WHERE id = ?`, [req.user.id]);
+  let nextJson = mergeUsageModeIntoPreferencesJson(row?.preferences_json, mode);
+  const before = parseOnboardingFromPreferencesJson(nextJson);
+  if (mode === 'business' && before.flags && !before.complete) {
+    nextJson = mergeOnboardingIntoPreferencesJson(nextJson, { assetClassesDone: true, budgetCategoriesDone: true, akahuStepDone: true });
+  }
+  run(db, `UPDATE users SET preferences_json = ?, updated_at = ? WHERE id = ?`, [nextJson, new Date().toISOString(), req.user.id]);
+  const parsed = parseOnboardingFromPreferencesJson(nextJson);
+  res.json({
+    usageMode: parseUsageMode(nextJson).mode,
+    onboardingComplete: parsed.complete,
+    onboarding: parsed.flags ?? { assetClassesDone: true, budgetCategoriesDone: true, akahuStepDone: true },
   });
 });
 

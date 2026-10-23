@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { api, setUnauthorizedHandler, type AuthUser } from '../api/client';
+import { isUsageMode } from '../lib/usageMode';
 import { signInWithPasskey } from '../lib/passkeys';
 import { clearPageCache, syncPageCacheUser } from '../lib/pageDataCache';
 
@@ -78,6 +79,8 @@ function normalizeUser(raw: AuthUser | null | undefined): AuthUser | null {
       akahuStepDone: Boolean(onboarding.akahuStepDone),
     },
     onboardingComplete,
+    usageMode: isUsageMode(raw.usageMode) ? raw.usageMode : 'personal',
+    usageModeChosen: raw.usageModeChosen === true,
   };
 }
 

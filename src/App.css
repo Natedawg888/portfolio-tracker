@@ -14735,3 +14735,24 @@ html .business-page .more-menu-body .business-menu-item:disabled { color: var(--
   .stock-history-row { grid-template-columns: 1fr auto; }
   .stock-history-date { grid-column: 1 / -1; }
 }
+
+/* What will you use KoruLedger for? (KAN-124): signup step and Settings → Account. */
+.usage-mode-choices { display: grid; gap: var(--space-2); margin: 0; padding: 0; border: 0; min-width: 0; }
+.usage-mode-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  min-height: 44px;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.usage-mode-choice:hover { background: var(--hover-row); }
+.usage-mode-choice.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.usage-mode-choice:focus-within { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.usage-mode-choice input { margin-top: 0.2rem; accent-color: var(--accent); }
+.usage-mode-text { display: grid; gap: 0.15rem; }
+fieldset:disabled .usage-mode-choice { cursor: default; opacity: 0.7; }
