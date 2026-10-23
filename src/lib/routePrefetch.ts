@@ -14,6 +14,7 @@ const loaders = {
   businessClients: () => import('../pages/BusinessClients'),
   businessStock: () => import('../pages/BusinessStock'),
   businessProfitLoss: () => import('../pages/BusinessProfitLoss'),
+  businessGst: () => import('../pages/BusinessGst'),
   calendar: () => import('../pages/Calendar'),
   invoices: () => import('../pages/Invoices'),
   invoiceEditor: () => import('../pages/InvoiceEditor'),
@@ -73,6 +74,8 @@ function exportName(name: PageName): string {
       return 'BusinessStock';
     case 'businessProfitLoss':
       return 'BusinessProfitLoss';
+    case 'businessGst':
+      return 'BusinessGst';
     case 'calendar':
       return 'Calendar';
     case 'invoices':
@@ -121,6 +124,7 @@ export const BusinessDetailPage = lazyNamed('businessDetail');
 export const BusinessClientsPage = lazyNamed('businessClients');
 export const BusinessStockPage = lazyNamed('businessStock');
 export const BusinessProfitLossPage = lazyNamed('businessProfitLoss');
+export const BusinessGstPage = lazyNamed('businessGst');
 export const CalendarPage = lazyNamed('calendar');
 export const InvoicesPage = lazyNamed('invoices');
 export const InvoiceEditorPage = lazyNamed('invoiceEditor');

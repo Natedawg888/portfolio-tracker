@@ -2475,3 +2475,26 @@ export interface ProfitLoss {
   months: { month: string; incomeNzd: number; expensesNzd: number }[];
   invoices: BusinessInvoiceFigures;
 }
+
+/** One tagged item on a GST return (KAN-127). See server/business/gst.ts. */
+export interface GstItem {
+  kind: 'invoice_payment' | 'income' | 'transaction';
+  id: string;
+  date: string;
+  description: string;
+  amountNzd: number;
+  side: 'sale' | 'purchase';
+  treatment: 'standard' | 'zero' | 'exempt';
+  marked: boolean;
+  editable: boolean;
+  gstNzd: number;
+}
+
+export interface GstReturnView {
+  registered: boolean;
+  settings: { frequency: 'monthly' | 'two_monthly' | 'six_monthly'; periodEndMonth: number };
+  period: { start: string; end: string };
+  dueDate: string;
+  boxes: Record<'box5' | 'box6' | 'box7' | 'box8' | 'box9' | 'box10' | 'box11' | 'box12' | 'box13' | 'box14' | 'box15', number>;
+  items: GstItem[];
+}

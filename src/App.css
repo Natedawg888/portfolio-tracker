@@ -14805,3 +14805,28 @@ html:not([data-theme]) { --chart-income: #199e70; --chart-expenses: #d95926; }
 .money-chart-table th,
 .money-chart-table td { padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border-soft); text-align: left; }
 .money-chart-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* GST return (KAN-127). */
+.gst-estimate { border-left: 3px solid var(--warn); }
+.gst-estimate p { margin: 0; }
+.gst-to-pay { color: var(--warn); }
+.gst-boxes { width: 100%; border-collapse: collapse; }
+.gst-boxes th,
+.gst-boxes td { padding: 0.45rem 0.4rem; border-bottom: 1px solid var(--border-soft); text-align: left; vertical-align: middle; }
+.gst-boxes .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gst-box-num { width: 2.5rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.gst-box-total td,
+.gst-box-total th { font-weight: 600; }
+.gst-boxes .btn { min-height: 2.25rem; }
+.gst-table-wrap { overflow-x: auto; }
+.gst-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.gst-table th,
+.gst-table td { padding: 0.4rem 0.4rem; border-bottom: 1px solid var(--border-soft); text-align: left; vertical-align: middle; }
+.gst-table thead th { color: var(--muted); font-weight: 500; font-size: 0.8rem; }
+.gst-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gst-table select { min-height: 2.25rem; max-width: 14rem; }
+.gst-date { white-space: nowrap; }
+.gst-settings h3 { margin: 0; }
+@media (max-width: 560px) {
+  .gst-boxes td:nth-child(2) { font-size: 0.82rem; }
+}

@@ -22,6 +22,8 @@ import type {
   StockAdjustmentWriteBody,
   EarningsResponse,
   ProfitLoss,
+  GstItem,
+  GstReturnView,
   HolidaysResponse,
   StockBatchWriteBody,
   StockItemWriteBody,
@@ -1028,6 +1030,13 @@ export const api = {
     produceCandidates: () => req<BusinessDetail['produce']>('/business/produce/candidates'),
     linkProduce: (commodityId: string, businessId: string | null) =>
       req<{ ok: true }>('/business/produce/link', { method: 'POST', body: JSON.stringify({ commodityId, businessId }) }),
+    /** The GST return for the period containing `date` (KAN-127). Business plan only. */
+    gst: (businessId: string, date?: string) =>
+      req<GstReturnView>(`/business/${encodeURIComponent(businessId)}/gst${date ? `?date=${encodeURIComponent(date)}` : ''}`),
+    setGstSettings: (businessId: string, settings: GstReturnView['settings']) =>
+      req<GstReturnView['settings']>(`/business/${encodeURIComponent(businessId)}/gst/settings`, { method: 'PUT', body: JSON.stringify(settings) }),
+    setGstItem: (businessId: string, kind: 'income' | 'transaction', id: string, treatment: GstItem['treatment'] | null) =>
+      req<{ ok: true }>(`/business/${encodeURIComponent(businessId)}/gst/items`, { method: 'PUT', body: JSON.stringify({ kind, id, treatment }) }),
     /** P&L for a tax year, or a custom from/to period (KAN-126). Business plan only: 402 otherwise. */
     profitLoss: (businessId: string, period: { taxYear?: number | null } | { from: string; to: string }) => {
       const q = 'from' in period ? new URLSearchParams({ from: period.from, to: period.to }) : new URLSearchParams(period.taxYear ? { taxYear: String(period.taxYear) } : {});

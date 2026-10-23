@@ -334,6 +334,11 @@ export function BusinessDetail() {
                 <Link className="btn small" to={`/business/${encodeURIComponent(b.id)}/profit-loss`}>
                   Profit &amp; loss
                 </Link>
+                {b.gstRegistered ? (
+                  <Link className="btn small" to={`/business/${encodeURIComponent(b.id)}/gst`}>
+                    GST
+                  </Link>
+                ) : null}
                 <Link className="btn small primary" to={`/business/invoices/new?business=${encodeURIComponent(b.id)}`} aria-label={`New invoice for ${name}`}>
                   + Invoice
                 </Link>
