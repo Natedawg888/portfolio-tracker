@@ -14830,3 +14830,7 @@ html:not([data-theme]) { --chart-income: #199e70; --chart-expenses: #d95926; }
 @media (max-width: 560px) {
   .gst-boxes td:nth-child(2) { font-size: 0.82rem; }
 }
+
+/* Accountant export links (KAN-128). */
+.pnl-export-links { flex-wrap: wrap; align-items: center; }
+.pnl-export-links .btn { min-height: 2.5rem; display: inline-flex; align-items: center; }

@@ -52,15 +52,24 @@ export function monthsBetween(start: string, end: string): string[] {
 
 const placeholders = (n: number) => Array.from({ length: n }, () => '?').join(',');
 
-export function profitLoss(
-  db: Database,
-  userId: string,
-  business: { id: string; name: string },
-  period: { start: string; end: string; taxYear: number | null; taxYears: number[] },
-  today: string,
-): ProfitLoss {
-  const { start, end } = period;
-  const money = businessMoney(db, userId, business.id, start, end);
+/** One counted item with the P&L line it lands on. Money in is positive, money out negative. */
+export type CategorisedItem = {
+  kind: 'invoice_payment' | 'income' | 'transaction';
+  id: string;
+  date: string;
+  description: string;
+  amountNzd: number;
+  source: ProfitLossLine['source'];
+  /** The P&L line: a category, "Invoice payments", or the fallbacks in the header. */
+  label: string;
+};
+
+/**
+ * Every item the P&L counts in [start, end], once each, with its line. Shared by the P&L and
+ * the accountant export, so the two always agree.
+ */
+export function categorisedItems(db: Database, userId: string, businessId: string, start: string, end: string) {
+  const money = businessMoney(db, userId, businessId, start, end);
   const txnIds = money.items.filter((i) => i.kind === 'transaction').map((i) => i.id);
   const incomeIds = money.items.filter((i) => i.kind === 'income').map((i) => i.id);
 
@@ -88,35 +97,60 @@ export function profitLoss(
       : []
     ).map((r) => [r.id, r.cat]),
   );
+  const invoiceOf = new Map(
+    (money.payments.length
+      ? queryAll<{ id: string; number: string; client_name: string }>(
+          db,
+          `SELECT p.id, i.number, i.client_name FROM invoice_payments p JOIN invoices i ON i.id = p.invoice_id AND i.user_id = p.user_id
+           WHERE p.user_id = ? AND p.id IN (${placeholders(money.payments.length)})`,
+          [userId, ...money.payments.map((p) => p.id)],
+        )
+      : []
+    ).map((r) => [r.id, r]),
+  );
 
-  const months = new Map(monthsBetween(start, end).map((m) => [m, { income: 0, expenses: 0 }]));
-  const inMonth = (date: string) => months.get(date.slice(0, 7));
-  const income = new Map<string, Bucket>();
-  const expenses = new Map<string, Bucket>();
-
+  const items: CategorisedItem[] = [];
   for (const p of money.payments) {
-    add(income, 'Invoice payments', 'invoice', p.amountNzd);
-    const mo = inMonth(p.date);
-    if (mo) mo.income += p.amountNzd;
+    const inv = invoiceOf.get(p.id);
+    const description = inv ? `Invoice ${inv.number}${inv.client_name ? ` · ${inv.client_name}` : ''}` : 'Invoice payment';
+    items.push({ kind: 'invoice_payment', id: p.id, date: p.date, description, amountNzd: p.amountNzd, source: 'invoice', label: 'Invoice payments' });
   }
   for (const item of money.items) {
     // Counted once already: an invoice payment, or the income row a deposit is linked to.
     if (item.countedVia) continue;
     if (item.kind === 'income') {
-      add(income, incomeCat.get(item.id)?.trim() || 'Other income', 'income', item.amountNzd);
-      const mo = inMonth(item.date);
-      if (mo) mo.income += item.amountNzd;
+      items.push({ kind: 'income', id: item.id, date: item.date, description: item.description, amountNzd: item.amountNzd, source: 'income', label: incomeCat.get(item.id)?.trim() || 'Other income' });
       continue;
     }
     const info = txnInfo.get(item.id);
     if (!info || info.kind === 'transfer' || item.amountNzd === 0) continue;
     const category = info.biz_cat?.trim() || info.cat?.trim() || '';
-    const mo = inMonth(item.date);
+    const label = category || (item.amountNzd > 0 ? 'Bank deposits' : 'Uncategorised');
+    items.push({ kind: 'transaction', id: item.id, date: item.date, description: item.description, amountNzd: item.amountNzd, source: 'bank', label });
+  }
+  items.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+  return { money, items };
+}
+
+export function profitLoss(
+  db: Database,
+  userId: string,
+  business: { id: string; name: string },
+  period: { start: string; end: string; taxYear: number | null; taxYears: number[] },
+  today: string,
+): ProfitLoss {
+  const { start, end } = period;
+  const { money, items } = categorisedItems(db, userId, business.id, start, end);
+  const months = new Map(monthsBetween(start, end).map((m) => [m, { income: 0, expenses: 0 }]));
+  const income = new Map<string, Bucket>();
+  const expenses = new Map<string, Bucket>();
+  for (const item of items) {
+    const mo = months.get(item.date.slice(0, 7));
     if (item.amountNzd > 0) {
-      add(income, category || 'Bank deposits', 'bank', item.amountNzd);
+      add(income, item.label, item.source, item.amountNzd);
       if (mo) mo.income += item.amountNzd;
     } else {
-      add(expenses, category || 'Uncategorised', 'bank', -item.amountNzd);
+      add(expenses, item.label, item.source, -item.amountNzd);
       if (mo) mo.expenses += -item.amountNzd;
     }
   }

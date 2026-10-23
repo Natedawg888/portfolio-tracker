@@ -81,10 +81,9 @@ export function setItemGst(db: Database, userId: string, businessId: string, kin
 const gstOf = (n: number, t: GstTreatment) => (t === 'standard' ? roundMoney((n * 3) / 23) : 0);
 const ph = (n: number) => Array.from({ length: n }, () => '?').join(',');
 
-export function gstReturn(db: Database, userId: string, business: { id: string; gstRegistered: boolean }, date: string): GstReturnView {
-  const settings = gstSettingsOf(db, userId, business.id);
-  const period = periodContaining(date, settings);
-  const money = businessMoney(db, userId, business.id, period.start, period.end);
+/** Every item a GST return counts in [start, end], with its GST treatment and content. */
+export function gstItems(db: Database, userId: string, businessId: string, start: string, end: string): GstItem[] {
+  const money = businessMoney(db, userId, businessId, start, end);
   const items: GstItem[] = [];
 
   // Invoice payments: standard when the invoice charged GST, else zero-rated.
@@ -130,12 +129,22 @@ export function gstReturn(db: Database, userId: string, business: { id: string; 
     items.push({ kind: 'transaction', id: item.id, date: item.date, description: item.description, amountNzd: amount, side: sale ? 'sale' : 'purchase', treatment, marked: stored != null, editable: true, gstNzd: gstOf(amount, treatment) });
   }
   items.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+  return items;
+}
 
+export function gstReturn(db: Database, userId: string, business: { id: string; gstRegistered: boolean }, date: string): GstReturnView {
+  const settings = gstSettingsOf(db, userId, business.id);
+  const period = periodContaining(date, settings);
+  const items = gstItems(db, userId, business.id, period.start, period.end);
+  return { registered: business.gstRegistered, settings, period, dueDate: gstDueDate(period.end), boxes: boxesFor(items), items };
+}
+
+/** The GST101A boxes for a set of items. */
+export function boxesFor(items: GstItem[]): Gst101a {
   const sales = items.filter((i) => i.side === 'sale' && i.treatment !== 'exempt');
-  const boxes = gst101a({
+  return gst101a({
     salesInclNzd: sales.reduce((s, i) => s + i.amountNzd, 0),
     zeroRatedNzd: sales.filter((i) => i.treatment === 'zero').reduce((s, i) => s + i.amountNzd, 0),
     purchasesInclNzd: items.filter((i) => i.side === 'purchase' && i.treatment === 'standard').reduce((s, i) => s + i.amountNzd, 0),
   });
-  return { registered: business.gstRegistered, settings, period, dueDate: gstDueDate(period.end), boxes, items };
 }

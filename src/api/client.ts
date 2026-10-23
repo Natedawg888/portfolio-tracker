@@ -1030,6 +1030,12 @@ export const api = {
     produceCandidates: () => req<BusinessDetail['produce']>('/business/produce/candidates'),
     linkProduce: (commodityId: string, businessId: string | null) =>
       req<{ ok: true }>('/business/produce/link', { method: 'POST', body: JSON.stringify({ commodityId, businessId }) }),
+    /** Accountant export link (KAN-128): the whole file, or one section, for a tax year or a from/to period. */
+    exportUrl: (businessId: string, period: { taxYear?: number | null } | { from: string; to: string }, section: 'all' | 'pnl' | 'transactions' | 'invoices' | 'gst' = 'all') => {
+      const q = new URLSearchParams('from' in period ? { from: period.from, to: period.to } : period.taxYear ? { taxYear: String(period.taxYear) } : {});
+      if (section !== 'all') q.set('section', section);
+      return `${BASE}/business/${encodeURIComponent(businessId)}/export.csv${q.size ? `?${q}` : ''}`;
+    },
     /** The GST return for the period containing `date` (KAN-127). Business plan only. */
     gst: (businessId: string, date?: string) =>
       req<GstReturnView>(`/business/${encodeURIComponent(businessId)}/gst${date ? `?date=${encodeURIComponent(date)}` : ''}`),
