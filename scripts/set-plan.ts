@@ -3,10 +3,12 @@
  *
  *   npm run plan:set -- someone@example.com plus
  *
- * Plans: free | plus | pro. Plus and Pro unlock households.
+ * Plans: free | plus | pro | business. Plus and Pro unlock households; Business unlocks the
+ * business reports (KAN-125).
  *
  * Stop the API first: it keeps the database in memory and would overwrite this change.
- * On Railway, prefer the PLAN_PLUS_EMAILS / PLAN_PRO_EMAILS variables (see entitlements.ts).
+ * On Railway, prefer the PLAN_PLUS_EMAILS / PLAN_PRO_EMAILS / PLAN_BUSINESS_EMAILS variables
+ * (see entitlements.ts).
  */
 import { getDb, queryOne } from '../server/db/index.ts';
 import { normalizeEmail } from '../server/auth/passwords.ts';
@@ -15,7 +17,7 @@ import { isPlan, setPlan } from '../server/lib/entitlements.ts';
 const email = normalizeEmail(process.argv[2] ?? '');
 const plan = process.argv[3];
 if (!email || !isPlan(plan)) {
-  console.error('Usage: npm run plan:set -- <email> <free|plus|pro>');
+  console.error('Usage: npm run plan:set -- <email> <free|plus|pro|business>');
   process.exit(1);
 }
 const db = await getDb();

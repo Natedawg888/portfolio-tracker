@@ -21,6 +21,7 @@ import type {
   BusinessEmployeeWriteBody,
   StockAdjustmentWriteBody,
   EarningsResponse,
+  ProfitLoss,
   HolidaysResponse,
   StockBatchWriteBody,
   StockItemWriteBody,
@@ -1027,6 +1028,11 @@ export const api = {
     produceCandidates: () => req<BusinessDetail['produce']>('/business/produce/candidates'),
     linkProduce: (commodityId: string, businessId: string | null) =>
       req<{ ok: true }>('/business/produce/link', { method: 'POST', body: JSON.stringify({ commodityId, businessId }) }),
+    /** P&L for a tax year, or a custom from/to period (KAN-126). Business plan only: 402 otherwise. */
+    profitLoss: (businessId: string, period: { taxYear?: number | null } | { from: string; to: string }) => {
+      const q = 'from' in period ? new URLSearchParams({ from: period.from, to: period.to }) : new URLSearchParams(period.taxYear ? { taxYear: String(period.taxYear) } : {});
+      return req<ProfitLoss>(`/business/${encodeURIComponent(businessId)}/profit-loss${q.size ? `?${q}` : ''}`);
+    },
     stock: (businessId: string, includeArchived = false) =>
       req<StockItemView[]>(`/business/${encodeURIComponent(businessId)}/stock${includeArchived ? '?includeArchived=1' : ''}`),
     createStockItem: (businessId: string, body: StockItemWriteBody) =>
@@ -1611,6 +1617,12 @@ export const api = {
           akahuStepDone: boolean;
         };
       }>('/settings/onboarding'),
+    /** The account's plan and its features (KAN-125). */
+    plan: () =>
+      req<{
+        plan: 'free' | 'plus' | 'pro' | 'business';
+        features: Record<'household' | 'payslips' | 'crypto_pro' | 'bonds_plus' | 'commodities_plus' | 'business_reports', boolean>;
+      }>('/settings/plan'),
     setOnboarding: (body: {
       assetClassesDone?: boolean;
       budgetCategoriesDone?: boolean;
