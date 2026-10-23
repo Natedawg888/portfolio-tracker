@@ -301,6 +301,24 @@ function relaxNotNull(database: Database, table: string, column: string) {
 }
 
 /**
+ * GST returns (KAN-127). Added here, not in schema.sql, because schema.sql runs before this on
+ * an old database; new databases get them here too.
+ *   businesses.gst_frequency          monthly | two_monthly | six_monthly (NULL: the default)
+ *   businesses.gst_period_end_month   1–12, a month in which one of its periods ends
+ *   transactions / income_records.gst_treatment   standard | zero | exempt (NULL: sales count as
+ *                                     standard, expenses aren't claimed)
+ */
+export function migrateGst(database: Database) {
+  const biz = tableColumns(database, 'businesses');
+  if (biz.size > 0 && !biz.has('gst_frequency')) database.run('ALTER TABLE businesses ADD COLUMN gst_frequency TEXT');
+  if (biz.size > 0 && !biz.has('gst_period_end_month')) database.run('ALTER TABLE businesses ADD COLUMN gst_period_end_month INTEGER');
+  for (const table of ['transactions', 'income_records']) {
+    const cols = tableColumns(database, table);
+    if (cols.size > 0 && !cols.has('gst_treatment')) database.run(`ALTER TABLE ${table} ADD COLUMN gst_treatment TEXT`);
+  }
+}
+
+/**
  * Calendar entries without a business: personal meetings and events. Old databases have
  * business_id NOT NULL on both meeting tables and no kind column.
  */
@@ -707,6 +725,8 @@ function migrateSchema(database: Database) {
   migrateBusinessStock(database);
   // Personal meetings and events on the Calendar.
   migratePersonalCalendar(database);
+  // GST return periods and per-item GST (KAN-127).
+  migrateGst(database);
 
   // Savings goal → savings account link (KAN-20).
   const goalCols = tableColumns(database, 'savings_goals');

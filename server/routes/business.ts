@@ -39,6 +39,15 @@
  *   DELETE /bills/:billId/file
  *   POST   /bills/:billId/batches { batchId } | DELETE /bills/:billId/batches/:batchId   batches of the same business
  *
+ *   GET    /:id/profit-loss?taxYear=2027 | ?from=YYYY-MM-DD&to=YYYY-MM-DD   P&L, months and invoice
+ *                                   figures (KAN-126). Business plan only (402 BUSINESS_PLAN_REQUIRED);
+ *                                   409 for an archived business
+ *   GET    /:id/gst?date=YYYY-MM-DD   the GST return for the period containing that date (default today):
+ *                                   GST101A boxes, due date and the items behind them (KAN-127)
+ *   PUT    /:id/gst/settings        { frequency: monthly | two_monthly | six_monthly, periodEndMonth: 1–12 }
+ *   PUT    /:id/gst/items           { kind: income | transaction, id, treatment: standard | zero | exempt | null }
+ *                                   The GST routes are Business plan only, like the P&L.
+ *
  * Clients are created and edited through /api/invoices/clients with a businessId.
  */
 import { Router, type Request, type Response } from 'express';
@@ -104,6 +113,13 @@ import {
   updateSupplier,
 } from '../business/suppliers.ts';
 import { clearEmployeeContract, createEmployee, deleteEmployee, parseEmployee, setEmployeeContract, updateEmployee } from '../business/employees.ts';
+import { profitLoss } from '../business/profitLoss.ts';
+import { gstReturn, parseGstSettings, setGstSettings, setItemGst } from '../business/gst.ts';
+import { isGstTreatment } from '../../src/lib/gst.ts';
+import { taxYears } from '../business/store.ts';
+import { businessRow } from '../business/profile.ts';
+import { requireFeature } from '../middleware/requireFeature.ts';
+import { isYmd } from '../../src/lib/invoiceCalc.ts';
 
 const router = Router();
 
@@ -369,6 +385,94 @@ router.post('/assets/:assetId/movements', async (req, res) => {
 router.delete('/movements/:id', async (req, res) => {
   const db = await getDb();
   reply(res, deleteMovement(db, uid(req), req.params.id));
+});
+
+/** A custom period can span up to three years; a tax year is the usual ask. */
+const MAX_PERIOD_DAYS = 3 * 366;
+
+router.get('/:id/profit-loss', requireFeature('business_reports'), async (req, res) => {
+  const db = await getDb();
+  const r = businessRow(db, uid(req), req.params.id);
+  if (!r) {
+    res.status(404).json({ error: 'Business not found' });
+    return;
+  }
+  if (r.archived_at) {
+    res.status(409).json({ error: 'This business is archived. Restore it to see its reports.' });
+    return;
+  }
+  const today = aucklandToday();
+  const from = typeof req.query.from === 'string' ? req.query.from : '';
+  const to = typeof req.query.to === 'string' ? req.query.to : '';
+  let period: { start: string; end: string; taxYear: number | null };
+  if (from || to) {
+    if (!isYmd(from) || !isYmd(to)) {
+      res.status(400).json({ error: 'from and to must both be YYYY-MM-DD' });
+      return;
+    }
+    if (to < from) {
+      res.status(400).json({ error: 'to must be on or after from' });
+      return;
+    }
+    if ((Date.parse(to) - Date.parse(from)) / 86_400_000 > MAX_PERIOD_DAYS) {
+      res.status(400).json({ error: 'Pick a period of three years or less' });
+      return;
+    }
+    period = { start: from, end: to, taxYear: null };
+  } else {
+    const year = taxYearParam(req) ?? taxYearOf(today);
+    period = { ...taxYearRange(year), taxYear: year };
+  }
+  res.json(profitLoss(db, uid(req), { id: r.id, name: r.name }, { ...period, taxYears: taxYears(db, uid(req), today) }, today));
+});
+
+/** This user's business, not archived; else the reply is sent and null comes back. */
+async function activeBusiness(req: Request, res: Response) {
+  const db = await getDb();
+  const r = businessRow(db, uid(req), req.params.id);
+  if (!r) {
+    res.status(404).json({ error: 'Business not found' });
+    return null;
+  }
+  if (r.archived_at) {
+    res.status(409).json({ error: 'This business is archived. Restore it to see its reports.' });
+    return null;
+  }
+  return { db, r };
+}
+
+router.get('/:id/gst', requireFeature('business_reports'), async (req, res) => {
+  const found = await activeBusiness(req, res);
+  if (!found) return;
+  const date = typeof req.query.date === 'string' && isYmd(req.query.date) ? req.query.date : aucklandToday();
+  res.json(gstReturn(found.db, uid(req), { id: found.r.id, gstRegistered: Number(found.r.gst_registered) === 1 }, date));
+});
+
+router.put('/:id/gst/settings', requireFeature('business_reports'), async (req, res) => {
+  const parsed = parseGstSettings(req.body);
+  if (!parsed.ok) {
+    res.status(400).json({ error: parsed.error });
+    return;
+  }
+  const found = await activeBusiness(req, res);
+  if (!found) return;
+  setGstSettings(found.db, uid(req), found.r.id, parsed.value);
+  res.json(parsed.value);
+});
+
+router.put('/:id/gst/items', requireFeature('business_reports'), async (req, res) => {
+  const b = (req.body ?? {}) as { kind?: unknown; id?: unknown; treatment?: unknown };
+  if ((b.kind !== 'income' && b.kind !== 'transaction') || typeof b.id !== 'string' || !(b.treatment === null || isGstTreatment(b.treatment))) {
+    res.status(400).json({ error: 'Send kind (income or transaction), id, and treatment (standard, zero, exempt or null)' });
+    return;
+  }
+  const found = await activeBusiness(req, res);
+  if (!found) return;
+  if (!setItemGst(found.db, uid(req), found.r.id, b.kind, b.id, b.treatment)) {
+    res.status(404).json({ error: 'Not found in this business’s money (invoice payments follow their invoice)' });
+    return;
+  }
+  res.json({ ok: true });
 });
 
 router.get('/:id', async (req, res) => {
