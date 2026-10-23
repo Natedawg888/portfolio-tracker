@@ -1475,6 +1475,8 @@ export interface BusinessDetail {
   /** Commodities linked as produce held (valued and counted on Portfolio → Commodities). */
   produce: BusinessProduce[];
   employees: BusinessEmployee[];
+  /** Outstanding and overdue invoices now, and payments in the tax year (KAN-126). */
+  invoiceFigures: BusinessInvoiceFigures;
 }
 
 /** Someone the business employs. Records only: nothing is paid from the app. */
@@ -2431,4 +2433,68 @@ export interface EarningsResponse {
 export interface HolidaysResponse {
   available: boolean;
   holidays: { date: string; name: string }[];
+}
+
+/** One line of a profit & loss (KAN-126): a category, or invoice payments, with what makes it up. */
+export interface ProfitLossLine {
+  label: string;
+  /** invoice: payments on this business's invoices; income: tagged income; bank: tagged bank transactions. */
+  source: 'invoice' | 'income' | 'bank';
+  amountNzd: number;
+  count: number;
+}
+
+/** Invoices for the business dashboard: what's owed, overdue, and paid in the period. */
+export interface BusinessInvoiceFigures {
+  outstandingNzd: number;
+  outstandingCount: number;
+  overdueNzd: number;
+  overdueCount: number;
+  /** Payments received in the period. */
+  paidNzd: number;
+}
+
+/**
+ * Profit & loss for one business over a period (KAN-126). Totals are businessMoney's, so a tax
+ * year matches the business card exactly; lines split them by category.
+ */
+export interface ProfitLoss {
+  businessId: string;
+  businessName: string;
+  start: string;
+  end: string;
+  /** The tax year asked for (named by its end year), or null for a custom period. */
+  taxYear: number | null;
+  taxYears: number[];
+  income: ProfitLossLine[];
+  expenses: ProfitLossLine[];
+  incomeNzd: number;
+  expensesNzd: number;
+  netNzd: number;
+  /** Every calendar month in the period, oldest first, including empty ones. */
+  months: { month: string; incomeNzd: number; expensesNzd: number }[];
+  invoices: BusinessInvoiceFigures;
+}
+
+/** One tagged item on a GST return (KAN-127). See server/business/gst.ts. */
+export interface GstItem {
+  kind: 'invoice_payment' | 'income' | 'transaction';
+  id: string;
+  date: string;
+  description: string;
+  amountNzd: number;
+  side: 'sale' | 'purchase';
+  treatment: 'standard' | 'zero' | 'exempt';
+  marked: boolean;
+  editable: boolean;
+  gstNzd: number;
+}
+
+export interface GstReturnView {
+  registered: boolean;
+  settings: { frequency: 'monthly' | 'two_monthly' | 'six_monthly'; periodEndMonth: number };
+  period: { start: string; end: string };
+  dueDate: string;
+  boxes: Record<'box5' | 'box6' | 'box7' | 'box8' | 'box9' | 'box10' | 'box11' | 'box12' | 'box13' | 'box14' | 'box15', number>;
+  items: GstItem[];
 }
