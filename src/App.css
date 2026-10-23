@@ -14735,3 +14735,7 @@ html .business-page .more-menu-body .business-menu-item:disabled { color: var(--
   .stock-history-row { grid-template-columns: 1fr auto; }
   .stock-history-date { grid-column: 1 / -1; }
 }
+
+/* KoruLedger Business plan note (KAN-125). */
+.business-plan-note h3 { margin: 0 0 0.35rem; }
+.business-plan-list { margin: 0.5rem 0 0; padding-left: 1.2rem; display: grid; gap: 0.25rem; }

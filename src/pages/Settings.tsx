@@ -15,6 +15,7 @@ import {
 import { CategoryManager } from '../components/CategoryManager';
 import { SecurityPanel } from '../components/SecurityPanel';
 import { BusinessDetailsPanel } from '../components/BusinessDetailsPanel';
+import { BusinessPlanCard } from '../components/business/BusinessPlanNote';
 import { AdPrefsPanel } from '../components/AdPrefsPanel';
 import { AccountProfileCard } from '../components/settings/AccountProfileCard';
 import { AccountSignInCard } from '../components/settings/AccountSignInCard';
@@ -107,7 +108,10 @@ export function Settings() {
         ) : tab === 'security' ? (
           <SecurityPanel />
         ) : tab === 'business' ? (
-          <BusinessDetailsPanel />
+          <>
+            <BusinessDetailsPanel />
+            <BusinessPlanCard />
+          </>
         ) : tab === 'categories' ? (
           <CategoriesPanel />
         ) : (

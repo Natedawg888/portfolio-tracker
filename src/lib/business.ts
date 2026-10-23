@@ -161,3 +161,6 @@ export function profitClass(n: number): string | undefined {
 export function netWorthNote(counted: boolean): string {
   return counted ? 'Counted in your net worth' : 'Not counted in your net worth';
 }
+
+/** 402 code for business reports without the Business plan (KAN-125); show BusinessPlanNote. */
+export const BUSINESS_PLAN_REQUIRED = 'BUSINESS_PLAN_REQUIRED';

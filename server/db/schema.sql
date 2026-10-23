@@ -1343,7 +1343,7 @@ CREATE INDEX IF NOT EXISTS idx_price_obs_contributor ON price_observations(contr
 -- Plans (KAN-77). No row = free. Granted by the operator (npm run plan:set) until billing exists.
 CREATE TABLE IF NOT EXISTS user_entitlements (
   user_id     TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  plan        TEXT NOT NULL DEFAULT 'free',       -- free | plus | pro
+  plan        TEXT NOT NULL DEFAULT 'free',       -- free | plus | pro | business
   note        TEXT NOT NULL DEFAULT '',
   updated_at  TEXT NOT NULL
 );

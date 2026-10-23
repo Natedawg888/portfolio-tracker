@@ -1611,6 +1611,12 @@ export const api = {
           akahuStepDone: boolean;
         };
       }>('/settings/onboarding'),
+    /** The account's plan and its features (KAN-125). */
+    plan: () =>
+      req<{
+        plan: 'free' | 'plus' | 'pro' | 'business';
+        features: Record<'household' | 'payslips' | 'crypto_pro' | 'bonds_plus' | 'commodities_plus' | 'business_reports', boolean>;
+      }>('/settings/plan'),
     setOnboarding: (body: {
       assetClassesDone?: boolean;
       budgetCategoriesDone?: boolean;
