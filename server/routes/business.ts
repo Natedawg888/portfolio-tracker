@@ -51,6 +51,19 @@
  *                                   accountant export (KAN-128); Business plan only
  *
  * Clients are created and edited through /api/invoices/clients with a businessId.
+ *
+ * Accountant and viewer access (KAN-129):
+ *   GET    /shared                    businesses other people have let me into
+ *   POST   /invites/preview | /invites/accept { token }   the invited person
+ *   GET    /:id/members               owner, members, pending invites (owner), activity
+ *   POST   /:id/members/invites       { email, role: accountant | viewer }   owner; emails the link when email is set up
+ *   DELETE /:id/members/invites/:inviteId                  owner
+ *   PATCH  /:id/members/:userId       { role }               owner
+ *   DELETE /:id/members/:userId       owner removes someone, or a member leaves
+ * Any route that names a business, or a record of one, works for its members too: the record's
+ * business is found, the caller's role checked, and the route runs as the owner. Viewers can only
+ * read; deleting, archiving and restoring the business stay with the owner. Routes that name no
+ * business (the list, create, money and produce) only ever touch the caller's own data.
  */
 import { Router, type Request, type Response } from 'express';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
@@ -121,7 +134,23 @@ import { accountantCsv, fileSlug, isExportSection } from '../business/accountant
 import { isGstTreatment } from '../../src/lib/gst.ts';
 import { taxYears } from '../business/store.ts';
 import { businessRow } from '../business/profile.ts';
-import { requireFeature } from '../middleware/requireFeature.ts';
+import { emailEnabled, messageHtml, safeDisplayName, sendEmail } from '../invoices/email.ts';
+import { shareBase } from './invoices.ts';
+import {
+  acceptInvite,
+  businessReportsUnlocked,
+  createInvite,
+  getMembers,
+  previewInvite,
+  removeMember,
+  resourceAccess,
+  revokeInvite,
+  roleAllows,
+  setMemberRole,
+  sharedWithMe,
+  type Access,
+  type ResourceKind,
+} from '../business/members.ts';
 import { isYmd } from '../../src/lib/invoiceCalc.ts';
 
 const router = Router();
@@ -133,8 +162,76 @@ router.use((req, res, next) => {
   next();
 });
 
+type ScopedRequest = AuthedRequest & { scopeUserId?: string; businessAccess?: Access };
+
+/** Whose rows the route reads and writes: the caller, or the owner of the business they're in. */
 function uid(req: Request): string {
-  return (req as AuthedRequest & { scopeUserId?: string }).scopeUserId || (req as AuthedRequest).user?.id || '';
+  return (req as ScopedRequest).scopeUserId || (req as AuthedRequest).user?.id || '';
+}
+
+/** The signed-in person, whatever business they're working in. */
+function me(req: Request): string {
+  return (req as AuthedRequest).user?.id || '';
+}
+
+/** Deleting, archiving and restoring a business stay with its owner. */
+function ownerOnly(req: Request): boolean {
+  return /^\/[^/]+\/(archive|restore)$/.test(req.path) || (req.method === 'DELETE' && /^\/[^/]+$/.test(req.path));
+}
+
+/** Member management checks roles itself (a viewer may still leave). */
+const MEMBERS_PATH = /^\/[^/]+\/members(\/|$)/;
+
+/**
+ * Scopes the request to the business that `kind`'s record belongs to (KAN-129). With no access
+ * the request carries on as the caller, whose own data doesn't hold the record, so it gets the
+ * usual 404 and nothing shows it exists. Two records on one route must share a business.
+ */
+function scopeTo(kind: ResourceKind | ((req: Request) => ResourceKind)) {
+  return async (req: Request, res: Response, next: (err?: unknown) => void, id: unknown) => {
+    try {
+      const r = req as ScopedRequest;
+      const db = await getDb();
+      const access = resourceAccess(db, me(req), typeof kind === 'function' ? kind(req) : kind, String(id));
+      if (r.businessAccess && access?.businessId !== r.businessAccess.businessId) {
+        res.status(404).json({ error: 'Not found' });
+        return;
+      }
+      if (!access) return next();
+      if (access.role !== 'owner' && !MEMBERS_PATH.test(req.path)) {
+        if (!roleAllows(access.role, req.method)) {
+          res.status(403).json({ error: 'You can view this business but not change it.', code: 'BUSINESS_VIEWER' });
+          return;
+        }
+        if (ownerOnly(req)) {
+          res.status(403).json({ error: 'Only the business owner can do this.', code: 'BUSINESS_OWNER_ONLY' });
+          return;
+        }
+      }
+      r.businessAccess = access;
+      r.scopeUserId = access.ownerId;
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+router.param('id', scopeTo((req) => (req.path.startsWith('/movements/') ? 'movement' : req.path.startsWith('/stock/adjustments/') ? 'stockAdjustment' : 'business')));
+router.param('assetId', scopeTo('asset'));
+router.param('employeeId', scopeTo('employee'));
+router.param('itemId', scopeTo('stockItem'));
+router.param('batchId', scopeTo('stockBatch'));
+router.param('supplierId', scopeTo('supplier'));
+router.param('billId', scopeTo('bill'));
+router.param('clientId', scopeTo('client'));
+
+/** Reports, GST and the export: the caller's Business plan, or an accountant's on this business. */
+async function requireBusinessReports(req: Request, res: Response, next: () => void) {
+  const db = await getDb();
+  const businessId = (req as ScopedRequest).businessAccess?.businessId ?? null;
+  if (businessReportsUnlocked(db, me(req), businessId)) return next();
+  res.status(402).json({ code: 'BUSINESS_PLAN_REQUIRED', error: 'Reports, the GST return and the accountant export are part of KoruLedger Business.' });
 }
 
 function reply<T>(res: Response, result: { ok: true; value: T } | { ok: false; status: number; error: string }, created = false) {
@@ -164,6 +261,57 @@ router.post('/', async (req, res) => {
   }
   const db = await getDb();
   res.status(201).json(createBusiness(db, uid(req), parsed.value));
+});
+
+router.get('/shared', async (req, res) => {
+  res.json(sharedWithMe(await getDb(), me(req)));
+});
+
+router.post('/invites/preview', async (req, res) => {
+  reply(res, previewInvite(await getDb(), me(req), req.body?.token));
+});
+
+router.post('/invites/accept', async (req, res) => {
+  reply(res, acceptInvite(await getDb(), me(req), req.body?.token));
+});
+
+router.get('/:id/members', async (req, res) => {
+  reply(res, getMembers(await getDb(), me(req), req.params.id));
+});
+
+router.post('/:id/members/invites', async (req, res) => {
+  const r = createInvite(await getDb(), me(req), req.params.id, req.body, shareBase(req));
+  if (!r.ok) return reply(res, r);
+  const { view, link, email, businessName, inviterName, role } = r.value;
+  let emailed = false;
+  if (emailEnabled()) {
+    const text = `${inviterName} has invited you to ${businessName}'s books on KoruLedger as ${role === 'accountant' ? 'their accountant' : 'a viewer'}.\n\nOpen this link within 7 days to accept. You'll see this business only, never ${inviterName}'s personal finances.`;
+    const sent = await sendEmail({
+      fromName: safeDisplayName(`${inviterName} via KoruLedger`),
+      replyTo: null,
+      to: [email],
+      subject: `${inviterName} invited you to ${businessName} on KoruLedger`,
+      text: `${text}\n\n${link}`,
+      html: messageHtml(text, link, 'Accept the invite'),
+      attachment: null,
+      idempotencyKey: link.slice(-24),
+    });
+    emailed = sent.ok;
+  }
+  // The link is returned so the owner can share it directly when email isn't set up.
+  res.status(201).json({ ...view, invite: { link, emailed } });
+});
+
+router.delete('/:id/members/invites/:inviteId', async (req, res) => {
+  reply(res, revokeInvite(await getDb(), me(req), req.params.id, req.params.inviteId));
+});
+
+router.patch('/:id/members/:userId', async (req, res) => {
+  reply(res, setMemberRole(await getDb(), me(req), req.params.id, req.params.userId, req.body));
+});
+
+router.delete('/:id/members/:userId', async (req, res) => {
+  reply(res, removeMember(await getDb(), me(req), req.params.id, req.params.userId));
 });
 
 router.get('/money/candidates', async (req, res) => {
@@ -415,7 +563,7 @@ function periodParam(req: Request, res: Response, today: string): { start: strin
   return { start: from, end: to, taxYear: null };
 }
 
-router.get('/:id/profit-loss', requireFeature('business_reports'), async (req, res) => {
+router.get('/:id/profit-loss', requireBusinessReports, async (req, res) => {
   const found = await activeBusiness(req, res);
   if (!found) return;
   const today = aucklandToday();
@@ -424,7 +572,7 @@ router.get('/:id/profit-loss', requireFeature('business_reports'), async (req, r
   res.json(profitLoss(found.db, uid(req), { id: found.r.id, name: found.r.name }, { ...period, taxYears: taxYears(found.db, uid(req), today) }, today));
 });
 
-router.get('/:id/export.csv', requireFeature('business_reports'), async (req, res) => {
+router.get('/:id/export.csv', requireBusinessReports, async (req, res) => {
   const section = req.query.section == null || req.query.section === '' ? 'all' : req.query.section;
   if (!isExportSection(section)) {
     res.status(400).json({ error: 'section must be all, pnl, transactions, invoices or gst' });
@@ -459,14 +607,14 @@ async function activeBusiness(req: Request, res: Response) {
   return { db, r };
 }
 
-router.get('/:id/gst', requireFeature('business_reports'), async (req, res) => {
+router.get('/:id/gst', requireBusinessReports, async (req, res) => {
   const found = await activeBusiness(req, res);
   if (!found) return;
   const date = typeof req.query.date === 'string' && isYmd(req.query.date) ? req.query.date : aucklandToday();
   res.json(gstReturn(found.db, uid(req), { id: found.r.id, gstRegistered: Number(found.r.gst_registered) === 1 }, date));
 });
 
-router.put('/:id/gst/settings', requireFeature('business_reports'), async (req, res) => {
+router.put('/:id/gst/settings', requireBusinessReports, async (req, res) => {
   const parsed = parseGstSettings(req.body);
   if (!parsed.ok) {
     res.status(400).json({ error: parsed.error });
@@ -478,7 +626,7 @@ router.put('/:id/gst/settings', requireFeature('business_reports'), async (req, 
   res.json(parsed.value);
 });
 
-router.put('/:id/gst/items', requireFeature('business_reports'), async (req, res) => {
+router.put('/:id/gst/items', requireBusinessReports, async (req, res) => {
   const b = (req.body ?? {}) as { kind?: unknown; id?: unknown; treatment?: unknown };
   if ((b.kind !== 'income' && b.kind !== 'transaction') || typeof b.id !== 'string' || !(b.treatment === null || isGstTreatment(b.treatment))) {
     res.status(400).json({ error: 'Send kind (income or transaction), id, and treatment (standard, zero, exempt or null)' });
@@ -500,7 +648,8 @@ router.get('/:id', async (req, res) => {
     res.status(404).json({ error: 'Business not found' });
     return;
   }
-  res.json(detail);
+  const access = (req as ScopedRequest).businessAccess;
+  res.json({ ...detail, access: { role: access?.role ?? 'owner', reportsUnlocked: businessReportsUnlocked(db, me(req), req.params.id) } });
 });
 
 router.put('/:id', async (req, res) => {

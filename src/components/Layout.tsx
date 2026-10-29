@@ -1,6 +1,6 @@
 import { cloneElement, isValidElement, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, useLocation, useNavigate, useOutlet } from 'react-router-dom';
-import { readPendingInvite } from '../lib/householdInvite';
+import { readPendingBusinessInvite, readPendingInvite } from '../lib/householdInvite';
 import { BrandLockup } from './BrandLockup';
 import { CloseIcon, MOBILE_NAV_ID, MobileNavDrawer } from './MobileNavDrawer';
 import { applyTheme, resolveTheme, setTheme, type Theme } from '../lib/theme';
@@ -119,9 +119,10 @@ export function Layout({ children }: { children?: ReactNode }) {
   const navigate = useNavigate();
   useMeetingReminders();
 
-  // Back to a household invite that was opened before signing in (KAN-77).
+  // Back to a household (KAN-77) or business (KAN-129) invite opened before signing in.
   useEffect(() => {
     if (readPendingInvite()) navigate('/household/join', { replace: true });
+    else if (readPendingBusinessInvite()) navigate('/business/join', { replace: true });
   }, [navigate]);
   const [metalProvider, setMetalProvider] = useState<string | null>(null);
   const moneyHidden = useMoneyHidden();
