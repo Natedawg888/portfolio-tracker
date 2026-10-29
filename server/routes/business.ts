@@ -47,6 +47,8 @@
  *   PUT    /:id/gst/settings        { frequency: monthly | two_monthly | six_monthly, periodEndMonth: 1–12 }
  *   PUT    /:id/gst/items           { kind: income | transaction, id, treatment: standard | zero | exempt | null }
  *                                   The GST routes are Business plan only, like the P&L.
+ *   GET    /:id/export.csv?taxYear= | ?from=&to= [&section=all|pnl|transactions|invoices|gst]
+ *                                   accountant export (KAN-128); Business plan only
  *
  * Clients are created and edited through /api/invoices/clients with a businessId.
  */
@@ -115,6 +117,7 @@ import {
 import { clearEmployeeContract, createEmployee, deleteEmployee, parseEmployee, setEmployeeContract, updateEmployee } from '../business/employees.ts';
 import { profitLoss } from '../business/profitLoss.ts';
 import { gstReturn, parseGstSettings, setGstSettings, setItemGst } from '../business/gst.ts';
+import { accountantCsv, fileSlug, isExportSection } from '../business/accountantExport.ts';
 import { isGstTreatment } from '../../src/lib/gst.ts';
 import { taxYears } from '../business/store.ts';
 import { businessRow } from '../business/profile.ts';
@@ -390,40 +393,55 @@ router.delete('/movements/:id', async (req, res) => {
 /** A custom period can span up to three years; a tax year is the usual ask. */
 const MAX_PERIOD_DAYS = 3 * 366;
 
-router.get('/:id/profit-loss', requireFeature('business_reports'), async (req, res) => {
-  const db = await getDb();
-  const r = businessRow(db, uid(req), req.params.id);
-  if (!r) {
-    res.status(404).json({ error: 'Business not found' });
-    return;
-  }
-  if (r.archived_at) {
-    res.status(409).json({ error: 'This business is archived. Restore it to see its reports.' });
-    return;
-  }
-  const today = aucklandToday();
+/** ?taxYear=, or ?from=&to= (both, in order, up to three years). Sends a 400 and returns null when invalid. */
+function periodParam(req: Request, res: Response, today: string): { start: string; end: string; taxYear: number | null } | null {
   const from = typeof req.query.from === 'string' ? req.query.from : '';
   const to = typeof req.query.to === 'string' ? req.query.to : '';
-  let period: { start: string; end: string; taxYear: number | null };
-  if (from || to) {
-    if (!isYmd(from) || !isYmd(to)) {
-      res.status(400).json({ error: 'from and to must both be YYYY-MM-DD' });
-      return;
-    }
-    if (to < from) {
-      res.status(400).json({ error: 'to must be on or after from' });
-      return;
-    }
-    if ((Date.parse(to) - Date.parse(from)) / 86_400_000 > MAX_PERIOD_DAYS) {
-      res.status(400).json({ error: 'Pick a period of three years or less' });
-      return;
-    }
-    period = { start: from, end: to, taxYear: null };
-  } else {
+  if (!from && !to) {
     const year = taxYearParam(req) ?? taxYearOf(today);
-    period = { ...taxYearRange(year), taxYear: year };
+    return { ...taxYearRange(year), taxYear: year };
   }
-  res.json(profitLoss(db, uid(req), { id: r.id, name: r.name }, { ...period, taxYears: taxYears(db, uid(req), today) }, today));
+  const error = !isYmd(from) || !isYmd(to)
+    ? 'from and to must both be YYYY-MM-DD'
+    : to < from
+      ? 'to must be on or after from'
+      : (Date.parse(to) - Date.parse(from)) / 86_400_000 > MAX_PERIOD_DAYS
+        ? 'Pick a period of three years or less'
+        : null;
+  if (error) {
+    res.status(400).json({ error });
+    return null;
+  }
+  return { start: from, end: to, taxYear: null };
+}
+
+router.get('/:id/profit-loss', requireFeature('business_reports'), async (req, res) => {
+  const found = await activeBusiness(req, res);
+  if (!found) return;
+  const today = aucklandToday();
+  const period = periodParam(req, res, today);
+  if (!period) return;
+  res.json(profitLoss(found.db, uid(req), { id: found.r.id, name: found.r.name }, { ...period, taxYears: taxYears(found.db, uid(req), today) }, today));
+});
+
+router.get('/:id/export.csv', requireFeature('business_reports'), async (req, res) => {
+  const section = req.query.section == null || req.query.section === '' ? 'all' : req.query.section;
+  if (!isExportSection(section)) {
+    res.status(400).json({ error: 'section must be all, pnl, transactions, invoices or gst' });
+    return;
+  }
+  const found = await activeBusiness(req, res);
+  if (!found) return;
+  const today = aucklandToday();
+  const period = periodParam(req, res, today);
+  if (!period) return;
+  const csv = accountantCsv(found.db, uid(req), { id: found.r.id, name: found.r.name, gstRegistered: Number(found.r.gst_registered) === 1 }, period, today, section);
+  const name = `${fileSlug(found.r.name)}-${period.start}-to-${period.end}${section === 'all' ? '' : `-${section}`}.csv`;
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+  res.setHeader('Cache-Control', 'no-store');
+  // The BOM makes Excel read the file as UTF-8 (macrons in names).
+  res.send(`\ufeff${csv}`);
 });
 
 /** This user's business, not archived; else the reply is sent and null comes back. */

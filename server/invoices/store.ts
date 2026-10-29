@@ -879,7 +879,7 @@ export function sendsSince(db: Database, userId: string, sinceIso: string): numb
 
 // ---------------------------------------------------------------- CSV
 
-function csvCell(v: string | number | null): string {
+export function csvCell(v: string | number | null): string {
   if (v == null) return '';
   const s = typeof v === 'number' ? v.toFixed(2) : v;
   // Neutralise spreadsheet formulas in text cells.

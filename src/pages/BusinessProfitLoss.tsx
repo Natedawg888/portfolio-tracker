@@ -92,6 +92,8 @@ export function BusinessProfitLoss() {
   }, [id, period]);
 
   const customHint = customPeriodError(from, to);
+  // The export uses whatever period is showing.
+  const exportPeriod = data ? (data.taxYear ? { taxYear: data.taxYear } : { from: data.start, to: data.end }) : { taxYear: null };
   const backTo = `/business/${encodeURIComponent(id)}`;
 
   return (
@@ -219,6 +221,33 @@ export function BusinessProfitLoss() {
                 <dd>{formatNzd(data.invoices.paidNzd)}</dd>
               </div>
             </dl>
+          </section>
+
+          <section className="panel warranty-card pnl-export" aria-labelledby="pnl-export-title">
+            <div className="rental-card-head">
+              <h3 id="pnl-export-title">For your accountant</h3>
+            </div>
+            <p className="muted small">
+              A CSV for this period: the profit &amp; loss, every transaction with its category, source and GST, the invoices issued, and the GST returns. Opens
+              in Excel, Numbers or Google Sheets.
+            </p>
+            <div className="row gap pnl-export-links">
+              <a className="btn primary" href={api.business.exportUrl(id, exportPeriod)} download>
+                Download everything (CSV)
+              </a>
+              {(
+                [
+                  ['pnl', 'Profit & loss'],
+                  ['transactions', 'Transactions'],
+                  ['invoices', 'Invoices'],
+                  ['gst', 'GST'],
+                ] as const
+              ).map(([section, label]) => (
+                <a key={section} className="btn small ghost" href={api.business.exportUrl(id, exportPeriod, section)} download>
+                  {label} only
+                </a>
+              ))}
+            </div>
           </section>
 
           <p className="muted small">
