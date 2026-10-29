@@ -20,7 +20,7 @@ function countedNote(m: BusinessMoneyItem): string {
 
 type Row = { date: string; key: string } & ({ type: 'invoice'; inv: InvoiceSummary } | { type: 'money'; m: BusinessMoneyItem });
 
-export function BusinessActivity({ businessId, businessName, taxYear, invoices, money, busy, act, onTag }: {
+export function BusinessActivity({ businessId, businessName, taxYear, invoices, money, busy, act, onTag, ownerTools = true }: {
   businessId: string;
   businessName: string;
   taxYear: number;
@@ -29,6 +29,8 @@ export function BusinessActivity({ businessId, businessName, taxYear, invoices, 
   busy: boolean;
   act: (fn: () => Promise<unknown>, note: string) => Promise<void>;
   onTag: () => void;
+  /** Invoices and tagging use the owner's own pages and money, so they're the owner's (KAN-129). */
+  ownerTools?: boolean;
 }) {
   const { start, end } = taxYearRange(taxYear);
   const rows: Row[] = [
@@ -41,6 +43,7 @@ export function BusinessActivity({ businessId, businessName, taxYear, invoices, 
     <section className="panel warranty-card" aria-labelledby="biz-activity">
       <div className="rental-card-head">
         <h3 id="biz-activity">Money in and out</h3>
+        {ownerTools ? (
         <div className="rental-card-actions">
           <Link className="btn small ghost" to={`/business/invoices/new?business=${encodeURIComponent(businessId)}`} aria-label={`New invoice for ${name}`}>
             + Invoice
@@ -49,6 +52,7 @@ export function BusinessActivity({ businessId, businessName, taxYear, invoices, 
             Tag transactions from Budget
           </button>
         </div>
+        ) : null}
       </div>
       {rows.length === 0 ? (
         <div className="business-activity-empty">
@@ -64,7 +68,7 @@ export function BusinessActivity({ businessId, businessName, taxYear, invoices, 
               <li key={r.key} className="rental-entry">
                 <div className="rental-entry-what">
                   <span>
-                    <Link to={`/business/invoices/${r.inv.id}`}>Invoice {r.inv.number}</Link> · {r.inv.clientName || 'No client'}
+                    {ownerTools ? <Link to={`/business/invoices/${r.inv.id}`}>Invoice {r.inv.number}</Link> : `Invoice ${r.inv.number}`} · {r.inv.clientName || 'No client'}
                   </span>
                   <span className="muted small">
                     {formatInvoiceDate(r.inv.issueDate)} · <InvoiceStatusBadge status={r.inv.status} />
@@ -83,7 +87,7 @@ export function BusinessActivity({ businessId, businessName, taxYear, invoices, 
                 </div>
                 <span className={'rental-entry-amount' + (r.m.amountNzd < 0 || r.m.countedVia ? ' rental-entry-amount--out' : '')}>{signed(r.m.amountNzd)}</span>
                 <span className="rental-entry-actions">
-                  {r.m.kind === 'income' && r.m.countedVia === 'invoice' ? null : (
+                  {!ownerTools || (r.m.kind === 'income' && r.m.countedVia === 'invoice') ? null : (
                     <button
                       type="button"
                       className="link-btn"
@@ -100,7 +104,7 @@ export function BusinessActivity({ businessId, businessName, taxYear, invoices, 
           )}
         </ul>
       )}
-      {invoices.length > 0 ? (
+      {invoices.length > 0 && ownerTools ? (
         <p className="small">
           <Link to={`/business/invoices?business=${encodeURIComponent(businessId)}`}>All invoices for {name}</Link>
         </p>

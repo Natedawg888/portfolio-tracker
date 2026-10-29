@@ -1161,6 +1161,42 @@ CREATE TABLE IF NOT EXISTS business_meeting_reminders (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_business_meeting_reminders_offset ON business_meeting_reminders(meeting_id, offset_minutes);
 CREATE INDEX IF NOT EXISTS idx_business_meeting_reminders_due ON business_meeting_reminders(user_id, remind_at) WHERE shown_at IS NULL;
 
+-- People the owner lets into a business's books (KAN-129): an accountant (reads and edits the
+-- books) or a viewer (reads only). The owner is businesses.user_id and has no row here. Rows
+-- stay under the owner's user_id; access is checked on every request (server/business/members.ts).
+CREATE TABLE IF NOT EXISTS business_members (
+  business_id  TEXT NOT NULL,
+  user_id      TEXT NOT NULL,
+  role         TEXT NOT NULL CHECK (role IN ('accountant', 'viewer')),
+  added_by     TEXT NOT NULL,
+  joined_at    TEXT NOT NULL,
+  PRIMARY KEY (business_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_business_members_user ON business_members(user_id);
+CREATE TABLE IF NOT EXISTS business_invites (
+  id           TEXT PRIMARY KEY,
+  business_id  TEXT NOT NULL,
+  email        TEXT NOT NULL,
+  role         TEXT NOT NULL CHECK (role IN ('accountant', 'viewer')),
+  token_hash   TEXT NOT NULL UNIQUE,
+  invited_by   TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  expires_at   TEXT NOT NULL,
+  accepted_at  TEXT,
+  revoked_at   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_business_invites_business ON business_invites(business_id);
+-- Who joined, left, was removed or changed role. Names only, never figures.
+CREATE TABLE IF NOT EXISTS business_member_activity (
+  id           TEXT PRIMARY KEY,
+  business_id  TEXT NOT NULL,
+  actor_id     TEXT,
+  actor_name   TEXT NOT NULL,
+  action       TEXT NOT NULL,
+  created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_business_member_activity ON business_member_activity(business_id, created_at);
+
 -- Bills and subscriptions (KAN-26). Saved items (confirmed from detection or added by hand).
 -- next_due is an anchor; reads roll it forward to the first due date on or after today.
 -- merchant_key links a confirmed item to its transactions (src/lib/recurring.ts merchantKey).

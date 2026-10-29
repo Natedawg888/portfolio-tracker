@@ -19,6 +19,7 @@ import {
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { priceContributor } from '../shopping/prices.ts';
 import { removeUserFromHouseholds } from '../households/store.ts';
+import { removeUserFromBusinesses } from '../business/members.ts';
 import { BUSINESS_STOCK_TABLES } from '../business/stockTables.ts';
 import { stockPhotoPaths } from '../business/stock.ts';
 import { billFilePaths } from '../business/suppliers.ts';
@@ -262,6 +263,9 @@ export function deleteScopedDataForUser(
 
   // Household (KAN-77): leave it, or hand an owned household on (or delete it).
   removeUserFromHouseholds(db, userId);
+
+  // Business access (KAN-129): leave businesses shared with them, and close their own to others.
+  removeUserFromBusinesses(db, userId);
 
   // Supermarket prices this person shared (KAN-74): the shared table holds a pseudonym, not the id.
   run(db, `DELETE FROM price_observations WHERE contributor = ?`, [priceContributor(userId)]);

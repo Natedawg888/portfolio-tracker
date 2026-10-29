@@ -1477,6 +1477,42 @@ export interface BusinessDetail {
   employees: BusinessEmployee[];
   /** Outstanding and overdue invoices now, and payments in the tax year (KAN-126). */
   invoiceFigures: BusinessInvoiceFigures;
+  /** The caller's role here, and whether reports are unlocked for them (KAN-129). */
+  access: { role: BusinessRole; reportsUnlocked: boolean };
+}
+
+/** Owner, or someone the owner let in (KAN-129): an accountant edits the books, a viewer reads them. */
+export type BusinessRole = 'owner' | 'accountant' | 'viewer';
+export type BusinessMemberRole = Exclude<BusinessRole, 'owner'>;
+
+export interface BusinessMembersView {
+  businessId: string;
+  businessName: string;
+  myRole: BusinessRole;
+  owner: { userId: string; name: string };
+  /** Email is shown to the owner, and to each person for their own row. */
+  members: { userId: string; name: string; email: string | null; role: BusinessMemberRole; joinedAt: string }[];
+  /** Pending invites; the owner only. */
+  invites: { id: string; email: string; role: BusinessMemberRole; createdAt: string; expiresAt: string }[];
+  activity: { actorName: string; action: string; createdAt: string }[];
+}
+
+/** A business someone else owns that the caller was let into. */
+export interface SharedBusiness {
+  id: string;
+  name: string;
+  ownerName: string;
+  role: BusinessMemberRole;
+  archived: boolean;
+  joinedAt: string;
+}
+
+export interface BusinessInvitePreview {
+  businessId: string;
+  businessName: string;
+  ownerName: string;
+  role: BusinessMemberRole;
+  alreadyMember: boolean;
 }
 
 /** Someone the business employs. Records only: nothing is paid from the app. */
@@ -2474,4 +2510,27 @@ export interface ProfitLoss {
   /** Every calendar month in the period, oldest first, including empty ones. */
   months: { month: string; incomeNzd: number; expensesNzd: number }[];
   invoices: BusinessInvoiceFigures;
+}
+
+/** One tagged item on a GST return (KAN-127). See server/business/gst.ts. */
+export interface GstItem {
+  kind: 'invoice_payment' | 'income' | 'transaction';
+  id: string;
+  date: string;
+  description: string;
+  amountNzd: number;
+  side: 'sale' | 'purchase';
+  treatment: 'standard' | 'zero' | 'exempt';
+  marked: boolean;
+  editable: boolean;
+  gstNzd: number;
+}
+
+export interface GstReturnView {
+  registered: boolean;
+  settings: { frequency: 'monthly' | 'two_monthly' | 'six_monthly'; periodEndMonth: number };
+  period: { start: string; end: string };
+  dueDate: string;
+  boxes: Record<'box5' | 'box6' | 'box7' | 'box8' | 'box9' | 'box10' | 'box11' | 'box12' | 'box13' | 'box14' | 'box15', number>;
+  items: GstItem[];
 }

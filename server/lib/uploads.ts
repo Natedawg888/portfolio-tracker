@@ -356,6 +356,14 @@ function storedPathMatches(stored: string | null | undefined, rel: string): bool
 }
 
 /** True when this user owns the receipt, photo, or avatar stored at `rel`. */
+/**
+ * Rows of a business the caller owns, or was let into (KAN-129). The member's row must also be
+ * under the business owner's user_id, so a file can't be reached through someone else's business.
+ */
+const MINE_OR_SHARED = (alias: string, businessCol: string) =>
+  `(${alias}.user_id = ? OR EXISTS (SELECT 1 FROM business_members bm JOIN businesses bb ON bb.id = bm.business_id
+     WHERE bm.user_id = ? AND bm.business_id = ${alias}.${businessCol} AND bb.user_id = ${alias}.user_id))`;
+
 export function userOwnsUpload(
   db: Awaited<ReturnType<typeof getDb>>,
   userId: string,
@@ -387,15 +395,15 @@ export function userOwnsUpload(
     return rows.some((r) => storedPathMatches(r.p, rel));
   }
   if (folder === 'business-logos') {
-    const rows = queryAll<{ p: string | null }>(db, `SELECT logo_path AS p FROM businesses WHERE user_id = ? AND logo_path IS NOT NULL`, [userId]);
+    const rows = queryAll<{ p: string | null }>(db, `SELECT logo_path AS p FROM businesses t WHERE ${MINE_OR_SHARED('t', 'id')} AND logo_path IS NOT NULL`, [userId, userId]);
     return rows.some((r) => storedPathMatches(r.p, rel));
   }
   if (folder === 'stock-photos') {
-    const rows = queryAll<{ p: string | null }>(db, `SELECT photo_path AS p FROM business_stock_items WHERE user_id = ? AND photo_path IS NOT NULL`, [userId]);
+    const rows = queryAll<{ p: string | null }>(db, `SELECT photo_path AS p FROM business_stock_items t WHERE ${MINE_OR_SHARED('t', 'business_id')} AND photo_path IS NOT NULL`, [userId, userId]);
     return rows.some((r) => storedPathMatches(r.p, rel));
   }
   if (folder === 'supplier-invoices') {
-    const rows = queryAll<{ p: string | null }>(db, `SELECT file_path AS p FROM business_supplier_invoices WHERE user_id = ? AND file_path IS NOT NULL`, [userId]);
+    const rows = queryAll<{ p: string | null }>(db, `SELECT file_path AS p FROM business_supplier_invoices t WHERE ${MINE_OR_SHARED('t', 'business_id')} AND file_path IS NOT NULL`, [userId, userId]);
     return rows.some((r) => storedPathMatches(r.p, rel));
   }
   if (folder === 'payslips') {
@@ -405,8 +413,8 @@ export function userOwnsUpload(
   if (folder === 'employee-contracts') {
     const rows = queryAll<{ p: string | null }>(
       db,
-      `SELECT contract_path AS p FROM business_employees WHERE user_id = ? AND contract_path IS NOT NULL`,
-      [userId],
+      `SELECT contract_path AS p FROM business_employees t WHERE ${MINE_OR_SHARED('t', 'business_id')} AND contract_path IS NOT NULL`,
+      [userId, userId],
     );
     return rows.some((r) => storedPathMatches(r.p, rel));
   }

@@ -19,6 +19,8 @@ import { WhatItOwns } from '../components/business/WhatItOwns';
 import { BusinessActivity } from '../components/business/BusinessActivity';
 import { ClientMeetings } from '../components/business/ClientMeetings';
 import { StockCard } from '../components/business/StockCard';
+import { BusinessPeople } from '../components/business/BusinessPeople';
+import { useAuth } from '../auth/AuthContext';
 import { MoreMenu } from '../components/MoreMenu';
 import { showQuietToast } from '../lib/quietToast';
 import { formatInvoiceDate } from './invoicesView';
@@ -205,6 +207,7 @@ function readImage(file: File): Promise<string> {
 export function BusinessDetail() {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData] = useState<Detail | null>(null);
   const [year, setYear] = useState<number | null>(null);
@@ -304,6 +307,11 @@ export function BusinessDetail() {
   const others = businesses.length ? businesses : [b];
   const hasInvoices = data.invoices.length > 0;
   const invoiceWord = `${data.invoices.length} invoice${data.invoices.length === 1 ? '' : 's'}`;
+  // KAN-129: an accountant edits the books; a viewer only reads. Invoices, clients, meetings,
+  // tagging and the net worth switch use the owner's own pages and money, so they stay theirs.
+  const role = data.access?.role ?? 'owner';
+  const isOwner = role === 'owner';
+  const canEdit = role !== 'viewer';
   const details = [b.industry, b.nzbn ? `NZBN ${b.nzbn}` : null, b.gstRegistered ? `GST ${b.gstNumber}` : null].filter(Boolean).join(' · ');
 
   return (
@@ -334,11 +342,19 @@ export function BusinessDetail() {
                 <Link className="btn small" to={`/business/${encodeURIComponent(b.id)}/profit-loss`}>
                   Profit &amp; loss
                 </Link>
-                <Link className="btn small primary" to={`/business/invoices/new?business=${encodeURIComponent(b.id)}`} aria-label={`New invoice for ${name}`}>
-                  + Invoice
-                </Link>
+                {b.gstRegistered ? (
+                  <Link className="btn small" to={`/business/${encodeURIComponent(b.id)}/gst`}>
+                    GST
+                  </Link>
+                ) : null}
+                {isOwner ? (
+                  <Link className="btn small primary" to={`/business/invoices/new?business=${encodeURIComponent(b.id)}`} aria-label={`New invoice for ${name}`}>
+                    + Invoice
+                  </Link>
+                ) : null}
               </>
             )}
+            {canEdit ? (
             <MoreMenu label={`More actions for ${name}`} menu>
               {(close) => (
                 <>
@@ -353,12 +369,12 @@ export function BusinessDetail() {
                       Remove logo
                     </button>
                   ) : null}
-                  {b.archivedAt ? (
+                  {b.archivedAt && isOwner ? (
                     <button type="button" role="menuitem" className="btn small business-menu-item" onClick={() => { close(); void restore(); }}>
                       Restore business
                     </button>
                   ) : null}
-                  {b.archivedAt && hasInvoices ? null : (
+                  {!isOwner || (b.archivedAt && hasInvoices) ? null : (
                     <button
                       type="button"
                       role="menuitem"
@@ -369,7 +385,7 @@ export function BusinessDetail() {
                       Delete business…
                     </button>
                   )}
-                  {hasInvoices && !b.archivedAt ? (
+                  {isOwner && hasInvoices && !b.archivedAt ? (
                     <p id="biz-delete-reason" className="muted small business-menu-reason">
                       Has {invoiceWord}: you can archive it
                     </p>
@@ -377,11 +393,22 @@ export function BusinessDetail() {
                 </>
               )}
             </MoreMenu>
+            ) : null}
           </div>
         </div>
         <TaxYearSwitch year={data.taxYear} years={data.taxYears} onChange={setYear} />
         <input ref={logoInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" tabIndex={-1} aria-hidden="true" onChange={(e) => void onLogo(e)} />
       </header>
+
+      {isOwner ? null : (
+        <section className="panel business-role-note" role="status">
+          <p>
+            {role === 'accountant'
+              ? 'You’re this business’s accountant: you can read and edit its books. Invoices, clients and meetings stay with the owner for now.'
+              : 'You can view this business’s books but not change them.'}
+          </p>
+        </section>
+      )}
 
       {b.archivedAt ? (
         <section className="panel business-archived-note" role="status">
@@ -389,9 +416,11 @@ export function BusinessDetail() {
             <strong>Archived {formatInvoiceDate(aucklandToday(new Date(b.archivedAt)))}.</strong> Hidden from Business, your net worth and the invoice and
             client pickers. Everything is kept.
           </p>
-          <button type="button" className="btn small" disabled={busy} onClick={() => void restore()}>
-            Restore business
-          </button>
+          {isOwner ? (
+            <button type="button" className="btn small" disabled={busy} onClick={() => void restore()}>
+              Restore business
+            </button>
+          ) : null}
         </section>
       ) : null}
 
@@ -431,7 +460,7 @@ export function BusinessDetail() {
             </span>
           </p>
         ) : null}
-        {b.archivedAt ? null : (
+        {b.archivedAt || !isOwner ? null : (
         <NetWorthSwitch
           on={b.countInNetWorth}
           busy={busy}
@@ -455,11 +484,11 @@ export function BusinessDetail() {
             .
           </p>
         ) : null}
-        <TypeNote type={b.type} name={name} busy={busy} onChange={async (type) => {
+        {canEdit ? <TypeNote type={b.type} name={name} busy={busy} onChange={async (type) => {
           await api.business.update(id, { ...businessBody(b), type });
           showQuietToast(`${name} is now a ${businessTypeLabel(type).toLowerCase()}.`);
           load();
-        }} />
+        }} /> : null}
       </section>
 
       <WhatItOwns
@@ -475,11 +504,13 @@ export function BusinessDetail() {
         onMoveAsset={(a) => setDialog({ mode: 'move', asset: a })}
         onLinkExisting={() => setDialog({ mode: 'produce' })}
         onChanged={(note) => void saved(note)}
+        ownerTools={isOwner}
+        readOnly={!canEdit}
       />
 
-      <StockCard businessId={id} archived={b.archivedAt != null} />
+      <StockCard businessId={id} archived={b.archivedAt != null || !canEdit} />
 
-      <ClientMeetings businessId={id} businessName={b.name} archived={b.archivedAt != null} clients={data.clients} onClientsChanged={load} />
+      {isOwner ? <ClientMeetings businessId={id} businessName={b.name} archived={b.archivedAt != null} clients={data.clients} onClientsChanged={load} /> : null}
 
       <BusinessActivity
         businessId={id}
@@ -490,6 +521,7 @@ export function BusinessDetail() {
         busy={busy}
         act={act}
         onTag={() => setDialog({ mode: 'tag' })}
+        ownerTools={isOwner}
       />
 
       {b.clientsEnabled ? (
@@ -497,9 +529,11 @@ export function BusinessDetail() {
           <div className="rental-card-head">
             <h3 id="biz-clients">Clients</h3>
             <div className="rental-card-actions">
+              {isOwner ? (
               <button type="button" className="btn small ghost" disabled={busy} aria-label={`Add a client to ${name}`} onClick={() => setDialog({ mode: 'add-client' })}>
                 + Client
               </button>
+              ) : null}
             </div>
           </div>
           {data.clients.length === 0 ? (
@@ -510,7 +544,7 @@ export function BusinessDetail() {
                 <li key={c.id} className="rental-entry">
                   <div className="rental-entry-what">
                     <span>
-                      <Link to={`/business/clients/${c.id}`}>{c.name}</Link>
+                      {isOwner ? <Link to={`/business/clients/${c.id}`}>{c.name}</Link> : c.name}
                       {c.status === 'inactive' ? <span className="muted small"> · Inactive</span> : null}
                     </span>
                     <span className="muted small">{[c.contactPerson, c.email, c.phone].filter(Boolean).join(' · ') || 'No contact details'}</span>
@@ -520,9 +554,11 @@ export function BusinessDetail() {
                     {c.outstandingNzd > 0 ? <span className="muted small"> · {formatNzd(c.outstandingNzd)} owed</span> : null}
                   </span>
                   <span className="rental-entry-actions">
-                    <button type="button" className="link-btn" disabled={busy} aria-label={`Edit ${c.name}`} onClick={() => setDialog({ mode: 'edit-client', client: c })}>
-                      Edit
-                    </button>
+                    {isOwner ? (
+                      <button type="button" className="link-btn" disabled={busy} aria-label={`Edit ${c.name}`} onClick={() => setDialog({ mode: 'edit-client', client: c })}>
+                        Edit
+                      </button>
+                    ) : null}
                   </span>
                 </li>
               ))}
@@ -535,9 +571,11 @@ export function BusinessDetail() {
         <div className="rental-card-head">
           <h3 id="biz-employees">Employees</h3>
           <div className="rental-card-actions">
-            <button type="button" className="btn small ghost" disabled={busy} aria-label={`Add an employee to ${name}`} onClick={() => setDialog({ mode: 'add-employee' })}>
-              + Employee
-            </button>
+            {canEdit ? (
+              <button type="button" className="btn small ghost" disabled={busy} aria-label={`Add an employee to ${name}`} onClick={() => setDialog({ mode: 'add-employee' })}>
+                + Employee
+              </button>
+            ) : null}
           </div>
         </div>
         {data.employees.length === 0 ? (
@@ -577,6 +615,8 @@ export function BusinessDetail() {
                     </span>
                   </span>
                   <span className="rental-entry-actions">
+                    {canEdit ? (
+                    <>
                     <button type="button" className="link-btn" disabled={busy} aria-label={`Edit ${e.name}`} onClick={() => setDialog({ mode: 'edit-employee', employee: e })}>
                       Edit
                     </button>
@@ -589,6 +629,8 @@ export function BusinessDetail() {
                     >
                       Delete
                     </button>
+                    </>
+                    ) : null}
                   </span>
                 </li>
               );
@@ -596,6 +638,8 @@ export function BusinessDetail() {
           </ul>
         )}
       </section>
+
+      <BusinessPeople key={id} businessId={id} businessName={b.name} myUserId={user?.id ?? null} />
 
       {dialog?.mode === 'edit' ? (
         <BusinessForm
@@ -671,7 +715,7 @@ export function BusinessDetail() {
         />
       ) : null}
       {dialog?.mode === 'produce' ? <ProduceDialog businessId={id} onLinked={load} onClose={() => setDialog(null)} /> : null}
-      {dialog?.mode === 'tag' || (tagFromLink && dialog == null) ? <TagDialog year={data.taxYear} businessId={id} onTagged={load} onClose={closeTag} /> : null}
+      {dialog?.mode === 'tag' || (isOwner && tagFromLink && dialog == null) ? <TagDialog year={data.taxYear} businessId={id} onTagged={load} onClose={closeTag} /> : null}
       <p className="muted small business-foot">Totals cover the tax year (1 April – 31 March). Values are the ones you enter. General information, not tax advice.</p>
     </div>
   );

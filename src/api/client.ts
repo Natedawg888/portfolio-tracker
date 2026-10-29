@@ -22,6 +22,8 @@ import type {
   StockAdjustmentWriteBody,
   EarningsResponse,
   ProfitLoss,
+  GstItem,
+  GstReturnView,
   HolidaysResponse,
   StockBatchWriteBody,
   StockItemWriteBody,
@@ -34,6 +36,10 @@ import type {
   MeetingStatus,
   MeetingWriteBody,
   BusinessDetail,
+  BusinessInvitePreview,
+  BusinessMemberRole,
+  BusinessMembersView,
+  SharedBusiness,
   BusinessListResponse,
   BusinessMoneyItem,
   BusinessMovementKind,
@@ -1004,6 +1010,23 @@ export const api = {
     setLogo: (id: string, image: string) =>
       req<Business>(`/business/${encodeURIComponent(id)}/logo`, { method: 'POST', body: JSON.stringify({ image }) }),
     removeLogo: (id: string) => req<Business>(`/business/${encodeURIComponent(id)}/logo`, { method: 'DELETE' }),
+    /** Accountant and viewer access (KAN-129). */
+    shared: () => req<SharedBusiness[]>('/business/shared'),
+    members: (id: string) => req<BusinessMembersView>(`/business/${encodeURIComponent(id)}/members`),
+    invite: (id: string, email: string, role: BusinessMemberRole) =>
+      req<BusinessMembersView & { invite: { link: string; emailed: boolean } }>(`/business/${encodeURIComponent(id)}/members/invites`, {
+        method: 'POST',
+        body: JSON.stringify({ email, role }),
+      }),
+    revokeInvite: (id: string, inviteId: string) =>
+      req<BusinessMembersView>(`/business/${encodeURIComponent(id)}/members/invites/${encodeURIComponent(inviteId)}`, { method: 'DELETE' }),
+    setMemberRole: (id: string, userId: string, role: BusinessMemberRole) =>
+      req<BusinessMembersView>(`/business/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { method: 'PATCH', body: JSON.stringify({ role }) }),
+    removeMember: (id: string, userId: string) =>
+      req<{ ok: true; left: boolean }>(`/business/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { method: 'DELETE' }),
+    previewInvite: (token: string) => req<BusinessInvitePreview>('/business/invites/preview', { method: 'POST', body: JSON.stringify({ token }) }),
+    acceptInvite: (token: string) =>
+      req<{ businessId: string; role: BusinessMemberRole }>('/business/invites/accept', { method: 'POST', body: JSON.stringify({ token }) }),
     createAsset: (businessId: string, body: BusinessAssetWriteBody) =>
       req<BusinessAsset>(`/business/${encodeURIComponent(businessId)}/assets`, { method: 'POST', body: JSON.stringify(body) }),
     updateAsset: (id: string, body: BusinessAssetWriteBody) =>
@@ -1028,6 +1051,19 @@ export const api = {
     produceCandidates: () => req<BusinessDetail['produce']>('/business/produce/candidates'),
     linkProduce: (commodityId: string, businessId: string | null) =>
       req<{ ok: true }>('/business/produce/link', { method: 'POST', body: JSON.stringify({ commodityId, businessId }) }),
+    /** Accountant export link (KAN-128): the whole file, or one section, for a tax year or a from/to period. */
+    exportUrl: (businessId: string, period: { taxYear?: number | null } | { from: string; to: string }, section: 'all' | 'pnl' | 'transactions' | 'invoices' | 'gst' = 'all') => {
+      const q = new URLSearchParams('from' in period ? { from: period.from, to: period.to } : period.taxYear ? { taxYear: String(period.taxYear) } : {});
+      if (section !== 'all') q.set('section', section);
+      return `${BASE}/business/${encodeURIComponent(businessId)}/export.csv${q.size ? `?${q}` : ''}`;
+    },
+    /** The GST return for the period containing `date` (KAN-127). Business plan only. */
+    gst: (businessId: string, date?: string) =>
+      req<GstReturnView>(`/business/${encodeURIComponent(businessId)}/gst${date ? `?date=${encodeURIComponent(date)}` : ''}`),
+    setGstSettings: (businessId: string, settings: GstReturnView['settings']) =>
+      req<GstReturnView['settings']>(`/business/${encodeURIComponent(businessId)}/gst/settings`, { method: 'PUT', body: JSON.stringify(settings) }),
+    setGstItem: (businessId: string, kind: 'income' | 'transaction', id: string, treatment: GstItem['treatment'] | null) =>
+      req<{ ok: true }>(`/business/${encodeURIComponent(businessId)}/gst/items`, { method: 'PUT', body: JSON.stringify({ kind, id, treatment }) }),
     /** P&L for a tax year, or a custom from/to period (KAN-126). Business plan only: 402 otherwise. */
     profitLoss: (businessId: string, period: { taxYear?: number | null } | { from: string; to: string }) => {
       const q = 'from' in period ? new URLSearchParams({ from: period.from, to: period.to }) : new URLSearchParams(period.taxYear ? { taxYear: String(period.taxYear) } : {});
