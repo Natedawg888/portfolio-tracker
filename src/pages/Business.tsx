@@ -5,7 +5,7 @@
  * row. Totals come from the server, which counts each dollar once.
  */
 import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, formatNzd } from '../api/client';
 import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import { showQuietToast } from '../lib/quietToast';
@@ -227,7 +227,15 @@ export function Business() {
   const [year, setYear] = useState<number | null>(null);
   const [reload, setReload] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Business only signup ends here with ?setup=1 (KAN-124): open the form for the first business.
+  const [adding, setAdding] = useState(() => searchParams.get('setup') === '1');
+  useEffect(() => {
+    if (searchParams.get('setup') !== '1') return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('setup');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
   const [editing, setEditing] = useState<BusinessCard | null>(null);
   const [nextMeetings, setNextMeetings] = useState<Map<string, BusinessMeeting>>(new Map());
   const [shared, setShared] = useState<SharedBusiness[]>([]);

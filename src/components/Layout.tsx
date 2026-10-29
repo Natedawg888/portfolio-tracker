@@ -11,6 +11,8 @@ import {
   useMoneyHidden,
 } from '../lib/privacy';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
+import { useAuth } from '../auth/AuthContext';
+import { navKeysForMode, type NavKey, type UsageMode } from '../lib/usageMode';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
 import { ProfileMenu } from './ProfileMenu';
 import { QuietToast } from './QuietToast';
@@ -37,33 +39,45 @@ function legalOnlyFooter(pathname: string, search: string): boolean {
   return pathname === '/settings' && (tab === 'business' || tab === 'categories');
 }
 
-const links: Array<{
+type NavItem = {
   to: string;
   label: string;
   end?: boolean;
   requirePref?: AssetClassPrefKey;
   /** Show the link only when the page would have something to show. */
   visible?: (enabled: (key: AssetClassPrefKey) => boolean, valueSearch: ValueSearchPrefs) => boolean;
-}> = [
-  { to: '/', label: 'Dashboard', end: true },
-  { to: '/spending', label: 'Budget' },
-  { to: '/debts', label: 'Debts' },
-  { to: '/portfolio', label: 'Portfolio' },
-  { to: '/projections', label: 'Projections' },
-  { to: '/news', label: 'News' },
-  { to: '/kiwisaver', label: 'KiwiSaver', requirePref: 'kiwisaver' },
+};
+
+/** Every main-nav link. Which ones show, and in what order, depends on the usage mode (KAN-124). */
+const LINKS: Record<NavKey, NavItem> = {
+  dashboard: { to: '/', label: 'Dashboard', end: true },
+  budget: { to: '/spending', label: 'Budget' },
+  debts: { to: '/debts', label: 'Debts' },
+  portfolio: { to: '/portfolio', label: 'Portfolio' },
+  projections: { to: '/projections', label: 'Projections' },
+  news: { to: '/news', label: 'News' },
+  kiwisaver: { to: '/kiwisaver', label: 'KiwiSaver', requirePref: 'kiwisaver' },
   // Take-home pay and Economic cycle are tabs on the PAYE pages.
-  { to: '/paye', label: 'PAYE' },
+  paye: { to: '/paye', label: 'PAYE' },
   // Overview, Invoices and Clients are tabs on the Business pages (KAN-84).
-  { to: '/business', label: 'Business' },
-  { to: '/calendar', label: 'Calendar' },
-  { to: '/yearly', label: 'History' },
-  {
+  business: { to: '/business', label: 'Business' },
+  // Business only shows these as their own nav items too.
+  invoices: { to: '/business/invoices', label: 'Invoices' },
+  clients: { to: '/business/clients', label: 'Clients' },
+  calendar: { to: '/calendar', label: 'Calendar' },
+  history: { to: '/yearly', label: 'History' },
+  valueSearch: {
     to: '/value-search',
     label: 'Value search',
     visible: (enabled, valueSearch) => visibleSearchTypes(enabled, valueSearch).length > 0,
   },
-];
+};
+
+/** Business only: the Business link is the business dashboard, so it reads "Overview" and stays lit only there. */
+function linkFor(key: NavKey, mode: UsageMode): NavItem {
+  if (mode === 'business' && key === 'business') return { to: '/business', label: 'Overview', end: true };
+  return LINKS[key];
+}
 
 function SunIcon() {
   return (
@@ -131,11 +145,15 @@ export function Layout({ children }: { children?: ReactNode }) {
   const painted = isValidElement(routed)
     ? cloneElement(routed, { moneyHidden } as { moneyHidden: boolean })
     : routed;
-  const visibleLinks = links.filter((l) => {
-    if (l.visible) return l.visible(enabled, valueSearch);
-    if (l.requirePref) return enabled(l.requirePref);
-    return true;
-  });
+  const { user } = useAuth();
+  const mode: UsageMode = user?.usageMode ?? 'personal';
+  const visibleLinks = navKeysForMode(mode)
+    .map((key) => linkFor(key, mode))
+    .filter((l) => {
+      if (l.visible) return l.visible(enabled, valueSearch);
+      if (l.requirePref) return enabled(l.requirePref);
+      return true;
+    });
 
   useEffect(() => {
     applyTheme(theme);

@@ -61,6 +61,7 @@ import {
   preferencesWithAkahuSkippedUnlessRequired,
   type OnboardingFlags,
 } from '../../src/lib/onboardingPrefs.ts';
+import { parseUsageMode } from '../../src/lib/usageMode.ts';
 
 const router = Router();
 
@@ -109,6 +110,7 @@ function publicUser(u: {
   const parsed = parseOnboardingFromPreferencesJson(
     u.preferencesJson ?? u.preferences_json ?? null,
   );
+  const usage = parseUsageMode(u.preferencesJson ?? u.preferences_json ?? null);
   const onboarding: OnboardingFlags = parsed.flags ?? {
     assetClassesDone: true,
     budgetCategoriesDone: true,
@@ -124,6 +126,8 @@ function publicUser(u: {
     createdAt: u.createdAt ?? u.created_at ?? null,
     onboardingComplete: parsed.complete,
     onboarding,
+    usageMode: usage.mode,
+    usageModeChosen: usage.chosen,
   };
 }
 

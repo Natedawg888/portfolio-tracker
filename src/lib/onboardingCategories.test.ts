@@ -80,9 +80,15 @@ assert(plan.create.length === 1 && plan.create[0].slug === 'cat-subscriptions', 
 assert(!defaults.some((r) => r.name === 'Tips'), 'defaults drop unsaved additions');
 
 // Step counter.
-assert(stepLabel('budgets', { crypto: false, offerAkahu: false }) === 'Step 3 of 3', 'budgets is 3 of 3 without crypto');
-assert(stepLabel('budgets', { crypto: true, offerAkahu: false }) === 'Step 4 of 4', 'wallets step adds one');
-assert(stepLabel('assets', { crypto: true, offerAkahu: true }) === 'Step 2 of 5', 'Akahu step counted when offered');
+// Step 2 asks what the account is for (KAN-124), so personal steps start at 3.
+assert(stepLabel('budgets', { crypto: false, offerAkahu: false }) === 'Step 4 of 4', 'budgets is 4 of 4 without crypto');
+assert(stepLabel('budgets', { crypto: true, offerAkahu: false }) === 'Step 5 of 5', 'wallets step adds one');
+assert(stepLabel('assets', { crypto: true, offerAkahu: true }) === 'Step 3 of 6', 'Akahu step counted when offered');
 assert(stepLabel('wallets', { crypto: false, offerAkahu: false }) === null, 'a step that does not apply has no label');
+assert(stepLabel('usage', { crypto: false, offerAkahu: false }) === 'Step 2 of 4', 'what it is for is step 2');
+assert(stepLabel('budgets', { crypto: false, offerAkahu: false, mode: 'both' }) === 'Step 4 of 4', 'both keeps the personal steps');
+assert(stepLabel('business', { crypto: true, offerAkahu: true, mode: 'business' }) === 'Step 3 of 3', 'business only ends at business setup');
+assert(stepLabel('budgets', { crypto: false, offerAkahu: false, mode: 'business' }) === null, 'business only has no budget categories step');
+assert(stepLabel('assets', { crypto: false, offerAkahu: false, mode: 'business' }) === null, 'business only has no asset classes step');
 
 console.log('onboarding categories: ok');
