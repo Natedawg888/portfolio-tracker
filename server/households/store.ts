@@ -40,7 +40,7 @@ export function householdActive(db: Database, m: Membership): boolean {
   return hasFeature(db, m.ownerId, 'household');
 }
 
-function displayName(db: Database, userId: string): string {
+export function displayName(db: Database, userId: string): string {
   const u = queryOne<{ display_name: string | null; first_name: string | null; last_name: string | null; email: string }>(
     db,
     `SELECT display_name, first_name, last_name, email FROM users WHERE id = ?`,

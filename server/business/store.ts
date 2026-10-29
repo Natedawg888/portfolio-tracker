@@ -16,6 +16,7 @@
  */
 import type { Database } from 'sql.js';
 import type {
+  BusinessInvoiceFigures,
   Business,
   BusinessAsset,
   BusinessAssetMovement,
@@ -53,6 +54,7 @@ import { deleteBusinessLogo, deleteEmployeeContract, deleteStockPhoto, deleteSup
 import { getClient, listClients, summary } from '../invoices/store.ts';
 import { listCommodities } from '../commodities/store.ts';
 import { businessRow, presentBusiness, type BusinessRow } from './profile.ts';
+import { forgetBusinessMembers } from './members.ts';
 import { activeEmployeeCount, listEmployees } from './employees.ts';
 import { BUSINESS_STOCK_TABLES } from './stockTables.ts';
 import { stockPhotoPaths, stockValue } from './stock.ts';
@@ -343,6 +345,7 @@ export function deleteBusiness(db: Database, userId: string, id: string): Result
   run(db, `UPDATE income_records SET business_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
   run(db, `UPDATE commodities SET business_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
   deleteBusinessLogo(r.logo_path);
+  forgetBusinessMembers(db, id);
   run(db, `DELETE FROM businesses WHERE id = ? AND user_id = ?`, [id, userId]);
   promoteDefault(db, userId);
   return { ok: true, value: true };
@@ -591,7 +594,14 @@ export function businessMoney(
   businessId: string,
   start: string,
   end: string,
-): { items: BusinessMoneyItem[]; incomeNzd: number; expensesNzd: number; invoicePaidNzd: number } {
+): {
+  items: BusinessMoneyItem[];
+  incomeNzd: number;
+  expensesNzd: number;
+  invoicePaidNzd: number;
+  /** The invoice payments behind invoicePaidNzd, for splitting them by month. */
+  payments: { id: string; date: string; amountNzd: number }[];
+} {
   const payments = queryAll<{ id: string; date: string; amount_nzd: number; income_record_id: string | null }>(
     db,
     `SELECT p.id, p.date, p.amount_nzd, p.income_record_id FROM invoice_payments p
@@ -671,7 +681,13 @@ export function businessMoney(
     });
   }
   items.sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
-  return { items, incomeNzd: roundMoney(income), expensesNzd: roundMoney(expenses), invoicePaidNzd };
+  return {
+    items,
+    incomeNzd: roundMoney(income),
+    expensesNzd: roundMoney(expenses),
+    invoicePaidNzd,
+    payments: payments.map((p) => ({ id: p.id, date: p.date, amountNzd: roundMoney(Number(p.amount_nzd)) })),
+  };
 }
 
 function outstanding(db: Database, userId: string, businessId: string, today: string): number {
@@ -680,6 +696,21 @@ function outstanding(db: Database, userId: string, businessId: string, today: st
       .map((r) => summary(db, userId, r, today).balanceNzd)
       .reduce((s, n) => s + n, 0),
   );
+}
+
+/** Outstanding and overdue invoices as of today, and payments received in [start, end]. */
+export function invoiceFigures(db: Database, userId: string, businessId: string, today: string, paidNzd: number): BusinessInvoiceFigures {
+  const open = queryAll<Parameters<typeof summary>[2]>(db, `SELECT * FROM invoices WHERE user_id = ? AND business_id = ? AND status = 'sent'`, [userId, businessId])
+    .map((r) => summary(db, userId, r, today))
+    .filter((s) => s.balanceNzd > 0);
+  const overdue = open.filter((s) => s.status === 'overdue');
+  return {
+    outstandingNzd: roundMoney(open.reduce((s, i) => s + i.balanceNzd, 0)),
+    outstandingCount: open.length,
+    overdueNzd: roundMoney(overdue.reduce((s, i) => s + i.balanceNzd, 0)),
+    overdueCount: overdue.length,
+    paidNzd: roundMoney(paidNzd),
+  };
 }
 
 export function businessTotals(db: Database, userId: string, b: BusinessRow, taxYear: number, today: string): BusinessTotals {
@@ -696,7 +727,7 @@ export function businessTotals(db: Database, userId: string, b: BusinessRow, tax
 }
 
 /** Tax years with tagged money or invoice payments, plus the current one, newest first. */
-function taxYears(db: Database, userId: string, today: string): number[] {
+export function taxYears(db: Database, userId: string, today: string): number[] {
   const years = new Set<number>([taxYearOf(today)]);
   const dates = queryAll<{ d: string }>(
     db,
@@ -765,6 +796,7 @@ export function getBusinessDetail(db: Database, userId: string, id: string, toda
   if (!r) return null;
   const year = taxYear ?? taxYearOf(today);
   const { start, end } = taxYearRange(year);
+  const money = businessMoney(db, userId, id, start, end);
   return {
     today,
     taxYear: year,
@@ -781,9 +813,10 @@ export function getBusinessDetail(db: Database, userId: string, id: string, toda
       `SELECT * FROM invoices WHERE user_id = ? AND business_id = ? ORDER BY issue_date DESC, created_at DESC`,
       [userId, id],
     ).map((inv) => summary(db, userId, inv, today)),
-    money: businessMoney(db, userId, id, start, end).items,
+    money: money.items,
     produce: businessProduce(db, userId, id, today),
     employees: listEmployees(db, userId, id, today),
+    invoiceFigures: invoiceFigures(db, userId, id, today, money.invoicePaidNzd),
   };
 }
 

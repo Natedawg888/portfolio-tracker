@@ -8,6 +8,7 @@ import { Register } from './pages/Register';
 import { Privacy } from './pages/Privacy';
 import { Terms } from './pages/Terms';
 import { ConfirmEmail } from './pages/ConfirmEmail';
+import { BusinessJoin } from './pages/BusinessJoin';
 import { HouseholdJoin } from './pages/HouseholdJoin';
 import { NotFoundRoute } from './pages/NotFound';
 import {
@@ -20,6 +21,8 @@ import {
   BusinessDetailPage,
   BusinessClientsPage,
   BusinessStockPage,
+  BusinessProfitLossPage,
+  BusinessGstPage,
   CalendarPage,
   InvoicesPage,
   InvoiceEditorPage,
@@ -65,6 +68,7 @@ export default function App() {
             <Route path="/terms" element={<Terms />} />
             {/* Household invite links work before signing in (KAN-77). */}
             <Route path="/household/join" element={<HouseholdJoin />} />
+            <Route path="/business/join" element={<BusinessJoin />} />
             {/* Email change link: works on any device, signed in or not. */}
             <Route path="/confirm-email" element={<ConfirmEmail />} />
             <Route
@@ -110,6 +114,8 @@ export default function App() {
                   <Route path="business/clients/:clientId" element={<BusinessClientsPage />} />
                   <Route path="calendar" element={<CalendarPage />} />
                   <Route path="business/:id/stock" element={<BusinessStockPage />} />
+                  <Route path="business/:id/profit-loss" element={<BusinessProfitLossPage />} />
+                  <Route path="business/:id/gst" element={<BusinessGstPage />} />
                   <Route path="business/:id" element={<BusinessDetailPage />} />
                   <Route path="invoices/*" element={<InvoicesMoved />} />
                   <Route path="value-search" element={<ValueSearchPage />} />

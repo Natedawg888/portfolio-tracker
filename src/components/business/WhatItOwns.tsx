@@ -79,7 +79,7 @@ function AssetRow({ a, busy, onEdit, onMove, onDelete, onUndo }: {
   );
 }
 
-function ProduceRow({ c, busy, onUnlink }: { c: BusinessProduce; busy: boolean; onUnlink: () => void }) {
+function ProduceRow({ c, busy, onUnlink }: { c: BusinessProduce; busy: boolean; onUnlink?: () => void }) {
   const unit = (UNIT_SHORT as Record<string, string>)[c.unit] ?? c.unit;
   const price =
     c.unitPriceNzd != null ? `${formatNzd(c.unitPriceNzd)}/${unit}${c.valueOn ? ` · your price, ${formatInvoiceDate(c.valueOn)}` : ' · your price, no date'}` : 'No price yet, so it isn’t counted';
@@ -97,9 +97,11 @@ function ProduceRow({ c, busy, onUnlink }: { c: BusinessProduce; busy: boolean; 
         <Link className="link-btn" to="/portfolio#commodities" aria-label={`Update the price of ${c.name} on Portfolio`}>
           Update price
         </Link>
+{onUnlink ? (
         <button type="button" className="link-btn" disabled={busy} aria-label={`Unlink ${c.name} from this business`} onClick={onUnlink}>
           Unlink
         </button>
+        ) : null}
       </span>
     </li>
   );
@@ -107,7 +109,7 @@ function ProduceRow({ c, busy, onUnlink }: { c: BusinessProduce; busy: boolean; 
 
 type Draft = { name: string; quantity: string; price: string; priceOn: string; category: AssetCategory; preset: string | null; commodityCategory: 'agriculture' | 'other'; unit: string };
 
-export function WhatItOwns({ businessId, businessName, assets, produce, assetsTotal, today, busy, act, onEditAsset, onMoveAsset, onLinkExisting, onChanged }: {
+export function WhatItOwns({ businessId, businessName, assets, produce, assetsTotal, today, busy, act, onEditAsset, onMoveAsset, onLinkExisting, onChanged, ownerTools = true, readOnly = false }: {
   businessId: string;
   businessName: string;
   assets: BusinessAsset[];
@@ -120,6 +122,10 @@ export function WhatItOwns({ businessId, businessName, assets, produce, assetsTo
   onMoveAsset: (a: BusinessAsset) => void;
   onLinkExisting: () => void;
   onChanged: (note: string) => void;
+  /** Produce lives in the owner's Commodities, so only the owner adds, links or unlinks it (KAN-129). */
+  ownerTools?: boolean;
+  /** A viewer (KAN-129): the list only, no adding or changing. */
+  readOnly?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>('assets');
   const blank = (t: Tab): Draft =>
@@ -240,6 +246,8 @@ export function WhatItOwns({ businessId, businessName, assets, produce, assetsTo
           {tab === 'produce' ? '.' : null}
         </p>
 
+        {!readOnly && (tab === 'assets' || ownerTools) ? (
+        <>
         <div className="business-quick-adds" role="group" aria-label={tab === 'assets' ? 'Quick add an asset' : 'Quick add produce'}>
           {tab === 'assets'
             ? ASSET_QUICK_ADDS.map((q) => (
@@ -288,6 +296,8 @@ export function WhatItOwns({ businessId, businessName, assets, produce, assetsTo
             )}
           </div>
         </form>
+        </>
+        ) : null}
         {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
         {tab === 'assets' ? (
@@ -302,7 +312,7 @@ export function WhatItOwns({ businessId, businessName, assets, produce, assetsTo
                     <AssetRow
                       key={a.id}
                       a={a}
-                      busy={busy}
+                      busy={busy || readOnly}
                       onEdit={() => onEditAsset(a)}
                       onMove={() => onMoveAsset(a)}
                       onDelete={() => void act(() => api.business.removeAsset(a.id), `${a.name} deleted.`, `Delete ${a.name} and its ${a.movements.length} recorded changes?`)}
@@ -319,7 +329,7 @@ export function WhatItOwns({ businessId, businessName, assets, produce, assetsTo
           <>
             <ul className="rental-entries">
               {produce.map((c) => (
-                <ProduceRow key={c.id} c={c} busy={busy} onUnlink={() => void act(() => api.business.linkProduce(c.id, null), `${c.name} unlinked. It stays on Portfolio.`)} />
+                <ProduceRow key={c.id} c={c} busy={busy} onUnlink={ownerTools && !readOnly ? () => void act(() => api.business.linkProduce(c.id, null), `${c.name} unlinked. It stays on Portfolio.`) : undefined} />
               ))}
             </ul>
             <p className="muted small">Produce worth {formatNzd(produceValue)}, counted in net worth on Portfolio, not in the total above.</p>
