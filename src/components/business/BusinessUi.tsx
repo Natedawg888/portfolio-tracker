@@ -10,7 +10,7 @@ import { BUSINESS_TYPES, BUSINESS_TYPE_NOTES, businessTypeLabel, profitClass, ta
 import type { BusinessTotals } from '../../types';
 
 const TABS = [
-  { to: '/business', label: 'Overview', match: (p: string) => p === '/business' || /^\/business\/(?!invoices|clients)[^/]+(\/stock)?$/.test(p) },
+  { to: '/business', label: 'Overview', match: (p: string) => p === '/business' || /^\/business\/(?!invoices|clients)[^/]+(\/stock|\/profit-loss|\/gst)?$/.test(p) },
   { to: '/business/invoices', label: 'Invoices', match: (p: string) => p.startsWith('/business/invoices') },
   { to: '/business/clients', label: 'Clients', match: (p: string) => p.startsWith('/business/clients') },
 ];

@@ -330,9 +330,19 @@ export function BusinessDetail() {
           </div>
           <div className="business-detail-actions">
             {b.archivedAt ? null : (
-              <Link className="btn small primary" to={`/business/invoices/new?business=${encodeURIComponent(b.id)}`} aria-label={`New invoice for ${name}`}>
-                + Invoice
-              </Link>
+              <>
+                <Link className="btn small" to={`/business/${encodeURIComponent(b.id)}/profit-loss`}>
+                  Profit &amp; loss
+                </Link>
+                {b.gstRegistered ? (
+                  <Link className="btn small" to={`/business/${encodeURIComponent(b.id)}/gst`}>
+                    GST
+                  </Link>
+                ) : null}
+                <Link className="btn small primary" to={`/business/invoices/new?business=${encodeURIComponent(b.id)}`} aria-label={`New invoice for ${name}`}>
+                  + Invoice
+                </Link>
+              </>
             )}
             <MoreMenu label={`More actions for ${name}`} menu>
               {(close) => (
@@ -410,6 +420,22 @@ export function BusinessDetail() {
 
       <section className="panel rental-summary business-summary" aria-label="This tax year">
         <BusinessFigures totals={t} assetsLabel="Business value" assetsNote={b.archivedAt ? 'Not counted while archived' : netWorthNote(b.countInNetWorth)} />
+        {data.invoiceFigures.outstandingCount || data.invoiceFigures.paidNzd ? (
+          <p className="small business-invoice-figures">
+            <span>
+              <strong>{formatNzd(data.invoiceFigures.outstandingNzd)}</strong> owed on {data.invoiceFigures.outstandingCount}{' '}
+              {data.invoiceFigures.outstandingCount === 1 ? 'invoice' : 'invoices'}
+            </span>
+            {data.invoiceFigures.overdueCount ? (
+              <span className="pnl-overdue">
+                <strong>{formatNzd(data.invoiceFigures.overdueNzd)}</strong> overdue ({data.invoiceFigures.overdueCount})
+              </span>
+            ) : null}
+            <span>
+              <strong>{formatNzd(data.invoiceFigures.paidNzd)}</strong> paid this tax year
+            </span>
+          </p>
+        ) : null}
         {b.archivedAt ? null : (
         <NetWorthSwitch
           on={b.countInNetWorth}
