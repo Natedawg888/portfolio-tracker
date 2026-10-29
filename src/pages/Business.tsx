@@ -20,7 +20,7 @@ import { formatInvoiceDate } from './invoicesView';
 import { aucklandToday } from '../lib/debtModel';
 import { shortDayLabel, spacedTime } from '../lib/calendarView';
 import { addDays } from '../lib/nzTime';
-import type { ArchivedBusiness, BusinessCard, BusinessListResponse, BusinessMeeting } from '../types';
+import type { ArchivedBusiness, BusinessCard, BusinessListResponse, BusinessMeeting, SharedBusiness } from '../types';
 
 const BUSINESS_KEY = 'business-list';
 
@@ -238,6 +238,19 @@ export function Business() {
   }, [searchParams, setSearchParams]);
   const [editing, setEditing] = useState<BusinessCard | null>(null);
   const [nextMeetings, setNextMeetings] = useState<Map<string, BusinessMeeting>>(new Map());
+  const [shared, setShared] = useState<SharedBusiness[]>([]);
+
+  // Businesses other people let this user into, as their accountant or a viewer (KAN-129).
+  useEffect(() => {
+    let cancelled = false;
+    api.business
+      .shared()
+      .then((l) => !cancelled && setShared(l))
+      .catch(() => !cancelled && setShared([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [reload]);
 
   // Each card's next meeting: the soonest scheduled one in the coming year, per business.
   useEffect(() => {
@@ -328,7 +341,7 @@ export function Business() {
         />
       ) : null}
 
-      {data && businesses.length === 0 && !adding ? (
+      {data && businesses.length === 0 && !adding && shared.length === 0 ? (
         <section className="panel warranties-empty" aria-labelledby="business-empty-title">
           <h3 id="business-empty-title">Track a business</h3>
           <p>
@@ -382,6 +395,37 @@ export function Business() {
             />
           ))}
         </section>
+      ) : null}
+
+      {shared.length > 0 ? (
+        <section className="panel warranty-card" aria-labelledby="business-shared-title">
+          <div className="rental-card-head">
+            <h3 id="business-shared-title">Shared with you</h3>
+          </div>
+          <p className="muted small">Other people’s businesses you were invited into. You see each one’s books only, never their personal finances.</p>
+          <ul className="rental-entries">
+            {shared.map((s) => (
+              <li key={s.id} className="rental-entry">
+                <div className="rental-entry-what">
+                  <span>
+                    <Link to={`/business/${encodeURIComponent(s.id)}`}>{s.name || 'Unnamed business'}</Link>
+                    {s.archived ? <span className="muted small"> · Archived</span> : null}
+                  </span>
+                  <span className="muted small">Owned by {s.ownerName}</span>
+                </div>
+                <span className="hh-role">{s.role === 'accountant' ? 'Accountant' : 'Viewer'}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {data && businesses.length === 0 && !adding && shared.length > 0 ? (
+        <p className="small">
+          <button type="button" className="link-btn" onClick={() => setAdding(true)}>
+            + Add a business of your own
+          </button>
+        </p>
       ) : null}
 
       {data?.archived?.length ? (

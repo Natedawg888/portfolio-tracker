@@ -12,6 +12,7 @@ import { readAssetClassPrefs } from '../lib/userAssetClassPrefs.ts';
 import { getDb, queryAll, queryOne, run } from '../db/index.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { isDataOwner } from '../lib/userScope.ts';
+import { featuresOf, planOf } from '../lib/entitlements.ts';
 import { isUsageMode, mergeUsageModeIntoPreferencesJson, parseUsageMode } from '../../src/lib/usageMode.ts';
 import {
   ASSET_CLASS_PREF_OPTIONS,
@@ -773,6 +774,16 @@ router.put('/usage-mode', async (req: AuthedRequest, res) => {
     onboardingComplete: parsed.complete,
     onboarding: parsed.flags ?? { assetClassesDone: true, budgetCategoriesDone: true, akahuStepDone: true },
   });
+});
+
+/** The account's plan and which plan features it has (KAN-125), so the app can show upgrade notes. */
+router.get('/plan', async (req: AuthedRequest, res) => {
+  if (!req.user) {
+    res.status(401).json({ error: 'Authentication required', code: 'UNAUTHORIZED' });
+    return;
+  }
+  const db = await getDb();
+  res.json({ plan: planOf(db, req.user.id), features: featuresOf(db, req.user.id) });
 });
 
 export default router;
