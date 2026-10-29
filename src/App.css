@@ -14410,6 +14410,11 @@ html .business-page .more-menu-body .business-menu-item:disabled { color: var(--
 .business-archived-note { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; border-left: 3px solid var(--warn); }
 .business-archived-note p { margin: 0; }
 .business-archived-note .btn.small { min-height: 44px; }
+/* Accountant or viewer in someone else's business (KAN-129). */
+.business-role-note { border-left: 3px solid var(--accent); }
+.business-role-note p { margin: 0; }
+.business-people-activity { margin-top: 0.75rem; }
+.business-people-activity summary { cursor: pointer; }
 .business-card .security-confirm { margin-top: 0.25rem; }
 
 /* Calendar: client meetings as a month grid or an agenda list. */

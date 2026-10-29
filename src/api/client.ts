@@ -36,6 +36,10 @@ import type {
   MeetingStatus,
   MeetingWriteBody,
   BusinessDetail,
+  BusinessInvitePreview,
+  BusinessMemberRole,
+  BusinessMembersView,
+  SharedBusiness,
   BusinessListResponse,
   BusinessMoneyItem,
   BusinessMovementKind,
@@ -1006,6 +1010,23 @@ export const api = {
     setLogo: (id: string, image: string) =>
       req<Business>(`/business/${encodeURIComponent(id)}/logo`, { method: 'POST', body: JSON.stringify({ image }) }),
     removeLogo: (id: string) => req<Business>(`/business/${encodeURIComponent(id)}/logo`, { method: 'DELETE' }),
+    /** Accountant and viewer access (KAN-129). */
+    shared: () => req<SharedBusiness[]>('/business/shared'),
+    members: (id: string) => req<BusinessMembersView>(`/business/${encodeURIComponent(id)}/members`),
+    invite: (id: string, email: string, role: BusinessMemberRole) =>
+      req<BusinessMembersView & { invite: { link: string; emailed: boolean } }>(`/business/${encodeURIComponent(id)}/members/invites`, {
+        method: 'POST',
+        body: JSON.stringify({ email, role }),
+      }),
+    revokeInvite: (id: string, inviteId: string) =>
+      req<BusinessMembersView>(`/business/${encodeURIComponent(id)}/members/invites/${encodeURIComponent(inviteId)}`, { method: 'DELETE' }),
+    setMemberRole: (id: string, userId: string, role: BusinessMemberRole) =>
+      req<BusinessMembersView>(`/business/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { method: 'PATCH', body: JSON.stringify({ role }) }),
+    removeMember: (id: string, userId: string) =>
+      req<{ ok: true; left: boolean }>(`/business/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { method: 'DELETE' }),
+    previewInvite: (token: string) => req<BusinessInvitePreview>('/business/invites/preview', { method: 'POST', body: JSON.stringify({ token }) }),
+    acceptInvite: (token: string) =>
+      req<{ businessId: string; role: BusinessMemberRole }>('/business/invites/accept', { method: 'POST', body: JSON.stringify({ token }) }),
     createAsset: (businessId: string, body: BusinessAssetWriteBody) =>
       req<BusinessAsset>(`/business/${encodeURIComponent(businessId)}/assets`, { method: 'POST', body: JSON.stringify(body) }),
     updateAsset: (id: string, body: BusinessAssetWriteBody) =>

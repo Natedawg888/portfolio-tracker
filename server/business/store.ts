@@ -54,6 +54,7 @@ import { deleteBusinessLogo, deleteEmployeeContract, deleteStockPhoto, deleteSup
 import { getClient, listClients, summary } from '../invoices/store.ts';
 import { listCommodities } from '../commodities/store.ts';
 import { businessRow, presentBusiness, type BusinessRow } from './profile.ts';
+import { forgetBusinessMembers } from './members.ts';
 import { activeEmployeeCount, listEmployees } from './employees.ts';
 import { BUSINESS_STOCK_TABLES } from './stockTables.ts';
 import { stockPhotoPaths, stockValue } from './stock.ts';
@@ -344,6 +345,7 @@ export function deleteBusiness(db: Database, userId: string, id: string): Result
   run(db, `UPDATE income_records SET business_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
   run(db, `UPDATE commodities SET business_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
   deleteBusinessLogo(r.logo_path);
+  forgetBusinessMembers(db, id);
   run(db, `DELETE FROM businesses WHERE id = ? AND user_id = ?`, [id, userId]);
   promoteDefault(db, userId);
   return { ok: true, value: true };

@@ -1477,6 +1477,42 @@ export interface BusinessDetail {
   employees: BusinessEmployee[];
   /** Outstanding and overdue invoices now, and payments in the tax year (KAN-126). */
   invoiceFigures: BusinessInvoiceFigures;
+  /** The caller's role here, and whether reports are unlocked for them (KAN-129). */
+  access: { role: BusinessRole; reportsUnlocked: boolean };
+}
+
+/** Owner, or someone the owner let in (KAN-129): an accountant edits the books, a viewer reads them. */
+export type BusinessRole = 'owner' | 'accountant' | 'viewer';
+export type BusinessMemberRole = Exclude<BusinessRole, 'owner'>;
+
+export interface BusinessMembersView {
+  businessId: string;
+  businessName: string;
+  myRole: BusinessRole;
+  owner: { userId: string; name: string };
+  /** Email is shown to the owner, and to each person for their own row. */
+  members: { userId: string; name: string; email: string | null; role: BusinessMemberRole; joinedAt: string }[];
+  /** Pending invites; the owner only. */
+  invites: { id: string; email: string; role: BusinessMemberRole; createdAt: string; expiresAt: string }[];
+  activity: { actorName: string; action: string; createdAt: string }[];
+}
+
+/** A business someone else owns that the caller was let into. */
+export interface SharedBusiness {
+  id: string;
+  name: string;
+  ownerName: string;
+  role: BusinessMemberRole;
+  archived: boolean;
+  joinedAt: string;
+}
+
+export interface BusinessInvitePreview {
+  businessId: string;
+  businessName: string;
+  ownerName: string;
+  role: BusinessMemberRole;
+  alreadyMember: boolean;
 }
 
 /** Someone the business employs. Records only: nothing is paid from the app. */
