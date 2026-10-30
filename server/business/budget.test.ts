@@ -148,6 +148,9 @@ try {
   const detail = (await call('GET', `/api/business/${biz}?taxYear=${year}`, A)).json;
   assert(near(detail.totals.expensesNzd, 1770), `expenses 500 + 30 + 1000 + 200 + 40 → ${detail.totals.expensesNzd}`);
   assert(near(detail.totals.incomeNzd, 405), `income 230 + 115 + 60 → ${detail.totals.incomeNzd}`);
+  const kinds = (detail.records as Json[]).map((r) => r.kind).sort().join();
+  assert(kinds === 'bill,bill,sale,wage', `detail records: sales, paid bills and wages → ${kinds}`);
+  assert(near((detail.records as Json[]).reduce((t, r) => t + r.amountNzd, 0), 230 - 500 - 30 - 1000), 'records signed: money out negative');
   assert(detail.money.find((m: Json) => m.id === 'pay_bill').countedVia === 'bill', 'bill payment counted via the bill');
   assert(detail.money.find((m: Json) => m.id === 'pay_wage').countedVia === 'wage', 'wage payment counted via the wage');
   const pnl = (await call('GET', `/api/business/${biz}/profit-loss?taxYear=${year}`, A)).json;

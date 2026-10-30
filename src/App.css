@@ -14716,6 +14716,45 @@ html .business-page .more-menu-body .business-menu-item:disabled { color: var(--
 .stock-bar--out .stock-bar-level,
 .stock-bar--oversold .stock-bar-level { color: var(--bar); }
 .stock-pager { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: 0.75rem; }
+
+/* Books links on a business, and the Sales, Suppliers and Budget pages (KAN-123). */
+.business-books-nav { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
+.business-books-nav .btn.small { min-height: 44px; display: inline-flex; align-items: center; }
+.sale-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.25rem 0.75rem; }
+.sale-upload { cursor: pointer; }
+.sale-upload:focus-within { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.sale-lines { border: 0; margin: 0.75rem 0; padding: 0; min-width: 0; display: grid; gap: 0.5rem; }
+.sale-lines legend { font-weight: 600; margin-bottom: 0.25rem; }
+.sale-line { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(4rem, 0.7fr) minmax(5rem, 0.9fr) minmax(5rem, auto) auto; gap: 0.5rem; align-items: center; }
+.sale-line select, .sale-line input { width: 100%; min-width: 0; }
+.sale-line-total { text-align: right; font-variant-numeric: tabular-nums; }
+.sale-form-total { margin: 0.5rem 0; text-align: right; }
+@media (max-width: 560px) {
+  .sale-line { grid-template-columns: 1fr 1fr; }
+  .sale-line > label:first-child { grid-column: 1 / -1; }
+}
+.bill-status { display: block; font-size: 0.8em; color: var(--muted); }
+.bill-status--overdue { color: var(--danger); font-weight: 600; }
+.bill-status--unpaid { color: var(--warn); }
+.budget-table-wrap { overflow-x: auto; }
+.budget-table { width: 100%; border-collapse: collapse; }
+.budget-table th, .budget-table td { padding: 0.5rem 0.4rem; border-bottom: 1px solid var(--border-soft); text-align: left; vertical-align: top; }
+.budget-table thead th { font-size: 0.85em; color: var(--muted); font-weight: 600; }
+.budget-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.budget-table tbody th { font-weight: 500; }
+.budget-role-note { display: block; font-weight: 400; }
+.budget-actions { white-space: nowrap; text-align: right; }
+.budget-actions .link-btn + .link-btn { margin-left: 0.75rem; }
+.budget-bar { display: block; height: 0.5rem; border-radius: 999px; background: var(--surface-3); overflow: hidden; margin-bottom: 0.25rem; max-width: 10rem; --bar: var(--accent); }
+.budget-bar > span { display: block; height: 100%; background: var(--bar); border-radius: inherit; }
+.budget-bar--bad { --bar: var(--danger); }
+.budget-bar--even { --bar: var(--accent-2); }
+.budget-variance--bad { color: var(--danger); }
+.budget-variance--none { color: var(--muted); }
+.budget-spread { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.5rem; margin-bottom: 0.75rem; }
+.budget-spread label { display: grid; gap: 0.25rem; }
+.budget-plan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: 0.5rem 0.75rem; }
+.budget-plan-grid label { display: grid; gap: 0.25rem; }
 .stock-item-figures { grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); }
 .stock-item-actions { flex-wrap: wrap; margin: 0.75rem 0; }
 .stock-history-title { margin: 0.5rem 0 0.25rem; }

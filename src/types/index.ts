@@ -1446,6 +1446,17 @@ export interface BusinessMoneyItem {
   businessId: string | null;
   /** Counted elsewhere already (an invoice payment, or a deposit an income row is linked to), so not added again. */
   countedVia: 'invoice' | 'income' | 'sale' | 'bill' | 'wage' | null;
+  /** A tagged transaction's business budget category (KAN-121); absent on income rows. */
+  businessCategoryId?: string | null;
+}
+
+/** A sale, paid bill or wage in the business's money list. Money out is negative. */
+export interface BusinessRecordItem {
+  kind: 'sale' | 'bill' | 'wage';
+  id: string;
+  date: string;
+  description: string;
+  amountNzd: number;
 }
 
 /** A commodity held as a business's produce. The price is the one the user set on it, with its date. */
@@ -1472,6 +1483,8 @@ export interface BusinessDetail {
   invoices: InvoiceSummary[];
   /** Tagged items in the tax year, newest first. */
   money: BusinessMoneyItem[];
+  /** Sales counted as income, paid supplier bills and wages in the tax year, newest first (KAN-123). */
+  records: BusinessRecordItem[];
   /** Commodities linked as produce held (valued and counted on Portfolio → Commodities). */
   produce: BusinessProduce[];
   employees: BusinessEmployee[];

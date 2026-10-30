@@ -584,7 +584,7 @@ export function businessAssetTotals(db: Database, userId: string, today: string)
 
 // ---------------------------------------------------------------- money
 
-type TxnRow = { id: string; date: string; description: string | null; merchant: string | null; amount: number; kind: string; business_id: string | null };
+type TxnRow = { id: string; date: string; description: string | null; merchant: string | null; amount: number; kind: string; business_id: string | null; business_category_id?: string | null };
 type IncomeRow = { id: string; date: string; description: string | null; amount_nzd: number; business_id: string | null; invoice_payment_id: string | null; transaction_id: string | null };
 
 function dayGap(a: string, b: string): number {
@@ -636,7 +636,7 @@ export function businessMoney(
   );
   const txns = queryAll<TxnRow>(
     db,
-    `SELECT id, date, description, merchant, amount, kind, business_id FROM transactions
+    `SELECT id, date, description, merchant, amount, kind, business_id, business_category_id FROM transactions
      WHERE user_id = ? AND business_id = ? AND date >= ? AND date <= ? ORDER BY date DESC, id`,
     [userId, businessId, start, end],
   );
@@ -705,6 +705,7 @@ export function businessMoney(
       amountNzd: roundMoney(amount),
       businessId: t.business_id,
       countedVia,
+      businessCategoryId: t.business_category_id ?? null,
     });
   }
   items.sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
@@ -848,6 +849,11 @@ export function getBusinessDetail(db: Database, userId: string, id: string, toda
       [userId, id],
     ).map((inv) => summary(db, userId, inv, today)),
     money: money.items,
+    records: [
+      ...money.sales.map((s) => ({ kind: 'sale' as const, id: s.id, date: s.date, description: s.description, amountNzd: s.amountNzd })),
+      ...money.bills.map((b) => ({ kind: 'bill' as const, id: b.id, date: b.date, description: b.description, amountNzd: -b.amountNzd })),
+      ...money.wages.map((w) => ({ kind: 'wage' as const, id: w.id, date: w.date, description: w.description, amountNzd: -w.amountNzd })),
+    ].sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id)),
     produce: businessProduce(db, userId, id, today),
     employees: listEmployees(db, userId, id, today),
     invoiceFigures: invoiceFigures(db, userId, id, today, money.invoicePaidNzd),
