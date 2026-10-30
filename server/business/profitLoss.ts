@@ -27,7 +27,7 @@ function add(map: Map<string, Bucket>, label: string, source: ProfitLossLine['so
 }
 
 function lines(map: Map<string, Bucket>): ProfitLossLine[] {
-  const order: Record<ProfitLossLine['source'], number> = { invoice: 0, sale: 1, income: 2, bank: 3 };
+  const order: Record<ProfitLossLine['source'], number> = { invoice: 0, sale: 1, income: 2, bill: 3, wage: 4, bank: 5 };
   return [...map.values()]
     .filter((b) => b.count > 0)
     .sort((a, b) => order[a.source] - order[b.source] || b.amount - a.amount || a.label.localeCompare(b.label))
@@ -54,7 +54,7 @@ const placeholders = (n: number) => Array.from({ length: n }, () => '?').join(',
 
 /** One counted item with the P&L line it lands on. Money in is positive, money out negative. */
 export type CategorisedItem = {
-  kind: 'invoice_payment' | 'income' | 'transaction' | 'sale';
+  kind: 'invoice_payment' | 'income' | 'transaction' | 'sale' | 'bill' | 'wage';
   id: string;
   date: string;
   description: string;
@@ -117,6 +117,12 @@ export function categorisedItems(db: Database, userId: string, businessId: strin
   }
   for (const s of money.sales) {
     items.push({ kind: 'sale', id: s.id, date: s.date, description: s.description, amountNzd: s.amountNzd, source: 'sale', label: 'Sales' });
+  }
+  for (const b of money.bills) {
+    items.push({ kind: 'bill', id: b.id, date: b.date, description: b.description, amountNzd: -b.amountNzd, source: 'bill', label: b.kind === 'delivery' ? 'Delivery' : 'Stock purchases' });
+  }
+  for (const w of money.wages) {
+    items.push({ kind: 'wage', id: w.id, date: w.date, description: w.description, amountNzd: -w.amountNzd, source: 'wage', label: 'Wages' });
   }
   for (const item of money.items) {
     // Counted once already: an invoice payment, or the income row a deposit is linked to.

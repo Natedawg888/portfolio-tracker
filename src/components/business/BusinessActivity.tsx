@@ -16,6 +16,8 @@ function countedNote(m: BusinessMoneyItem): string {
   if (m.countedVia === 'invoice') return 'Counted through its invoice payment';
   if (m.countedVia === 'income') return 'Counted through the income row linked to it';
   if (m.countedVia === 'sale') return 'Counted through the sale linked to it';
+  if (m.countedVia === 'bill') return 'Counted through the supplier bill it paid';
+  if (m.countedVia === 'wage') return 'Counted through the wages it paid';
   return m.kind === 'income' ? 'Income' : m.amountNzd < 0 ? 'Cost' : 'Money in';
 }
 

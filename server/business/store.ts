@@ -61,6 +61,8 @@ import { stockPhotoPaths, stockValue } from './stock.ts';
 import { clientMeetings, deleteBusinessMeetings } from './meetings.ts';
 import { billFilePaths } from './suppliers.ts';
 import { saleLinkedDeposits, saleReceiptPaths, salesIncome } from './sales.ts';
+import { billLinkedPayments, paidBills } from './suppliers.ts';
+import { listWages, wageLinkedPayments } from './wages.ts';
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 type Result<T> = { ok: true; value: T } | { ok: false; status: number; error: string };
@@ -605,6 +607,9 @@ export function businessMoney(
   payments: { id: string; date: string; amountNzd: number }[];
   /** Sales counted as income (KAN-120): not linked to an invoice. */
   sales: { id: string; date: string; description: string; amountNzd: number }[];
+  /** Supplier bills paid in the period, and wages paid (KAN-121): expenses. */
+  bills: ReturnType<typeof paidBills>;
+  wages: { id: string; date: string; description: string; amountNzd: number; employeeId: string | null }[];
 } {
   const payments = queryAll<{ id: string; date: string; amount_nzd: number; income_record_id: string | null }>(
     db,
@@ -639,6 +644,17 @@ export function businessMoney(
   // Sales are income themselves; a deposit linked to one isn't counted again (KAN-120).
   const sales = salesIncome(db, userId, businessId, start, end);
   const saleDeposits = saleLinkedDeposits(db, userId, businessId);
+  // Paid bills and wages are expenses themselves; the bank payment linked to one isn't counted again (KAN-121).
+  const bills = paidBills(db, userId, businessId, start, end);
+  const wages = listWages(db, userId, businessId, start, end).map((w) => ({
+    id: w.id,
+    date: w.date,
+    description: `Wages${w.employeeName ? ` · ${w.employeeName}` : ''}`,
+    amountNzd: w.amountNzd,
+    employeeId: w.employeeId,
+  }));
+  const billPayments = billLinkedPayments(db, userId, businessId);
+  const wagePayments = wageLinkedPayments(db, userId, businessId);
 
   // Invoice payments with no income row have no bank link: match a tagged deposit the usual way.
   const paidByDeposit = new Set<string>();
@@ -651,7 +667,7 @@ export function businessMoney(
   }
 
   let income = invoicePaidNzd + sales.reduce((s, x) => s + x.amountNzd, 0);
-  let expenses = 0;
+  let expenses = bills.reduce((s, b) => s + b.amountNzd, 0) + wages.reduce((s, w) => s + w.amountNzd, 0);
   const items: BusinessMoneyItem[] = [];
   for (const r of incomes) {
     const viaInvoice = Boolean(r.invoice_payment_id);
@@ -677,7 +693,9 @@ export function businessMoney(
       else if (paidByDeposit.has(t.id)) countedVia = 'invoice';
       else income += amount;
     } else if (amount < 0) {
-      expenses += -amount;
+      if (billPayments.has(t.id)) countedVia = 'bill';
+      else if (wagePayments.has(t.id)) countedVia = 'wage';
+      else expenses += -amount;
     }
     items.push({
       kind: 'transaction',
@@ -697,6 +715,8 @@ export function businessMoney(
     invoicePaidNzd,
     payments: payments.map((p) => ({ id: p.id, date: p.date, amountNzd: roundMoney(Number(p.amount_nzd)) })),
     sales: sales.map(({ id, date, description, amountNzd }) => ({ id, date, description, amountNzd })),
+    bills,
+    wages,
   };
 }
 
@@ -744,8 +764,10 @@ export function taxYears(db: Database, userId: string, today: string): number[] 
     `SELECT date AS d FROM transactions WHERE user_id = ? AND business_id IS NOT NULL
      UNION SELECT date FROM income_records WHERE user_id = ? AND business_id IS NOT NULL
      UNION SELECT p.date FROM invoice_payments p WHERE p.user_id = ?
-     UNION SELECT date FROM business_sales WHERE user_id = ?`,
-    [userId, userId, userId, userId],
+     UNION SELECT date FROM business_sales WHERE user_id = ?
+     UNION SELECT paid_on FROM business_supplier_invoices WHERE user_id = ? AND paid_on IS NOT NULL
+     UNION SELECT date FROM business_wage_payments WHERE user_id = ?`,
+    [userId, userId, userId, userId, userId, userId],
   );
   for (const r of dates) if (isYmd(r.d)) years.add(taxYearOf(r.d));
   return [...years].sort((a, b) => b - a);

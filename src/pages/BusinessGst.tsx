@@ -145,7 +145,7 @@ export function BusinessGst() {
   }
 
   async function mark(item: GstItem, treatment: GstItem['treatment']) {
-    if (item.kind === 'invoice_payment' || item.kind === 'sale') return;
+    if (!item.editable || (item.kind !== 'income' && item.kind !== 'transaction')) return;
     setBusy(true);
     try {
       await api.business.setGstItem(id, item.kind, item.id, treatment);

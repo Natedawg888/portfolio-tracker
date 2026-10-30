@@ -26,7 +26,7 @@ export const isExportSection = (v: unknown): v is ExportSection => (EXPORT_SECTI
 type Cell = string | number | null;
 const row = (cells: Cell[]) => cells.map(csvCell).join(',');
 
-const SOURCE: Record<string, string> = { invoice: 'Invoice payment', income: 'Income', bank: 'Bank', sale: 'Sale' };
+const SOURCE: Record<string, string> = { invoice: 'Invoice payment', income: 'Income', bank: 'Bank', sale: 'Sale', bill: 'Supplier bill', wage: 'Wages' };
 const TREATMENT: Record<string, string> = { standard: 'GST-inclusive 15%', zero: 'Zero-rated', exempt: 'No GST' };
 
 export const COLUMNS = {

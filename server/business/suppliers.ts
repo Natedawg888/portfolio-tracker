@@ -2,8 +2,8 @@
  * Suppliers and their bills for one of the user's businesses (KAN-107). A bill can carry an
  * uploaded PDF or photo and covers stock batches of the same business; capitalised freight on
  * a linked bill reaches average cost through server/business/stock.ts. Paid, unpaid and overdue
- * are derived. Bills are records only here: they don't count in businessMoney or budget actuals
- * yet (that waits on the money story's cash-or-accrual decision).
+ * are derived. A bill is an expense on the date it's paid (payments basis, KAN-121): businessMoney
+ * counts paidBills, and a bank payment linked to a bill isn't counted again.
  *
  * Every query filters on user_id and business_id; another user's or business's id behaves like
  * a missing row. A supplier with bills can't be deleted (409): the bills would lose who sent them.
@@ -316,13 +316,54 @@ export function listBills(db: Database, userId: string, businessId: string, toda
 }
 
 /** The draft's supplier and bank payment must be the user's, the supplier in this business. */
-function checkRefs(db: Database, userId: string, businessId: string, d: BillDraft): Result<true> {
+function checkRefs(db: Database, userId: string, businessId: string, d: BillDraft, exceptId: string | null = null): Result<true> {
   const s = supplierRow(db, userId, d.supplierId);
   if (!s || s.business_id !== businessId) return fail(404, 'Supplier not found');
-  if (d.transactionId && !queryOne(db, `SELECT id FROM transactions WHERE id = ? AND user_id = ?`, [d.transactionId, userId])) {
-    return fail(404, 'Bank transaction not found');
+  if (d.transactionId) {
+    const t = queryOne<{ amount: number; kind: string }>(db, `SELECT amount, kind FROM transactions WHERE id = ? AND user_id = ?`, [d.transactionId, userId]);
+    if (!t) return fail(404, 'Bank transaction not found');
+    if (!(Number(t.amount) < 0) || t.kind === 'transfer') return fail(400, 'Link a payment (money out), not a deposit or transfer');
+    // One payment pays one bill or wage, so it's counted once (KAN-121).
+    const other =
+      queryOne(db, `SELECT id FROM business_supplier_invoices WHERE user_id = ? AND transaction_id = ? AND id IS NOT ?`, [userId, d.transactionId, exceptId]) ??
+      queryOne(db, `SELECT id FROM business_wage_payments WHERE user_id = ? AND transaction_id = ?`, [userId, d.transactionId]);
+    if (other) return fail(409, 'That payment is already linked to another bill or a wage');
   }
   return { ok: true, value: true };
+}
+
+/** Bills of the business paid in [start, end], for businessMoney and budget actuals (KAN-121). */
+export function paidBills(
+  db: Database,
+  userId: string,
+  businessId: string,
+  start: string,
+  end: string,
+): { id: string; date: string; description: string; kind: BillKind; amountNzd: number; deliveryNzd: number; supplierHasGst: boolean }[] {
+  return queryAll<{ id: string; paid_on: string; kind: string; reference: string; amount_nzd: number; delivery_nzd: number; supplier: string | null; gst: string | null }>(
+    db,
+    `SELECT b.id, b.paid_on, b.kind, b.reference, b.amount_nzd, b.delivery_nzd, s.name AS supplier, s.gst_number AS gst
+     FROM business_supplier_invoices b LEFT JOIN business_suppliers s ON s.id = b.supplier_id AND s.user_id = b.user_id
+     WHERE b.user_id = ? AND b.business_id = ? AND b.paid_on IS NOT NULL AND b.paid_on >= ? AND b.paid_on <= ? ORDER BY b.paid_on, b.id`,
+    [userId, businessId, start, end],
+  ).map((r) => ({
+    id: r.id,
+    date: r.paid_on,
+    description: [r.kind === 'delivery' ? 'Delivery bill' : 'Bill', r.reference, r.supplier].filter(Boolean).join(' · '),
+    kind: r.kind === 'delivery' ? 'delivery' : 'stock',
+    amountNzd: roundMoney(Number(r.amount_nzd)),
+    deliveryNzd: roundMoney(Number(r.delivery_nzd)),
+    supplierHasGst: Boolean(r.gst?.trim()),
+  }));
+}
+
+/** Bank payments linked to this business's paid bills (any date), so they count once. */
+export function billLinkedPayments(db: Database, userId: string, businessId: string): Set<string> {
+  return new Set(
+    queryAll<{ t: string }>(db, `SELECT transaction_id AS t FROM business_supplier_invoices WHERE user_id = ? AND business_id = ? AND transaction_id IS NOT NULL`, [userId, businessId]).map(
+      (r) => r.t,
+    ),
+  );
 }
 
 export function createBill(db: Database, userId: string, businessId: string, d: BillDraft, today: string): Result<SupplierBill> {
@@ -347,7 +388,7 @@ export function createBill(db: Database, userId: string, businessId: string, d: 
 export function updateBill(db: Database, userId: string, id: string, d: BillDraft, today: string): Result<SupplierBill> {
   const r = billRow(db, userId, id);
   if (!r) return fail(404, 'Bill not found');
-  const refs = checkRefs(db, userId, r.business_id, d);
+  const refs = checkRefs(db, userId, r.business_id, d, id);
   if (!refs.ok) return refs;
   run(
     db,
