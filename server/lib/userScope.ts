@@ -14,6 +14,7 @@ import {
   deletePropertyPhoto,
   deleteStockPhoto,
   deleteSupplierInvoiceFile,
+  deleteSaleReceiptFile,
   deleteWarrantyReceipt,
 } from './uploads.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
@@ -23,6 +24,7 @@ import { removeUserFromBusinesses } from '../business/members.ts';
 import { BUSINESS_STOCK_TABLES } from '../business/stockTables.ts';
 import { stockPhotoPaths } from '../business/stock.ts';
 import { billFilePaths } from '../business/suppliers.ts';
+import { saleReceiptPaths } from '../business/sales.ts';
 
 export const SCOPED_TABLES = [
   'holdings',
@@ -186,6 +188,7 @@ export function deleteScopedDataForUser(
   // Stock item photos and supplier bills (KAN-107).
   for (const p of stockPhotoPaths(db, userId, null)) deleteStockPhoto(p);
   for (const p of billFilePaths(db, userId, null)) deleteSupplierInvoiceFile(p);
+  for (const p of saleReceiptPaths(db, userId, null)) deleteSaleReceiptFile(p);
 
   // Uploaded payslips (KAN-78).
   for (const row of queryAll<{ p: string | null }>(db, `SELECT file_path AS p FROM payslips WHERE user_id = ? AND file_path IS NOT NULL`, [userId])) {

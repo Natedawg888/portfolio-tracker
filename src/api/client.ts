@@ -5,6 +5,7 @@ import type {
   RegistrationResponseJSON,
 } from '@simplewebauthn/browser';
 import type { StockItemView } from '../lib/stock.ts';
+import type { BillKind, DeliveryTreatment, Supplier, SupplierBill } from '../lib/suppliers.ts';
 import type { UsageMode } from '../lib/usageMode.ts';
 import { isMoneyHidden, MONEY_MASK } from '../lib/privacy';
 import type { AdsConfig } from '../lib/ads';
@@ -37,6 +38,10 @@ import type {
   MeetingStatus,
   MeetingWriteBody,
   BusinessDetail,
+  BusinessBudgetCategory,
+  BusinessBudgetView,
+  BusinessSale,
+  BusinessWagePayment,
   BusinessInvitePreview,
   BusinessMemberRole,
   BusinessMembersView,
@@ -1088,6 +1093,58 @@ export const api = {
     addStockAdjustment: (itemId: string, body: StockAdjustmentWriteBody) =>
       req<StockItemView>(`/business/stock/${encodeURIComponent(itemId)}/adjustments`, { method: 'POST', body: JSON.stringify(body) }),
     removeStockAdjustment: (id: string) => req<StockItemView>(`/business/stock/adjustments/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    /** Suppliers and their bills (KAN-107, KAN-123). */
+    suppliers: (businessId: string) => req<Supplier[]>(`/business/${encodeURIComponent(businessId)}/suppliers`),
+    createSupplier: (businessId: string, body: SupplierWriteBody) =>
+      req<Supplier>(`/business/${encodeURIComponent(businessId)}/suppliers`, { method: 'POST', body: JSON.stringify(body) }),
+    updateSupplier: (id: string, body: SupplierWriteBody) => req<Supplier>(`/business/suppliers/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    removeSupplier: (id: string) => req<{ id: string }>(`/business/suppliers/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    bills: (businessId: string, supplierId?: string | null) =>
+      req<SupplierBill[]>(`/business/${encodeURIComponent(businessId)}/bills${supplierId ? `?supplierId=${encodeURIComponent(supplierId)}` : ''}`),
+    createBill: (businessId: string, body: BillWriteBody) => req<SupplierBill>(`/business/${encodeURIComponent(businessId)}/bills`, { method: 'POST', body: JSON.stringify(body) }),
+    updateBill: (id: string, body: BillWriteBody) => req<SupplierBill>(`/business/bills/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    removeBill: (id: string) => req<{ id: string }>(`/business/bills/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    uploadBillFile: (id: string, fileBase64: string, fileName: string) =>
+      req<SupplierBill>(`/business/bills/${encodeURIComponent(id)}/file`, { method: 'POST', body: JSON.stringify({ fileBase64, fileName }) }),
+    removeBillFile: (id: string) => req<SupplierBill>(`/business/bills/${encodeURIComponent(id)}/file`, { method: 'DELETE' }),
+    linkBillBatch: (id: string, batchId: string) => req<SupplierBill>(`/business/bills/${encodeURIComponent(id)}/batches`, { method: 'POST', body: JSON.stringify({ batchId }) }),
+    unlinkBillBatch: (id: string, batchId: string) =>
+      req<SupplierBill>(`/business/bills/${encodeURIComponent(id)}/batches/${encodeURIComponent(batchId)}`, { method: 'DELETE' }),
+    /** Sales and receipts (KAN-120). */
+    sales: (businessId: string, range?: { from?: string; to?: string }) => {
+      const q = new URLSearchParams();
+      if (range?.from) q.set('from', range.from);
+      if (range?.to) q.set('to', range.to);
+      return req<BusinessSale[]>(`/business/${encodeURIComponent(businessId)}/sales${q.size ? `?${q}` : ''}`);
+    },
+    createSale: (businessId: string, body: SaleWriteBody) => req<BusinessSale>(`/business/${encodeURIComponent(businessId)}/sales`, { method: 'POST', body: JSON.stringify(body) }),
+    updateSale: (id: string, body: SaleWriteBody) => req<BusinessSale>(`/business/sales/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    removeSale: (id: string) => req<{ id: string }>(`/business/sales/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    issueReceipt: (id: string) => req<BusinessSale>(`/business/sales/${encodeURIComponent(id)}/receipt`, { method: 'POST' }),
+    uploadSaleReceipt: (id: string, fileBase64: string, fileName: string) =>
+      req<BusinessSale>(`/business/sales/${encodeURIComponent(id)}/receipt-file`, { method: 'POST', body: JSON.stringify({ fileBase64, fileName }) }),
+    removeSaleReceipt: (id: string) => req<BusinessSale>(`/business/sales/${encodeURIComponent(id)}/receipt-file`, { method: 'DELETE' }),
+    /** Wages and the business budget (KAN-121). */
+    wages: (businessId: string, range?: { from?: string; to?: string }) => {
+      const q = new URLSearchParams();
+      if (range?.from) q.set('from', range.from);
+      if (range?.to) q.set('to', range.to);
+      return req<BusinessWagePayment[]>(`/business/${encodeURIComponent(businessId)}/wages${q.size ? `?${q}` : ''}`);
+    },
+    createWage: (businessId: string, body: WageWriteBody) => req<BusinessWagePayment>(`/business/${encodeURIComponent(businessId)}/wages`, { method: 'POST', body: JSON.stringify(body) }),
+    updateWage: (id: string, body: WageWriteBody) => req<BusinessWagePayment>(`/business/wages/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    removeWage: (id: string) => req<{ id: string }>(`/business/wages/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    budget: (businessId: string, taxYear?: number | null) =>
+      req<BusinessBudgetView>(`/business/${encodeURIComponent(businessId)}/budget${taxYear ? `?taxYear=${taxYear}` : ''}`),
+    createBudgetCategory: (businessId: string, body: BudgetCategoryWriteBody) =>
+      req<BusinessBudgetCategory>(`/business/${encodeURIComponent(businessId)}/budget/categories`, { method: 'POST', body: JSON.stringify(body) }),
+    updateBudgetCategory: (id: string, body: BudgetCategoryWriteBody) =>
+      req<BusinessBudgetCategory>(`/business/budget/categories/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    removeBudgetCategory: (id: string) => req<{ id: string }>(`/business/budget/categories/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    setBudgetPlans: (id: string, plans: { period: string; amountNzd: number | null }[]) =>
+      req<BusinessBudgetCategory>(`/business/budget/categories/${encodeURIComponent(id)}/plans`, { method: 'PUT', body: JSON.stringify({ plans }) }),
+    setTransactionCategory: (businessId: string, transactionId: string, categoryId: string | null) =>
+      req<true>(`/business/${encodeURIComponent(businessId)}/money/category`, { method: 'PUT', body: JSON.stringify({ transactionId, categoryId }) }),
   },
   calendar: {
     range: (from: string, to: string, businessId?: string | null) =>
@@ -2058,3 +2115,28 @@ export function formatAuckland(iso: string | null | undefined): string {
     return iso;
   }
 }
+
+export type SupplierWriteBody = Pick<Supplier, 'name' | 'contactPerson' | 'email' | 'phone' | 'address' | 'nzbn' | 'gstNumber' | 'notes'>;
+export type BillWriteBody = {
+  supplierId: string;
+  kind: BillKind;
+  reference: string;
+  invoiceDate: string;
+  dueDate: string;
+  amountNzd: number;
+  deliveryNzd: number;
+  deliveryTreatment: DeliveryTreatment;
+  paidOn: string | null;
+  transactionId: string | null;
+  notes: string;
+};
+export type SaleWriteBody = {
+  date: string;
+  clientId: string | null;
+  invoiceId: string | null;
+  transactionId: string | null;
+  notes: string;
+  lines: { itemId: string; quantity: number; unitPriceNzd: number | null }[];
+};
+export type WageWriteBody = { employeeId: string | null; employeeName: string; date: string; amountNzd: number; transactionId: string | null; notes: string };
+export type BudgetCategoryWriteBody = { name: string; kind: 'income' | 'expense'; planCadence: 'month' | 'year' };

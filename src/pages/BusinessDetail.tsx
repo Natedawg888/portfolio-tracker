@@ -397,6 +397,18 @@ export function BusinessDetail() {
           </div>
         </div>
         <TaxYearSwitch year={data.taxYear} years={data.taxYears} onChange={setYear} />
+        <nav className="business-books-nav" aria-label={`${name}’s books`}>
+          {[
+            ['stock', 'Stock'],
+            ['sales', 'Sales'],
+            ['suppliers', 'Suppliers & bills'],
+            ['budget', 'Budget'],
+          ].map(([path, label]) => (
+            <Link key={path} className="btn small ghost" to={`/business/${encodeURIComponent(b.id)}/${path}`}>
+              {label}
+            </Link>
+          ))}
+        </nav>
         <input ref={logoInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" tabIndex={-1} aria-hidden="true" onChange={(e) => void onLogo(e)} />
       </header>
 
@@ -518,6 +530,7 @@ export function BusinessDetail() {
         taxYear={data.taxYear}
         invoices={data.invoices}
         money={data.money}
+        records={data.records ?? []}
         busy={busy}
         act={act}
         onTag={() => setDialog({ mode: 'tag' })}

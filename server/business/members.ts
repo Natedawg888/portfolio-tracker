@@ -58,6 +58,9 @@ export const RESOURCE_SQL = {
   supplier: `SELECT business_id, user_id FROM business_suppliers WHERE id = ?`,
   bill: `SELECT business_id, user_id FROM business_supplier_invoices WHERE id = ?`,
   client: `SELECT business_id, user_id FROM invoice_clients WHERE id = ?`,
+  sale: `SELECT business_id, user_id FROM business_sales WHERE id = ?`,
+  wage: `SELECT business_id, user_id FROM business_wage_payments WHERE id = ?`,
+  budgetCategory: `SELECT business_id, user_id FROM business_budget_categories WHERE id = ?`,
 } as const;
 export type ResourceKind = keyof typeof RESOURCE_SQL;
 

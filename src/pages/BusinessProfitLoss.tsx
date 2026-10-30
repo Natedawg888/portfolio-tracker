@@ -21,6 +21,9 @@ const SOURCE_NOTE: Record<ProfitLossLine['source'], string> = {
   invoice: 'payments on your invoices',
   income: 'income tagged to this business',
   bank: 'bank transactions tagged to this business',
+  sale: 'sales recorded on this business',
+  bill: 'supplier bills paid',
+  wage: 'wages paid',
 };
 
 function Lines({ title, lines, total, empty }: { title: string; lines: ProfitLossLine[]; total: number; empty: string }) {

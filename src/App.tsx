@@ -24,6 +24,9 @@ import {
   BusinessStockPage,
   BusinessProfitLossPage,
   BusinessGstPage,
+  BusinessSalesPage,
+  BusinessSuppliersPage,
+  BusinessBudgetPage,
   CalendarPage,
   InvoicesPage,
   InvoiceEditorPage,
@@ -119,6 +122,9 @@ export default function App() {
                   <Route path="business/:id/stock" element={<BusinessStockPage />} />
                   <Route path="business/:id/profit-loss" element={<BusinessProfitLossPage />} />
                   <Route path="business/:id/gst" element={<BusinessGstPage />} />
+                  <Route path="business/:id/sales" element={<BusinessSalesPage />} />
+                  <Route path="business/:id/suppliers" element={<BusinessSuppliersPage />} />
+                  <Route path="business/:id/budget" element={<BusinessBudgetPage />} />
                   <Route path="business/:id" element={<BusinessDetailPage />} />
                   <Route path="invoices/*" element={<InvoicesMoved />} />
                   <Route path="value-search" element={<ValueSearchPage />} />

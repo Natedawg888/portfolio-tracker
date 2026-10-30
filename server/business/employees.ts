@@ -187,6 +187,8 @@ export function deleteEmployee(db: Database, userId: string, id: string): boolea
   const r = row(db, userId, id);
   if (!r) return false;
   deleteEmployeeContract(r.contract_path);
+  // Wages already paid stay on record under the name they were paid to (KAN-121).
+  run(db, `UPDATE business_wage_payments SET employee_id = NULL WHERE employee_id = ? AND user_id = ?`, [id, userId]);
   run(db, `DELETE FROM business_employees WHERE id = ? AND user_id = ?`, [id, userId]);
   return true;
 }

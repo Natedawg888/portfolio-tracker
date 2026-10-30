@@ -14,7 +14,7 @@ import type { PublicInvoice } from '../../src/types/index.ts';
 const FONT_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fonts');
 let fontBytes: { regular: Buffer; bold: Buffer } | null = null;
 
-function fonts(): { regular: Buffer; bold: Buffer } {
+export function fonts(): { regular: Buffer; bold: Buffer } {
   fontBytes ??= {
     regular: fs.readFileSync(path.join(FONT_DIR, 'DejaVuSans.ttf')),
     bold: fs.readFileSync(path.join(FONT_DIR, 'DejaVuSans-Bold.ttf')),
@@ -22,11 +22,11 @@ function fonts(): { regular: Buffer; bold: Buffer } {
   return fontBytes;
 }
 
-const A4 = { w: 595.28, h: 841.89 };
-const MARGIN = 48;
-const INK = rgb(0.12, 0.12, 0.12);
-const MUTED = rgb(0.42, 0.42, 0.42);
-const RULE = rgb(0.82, 0.82, 0.82);
+export const A4 = { w: 595.28, h: 841.89 };
+export const MARGIN = 48;
+export const INK = rgb(0.12, 0.12, 0.12);
+export const MUTED = rgb(0.42, 0.42, 0.42);
+export const RULE = rgb(0.82, 0.82, 0.82);
 
 export function formatMoney(n: number): string {
   return new Intl.NumberFormat('en-NZ', { style: 'currency', currency: 'NZD' }).format(n);

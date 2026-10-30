@@ -16,7 +16,7 @@ import { queryAll, queryOne, run } from '../db/index.ts';
 import { businessMoney } from './store.ts';
 
 export type GstItem = {
-  kind: 'invoice_payment' | 'income' | 'transaction';
+  kind: 'invoice_payment' | 'income' | 'transaction' | 'sale' | 'bill';
   id: string;
   date: string;
   description: string;
@@ -100,6 +100,17 @@ export function gstItems(db: Database, userId: string, businessId: string, start
     const treatment: GstTreatment = Number(p.gst_nzd) > 0 ? 'standard' : 'zero';
     const amount = roundMoney(Number(p.amount_nzd));
     items.push({ kind: 'invoice_payment', id: p.id, date: p.date, description: `Invoice ${p.number}${p.client_name ? ` · ${p.client_name}` : ''}`, amountNzd: amount, side: 'sale', treatment, marked: false, editable: false, gstNzd: gstOf(amount, treatment) });
+  }
+
+  // Sales are GST-inclusive at the standard rate (KAN-120).
+  for (const s of money.sales) {
+    items.push({ kind: 'sale', id: s.id, date: s.date, description: s.description, amountNzd: s.amountNzd, side: 'sale', treatment: 'standard', marked: false, editable: false, gstNzd: gstOf(s.amountNzd, 'standard') });
+  }
+
+  // Paid bills: GST is claimable when the supplier gave a GST number (KAN-121).
+  for (const b of money.bills) {
+    const treatment: GstTreatment = b.supplierHasGst ? 'standard' : 'exempt';
+    items.push({ kind: 'bill', id: b.id, date: b.date, description: b.description, amountNzd: b.amountNzd, side: 'purchase', treatment, marked: false, editable: false, gstNzd: gstOf(b.amountNzd, treatment) });
   }
 
   const counted = money.items.filter((i) => !i.countedVia);

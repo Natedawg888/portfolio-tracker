@@ -149,6 +149,19 @@ try {
     const r = await call(method, p, acct.cookie, body);
     assert(r.status === 404, `accountant ${method} ${p} → ${r.status}, want 404`);
   }
+  // Sales (KAN-120) follow the same scope.
+  const sold = await call('POST', `/api/business/${shared.biz}/sales`, acct.cookie, { lines: [{ itemId: shared.item, quantity: 1, unitPriceNzd: 5 }] });
+  assert(sold.status === 201, `the accountant records a sale: ${sold.status}`);
+  const otherSale = await call('POST', `/api/business/${other.biz}/sales`, owner.cookie, { lines: [{ itemId: other.item, quantity: 1, unitPriceNzd: 5 }] });
+  assert((await call('DELETE', `/api/business/sales/${otherSale.json.id}`, acct.cookie)).status === 404, 'but not touch the other business’s sales');
+  assert((await call('POST', `/api/business/${shared.biz}/sales`, acct.cookie, { lines: [{ itemId: other.item, quantity: 1, unitPriceNzd: 5 }] })).status === 404, 'or sell its stock');
+  // Wages and the budget (KAN-121) too.
+  assert((await call('POST', `/api/business/${shared.biz}/wages`, acct.cookie, { employeeName: 'Casual', amountNzd: 50 })).status === 201, 'the accountant records wages');
+  assert((await call('GET', `/api/business/${shared.biz}/budget`, acct.cookie)).status === 200, 'and reads the budget');
+  const otherWage = await call('POST', `/api/business/${other.biz}/wages`, owner.cookie, { employeeName: 'Casual', amountNzd: 50 });
+  assert((await call('DELETE', `/api/business/wages/${otherWage.json.id}`, acct.cookie)).status === 404, 'not the other business’s wages');
+  const otherCats = (await call('GET', `/api/business/${other.biz}/budget`, owner.cookie)).json.expenses;
+  assert((await call('PUT', `/api/business/budget/categories/${otherCats[0].id}`, acct.cookie, { name: 'x', kind: 'expense' })).status === 404, 'or its budget');
   const candidates = await call('GET', '/api/business/money/candidates', acct.cookie);
   assert(!JSON.stringify(candidates.json).includes('Owner Personal Secret'), 'the owner’s personal transactions stay hidden');
 

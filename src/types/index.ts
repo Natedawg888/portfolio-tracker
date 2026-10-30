@@ -1445,7 +1445,18 @@ export interface BusinessMoneyItem {
   amountNzd: number;
   businessId: string | null;
   /** Counted elsewhere already (an invoice payment, or a deposit an income row is linked to), so not added again. */
-  countedVia: 'invoice' | 'income' | null;
+  countedVia: 'invoice' | 'income' | 'sale' | 'bill' | 'wage' | null;
+  /** A tagged transaction's business budget category (KAN-121); absent on income rows. */
+  businessCategoryId?: string | null;
+}
+
+/** A sale, paid bill or wage in the business's money list. Money out is negative. */
+export interface BusinessRecordItem {
+  kind: 'sale' | 'bill' | 'wage';
+  id: string;
+  date: string;
+  description: string;
+  amountNzd: number;
 }
 
 /** A commodity held as a business's produce. The price is the one the user set on it, with its date. */
@@ -1472,6 +1483,8 @@ export interface BusinessDetail {
   invoices: InvoiceSummary[];
   /** Tagged items in the tax year, newest first. */
   money: BusinessMoneyItem[];
+  /** Sales counted as income, paid supplier bills and wages in the tax year, newest first (KAN-123). */
+  records: BusinessRecordItem[];
   /** Commodities linked as produce held (valued and counted on Portfolio → Commodities). */
   produce: BusinessProduce[];
   employees: BusinessEmployee[];
@@ -1479,6 +1492,114 @@ export interface BusinessDetail {
   invoiceFigures: BusinessInvoiceFigures;
   /** The caller's role here, and whether reports are unlocked for them (KAN-129). */
   access: { role: BusinessRole; reportsUnlocked: boolean };
+}
+
+/**
+ * A business budget category (KAN-121), separate from the personal budget. role marks where
+ * automatic actuals land: sales and other_income are income; stock, delivery and wages are
+ * expenses. A category with no role is filled by bank transactions put in it.
+ */
+export interface BusinessBudgetCategory {
+  id: string;
+  name: string;
+  kind: 'income' | 'expense';
+  role: 'sales' | 'other_income' | 'stock' | 'delivery' | 'wages' | null;
+  planCadence: 'month' | 'year';
+  sortOrder: number;
+}
+
+export interface BusinessBudgetLine extends BusinessBudgetCategory {
+  /** The year's plan: the sum of the months planned, or the year amount. null = nothing planned. */
+  plannedNzd: number | null;
+  actualNzd: number;
+  /** One per month of the tax year. plannedNzd is null for a year-planned category. */
+  months: { month: string; plannedNzd: number | null; actualNzd: number }[];
+}
+
+/**
+ * Planned vs actual for one tax year (KAN-121). Actuals are payments basis and count each dollar
+ * once, from the same money as the P&L. Gross profit = sales − cost of goods sold; net profit =
+ * gross profit + other income − operating expenses (stock purchases are stock, not an expense:
+ * their cost arrives through cost of goods sold). null when a sold item had no cost yet.
+ */
+export interface BusinessBudgetView {
+  businessId: string;
+  taxYear: number;
+  taxYears: number[];
+  months: string[];
+  income: BusinessBudgetLine[];
+  expenses: BusinessBudgetLine[];
+  /** Tagged bank money not put in a category. */
+  uncategorised: { incomeNzd: number; expensesNzd: number };
+  summary: {
+    salesNzd: number;
+    costOfGoodsSoldNzd: number | null;
+    grossProfitNzd: number | null;
+    otherIncomeNzd: number;
+    operatingExpensesNzd: number;
+    stockPurchasesNzd: number;
+    netProfitNzd: number | null;
+    plannedIncomeNzd: number;
+    plannedExpensesNzd: number;
+  };
+}
+
+/** Wages a business paid (KAN-121). employeeName stays when the employee is deleted. */
+export interface BusinessWagePayment {
+  id: string;
+  businessId: string;
+  employeeId: string | null;
+  employeeName: string;
+  date: string;
+  amountNzd: number;
+  transactionId: string | null;
+  notes: string;
+  createdAt: string;
+}
+
+/** One line of a sale (KAN-120). description is the item name when the sale was saved. */
+export interface BusinessSaleLine {
+  id: string;
+  itemId: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  unitPriceNzd: number;
+  totalNzd: number;
+  /** Cost of goods sold at the average cost then; null when the item had no stock cost yet. */
+  costNzd: number | null;
+}
+
+/**
+ * A sale of stock (KAN-120). It always reduces stock on hand. Income: a sale linked to an invoice
+ * is counted through the invoice's payments; otherwise the sale is the income, and a tagged
+ * bank deposit linked to it is not counted again.
+ */
+export interface BusinessSale {
+  id: string;
+  businessId: string;
+  date: string;
+  clientId: string | null;
+  clientName: string | null;
+  invoiceId: string | null;
+  invoiceNumber: string | null;
+  transactionId: string | null;
+  notes: string;
+  lines: BusinessSaleLine[];
+  totalNzd: number;
+  /** GST in the total (3/23) when the business is GST-registered; else null. */
+  gstNzd: number | null;
+  /** null when any line has no cost yet. */
+  costNzd: number | null;
+  grossProfitNzd: number | null;
+  countsAsIncome: boolean;
+  /** An uploaded file, or a receipt the app issued (numbered, with a PDF). */
+  receipt:
+    | { kind: 'uploaded'; url: string; name: string }
+    | { kind: 'issued'; number: string; issuedAt: string; pdfUrl: string }
+    | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** Owner, or someone the owner let in (KAN-129): an accountant edits the books, a viewer reads them. */
@@ -2474,8 +2595,11 @@ export interface HolidaysResponse {
 /** One line of a profit & loss (KAN-126): a category, or invoice payments, with what makes it up. */
 export interface ProfitLossLine {
   label: string;
-  /** invoice: payments on this business's invoices; income: tagged income; bank: tagged bank transactions. */
-  source: 'invoice' | 'income' | 'bank';
+  /**
+   * invoice: payments on this business's invoices; income: tagged income; bank: tagged bank
+   * transactions; sale: recorded sales (KAN-120); bill: paid supplier bills; wage: wages paid (KAN-121).
+   */
+  source: 'invoice' | 'income' | 'bank' | 'sale' | 'bill' | 'wage';
   amountNzd: number;
   count: number;
 }
@@ -2514,7 +2638,7 @@ export interface ProfitLoss {
 
 /** One tagged item on a GST return (KAN-127). See server/business/gst.ts. */
 export interface GstItem {
-  kind: 'invoice_payment' | 'income' | 'transaction';
+  kind: 'invoice_payment' | 'income' | 'transaction' | 'sale' | 'bill';
   id: string;
   date: string;
   description: string;
