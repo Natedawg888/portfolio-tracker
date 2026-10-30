@@ -304,13 +304,14 @@ export function BusinessDetail() {
   const t = data.totals;
   const today = data.today;
   const name = b.name || 'Unnamed business';
-  const others = businesses.length ? businesses : [b];
   const hasInvoices = data.invoices.length > 0;
   const invoiceWord = `${data.invoices.length} invoice${data.invoices.length === 1 ? '' : 's'}`;
   // KAN-129: an accountant edits the books; a viewer only reads. Invoices, clients, meetings,
   // tagging and the net worth switch use the owner's own pages and money, so they stay theirs.
   const role = data.access?.role ?? 'owner';
   const isOwner = role === 'owner';
+  // A member's client stays in this business: the picker offers it alone (KAN-129).
+  const others = isOwner && businesses.length ? businesses : [b];
   const canEdit = role !== 'viewer';
   const details = [b.industry, b.nzbn ? `NZBN ${b.nzbn}` : null, b.gstRegistered ? `GST ${b.gstNumber}` : null].filter(Boolean).join(' · ');
 
@@ -347,7 +348,7 @@ export function BusinessDetail() {
                     GST
                   </Link>
                 ) : null}
-                {isOwner ? (
+                {canEdit ? (
                   <Link className="btn small primary" to={`/business/invoices/new?business=${encodeURIComponent(b.id)}`} aria-label={`New invoice for ${name}`}>
                     + Invoice
                   </Link>
@@ -416,7 +417,7 @@ export function BusinessDetail() {
         <section className="panel business-role-note" role="status">
           <p>
             {role === 'accountant'
-              ? 'You’re this business’s accountant: you can read and edit its books. Invoices, clients and meetings stay with the owner for now.'
+              ? 'You’re this business’s accountant: you can read and edit its books, invoices, clients and meetings. Emailing invoices and share links stay with the owner.'
               : 'You can view this business’s books but not change them.'}
           </p>
         </section>
@@ -522,7 +523,7 @@ export function BusinessDetail() {
 
       <StockCard businessId={id} archived={b.archivedAt != null || !canEdit} />
 
-      {isOwner ? <ClientMeetings businessId={id} businessName={b.name} archived={b.archivedAt != null} clients={data.clients} onClientsChanged={load} /> : null}
+      <ClientMeetings businessId={id} businessName={b.name} archived={b.archivedAt != null || !canEdit} clients={data.clients} onClientsChanged={load} />
 
       <BusinessActivity
         businessId={id}
@@ -535,6 +536,7 @@ export function BusinessDetail() {
         act={act}
         onTag={() => setDialog({ mode: 'tag' })}
         ownerTools={isOwner}
+        invoiceTools={canEdit ? 'edit' : 'view'}
       />
 
       {b.clientsEnabled ? (
@@ -542,7 +544,7 @@ export function BusinessDetail() {
           <div className="rental-card-head">
             <h3 id="biz-clients">Clients</h3>
             <div className="rental-card-actions">
-              {isOwner ? (
+              {canEdit ? (
               <button type="button" className="btn small ghost" disabled={busy} aria-label={`Add a client to ${name}`} onClick={() => setDialog({ mode: 'add-client' })}>
                 + Client
               </button>
@@ -567,7 +569,7 @@ export function BusinessDetail() {
                     {c.outstandingNzd > 0 ? <span className="muted small"> · {formatNzd(c.outstandingNzd)} owed</span> : null}
                   </span>
                   <span className="rental-entry-actions">
-                    {isOwner ? (
+                    {canEdit ? (
                       <button type="button" className="link-btn" disabled={busy} aria-label={`Edit ${c.name}`} onClick={() => setDialog({ mode: 'edit-client', client: c })}>
                         Edit
                       </button>

@@ -136,7 +136,7 @@ export function InvoiceEditor() {
     let cancelled = false;
     (async () => {
       try {
-        const [fallback, cl, owned, sources] = await Promise.all([
+        const [fallback, ownClients, ownBusinesses, sources] = await Promise.all([
           api.invoices.business(),
           api.invoices.clients(),
           api.business.list().then((r) => r.businesses).catch(() => [] as Business[]),
@@ -145,6 +145,16 @@ export function InvoiceEditor() {
         if (cancelled) return;
         // A new invoice goes to ?business=, else the default business (none yet → made on save).
         const inv = editingId ? await api.invoices.get(editingId) : null;
+        if (cancelled) return;
+        // KAN-129: someone else's business the caller was let into as its accountant. The picker
+        // and clients are that business's only.
+        const target = inv?.businessId ?? wantedBusiness;
+        const sharedDetail =
+          target && !ownBusinesses.some((b) => b.id === target) ? await api.business.get(target).catch(() => null) : null;
+        if (cancelled) return;
+        const shared = sharedDetail && sharedDetail.access?.role !== 'owner' ? sharedDetail.business : null;
+        const owned = shared ? [shared] : ownBusinesses;
+        const cl = shared ? await api.invoices.clients(shared.id) : ownClients;
         if (cancelled) return;
         // A draft of an archived business (not in the picker) keeps its business and its details.
         const archivedOwner = inv?.businessId && !owned.some((b) => b.id === inv.businessId) ? inv.businessId : null;

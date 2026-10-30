@@ -1790,6 +1790,8 @@ export interface InvoiceSummary {
 }
 
 export interface Invoice extends InvoiceSummary {
+  /** The caller's role on the invoice's business (KAN-129); missing on older responses = owner. */
+  access?: { role: BusinessRole };
   clientEmail: string;
   clientAddress: string;
   clientReference: string;
