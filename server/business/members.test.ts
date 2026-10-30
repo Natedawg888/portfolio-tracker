@@ -26,6 +26,8 @@ process.env.AKAHU_TOKEN_ENCRYPTION_KEY = crypto.randomBytes(32).toString('base64
 const { getDb, queryAll, queryOne, run } = await import('../db/index.ts');
 const { default: authRouter } = await import('../routes/auth.ts');
 const { default: businessRouter } = await import('../routes/business.ts');
+const { default: invoicesRouter } = await import('../routes/invoices.ts');
+const { default: calendarRouter } = await import('../routes/calendar.ts');
 const { setPlan } = await import('../lib/entitlements.ts');
 const { removeUserFromBusinesses } = await import('./members.ts');
 const { attachUser, requireAuth, isPublicApiPath } = await import('../middleware/requireAuth.ts');
@@ -37,6 +39,8 @@ app.use('/api', attachUser);
 app.use('/api', (req, res, next) => (isPublicApiPath(req.path) ? next() : requireAuth(req, res, next)));
 app.use('/api/auth', authRouter);
 app.use('/api/business', businessRouter);
+app.use('/api/invoices', invoicesRouter);
+app.use('/api/calendar', calendarRouter);
 app.use('/api/uploads', uploadsGate(), express.static(UPLOADS_DIR));
 
 const server: Server = await new Promise((resolve) => {
@@ -155,6 +159,41 @@ try {
   const otherSale = await call('POST', `/api/business/${other.biz}/sales`, owner.cookie, { lines: [{ itemId: other.item, quantity: 1, unitPriceNzd: 5 }] });
   assert((await call('DELETE', `/api/business/sales/${otherSale.json.id}`, acct.cookie)).status === 404, 'but not touch the other business’s sales');
   assert((await call('POST', `/api/business/${shared.biz}/sales`, acct.cookie, { lines: [{ itemId: other.item, quantity: 1, unitPriceNzd: 5 }] })).status === 404, 'or sell its stock');
+  // Invoices, clients and meetings (KAN-129 phase 2): the shared business only; emailing and
+  // public links stay with the owner.
+  const client = await call('POST', '/api/invoices/clients', acct.cookie, { businessId: shared.biz, name: 'Shared Client' });
+  assert(client.status === 201, `the accountant adds a client: ${client.status}`);
+  const otherClient = await call('POST', '/api/invoices/clients', owner.cookie, { businessId: other.biz, name: 'Private Client' });
+  assert((await call('POST', '/api/invoices/clients', acct.cookie, { businessId: other.biz, name: 'x' })).status === 404, 'not to the other business');
+  const clients = await call('GET', `/api/invoices/clients?businessId=${shared.biz}`, acct.cookie);
+  assert(clients.status === 200 && JSON.stringify(clients.json).includes('Shared Client'), 'lists the shared business’s clients');
+  assert(!JSON.stringify((await call('GET', `/api/invoices/clients?businessId=${other.biz}`, acct.cookie)).json).includes('Private Client'), 'not the other business’s');
+  assert((await call('PUT', `/api/invoices/clients/${otherClient.json.id}`, acct.cookie, { businessId: other.biz, name: 'x' })).status === 404, 'can’t edit the other business’s client');
+  assert((await call('PUT', `/api/invoices/clients/${client.json.id}`, acct.cookie, { businessId: other.biz, name: 'Moved' })).status === 404, 'or move a client into it');
+  const invBody = { businessId: shared.biz, clientId: client.json.id, clientName: 'Shared Client', issueDate: '2026-10-01', duePreset: 'days_14', gstMode: 'none', lines: [{ description: 'Books', quantity: 1, unit: 'job', rate: 100 }] };
+  const bizInv = await call('POST', '/api/invoices', acct.cookie, invBody);
+  assert(bizInv.status === 201, `the accountant drafts an invoice: ${bizInv.status} ${JSON.stringify(bizInv.json)}`);
+  assert((await call('GET', `/api/invoices/${bizInv.json.id}`, acct.cookie)).json.access.role === 'accountant', 'the invoice says their role');
+  assert((await call('GET', `/api/invoices?businessId=${shared.biz}`, acct.cookie)).json.invoices.length === 1, 'lists the shared business’s invoices');
+  assert((await call('PUT', `/api/invoices/${bizInv.json.id}`, acct.cookie, { ...invBody, businessId: other.biz })).status === 404, 'can’t move it to the other business');
+  assert((await call('POST', `/api/invoices/${bizInv.json.id}/mark-sent`, acct.cookie)).status === 200, 'marks it sent');
+  assert((await call('POST', `/api/invoices/${bizInv.json.id}/payments`, acct.cookie, { date: '2026-10-05', amountNzd: 100, method: 'Bank transfer' })).status === 201, 'records a payment');
+  assert((await call('POST', `/api/invoices/${bizInv.json.id}/send`, acct.cookie, { kind: 'invoice', to: ['c@example.test'], subject: 's', message: 'm', includeLink: false, confirm: true })).status === 403, 'emailing stays with the owner');
+  assert((await call('POST', `/api/invoices/${bizInv.json.id}/share`, acct.cookie)).status === 403, 'so do public links');
+  const otherInv = await call('POST', '/api/invoices', owner.cookie, { ...invBody, businessId: other.biz, clientId: otherClient.json.id });
+  assert((await call('GET', `/api/invoices/${otherInv.json.id}`, acct.cookie)).status === 404, 'the other business’s invoice is hidden');
+  const intoOther = await call('POST', '/api/invoices', acct.cookie, { ...invBody, businessId: other.biz, clientId: otherClient.json.id });
+  assert(intoOther.status === 400 || intoOther.status === 404, `and can’t be added to: ${intoOther.status}`);
+  assert((await call('POST', '/api/invoices', viewer.cookie, invBody)).status === 403, 'a viewer can’t draft invoices');
+  assert((await call('GET', `/api/invoices/${bizInv.json.id}`, viewer.cookie)).json.access.role === 'viewer', 'but can read them');
+  const meeting = await call('POST', '/api/calendar/meetings', acct.cookie, { businessId: shared.biz, clientId: client.json.id, title: 'Year end', date: '2027-02-01', time: '10:00' });
+  assert(meeting.status === 201, `the accountant books a meeting: ${meeting.status} ${JSON.stringify(meeting.json)}`);
+  assert((await call('PUT', `/api/calendar/meetings/${meeting.json.id}`, acct.cookie, { title: 'Mine now', date: '2027-02-01', time: '10:00' })).status === 404, 'a member can’t turn it into the owner’s personal entry');
+  const listed = await call('GET', `/api/calendar?from=2027-01-01&to=2027-03-01&businessId=${shared.biz}`, acct.cookie);
+  assert(listed.status === 200 && JSON.stringify(listed.json).includes('Year end'), 'lists the shared business’s meetings');
+  const ownMeeting = await call('POST', '/api/calendar/meetings', owner.cookie, { kind: 'event', title: 'Owner Personal Dentist', date: '2027-02-02', time: '09:00' });
+  assert((await call('GET', `/api/calendar/meetings/${ownMeeting.json.id}`, acct.cookie)).status === 404, 'never the owner’s personal entries');
+
   // Wages and the budget (KAN-121) too.
   assert((await call('POST', `/api/business/${shared.biz}/wages`, acct.cookie, { employeeName: 'Casual', amountNzd: 50 })).status === 201, 'the accountant records wages');
   assert((await call('GET', `/api/business/${shared.biz}/budget`, acct.cookie)).status === 200, 'and reads the budget');

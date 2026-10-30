@@ -314,6 +314,12 @@ export function InvoiceDetail() {
     );
   }
 
+  // KAN-129: an accountant works on the invoice but emailing and share links stay with the owner;
+  // a viewer only reads it.
+  const role = inv.access?.role ?? 'owner';
+  const isOwner = role === 'owner';
+  const canEdit = role !== 'viewer';
+  const backTo = isOwner ? '/business/invoices' : `/business/${encodeURIComponent(inv.businessId ?? '')}`;
   const isDraft = inv.storedStatus === 'draft';
   const isSent = inv.storedStatus === 'sent';
   const owing = isSent && inv.balanceNzd > 0;
@@ -328,8 +334,8 @@ export function InvoiceDetail() {
             </h2>
             <InvoiceStatusBadge status={inv.status} />
           </div>
-          <Link to="/business/invoices" className="btn small">
-            All invoices
+          <Link to={backTo} className="btn small">
+            {isOwner ? 'All invoices' : 'Back to the business'}
           </Link>
         </div>
         <p className="muted small">
@@ -338,22 +344,22 @@ export function InvoiceDetail() {
           {isSent ? ` · ${formatNzd(inv.balanceNzd)} owing` : ''}
         </p>
         <div className="row gap" style={{ flexWrap: 'wrap' }}>
-          {isDraft ? (
+          {isDraft && canEdit ? (
             <Link className="btn small" to={`/business/invoices/${inv.id}/edit`}>
               Edit
             </Link>
           ) : null}
-          {isDraft || isSent ? (
+          {isOwner && (isDraft || isSent) ? (
             <button type="button" className="btn small primary" disabled={busy} onClick={() => setDialog('send')}>
               {isDraft ? 'Send…' : 'Send again…'}
             </button>
           ) : null}
-          {owing ? (
+          {owing && isOwner ? (
             <button type="button" className={`btn small${inv.status === 'overdue' ? ' primary' : ''}`} disabled={busy} onClick={() => setDialog('reminder')}>
               Send reminder…
             </button>
           ) : null}
-          {owing ? (
+          {owing && canEdit ? (
             <button type="button" className="btn small" disabled={busy} onClick={() => setDialog('payment')}>
               Record payment
             </button>
@@ -361,7 +367,7 @@ export function InvoiceDetail() {
           <a className="btn small" href={api.invoices.pdfUrl(inv.id)} download>
             Download PDF
           </a>
-          {inv.storedStatus !== 'void' ? (
+          {inv.storedStatus !== 'void' && isOwner ? (
             inv.shareUrl ? (
               <>
                 <button type="button" className="btn small" onClick={() => void copyText(inv.shareUrl!).then((ok) => setMsg(ok ? 'Share link copied.' : null))}>
@@ -393,7 +399,7 @@ export function InvoiceDetail() {
               </button>
             )
           ) : null}
-          {isDraft ? (
+          {isDraft && canEdit ? (
             <button
               type="button"
               className="btn small"
@@ -403,6 +409,7 @@ export function InvoiceDetail() {
               Mark as sent
             </button>
           ) : null}
+          {canEdit ? (
           <button
             type="button"
             className="btn small"
@@ -416,7 +423,8 @@ export function InvoiceDetail() {
           >
             Duplicate
           </button>
-          {isSent && inv.payments.length === 0 ? (
+          ) : null}
+          {isSent && inv.payments.length === 0 && canEdit ? (
             <button
               type="button"
               className="btn small danger"
@@ -426,7 +434,7 @@ export function InvoiceDetail() {
               Void
             </button>
           ) : null}
-          {isDraft || inv.storedStatus === 'void' ? (
+          {(isDraft || inv.storedStatus === 'void') && canEdit ? (
             <button
               type="button"
               className="btn small danger"
@@ -434,7 +442,7 @@ export function InvoiceDetail() {
               onClick={() =>
                 void act(async () => {
                   await api.invoices.remove(inv.id);
-                  navigate('/business/invoices');
+                  navigate(backTo);
                 }, null, `Delete ${isDraft ? 'draft' : 'void invoice'} ${inv.number}? This can’t be undone.`)
               }
             >
@@ -480,7 +488,8 @@ export function InvoiceDetail() {
                         <button
                           type="button"
                           className="btn small danger"
-                          disabled={busy}
+                          disabled={busy || !canEdit}
+                          hidden={!canEdit}
                           onClick={() => void act(() => api.invoices.removePayment(inv.id, p.id), 'Payment removed.', 'Remove this payment? Its income entry is removed too.')}
                         >
                           Remove
