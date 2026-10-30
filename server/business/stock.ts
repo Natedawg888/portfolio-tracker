@@ -212,9 +212,21 @@ const newestFirst = <T extends { date: string; createdAt: string }>(a: T, b: T) 
  * of several items.
  */
 function loadStock(db: Database, userId: string, businessId: string): StockItemView[] {
+  return replayBusiness(db, userId, businessId).views;
+}
+
+/**
+ * Cost of goods sold for each sale line of the business, at the average cost when it sold
+ * (KAN-120). null when the item had no batch before the sale.
+ */
+export function saleLineCosts(db: Database, userId: string, businessId: string): Map<string, number | null> {
+  return replayBusiness(db, userId, businessId).lineCost;
+}
+
+function replayBusiness(db: Database, userId: string, businessId: string): { views: StockItemView[]; lineCost: Map<string, number | null> } {
   const scope = [userId, businessId];
   const items = queryAll<ItemRow>(db, `SELECT * FROM business_stock_items WHERE user_id = ? AND business_id = ? ORDER BY lower(name), created_at, id`, scope).map(presentItem);
-  if (!items.length) return [];
+  if (!items.length) return { views: [], lineCost: new Map() };
   const batches = queryAll<BatchRow>(db, `SELECT * FROM business_stock_batches WHERE user_id = ? AND business_id = ?`, scope).map(presentBatch);
   const adjustments = queryAll<AdjustmentRow>(db, `SELECT * FROM business_stock_adjustments WHERE user_id = ? AND business_id = ?`, scope).map(presentAdjustment);
   const saleLines = queryAll<SaleLineRow>(
@@ -252,10 +264,12 @@ function loadStock(db: Database, userId: string, businessId: string): StockItemV
   const batchesOf = groupBy(batches);
   const adjustmentsOf = groupBy(adjustments);
   const linesOf = groupBy(saleLines);
-  return items.map((item) => {
+  const lineCost = new Map<string, number | null>();
+  const views = items.map((item) => {
     const own = batchesOf.get(item.id) ?? [];
     const adj = adjustmentsOf.get(item.id) ?? [];
     const ledger = replayStock({ batches: own, landed, adjustments: adj, saleLines: linesOf.get(item.id) ?? [] });
+    for (const [id, cost] of ledger.lineCost) lineCost.set(id, cost);
     return {
       ...item,
       position: stockPosition(item, ledger),
@@ -264,6 +278,7 @@ function loadStock(db: Database, userId: string, businessId: string): StockItemV
       adjustments: [...adj].sort(newestFirst),
     };
   });
+  return { views, lineCost };
 }
 
 function itemRow(db: Database, userId: string, id: string): ItemRow | null {

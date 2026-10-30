@@ -50,7 +50,7 @@ import {
 import { isValidEmail, isYmd } from '../../src/lib/invoiceCalc.ts';
 import { roundMoney } from '../../src/lib/debtModel.ts';
 import { newId, queryAll, queryOne, run } from '../db/index.ts';
-import { deleteBusinessLogo, deleteEmployeeContract, deleteStockPhoto, deleteSupplierInvoiceFile, saveBusinessLogo } from '../lib/uploads.ts';
+import { deleteBusinessLogo, deleteEmployeeContract, deleteSaleReceiptFile, deleteStockPhoto, deleteSupplierInvoiceFile, saveBusinessLogo } from '../lib/uploads.ts';
 import { getClient, listClients, summary } from '../invoices/store.ts';
 import { listCommodities } from '../commodities/store.ts';
 import { businessRow, presentBusiness, type BusinessRow } from './profile.ts';
@@ -60,6 +60,7 @@ import { BUSINESS_STOCK_TABLES } from './stockTables.ts';
 import { stockPhotoPaths, stockValue } from './stock.ts';
 import { clientMeetings, deleteBusinessMeetings } from './meetings.ts';
 import { billFilePaths } from './suppliers.ts';
+import { saleLinkedDeposits, saleReceiptPaths, salesIncome } from './sales.ts';
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 type Result<T> = { ok: true; value: T } | { ok: false; status: number; error: string };
@@ -339,6 +340,7 @@ export function deleteBusiness(db: Database, userId: string, id: string): Result
   run(db, `DELETE FROM business_employees WHERE user_id = ? AND business_id = ?`, [userId, id]);
   for (const p of stockPhotoPaths(db, userId, id)) deleteStockPhoto(p);
   for (const p of billFilePaths(db, userId, id)) deleteSupplierInvoiceFile(p);
+  for (const p of saleReceiptPaths(db, userId, id)) deleteSaleReceiptFile(p);
   for (const table of BUSINESS_STOCK_TABLES) run(db, `DELETE FROM ${table} WHERE user_id = ? AND business_id = ?`, [userId, id]);
   deleteBusinessMeetings(db, userId, id);
   run(db, `UPDATE transactions SET business_id = NULL, business_category_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
@@ -601,6 +603,8 @@ export function businessMoney(
   invoicePaidNzd: number;
   /** The invoice payments behind invoicePaidNzd, for splitting them by month. */
   payments: { id: string; date: string; amountNzd: number }[];
+  /** Sales counted as income (KAN-120): not linked to an invoice. */
+  sales: { id: string; date: string; description: string; amountNzd: number }[];
 } {
   const payments = queryAll<{ id: string; date: string; amount_nzd: number; income_record_id: string | null }>(
     db,
@@ -632,17 +636,21 @@ export function businessMoney(
     [userId, businessId, start, end],
   );
 
+  // Sales are income themselves; a deposit linked to one isn't counted again (KAN-120).
+  const sales = salesIncome(db, userId, businessId, start, end);
+  const saleDeposits = saleLinkedDeposits(db, userId, businessId);
+
   // Invoice payments with no income row have no bank link: match a tagged deposit the usual way.
   const paidByDeposit = new Set<string>();
   for (const p of payments.filter((x) => !x.income_record_id).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))) {
     const hit = txns
-      .filter((t) => Number(t.amount) > 0 && !linkedDeposits.has(t.id) && !paidByDeposit.has(t.id))
+      .filter((t) => Number(t.amount) > 0 && !linkedDeposits.has(t.id) && !saleDeposits.has(t.id) && !paidByDeposit.has(t.id))
       .filter((t) => Math.abs(Number(t.amount) - Number(p.amount_nzd)) < 0.005 && dayGap(t.date, p.date) <= BANK_MATCH_DAYS)
       .sort((a, b) => dayGap(a.date, p.date) - dayGap(b.date, p.date) || a.id.localeCompare(b.id))[0];
     if (hit) paidByDeposit.add(hit.id);
   }
 
-  let income = invoicePaidNzd;
+  let income = invoicePaidNzd + sales.reduce((s, x) => s + x.amountNzd, 0);
   let expenses = 0;
   const items: BusinessMoneyItem[] = [];
   for (const r of incomes) {
@@ -665,6 +673,7 @@ export function businessMoney(
       // A transfer between the user's own accounts is neither income nor an expense.
     } else if (amount > 0) {
       if (linkedDeposits.has(t.id)) countedVia = linkedDeposits.get(t.id)!;
+      else if (saleDeposits.has(t.id)) countedVia = 'sale';
       else if (paidByDeposit.has(t.id)) countedVia = 'invoice';
       else income += amount;
     } else if (amount < 0) {
@@ -687,6 +696,7 @@ export function businessMoney(
     expensesNzd: roundMoney(expenses),
     invoicePaidNzd,
     payments: payments.map((p) => ({ id: p.id, date: p.date, amountNzd: roundMoney(Number(p.amount_nzd)) })),
+    sales: sales.map(({ id, date, description, amountNzd }) => ({ id, date, description, amountNzd })),
   };
 }
 
@@ -733,8 +743,9 @@ export function taxYears(db: Database, userId: string, today: string): number[] 
     db,
     `SELECT date AS d FROM transactions WHERE user_id = ? AND business_id IS NOT NULL
      UNION SELECT date FROM income_records WHERE user_id = ? AND business_id IS NOT NULL
-     UNION SELECT p.date FROM invoice_payments p WHERE p.user_id = ?`,
-    [userId, userId, userId],
+     UNION SELECT p.date FROM invoice_payments p WHERE p.user_id = ?
+     UNION SELECT date FROM business_sales WHERE user_id = ?`,
+    [userId, userId, userId, userId],
   );
   for (const r of dates) if (isYmd(r.d)) years.add(taxYearOf(r.d));
   return [...years].sort((a, b) => b - a);
@@ -791,7 +802,8 @@ function clientFigures(db: Database, userId: string, clientId: string, today: st
   };
 }
 
-export function getBusinessDetail(db: Database, userId: string, id: string, today: string, taxYear?: number | null): BusinessDetail | null {
+/** Without `access`, which the route adds for the caller (KAN-129). */
+export function getBusinessDetail(db: Database, userId: string, id: string, today: string, taxYear?: number | null): Omit<BusinessDetail, 'access'> | null {
   const r = businessRow(db, userId, id);
   if (!r) return null;
   const year = taxYear ?? taxYearOf(today);

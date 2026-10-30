@@ -149,6 +149,12 @@ try {
     const r = await call(method, p, acct.cookie, body);
     assert(r.status === 404, `accountant ${method} ${p} → ${r.status}, want 404`);
   }
+  // Sales (KAN-120) follow the same scope.
+  const sold = await call('POST', `/api/business/${shared.biz}/sales`, acct.cookie, { lines: [{ itemId: shared.item, quantity: 1, unitPriceNzd: 5 }] });
+  assert(sold.status === 201, `the accountant records a sale: ${sold.status}`);
+  const otherSale = await call('POST', `/api/business/${other.biz}/sales`, owner.cookie, { lines: [{ itemId: other.item, quantity: 1, unitPriceNzd: 5 }] });
+  assert((await call('DELETE', `/api/business/sales/${otherSale.json.id}`, acct.cookie)).status === 404, 'but not touch the other business’s sales');
+  assert((await call('POST', `/api/business/${shared.biz}/sales`, acct.cookie, { lines: [{ itemId: other.item, quantity: 1, unitPriceNzd: 5 }] })).status === 404, 'or sell its stock');
   const candidates = await call('GET', '/api/business/money/candidates', acct.cookie);
   assert(!JSON.stringify(candidates.json).includes('Owner Personal Secret'), 'the owner’s personal transactions stay hidden');
 

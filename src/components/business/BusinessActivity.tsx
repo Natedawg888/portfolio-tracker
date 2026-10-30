@@ -15,6 +15,7 @@ const signed = (n: number) => `${n < 0 ? '−' : '+'}${formatNzd(Math.abs(n))}`;
 function countedNote(m: BusinessMoneyItem): string {
   if (m.countedVia === 'invoice') return 'Counted through its invoice payment';
   if (m.countedVia === 'income') return 'Counted through the income row linked to it';
+  if (m.countedVia === 'sale') return 'Counted through the sale linked to it';
   return m.kind === 'income' ? 'Income' : m.amountNzd < 0 ? 'Cost' : 'Money in';
 }
 

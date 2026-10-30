@@ -1445,7 +1445,7 @@ export interface BusinessMoneyItem {
   amountNzd: number;
   businessId: string | null;
   /** Counted elsewhere already (an invoice payment, or a deposit an income row is linked to), so not added again. */
-  countedVia: 'invoice' | 'income' | null;
+  countedVia: 'invoice' | 'income' | 'sale' | null;
 }
 
 /** A commodity held as a business's produce. The price is the one the user set on it, with its date. */
@@ -1479,6 +1479,51 @@ export interface BusinessDetail {
   invoiceFigures: BusinessInvoiceFigures;
   /** The caller's role here, and whether reports are unlocked for them (KAN-129). */
   access: { role: BusinessRole; reportsUnlocked: boolean };
+}
+
+/** One line of a sale (KAN-120). description is the item name when the sale was saved. */
+export interface BusinessSaleLine {
+  id: string;
+  itemId: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  unitPriceNzd: number;
+  totalNzd: number;
+  /** Cost of goods sold at the average cost then; null when the item had no stock cost yet. */
+  costNzd: number | null;
+}
+
+/**
+ * A sale of stock (KAN-120). It always reduces stock on hand. Income: a sale linked to an invoice
+ * is counted through the invoice's payments; otherwise the sale is the income, and a tagged
+ * bank deposit linked to it is not counted again.
+ */
+export interface BusinessSale {
+  id: string;
+  businessId: string;
+  date: string;
+  clientId: string | null;
+  clientName: string | null;
+  invoiceId: string | null;
+  invoiceNumber: string | null;
+  transactionId: string | null;
+  notes: string;
+  lines: BusinessSaleLine[];
+  totalNzd: number;
+  /** GST in the total (3/23) when the business is GST-registered; else null. */
+  gstNzd: number | null;
+  /** null when any line has no cost yet. */
+  costNzd: number | null;
+  grossProfitNzd: number | null;
+  countsAsIncome: boolean;
+  /** An uploaded file, or a receipt the app issued (numbered, with a PDF). */
+  receipt:
+    | { kind: 'uploaded'; url: string; name: string }
+    | { kind: 'issued'; number: string; issuedAt: string; pdfUrl: string }
+    | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** Owner, or someone the owner let in (KAN-129): an accountant edits the books, a viewer reads them. */
@@ -2474,8 +2519,8 @@ export interface HolidaysResponse {
 /** One line of a profit & loss (KAN-126): a category, or invoice payments, with what makes it up. */
 export interface ProfitLossLine {
   label: string;
-  /** invoice: payments on this business's invoices; income: tagged income; bank: tagged bank transactions. */
-  source: 'invoice' | 'income' | 'bank';
+  /** invoice: payments on this business's invoices; income: tagged income; bank: tagged bank transactions; sale: recorded sales (KAN-120). */
+  source: 'invoice' | 'income' | 'bank' | 'sale';
   amountNzd: number;
   count: number;
 }
@@ -2514,7 +2559,7 @@ export interface ProfitLoss {
 
 /** One tagged item on a GST return (KAN-127). See server/business/gst.ts. */
 export interface GstItem {
-  kind: 'invoice_payment' | 'income' | 'transaction';
+  kind: 'invoice_payment' | 'income' | 'transaction' | 'sale';
   id: string;
   date: string;
   description: string;

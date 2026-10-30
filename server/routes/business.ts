@@ -38,6 +38,11 @@
  *   POST   /bills/:billId/file { fileBase64, fileName? }  PDF or photo, checked by its signature, max 8MB
  *   DELETE /bills/:billId/file
  *   POST   /bills/:billId/batches { batchId } | DELETE /bills/:billId/batches/:batchId   batches of the same business
+ *   GET    /:id/sales?from=&to=     sales with lines, GST, cost of goods sold and receipt (KAN-120)
+ *   POST   /:id/sales               { date?, clientId?, invoiceId? | transactionId?, notes?, lines: [{ itemId, quantity, unitPriceNzd? }] }
+ *   PUT    /sales/:saleId | DELETE /sales/:saleId   edit (not once a receipt is issued) | delete (stock goes back)
+ *   POST   /sales/:saleId/receipt-file { fileBase64, fileName? } | DELETE   upload or remove a receipt (PDF or photo)
+ *   POST   /sales/:saleId/receipt   issue a numbered receipt (RCT-0001…); GET /sales/:saleId/receipt.pdf
  *
  *   GET    /:id/profit-loss?taxYear=2027 | ?from=YYYY-MM-DD&to=YYYY-MM-DD   P&L, months and invoice
  *                                   figures (KAN-126). Business plan only (402 BUSINESS_PLAN_REQUIRED);
@@ -68,6 +73,8 @@
 import { Router, type Request, type Response } from 'express';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { requireUserId } from '../lib/userScope.ts';
+import { clearSaleReceiptFile, createSale, deleteSale, issueReceipt, listSales, parseSale, receiptForPdf, setSaleReceiptFile, updateSale } from '../business/sales.ts';
+import { receiptFilename, renderReceiptPdf } from '../business/receiptPdf.ts';
 import { getDb } from '../db/index.ts';
 import { aucklandToday } from '../debts/model.ts';
 import { taxYearOf, taxYearRange } from '../../src/lib/business.ts';
@@ -225,6 +232,7 @@ router.param('batchId', scopeTo('stockBatch'));
 router.param('supplierId', scopeTo('supplier'));
 router.param('billId', scopeTo('bill'));
 router.param('clientId', scopeTo('client'));
+router.param('saleId', scopeTo('sale'));
 
 /** Reports, GST and the export: the caller's Business plan, or an accountant's on this business. */
 async function requireBusinessReports(req: Request, res: Response, next: () => void) {
@@ -504,6 +512,48 @@ router.delete('/bills/:billId/batches/:batchId', async (req, res) => {
   reply(res, unlinkBillBatch(db, uid(req), req.params.billId, req.params.batchId, aucklandToday()));
 });
 
+router.put('/sales/:saleId', async (req, res) => {
+  const draft = parsedOr400(res, parseSale(req.body, aucklandToday()));
+  if (!draft) return;
+  const db = await getDb();
+  reply(res, updateSale(db, uid(req), req.params.saleId, draft));
+});
+
+router.delete('/sales/:saleId', async (req, res) => {
+  const db = await getDb();
+  reply(res, deleteSale(db, uid(req), req.params.saleId));
+});
+
+router.post('/sales/:saleId/receipt-file', async (req, res) => {
+  const db = await getDb();
+  reply(res, setSaleReceiptFile(db, uid(req), req.params.saleId, req.body?.fileBase64, req.body?.fileName));
+});
+
+router.delete('/sales/:saleId/receipt-file', async (req, res) => {
+  const db = await getDb();
+  reply(res, clearSaleReceiptFile(db, uid(req), req.params.saleId));
+});
+
+router.post('/sales/:saleId/receipt', async (req, res) => {
+  const db = await getDb();
+  reply(res, issueReceipt(db, uid(req), req.params.saleId));
+});
+
+router.get('/sales/:saleId/receipt.pdf', async (req, res) => {
+  const db = await getDb();
+  const found = receiptForPdf(db, uid(req), req.params.saleId);
+  if (!found) {
+    res.status(404).json({ error: 'No receipt has been issued for this sale' });
+    return;
+  }
+  const pdf = await renderReceiptPdf(found.sale, found.snapshot);
+  const name = receiptFilename(found.sale.receipt?.kind === 'issued' ? found.sale.receipt.number : 'receipt');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="${name}"`);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.send(Buffer.from(pdf));
+});
+
 router.put('/assets/:assetId', async (req, res) => {
   const parsed = parseAsset(req.body, aucklandToday());
   if (!parsed.ok) {
@@ -747,6 +797,20 @@ router.post('/:id/bills', async (req, res) => {
   if (!draft) return;
   const db = await getDb();
   reply(res, createBill(db, uid(req), req.params.id, draft, aucklandToday()), true);
+});
+
+router.get('/:id/sales', async (req, res) => {
+  const from = typeof req.query.from === 'string' && isYmd(req.query.from) ? req.query.from : undefined;
+  const to = typeof req.query.to === 'string' && isYmd(req.query.to) ? req.query.to : undefined;
+  const db = await getDb();
+  reply(res, listSales(db, uid(req), req.params.id, { from, to }));
+});
+
+router.post('/:id/sales', async (req, res) => {
+  const draft = parsedOr400(res, parseSale(req.body, aucklandToday()));
+  if (!draft) return;
+  const db = await getDb();
+  reply(res, createSale(db, uid(req), req.params.id, draft), true);
 });
 
 router.post('/:id/assets', async (req, res) => {

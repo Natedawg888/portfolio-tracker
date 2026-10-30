@@ -322,7 +322,7 @@ export function deleteEmployeeContract(filePath: string | null | undefined) {
   deleteCharityReceipt(filePath);
 }
 
-const UPLOAD_FOLDERS = new Set(['properties', 'collectables', 'art', 'avatars', 'receipts', 'warranties', 'payslips', 'business-logos', 'employee-contracts', 'stock-photos', 'supplier-invoices']);
+const UPLOAD_FOLDERS = new Set(['properties', 'collectables', 'art', 'avatars', 'receipts', 'warranties', 'payslips', 'business-logos', 'employee-contracts', 'stock-photos', 'supplier-invoices', 'sale-receipts']);
 
 /** Relative path `folder/file` under data/uploads, or null if it is not a single file there. */
 export function normalizeUploadRel(rawPath: string): string | null {
@@ -404,6 +404,10 @@ export function userOwnsUpload(
   }
   if (folder === 'supplier-invoices') {
     const rows = queryAll<{ p: string | null }>(db, `SELECT file_path AS p FROM business_supplier_invoices t WHERE ${MINE_OR_SHARED('t', 'business_id')} AND file_path IS NOT NULL`, [userId, userId]);
+    return rows.some((r) => storedPathMatches(r.p, rel));
+  }
+  if (folder === 'sale-receipts') {
+    const rows = queryAll<{ p: string | null }>(db, `SELECT receipt_path AS p FROM business_sales t WHERE ${MINE_OR_SHARED('t', 'business_id')} AND receipt_path IS NOT NULL`, [userId, userId]);
     return rows.some((r) => storedPathMatches(r.p, rel));
   }
   if (folder === 'payslips') {
@@ -568,6 +572,28 @@ export function saveSupplierInvoiceFile(billId: string, dataUrlOrBase64: string)
   const rel = `supplier-invoices/${safeId}${decoded.ext}`;
   fs.writeFileSync(path.join(UPLOADS_DIR, rel), decoded.buffer);
   return rel;
+}
+
+export const SALE_RECEIPTS_DIR = path.join(UPLOADS_DIR, 'sale-receipts');
+
+/** An uploaded receipt for a sale (KAN-120); returns relative path sale-receipts/<saleId><ext>. */
+export function saveSaleReceiptFile(saleId: string, dataUrlOrBase64: string): string {
+  const decoded = decodeBillFile(dataUrlOrBase64);
+  if (!decoded) throw new Error('Invalid file — use a PDF or a photo (JPEG, PNG, WebP or GIF, max 8MB)');
+  fs.mkdirSync(SALE_RECEIPTS_DIR, { recursive: true });
+  const safeId = saleId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
+  for (const e of BILL_EXT) {
+    const prev = path.join(SALE_RECEIPTS_DIR, `${safeId}${e}`);
+    if (fs.existsSync(prev)) fs.unlinkSync(prev);
+  }
+  const rel = `sale-receipts/${safeId}${decoded.ext}`;
+  fs.writeFileSync(path.join(UPLOADS_DIR, rel), decoded.buffer);
+  return rel;
+}
+
+export function deleteSaleReceiptFile(filePath: string | null | undefined) {
+  if (!filePath || !filePath.startsWith('sale-receipts/')) return;
+  deleteCharityReceipt(filePath);
 }
 
 export function deleteSupplierInvoiceFile(filePath: string | null | undefined) {
