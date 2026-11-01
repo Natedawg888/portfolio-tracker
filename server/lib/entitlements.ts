@@ -1,11 +1,12 @@
 /**
  * Plans and what they unlock (KAN-77). Checked on the server only; the client just shows the
- * result. Until billing exists, the operator grants plans in either of two ways:
+ * result. A paid Stripe subscription (KAN-52, server/billing/) grants Plus or Pro. The operator
+ * can also grant any plan, in either of two ways:
  *   - PLAN_PLUS_EMAILS / PLAN_PRO_EMAILS / PLAN_BUSINESS_EMAILS: comma-separated emails, read
  *     on every check (set them as Railway variables; no database write, survives redeploys);
  *   - `npm run plan:set -- <email> <free|plus|pro|business>` writes user_entitlements. Stop the
  *     API first: it keeps the database in memory and would overwrite the change.
- * The later one in PLANS wins. Anyone else is on the free plan.
+ * The later one in PLANS wins across all three. Anyone else is on the free plan.
  *
  * Business (KAN-125) is its own product, not a tier above Pro: it unlocks the business reports
  * (P&L, GST return, accountant export, accountant access) and none of the Plus or Pro personal
@@ -13,6 +14,7 @@
  */
 import type { Database } from 'sql.js';
 import { queryOne, run } from '../db/index.ts';
+import { subscribedPlanOf } from '../billing/store.ts';
 
 export const PLANS = ['free', 'plus', 'pro', 'business'] as const;
 export type Plan = (typeof PLANS)[number];
@@ -58,7 +60,8 @@ export function planOf(db: Database, userId: string): Plan {
       : envList('PLAN_PLUS_EMAILS').has(email)
         ? 'plus'
         : 'free';
-  return PLANS.indexOf(fromEnv) > PLANS.indexOf(stored) ? fromEnv : stored;
+  const paid: Plan = subscribedPlanOf(db, userId) ?? 'free';
+  return [stored, fromEnv, paid].reduce((best, p) => (PLANS.indexOf(p) > PLANS.indexOf(best) ? p : best));
 }
 
 export function hasFeature(db: Database, userId: string, feature: Feature): boolean {

@@ -14801,6 +14801,60 @@ html .business-page .more-menu-body .business-menu-item:disabled { color: var(--
 .usage-mode-text { display: grid; gap: 0.15rem; }
 fieldset:disabled .usage-mode-choice { cursor: default; opacity: 0.7; }
 
+/* Settings → Account → Plan (KAN-52). */
+.billing-test-note {
+  margin: 0.75rem 0 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+}
+.billing-manage { margin-top: 0.75rem; }
+.billing-interval {
+  display: inline-flex;
+  margin: 1rem 0 0.75rem;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+}
+.billing-interval-btn {
+  min-height: 40px;
+  padding: 0 1rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.billing-interval-btn.active { background: color-mix(in srgb, var(--accent) 18%, var(--surface)); font-weight: 600; }
+.billing-interval-btn:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.billing-plans {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 0.75rem;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  list-style: none;
+}
+.billing-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.billing-plan.current { border-color: var(--accent); }
+.billing-plan-head h3 { margin: 0; }
+.billing-plan-head p { margin: 0.15rem 0 0; }
+.billing-plan-price { font-size: 1.1rem; font-weight: 600; }
+.billing-saving { font-size: 0.85rem; font-weight: 500; color: var(--accent); }
+.billing-plan-features { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.2rem; font-size: 0.9rem; flex: 1; }
+.billing-plan .btn { min-height: 44px; align-self: flex-start; }
+
 /* KoruLedger Business plan note (KAN-125). */
 .business-plan-note h3 { margin: 0 0 0.35rem; }
 .business-plan-list { margin: 0.5rem 0 0; padding-left: 1.2rem; display: grid; gap: 0.25rem; }
