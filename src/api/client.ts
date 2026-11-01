@@ -334,6 +334,22 @@ export type AuthEvent = {
 /** A passkey on the account (KAN-75). */
 export type PasskeyInfo = { id: string; name: string; createdAt: string; lastUsedAt: string | null; backedUp: boolean };
 
+/** Settings → Plan (KAN-52): the plan, a Stripe subscription if any, and what's for sale. */
+export type BillingStatus = {
+  available: boolean;
+  mode: 'test' | 'live' | null;
+  plan: 'free' | 'plus' | 'pro' | 'business';
+  subscription: {
+    plan: 'plus' | 'pro';
+    interval: 'month' | 'year';
+    status: string;
+    cancelAtPeriodEnd: boolean;
+    currentPeriodEnd: string | null;
+  } | null;
+  canManage: boolean;
+  prices: { plan: 'plus' | 'pro'; interval: 'month' | 'year'; amountCents: number }[];
+};
+
 export const api = {
   auth: {
     status: () =>
@@ -1567,6 +1583,14 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ sinceDate }),
       }),
+  },
+  billing: {
+    status: () => req<BillingStatus>('/billing'),
+    /** A Stripe Checkout page for Plus or Pro; the browser goes there next. */
+    checkout: (plan: 'plus' | 'pro', interval: 'month' | 'year') =>
+      req<{ url: string }>('/billing/checkout', { method: 'POST', body: JSON.stringify({ plan, interval }) }),
+    /** Stripe's Customer Portal: change plan, card, receipts, cancel. */
+    portal: () => req<{ url: string }>('/billing/portal', { method: 'POST', body: '{}' }),
   },
   settings: {
     get: () =>

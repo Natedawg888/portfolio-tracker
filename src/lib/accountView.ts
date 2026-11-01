@@ -23,6 +23,7 @@ export const DELETED_ITEMS: readonly string[] = [
   'How you sign in: password, passkeys, Google, Apple or Microsoft connections, two-factor setup, trusted devices, signed-in sessions and sign-in history',
   'Your money: accounts, transactions and receipts, holdings and their photos, KiwiSaver, crypto, bonds, commodities, vehicles, rentals, businesses with their assets, clients and logos, budgets and categories, savings goals, income, payslips, invoices, warranties and shopping lists',
   'Your Akahu bank connection',
+  'Your Plus or Pro subscription: it’s cancelled first, with no further charges',
   'Supermarket prices you shared',
   'Your place in a household, what you shared with it, and your name in its history',
 ];
@@ -34,4 +35,5 @@ export const KEPT_ITEMS: readonly { text: string; link?: { href: string; label: 
     text: 'If you share a household with others: splits and payments you were part of stay for them, since they affect what they owe. You show as “Former member”.',
   },
   { text: 'Your consent with Akahu itself. End it at', link: { href: 'https://my.akahu.nz', label: 'my.akahu.nz' } },
+  { text: 'Receipts for anything you paid. Stripe, who takes the payments, keeps them for tax records. KoruLedger never sees your card number.' },
 ];
