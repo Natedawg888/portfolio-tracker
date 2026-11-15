@@ -59,7 +59,7 @@ router.post('/checkout', async (req: AuthedRequest, res) => {
   if (!cfg.ok) return unavailable(res);
   const { plan, interval } = (req.body ?? {}) as { plan?: unknown; interval?: unknown };
   if (!isBillingPlan(plan) || !isBillingInterval(interval)) {
-    res.status(400).json({ error: 'Choose Plus or Pro, monthly or yearly.', code: 'BAD_PLAN' });
+    res.status(400).json({ error: 'Choose Plus, Pro or Business, monthly or yearly.', code: 'BAD_PLAN' });
     return;
   }
   const db = await getDb();

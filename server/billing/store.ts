@@ -91,17 +91,17 @@ export function saveSubscription(db: Database, s: SubscriptionInput): void {
   );
 }
 
-/** Subscriptions that currently grant a plan (any mode), best plan first. */
+/** Subscriptions that currently grant a plan (any mode), best plan first (Business, then Pro, then Plus). */
 export function grantingSubscriptions(db: Database, userId: string): SubscriptionRow[] {
   return queryAll<SubscriptionRow>(
     db,
     `SELECT * FROM billing_subscriptions WHERE user_id = ? AND ${granting}
-     ORDER BY CASE plan WHEN 'pro' THEN 0 ELSE 1 END, updated_at DESC`,
+     ORDER BY CASE plan WHEN 'business' THEN 0 WHEN 'pro' THEN 1 ELSE 2 END, updated_at DESC`,
     [userId],
   );
 }
 
-/** The plan a paid subscription gives this user: 'pro', 'plus' or null. */
+/** The plan a paid subscription gives this user: 'business', 'pro', 'plus', or null. */
 export function subscribedPlanOf(db: Database, userId: string): BillingPlan | null {
   return grantingSubscriptions(db, userId)[0]?.plan ?? null;
 }

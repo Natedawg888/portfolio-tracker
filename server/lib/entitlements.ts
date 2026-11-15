@@ -1,6 +1,6 @@
 /**
  * Plans and what they unlock (KAN-77). Checked on the server only; the client just shows the
- * result. A paid Stripe subscription (KAN-52, server/billing/) grants Plus or Pro. The operator
+ * result. A paid Stripe subscription (KAN-52, server/billing/) grants Plus, Pro or Business. The operator
  * can also grant any plan, in either of two ways:
  *   - PLAN_PLUS_EMAILS / PLAN_PRO_EMAILS / PLAN_BUSINESS_EMAILS: comma-separated emails, read
  *     on every check (set them as Railway variables; no database write, survives redeploys);

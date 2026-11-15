@@ -28,6 +28,7 @@ const { getDb, run, queryOne } = await import('../db/index.ts');
 const { planOf, hasFeature, setPlan } = await import('../lib/entitlements.ts');
 const { billingConfig } = await import('./config.ts');
 const { catalogByLookupKey, catalogPrice } = await import('./catalog.ts');
+const { catalogForSubscription } = await import('./service.ts');
 const { setStripeClientForTests } = await import('./client.ts');
 const { createSession, SESSION_COOKIE } = await import('../auth/sessions.ts');
 const { hashPassword } = await import('../auth/passwords.ts');
@@ -49,7 +50,21 @@ assert(testCfg.ok && !testCfg.config.live && testCfg.config.secretKey === 'sk_te
 // --- Catalog: the prices in the ticket, GST included.
 assert(catalogPrice('plus', 'month').amountCents === 999 && catalogPrice('plus', 'year').amountCents === 7999, 'Plus NZ$9.99 / $79.99');
 assert(catalogPrice('pro', 'month').amountCents === 1999 && catalogPrice('pro', 'year').amountCents === 14999, 'Pro NZ$19.99 / $149.99');
-assert(catalogByLookupKey('koruledger_pro_yearly')?.plan === 'pro' && catalogByLookupKey('other') === null, 'lookup keys');
+assert(catalogPrice('business', 'month').amountCents === 2999 && catalogPrice('business', 'year').amountCents === 24999, 'Business NZ$29.99 / $249.99');
+assert(catalogPrice('business', 'month').lookupKey === 'koruledger_business_monthly' && catalogPrice('business', 'year').lookupKey === 'koruledger_business_yearly', 'Business lookup keys');
+assert(catalogByLookupKey('koruledger_pro_yearly')?.plan === 'pro' && catalogByLookupKey('koruledger_business_yearly')?.plan === 'business' && catalogByLookupKey('other') === null, 'lookup keys');
+assert(
+  catalogForSubscription({
+    items: {
+      data: [
+        { price: { lookup_key: 'koruledger_plus_monthly' } },
+        { price: { lookup_key: 'koruledger_business_yearly' } },
+        { price: { lookup_key: 'koruledger_pro_monthly' } },
+      ],
+    },
+  } as never)?.plan === 'business',
+  'several prices on one subscription map to Business',
+);
 
 // --- A fake Stripe: subscriptions live in a map the tests change.
 type FakeSub = { id: string; customer: string; status: string; lookupKey: string; metadata: Record<string, string>; cancel_at_period_end?: boolean; livemode?: boolean };
@@ -163,7 +178,12 @@ try {
 
   // Billing off: the page says so, checkout and the webhook refuse.
   let st = await call('GET', '/api/billing', una);
-  assert(st.status === 200 && st.json.available === false && st.json.plan === 'free' && st.json.prices.length === 4, 'off: status shows prices, unavailable');
+  assert(st.status === 200 && st.json.available === false && st.json.plan === 'free' && st.json.prices.length === 6, 'off: status shows prices, unavailable');
+  assert(
+    st.json.prices.some((p: { plan: string; interval: string; amountCents: number }) => p.plan === 'business' && p.interval === 'month' && p.amountCents === 2999) &&
+      st.json.prices.some((p: { plan: string; interval: string; amountCents: number }) => p.plan === 'business' && p.interval === 'year' && p.amountCents === 24999),
+    'off: Business prices are listed',
+  );
   assert((await call('POST', '/api/billing/checkout', una, { plan: 'plus', interval: 'month' })).json.code === 'BILLING_UNAVAILABLE', 'off: checkout refused');
   assert((await webhook('customer.subscription.updated', { id: 'sub_x' })) === 503, 'off: webhook 503');
   process.env.STRIPE_SECRET_KEY = 'sk_live_abc';
@@ -176,7 +196,7 @@ try {
   st = await call('GET', '/api/billing', una);
   assert(st.json.available === true && st.json.mode === 'test' && st.json.canManage === false, 'test mode on');
   assert((await call('GET', '/api/billing', null)).status === 401, 'signed out 401');
-  assert((await call('POST', '/api/billing/checkout', una, { plan: 'business', interval: 'month' })).json.code === 'BAD_PLAN', 'only Plus/Pro sold');
+  assert((await call('POST', '/api/billing/checkout', una, { plan: 'enterprise', interval: 'month' })).json.code === 'BAD_PLAN', 'unknown plan refused');
   assert((await call('POST', '/api/billing/portal', una)).json.code === 'NO_CUSTOMER', 'no portal before a customer');
 
   // Checkout: one customer per user, the price by lookup key, user id on the subscription.
@@ -191,6 +211,16 @@ try {
   await call('POST', '/api/billing/checkout', una, { plan: 'pro', interval: 'year' });
   assert(calls.customers === 1 && (calls.checkout[1] as any).customer === 'cus_new1', 'customer reused');
   assert((calls.checkout[1] as any).line_items[0].tax_rates[0] === 'txr_gst', 'GST rate applied when set');
+  const bizMonth = await call('POST', '/api/billing/checkout', una, { plan: 'business', interval: 'month' });
+  assert(bizMonth.status === 200 && bizMonth.json.url === 'https://checkout.stripe.test/cs_1', 'business monthly checkout');
+  const bizMonthParams = calls.checkout[2] as any;
+  assert(bizMonthParams.mode === 'subscription' && bizMonthParams.customer === 'cus_new1' && bizMonthParams.client_reference_id === 'una', 'business checkout for una');
+  assert(bizMonthParams.line_items[0].price === 'price_koruledger_business_monthly' && bizMonthParams.line_items[0].quantity === 1, 'business monthly price by lookup key');
+  assert(bizMonthParams.subscription_data.metadata.user_id === 'una', 'business subscription tagged with user');
+  assert(bizMonthParams.line_items[0].tax_rates[0] === 'txr_gst', 'business monthly includes the GST rate when set');
+  const bizYear = await call('POST', '/api/billing/checkout', una, { plan: 'business', interval: 'year' });
+  assert(bizYear.status === 200 && (calls.checkout[3] as any).line_items[0].price === 'price_koruledger_business_yearly', 'business yearly price by lookup key');
+  assert(calls.customers === 1, 'business checkout reuses the customer');
   assert(planOf(db, 'una') === 'free', 'no plan until Stripe says paid');
 
   // Webhook security: bad signature, wrong mode.
@@ -235,8 +265,25 @@ try {
 
   // An operator grant still counts, and the best plan wins.
   setPlan(db, 'una', 'business', 'test');
-  assert(planOf(db, 'una') === 'business', 'operator Business grant');
+  assert(planOf(db, 'una') === 'business' && hasFeature(db, 'una', 'business_reports'), 'operator Business grant');
   setPlan(db, 'una', 'free', 'test');
+
+  // A Business subscription maps to the business tier and its reports, not Plus or Pro features.
+  subs.set('sub_biz', { id: 'sub_biz', customer: 'cus_new1', status: 'active', lookupKey: 'koruledger_business_yearly', metadata: { user_id: 'una' } });
+  assert((await webhook('customer.subscription.created', { id: 'sub_biz' })) === 200, 'business subscription webhook');
+  assert(planOf(db, 'una') === 'business' && hasFeature(db, 'una', 'business_reports'), 'paid: Business grants business reports');
+  assert(!hasFeature(db, 'una', 'household') && !hasFeature(db, 'una', 'crypto_pro') && !hasFeature(db, 'una', 'payslips'), 'Business subscription does not include Plus or Pro');
+  st = await call('GET', '/api/billing', una);
+  assert(st.json.plan === 'business' && st.json.subscription.plan === 'business' && st.json.subscription.interval === 'year' && st.json.subscription.status === 'active', 'GET /api/billing reports Business');
+  subs.get('sub_biz')!.lookupKey = 'koruledger_business_monthly';
+  await webhook('customer.subscription.updated', { id: 'sub_biz' });
+  assert(planOf(db, 'una') === 'business' && (await call('GET', '/api/billing', una)).json.subscription.interval === 'month', 'business monthly price stays on Business');
+  setPlan(db, 'una', 'business', 'test');
+  subs.get('sub_biz')!.status = 'canceled';
+  await webhook('customer.subscription.updated', { id: 'sub_biz' });
+  assert(planOf(db, 'una') === 'business' && hasFeature(db, 'una', 'business_reports'), 'operator grant remains after the Business subscription ends');
+  setPlan(db, 'una', 'free', 'test');
+  assert(planOf(db, 'una') === 'free' && !hasFeature(db, 'una', 'business_reports'), 'clearing the grant drops Business');
 
   // Unknown customer and unknown prices are ignored, not retried.
   subs.set('sub_ghost', { id: 'sub_ghost', customer: 'cus_ghost', status: 'active', lookupKey: 'koruledger_pro_monthly', metadata: {} });

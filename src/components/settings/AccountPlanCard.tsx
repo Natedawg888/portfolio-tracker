@@ -1,5 +1,5 @@
 /**
- * Settings → Account → Plan (KAN-52): the account's plan, and Plus or Pro through Stripe.
+ * Settings → Account → Plan (KAN-52): the account's plan, and Plus, Pro or Business through Stripe.
  * Checkout and plan changes happen on Stripe's own pages; the plan here follows Stripe's
  * webhook, so after checkout it can take a few seconds to show.
  */
@@ -18,7 +18,7 @@ import {
   type PaidPlan,
 } from '../../lib/billingView';
 
-const PAID: PaidPlan[] = ['plus', 'pro'];
+const PAID: PaidPlan[] = ['plus', 'pro', 'business'];
 
 export function AccountPlanCard() {
   const [searchParams, setSearchParams] = useSearchParams();

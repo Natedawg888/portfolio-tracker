@@ -340,14 +340,14 @@ export type BillingStatus = {
   mode: 'test' | 'live' | null;
   plan: 'free' | 'plus' | 'pro' | 'business';
   subscription: {
-    plan: 'plus' | 'pro';
+    plan: 'plus' | 'pro' | 'business';
     interval: 'month' | 'year';
     status: string;
     cancelAtPeriodEnd: boolean;
     currentPeriodEnd: string | null;
   } | null;
   canManage: boolean;
-  prices: { plan: 'plus' | 'pro'; interval: 'month' | 'year'; amountCents: number }[];
+  prices: { plan: 'plus' | 'pro' | 'business'; interval: 'month' | 'year'; amountCents: number }[];
 };
 
 export const api = {
@@ -1586,8 +1586,8 @@ export const api = {
   },
   billing: {
     status: () => req<BillingStatus>('/billing'),
-    /** A Stripe Checkout page for Plus or Pro; the browser goes there next. */
-    checkout: (plan: 'plus' | 'pro', interval: 'month' | 'year') =>
+    /** A Stripe Checkout page for Plus, Pro or Business; the browser goes there next. */
+    checkout: (plan: 'plus' | 'pro' | 'business', interval: 'month' | 'year') =>
       req<{ url: string }>('/billing/checkout', { method: 'POST', body: JSON.stringify({ plan, interval }) }),
     /** Stripe's Customer Portal: change plan, card, receipts, cancel. */
     portal: () => req<{ url: string }>('/billing/portal', { method: 'POST', body: '{}' }),

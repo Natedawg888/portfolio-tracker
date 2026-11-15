@@ -10,7 +10,7 @@ import type Stripe from 'stripe';
 import type { Database } from 'sql.js';
 import { queryOne } from '../db/index.ts';
 import { logger } from '../lib/logger.ts';
-import { catalogByLookupKey, catalogPrice, type BillingInterval, type BillingPlan, type CatalogPrice } from './catalog.ts';
+import { BILLING_PLANS, catalogByLookupKey, catalogPrice, type BillingInterval, type BillingPlan, type CatalogPrice } from './catalog.ts';
 import { stripeClient } from './client.ts';
 import type { BillingConfig } from './config.ts';
 import {
@@ -41,7 +41,10 @@ export function catalogForSubscription(sub: Stripe.Subscription): CatalogPrice |
   const known = sub.items.data
     .map((item) => catalogByLookupKey(item.price.lookup_key))
     .filter((c): c is CatalogPrice => c != null);
-  return known.find((c) => c.plan === 'pro') ?? known[0] ?? null;
+  return known.reduce<CatalogPrice | null>((best, c) => {
+    if (!best || BILLING_PLANS.indexOf(c.plan) > BILLING_PLANS.indexOf(best.plan)) return c;
+    return best;
+  }, null);
 }
 
 /** When the current paid period ends (Stripe keeps it on each item since API 2025-03-31). */

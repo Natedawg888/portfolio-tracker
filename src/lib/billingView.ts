@@ -3,7 +3,7 @@
  * browser: npm run test:billing.
  */
 export type AccountPlan = 'free' | 'plus' | 'pro' | 'business';
-export type PaidPlan = 'plus' | 'pro';
+export type PaidPlan = 'plus' | 'pro' | 'business';
 export type BillingInterval = 'month' | 'year';
 
 export type BillingPrice = { plan: PaidPlan; interval: BillingInterval; amountCents: number };
@@ -27,6 +27,7 @@ export const PLAN_LABELS: Record<AccountPlan, string> = {
 export const PLAN_FEATURES: Record<PaidPlan, readonly string[]> = {
   plus: ['Share with your household', 'Payslips and the PAYE check', 'Bonds: coupons, maturities and projections', 'Commodities in your asset mix'],
   pro: ['Everything in Plus', 'Advanced crypto: cost basis and gains, staking, DeFi and wallet import'],
+  business: ['Profit & loss for a tax year or any period', 'GST return to copy into myIR', 'An export for your accountant', 'Access for your accountant'],
 };
 
 export function formatNzd(cents: number): string {
