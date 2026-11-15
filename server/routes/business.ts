@@ -159,14 +159,11 @@ import {
   getMembers,
   previewInvite,
   removeMember,
-  resourceAccess,
   revokeInvite,
-  roleAllows,
   setMemberRole,
   sharedWithMe,
-  type Access,
-  type ResourceKind,
 } from '../business/members.ts';
+import { callerId, scopeTo as scopeRecord, scopeUid, type ScopedRequest as BusinessScopedRequest } from '../middleware/businessScope.ts';
 import { isYmd } from '../../src/lib/invoiceCalc.ts';
 
 const router = Router();
@@ -178,17 +175,9 @@ router.use((req, res, next) => {
   next();
 });
 
-type ScopedRequest = AuthedRequest & { scopeUserId?: string; businessAccess?: Access };
-
-/** Whose rows the route reads and writes: the caller, or the owner of the business they're in. */
-function uid(req: Request): string {
-  return (req as ScopedRequest).scopeUserId || (req as AuthedRequest).user?.id || '';
-}
-
-/** The signed-in person, whatever business they're working in. */
-function me(req: Request): string {
-  return (req as AuthedRequest).user?.id || '';
-}
+type ScopedRequest = BusinessScopedRequest;
+const uid = scopeUid;
+const me = callerId;
 
 /** Deleting, archiving and restoring a business stay with its owner. */
 function ownerOnly(req: Request): boolean {
@@ -197,41 +186,8 @@ function ownerOnly(req: Request): boolean {
 
 /** Member management checks roles itself (a viewer may still leave). */
 const MEMBERS_PATH = /^\/[^/]+\/members(\/|$)/;
-
-/**
- * Scopes the request to the business that `kind`'s record belongs to (KAN-129). With no access
- * the request carries on as the caller, whose own data doesn't hold the record, so it gets the
- * usual 404 and nothing shows it exists. Two records on one route must share a business.
- */
-function scopeTo(kind: ResourceKind | ((req: Request) => ResourceKind)) {
-  return async (req: Request, res: Response, next: (err?: unknown) => void, id: unknown) => {
-    try {
-      const r = req as ScopedRequest;
-      const db = await getDb();
-      const access = resourceAccess(db, me(req), typeof kind === 'function' ? kind(req) : kind, String(id));
-      if (r.businessAccess && access?.businessId !== r.businessAccess.businessId) {
-        res.status(404).json({ error: 'Not found' });
-        return;
-      }
-      if (!access) return next();
-      if (access.role !== 'owner' && !MEMBERS_PATH.test(req.path)) {
-        if (!roleAllows(access.role, req.method)) {
-          res.status(403).json({ error: 'You can view this business but not change it.', code: 'BUSINESS_VIEWER' });
-          return;
-        }
-        if (ownerOnly(req)) {
-          res.status(403).json({ error: 'Only the business owner can do this.', code: 'BUSINESS_OWNER_ONLY' });
-          return;
-        }
-      }
-      r.businessAccess = access;
-      r.scopeUserId = access.ownerId;
-      next();
-    } catch (err) {
-      next(err);
-    }
-  };
-}
+const SCOPE = { ownerOnly, exempt: (req: Request) => MEMBERS_PATH.test(req.path) };
+const scopeTo = (kind: Parameters<typeof scopeRecord>[0]) => scopeRecord(kind, SCOPE);
 
 router.param('id', scopeTo((req) => (req.path.startsWith('/movements/') ? 'movement' : req.path.startsWith('/stock/adjustments/') ? 'stockAdjustment' : 'business')));
 router.param('assetId', scopeTo('asset'));

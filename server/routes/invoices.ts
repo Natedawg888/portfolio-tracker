@@ -18,11 +18,17 @@
  *                                      marks the invoice sent
  *
  * Nothing is emailed without an explicit send request carrying confirm: true.
+ *
+ * Accountants and viewers of a business (KAN-129) reach its invoices and clients the same way as
+ * on /api/business (server/middleware/businessScope.ts): routes naming an invoice or client, or a
+ * businessId, run as the owner after a role check. Viewers only read. Emailing an invoice and
+ * public share links stay with the owner, since they go out in the owner's name.
  */
 import crypto from 'node:crypto';
 import { Router, type Request } from 'express';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { requireUserId } from '../lib/userScope.ts';
+import { scopeTo, scopeToBusiness, scopeUid, staysInBusiness, type ScopedRequest } from '../middleware/businessScope.ts';
 import { getDb, queryOne } from '../db/index.ts';
 import { aucklandToday } from '../debts/model.ts';
 import { isYmd, INVOICE_STATUS_LABELS } from '../../src/lib/invoiceCalc.ts';
@@ -65,9 +71,11 @@ router.use((req, res, next) => {
   next();
 });
 
-function uid(req: Request): string {
-  return (req as AuthedRequest & { scopeUserId?: string }).scopeUserId || (req as AuthedRequest).user?.id || '';
-}
+const uid = scopeUid;
+
+/** Emailing an invoice and its public link go out in the owner's name. */
+const ownerOnly = (req: Request) => /^\/[^/]+\/(send|share)$/.test(req.path);
+router.param('id', scopeTo((req) => (req.path.startsWith('/clients/') ? 'client' : 'invoice'), { ownerOnly }));
 
 /** Base for share links: PUBLIC_URL in production; the page's own origin locally. */
 export function shareBase(req: Request): string {
@@ -117,6 +125,7 @@ router.put('/business', async (req, res) => {
 // ---------------------------------------------------------------- clients
 
 router.get('/clients', async (req, res) => {
+  if (!(await scopeToBusiness(req, res, req.query.businessId))) return;
   const db = await getDb();
   const businessId = typeof req.query.businessId === 'string' && req.query.businessId.trim() ? req.query.businessId.trim() : null;
   res.json(listClients(db, uid(req), businessId));
@@ -128,6 +137,7 @@ router.post('/clients', async (req, res) => {
     res.status(400).json({ error: parsed.error });
     return;
   }
+  if (!(await scopeToBusiness(req, res, parsed.value.businessId))) return;
   const db = await getDb();
   const created = createClient(db, uid(req), parsed.value);
   if (!created) {
@@ -141,6 +151,10 @@ router.put('/clients/:id', async (req, res) => {
   const parsed = parseClient(req.body);
   if (!parsed.ok) {
     res.status(400).json({ error: parsed.error });
+    return;
+  }
+  if (!staysInBusiness(req, parsed.value.businessId)) {
+    res.status(404).json({ error: 'Business not found' });
     return;
   }
   const db = await getDb();
@@ -188,6 +202,7 @@ router.get('/', async (req, res) => {
     res.status(400).json({ error: 'Unknown status' });
     return;
   }
+  if (!(await scopeToBusiness(req, res, q.businessId))) return;
   res.json({
     ...listInvoices(db, uid(req), { status, clientId: one(q.clientId), businessId: one(q.businessId), from, to }, aucklandToday()),
     emailEnabled: emailEnabled(),
@@ -201,6 +216,7 @@ router.post('/', async (req, res) => {
     res.status(400).json({ error: parsed.error });
     return;
   }
+  if (!(await scopeToBusiness(req, res, parsed.value.businessId))) return;
   const db = await getDb();
   reply(res, createInvoice(db, uid(req), parsed.value, today, shareBase(req)), true);
 });
@@ -212,7 +228,8 @@ router.get('/:id', async (req, res) => {
     res.status(404).json({ error: 'Invoice not found' });
     return;
   }
-  res.json(inv);
+  // The caller's role on the invoice's business, so the page can hide what they can't do.
+  res.json({ ...inv, access: { role: (req as ScopedRequest).businessAccess?.role ?? 'owner' } });
 });
 
 router.put('/:id', async (req, res) => {
@@ -220,6 +237,10 @@ router.put('/:id', async (req, res) => {
   const parsed = parseInvoice(req.body, today);
   if (!parsed.ok) {
     res.status(400).json({ error: parsed.error });
+    return;
+  }
+  if (!staysInBusiness(req, parsed.value.businessId)) {
+    res.status(404).json({ error: 'Business not found' });
     return;
   }
   const db = await getDb();

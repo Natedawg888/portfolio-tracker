@@ -8,10 +8,16 @@
  *   POST   /reminders/due            reminders due now, each handed out once (POST: it marks them shown)
  *   GET    /earnings?from=&to=       report dates for the user's US-listed stocks (Finnhub), on NZ dates
  *   GET    /holidays?from=&to=       NZ national public holidays (Nager.Date)
+ *
+ * A business's accountants and viewers (KAN-129) reach its meetings: ?businessId= on the list,
+ * businessId on a new meeting, or a meeting of that business, run as the owner after a role
+ * check (server/middleware/businessScope.ts). A member's meeting always stays in that business,
+ * never becomes one of the owner's personal entries. Reminders go to the owner.
  */
 import { Router, type Request, type Response } from 'express';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { requireUserId } from '../lib/userScope.ts';
+import { scopeTo, scopeToBusiness, scopeUid, type ScopedRequest } from '../middleware/businessScope.ts';
 import { getDb, queryAll } from '../db/index.ts';
 import { earningsFor } from '../calendar/earnings.ts';
 import { holidaysBetween } from '../calendar/holidays.ts';
@@ -37,8 +43,13 @@ router.use((req, res, next) => {
   next();
 });
 
-function uid(req: Request): string {
-  return (req as AuthedRequest & { scopeUserId?: string }).scopeUserId || (req as AuthedRequest).user?.id || '';
+const uid = scopeUid;
+router.param('id', scopeTo('meeting'));
+
+/** A member works only inside the business they were let into: no moving a meeting out of it. */
+function memberKeepsBusiness(req: Request, businessId: string | null): boolean {
+  const a = (req as ScopedRequest).businessAccess;
+  return !a || a.role === 'owner' || businessId === a.businessId;
 }
 
 function reply<T>(res: Response, result: { ok: true; value: T } | { ok: false; status: number; error: string }, created = false) {
@@ -64,6 +75,7 @@ function rangeOr400(req: Request, res: Response): { from: string; to: string } |
 }
 
 router.get('/', async (req, res) => {
+  if (!(await scopeToBusiness(req, res, req.query.businessId))) return;
   const db = await getDb();
   reply(res, listCalendar(db, uid(req), param(req.query.from), param(req.query.to), param(req.query.businessId) || null));
 });
@@ -74,6 +86,7 @@ router.post('/meetings', async (req, res) => {
     res.status(400).json({ error: parsed.error });
     return;
   }
+  if (!(await scopeToBusiness(req, res, parsed.value.businessId))) return;
   const db = await getDb();
   reply(res, createMeeting(db, uid(req), parsed.value, Date.now()), true);
 });
@@ -92,6 +105,10 @@ router.put('/meetings/:id', async (req, res) => {
   const parsed = parseMeeting(req.body);
   if (!parsed.ok) {
     res.status(400).json({ error: parsed.error });
+    return;
+  }
+  if (!memberKeepsBusiness(req, parsed.value.businessId)) {
+    res.status(404).json({ error: 'Business not found' });
     return;
   }
   const db = await getDb();

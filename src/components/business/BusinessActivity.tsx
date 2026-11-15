@@ -29,7 +29,7 @@ const RECORD_PAGE: Record<BusinessRecordItem['kind'], { path: string; note: stri
   wage: { path: 'budget', note: 'Wages paid' },
 };
 
-export function BusinessActivity({ businessId, businessName, taxYear, invoices, money, records = [], busy, act, onTag, ownerTools = true }: {
+export function BusinessActivity({ businessId, businessName, taxYear, invoices, money, records = [], busy, act, onTag, ownerTools = true, invoiceTools = 'edit' }: {
   businessId: string;
   businessName: string;
   taxYear: number;
@@ -42,6 +42,8 @@ export function BusinessActivity({ businessId, businessName, taxYear, invoices, 
   onTag: () => void;
   /** Invoices and tagging use the owner's own pages and money, so they're the owner's (KAN-129). */
   ownerTools?: boolean;
+  /** Invoices (KAN-129): an accountant adds and opens them, a viewer only opens them. */
+  invoiceTools?: 'edit' | 'view';
 }) {
   const { start, end } = taxYearRange(taxYear);
   const rows: Row[] = [
@@ -55,16 +57,18 @@ export function BusinessActivity({ businessId, businessName, taxYear, invoices, 
     <section className="panel warranty-card" aria-labelledby="biz-activity">
       <div className="rental-card-head">
         <h3 id="biz-activity">Money in and out</h3>
-        {ownerTools ? (
         <div className="rental-card-actions">
-          <Link className="btn small ghost" to={`/business/invoices/new?business=${encodeURIComponent(businessId)}`} aria-label={`New invoice for ${name}`}>
-            + Invoice
-          </Link>
-          <button type="button" className="btn small ghost" disabled={busy} aria-label={`Tag transactions from Budget to ${name}`} onClick={onTag}>
-            Tag transactions from Budget
-          </button>
+          {invoiceTools === 'edit' ? (
+            <Link className="btn small ghost" to={`/business/invoices/new?business=${encodeURIComponent(businessId)}`} aria-label={`New invoice for ${name}`}>
+              + Invoice
+            </Link>
+          ) : null}
+          {ownerTools ? (
+            <button type="button" className="btn small ghost" disabled={busy} aria-label={`Tag transactions from Budget to ${name}`} onClick={onTag}>
+              Tag transactions from Budget
+            </button>
+          ) : null}
         </div>
-        ) : null}
       </div>
       {rows.length === 0 ? (
         <div className="business-activity-empty">
@@ -93,7 +97,7 @@ export function BusinessActivity({ businessId, businessName, taxYear, invoices, 
               <li key={r.key} className="rental-entry">
                 <div className="rental-entry-what">
                   <span>
-                    {ownerTools ? <Link to={`/business/invoices/${r.inv.id}`}>Invoice {r.inv.number}</Link> : `Invoice ${r.inv.number}`} · {r.inv.clientName || 'No client'}
+                    <Link to={`/business/invoices/${r.inv.id}`}>Invoice {r.inv.number}</Link> · {r.inv.clientName || 'No client'}
                   </span>
                   <span className="muted small">
                     {formatInvoiceDate(r.inv.issueDate)} · <InvoiceStatusBadge status={r.inv.status} />
