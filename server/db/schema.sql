@@ -1384,6 +1384,29 @@ CREATE TABLE IF NOT EXISTS user_entitlements (
   updated_at  TEXT NOT NULL
 );
 
+-- Stripe billing (KAN-52). Written by the webhook; Stripe is the source of truth. One customer
+-- per user per mode (test/live). A subscription in active/trialing/past_due grants its plan.
+CREATE TABLE IF NOT EXISTS billing_customers (
+  user_id             TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  livemode            INTEGER NOT NULL DEFAULT 0,
+  stripe_customer_id  TEXT NOT NULL UNIQUE,
+  created_at          TEXT NOT NULL,
+  PRIMARY KEY (user_id, livemode)
+);
+CREATE TABLE IF NOT EXISTS billing_subscriptions (
+  stripe_subscription_id  TEXT PRIMARY KEY,
+  user_id                 TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  stripe_customer_id      TEXT NOT NULL,
+  plan                    TEXT NOT NULL,             -- plus | pro
+  billing_interval        TEXT NOT NULL,             -- month | year
+  status                  TEXT NOT NULL,             -- Stripe's subscription status
+  cancel_at_period_end    INTEGER NOT NULL DEFAULT 0,
+  current_period_end      TEXT,
+  livemode                INTEGER NOT NULL DEFAULT 0,
+  updated_at              TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_billing_subscriptions_user ON billing_subscriptions(user_id);
+
 -- Households (KAN-77). A user belongs to at most one household. Roles: owner (one per
 -- household), adult (edits shared items), viewer (read-only). Invites are single-use links
 -- tied to an email address; only the token's hash is stored.

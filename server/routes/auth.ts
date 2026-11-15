@@ -51,6 +51,9 @@ import { exportAccountData } from '../lib/accountExport.ts';
 import { composeDisplayName, createUserAccount, hasPassword } from '../auth/users.ts';
 import { deleteScopedDataForUser, getDataOwnerUserId } from '../lib/userScope.ts';
 import { mayClaimExistingFinance } from '../lib/dataClaim.ts';
+import { billingConfig } from '../billing/config.ts';
+import { BillingError, cancelSubscriptionsForDeletion } from '../billing/service.ts';
+import { deleteBillingRowsForUser } from '../billing/store.ts';
 import {
   deleteAvatarFile,
   photoUrlFromPath,
@@ -917,6 +920,20 @@ router.post('/delete-account', async (req: AuthedRequest, res) => {
   const userId = req.user.id;
   const wasOwner = getDataOwnerUserId(db) === userId;
 
+  // 0) A paid subscription (KAN-52) is cancelled first: if Stripe can't be reached, nothing is
+  //    deleted, so nobody is left being charged for an account that no longer exists.
+  let subscriptionsCancelled = 0;
+  try {
+    const cfg = billingConfig();
+    subscriptionsCancelled = await cancelSubscriptionsForDeletion(db, cfg.ok ? cfg.config : null, userId);
+  } catch (err) {
+    if (err instanceof BillingError) {
+      res.status(err.status).json({ error: err.message, code: err.code });
+      return;
+    }
+    throw err;
+  }
+
   // 1) Scoped finance + holding photos (this user only)
   const scoped = deleteScopedDataForUser(db, userId);
 
@@ -943,6 +960,7 @@ router.post('/delete-account', async (req: AuthedRequest, res) => {
   run(db, `DELETE FROM webauthn_challenges WHERE user_id = ?`, [userId]);
   run(db, `DELETE FROM auth_events WHERE user_id = ?`, [userId]);
   run(db, `DELETE FROM user_entitlements WHERE user_id = ?`, [userId]);
+  deleteBillingRowsForUser(db, userId);
   run(db, `DELETE FROM email_changes WHERE user_id = ?`, [userId]);
 
   // 5) data owner: cleared, never handed to another account. The owner role unlocks the
@@ -969,6 +987,7 @@ router.post('/delete-account', async (req: AuthedRequest, res) => {
       scopedTables: scoped.tables,
       holdingPhotos: scoped.photosRemoved,
       wasDataOwner: wasOwner,
+      subscriptionsCancelled,
     },
     sharedDataRemaining: [
       'app_settings (locale, currency, timezone defaults)',

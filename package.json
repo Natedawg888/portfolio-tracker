@@ -14,6 +14,7 @@
     "db:backfill-mtg-meta": "node --import tsx scripts/backfill-mtg-meta.ts",
     "denylist:update": "node --import tsx scripts/build-custodial-denylist.ts",
     "plan:set": "node --import tsx scripts/set-plan.ts",
+    "stripe:setup": "node --import tsx scripts/stripe-setup.ts",
     "auth:reset-2fa": "node --import tsx scripts/reset-2fa.ts",
     "test:metals": "node --import tsx server/quotes/metals.public.test.ts",
     "test:cash-sync": "node --import tsx server/akahu/sync.cash.test.ts && node --import tsx server/lib/txnBtcLink.test.ts && node --import tsx server/lib/categoryPredict.test.ts",
@@ -51,6 +52,7 @@
     "test:rentals": "node --import tsx src/lib/rental.test.ts && node --import tsx src/lib/rentalTax.test.ts && node --import tsx src/lib/rentalRooms.test.ts && node --import tsx server/rentals/store.test.ts && node --import tsx server/rentals/rooms.test.ts",
     "test:shopping": "node --import tsx server/shopping/store.test.ts && node --import tsx src/lib/shoppingView.test.ts",
     "test:plans": "node --import tsx server/lib/entitlements.test.ts",
+    "test:billing": "node --import tsx server/billing/billing.test.ts && node --import tsx src/lib/billingView.test.ts",
     "test:onboarding-categories": "node --import tsx src/lib/onboardingCategories.test.ts && node --import tsx server/lib/onboardingCategories.api.test.ts",
     "test:settings-categories": "node --import tsx src/lib/assetClassSummary.test.ts && node --import tsx src/lib/visibleNetWorth.test.ts && node --import tsx src/lib/categoryManagerView.test.ts && node --import tsx server/lib/categoryDelete.test.ts",
     "test:household": "node --import tsx server/households/store.test.ts && node --import tsx server/households/sharing.test.ts && node --import tsx server/households/splitMath.test.ts && node --import tsx server/households/splits.test.ts && node --import tsx server/households/paye.test.ts && node --import tsx server/households/family.test.ts",
@@ -93,6 +95,7 @@
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.4",
     "sql.js": "^1.14.2",
+    "stripe": "^23.1.0",
     "tsx": "^4.23.15"
   },
   "devDependencies": {

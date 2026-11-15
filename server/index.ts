@@ -51,6 +51,7 @@ import ssoRouter from './routes/sso.ts';
 import passkeysRouter from './routes/passkeys.ts';
 import economyRouter from './routes/economy.ts';
 import newsRouter from './routes/news.ts';
+import billingRouter, { billingWebhook } from './routes/billing.ts';
 import { loadDotEnv } from './akahu/loadEnv.ts';
 import { ensureUploadDirs, uploadsGate } from './lib/uploads.ts';
 import { attachUser, requireAuth, isPublicApiPath } from './middleware/requireAuth.ts';
@@ -104,6 +105,9 @@ async function main() {
       credentials: true,
     }),
   );
+  // Stripe signs the raw body (KAN-52), so the webhook is mounted before the JSON parser and
+  // before the session gate: the signature is its credential.
+  app.post('/api/billing/webhook', express.raw({ type: 'application/json', limit: '1mb' }), billingWebhook);
   app.use(express.json({ limit: '10mb' })); // property photos as base64
   ensureUploadDirs();
 
@@ -175,6 +179,7 @@ async function main() {
   app.use('/api/economy', economyRouter);
   app.use('/api/news', newsRouter);
   app.use('/api/wallets', walletsRouter);
+  app.use('/api/billing', billingRouter);
 
   // Unmatched /api stops here (JSON). It must not fall through to the SPA.
   app.use('/api', apiNotFound);
