@@ -3,9 +3,11 @@
  * each price by its lookup key, so `npm run stripe:setup` can replace a price (a new amount)
  * without a code change; the amounts here are what that script creates and what Settings shows.
  *
- * Business (KAN-125) isn't sold here yet: it stays an operator grant until it has a price.
+ * Business (KAN-125) is sold here too. A Business subscription grants the business reports
+ * (P&L, GST return, accountant export, accountant access) and not the Plus or Pro features.
+ * An operator can still grant Business with `npm run plan:set` or PLAN_BUSINESS_EMAILS.
  */
-export const BILLING_PLANS = ['plus', 'pro'] as const;
+export const BILLING_PLANS = ['plus', 'pro', 'business'] as const;
 export type BillingPlan = (typeof BILLING_PLANS)[number];
 
 export const BILLING_INTERVALS = ['month', 'year'] as const;
@@ -26,11 +28,14 @@ export const CATALOG: readonly CatalogPrice[] = [
   { plan: 'plus', interval: 'year', lookupKey: 'koruledger_plus_yearly', amountCents: 7999 },
   { plan: 'pro', interval: 'month', lookupKey: 'koruledger_pro_monthly', amountCents: 1999 },
   { plan: 'pro', interval: 'year', lookupKey: 'koruledger_pro_yearly', amountCents: 14999 },
+  { plan: 'business', interval: 'month', lookupKey: 'koruledger_business_monthly', amountCents: 2999 },
+  { plan: 'business', interval: 'year', lookupKey: 'koruledger_business_yearly', amountCents: 24999 },
 ];
 
 export const PRODUCTS: Record<BillingPlan, { id: string; name: string }> = {
   plus: { id: 'koruledger_plus', name: 'KoruLedger Plus' },
   pro: { id: 'koruledger_pro', name: 'KoruLedger Pro' },
+  business: { id: 'koruledger_business', name: 'KoruLedger Business' },
 };
 
 export function isBillingPlan(v: unknown): v is BillingPlan {

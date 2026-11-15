@@ -1397,7 +1397,7 @@ CREATE TABLE IF NOT EXISTS billing_subscriptions (
   stripe_subscription_id  TEXT PRIMARY KEY,
   user_id                 TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   stripe_customer_id      TEXT NOT NULL,
-  plan                    TEXT NOT NULL,             -- plus | pro
+  plan                    TEXT NOT NULL,             -- plus | pro | business
   billing_interval        TEXT NOT NULL,             -- month | year
   status                  TEXT NOT NULL,             -- Stripe's subscription status
   cancel_at_period_end    INTEGER NOT NULL DEFAULT 0,

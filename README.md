@@ -201,6 +201,22 @@ Portfolio → metal card → **Refresh value**, or Value search → **Refresh me
 
 Details: [docs/METALS.md](./docs/METALS.md)
 
+## Billing
+
+Paid plans are sold through Stripe in NZD, GST included. Settings → Account → Plan offers:
+
+| Plan | Monthly | Yearly | Lookup keys |
+|------|---------|--------|-------------|
+| Plus | NZ$9.99 | NZ$79.99 | `koruledger_plus_monthly`, `koruledger_plus_yearly` |
+| Pro | NZ$19.99 | NZ$149.99 | `koruledger_pro_monthly`, `koruledger_pro_yearly` |
+| Business | NZ$29.99 | NZ$249.99 | `koruledger_business_monthly`, `koruledger_business_yearly` |
+
+`npm run stripe:setup` creates the Plus, Pro and Business products and prices (safe to re-run). `npm run stripe:setup -- --gst` also creates an inclusive 15% GST rate. A `sk_live_` or `rk_live_` key is refused unless `STRIPE_LIVE_ENABLED=1`.
+
+`POST /api/billing/checkout` starts Checkout for `plus`, `pro` or `business` (monthly or yearly). The webhook at `POST /api/billing/webhook` fetches the subscription from Stripe and saves it. `GET /api/billing` reports the plan, the subscription and the prices. An `active`, `trialing` or `past_due` Business subscription grants the Business plan used by the business reports (profit & loss, the GST return, the accountant export and accountant access). It does not include Plus or Pro features. `unpaid` and `canceled` drop the paid plan.
+
+`npm run plan:set` and `PLAN_BUSINESS_EMAILS` still grant Business without a subscription. Deleting an account cancels its Plus, Pro or Business subscription first. Variables are in `.env.example`. `npm run test:billing`.
+
 ## Branch / release flow
 
 NZ personal finance / portfolio tracker (Akahu).

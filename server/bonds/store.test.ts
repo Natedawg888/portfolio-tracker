@@ -27,6 +27,7 @@ const { attachUser, requireAuth, isPublicApiPath } = await import('../middleware
 const { computeNetWorth } = await import('../lib/netWorth.ts');
 const { deleteScopedDataForUser } = await import('../lib/userScope.ts');
 const { listBonds, syncBondIncome, bondProjectionFlows } = await import('./store.ts');
+const { aucklandToday } = await import('../../src/lib/debtModel.ts');
 const { cycleMix } = await import('../../src/lib/cycleMix.ts');
 const { default: bondsRouter } = await import('../routes/bonds.ts');
 
@@ -90,10 +91,14 @@ try {
   const g = r.json.bonds.find((b: Json) => b.kind === 'govt');
   const t = r.json.bonds.find((b: Json) => b.kind === 'td');
   assert(g.value === 9800 && g.valueSource === 'cost' && g.code === 'NZGOVDT529', 'bond at cost');
-  assert(g.nextCoupon.date === '2026-11-15' && g.nextCoupon.net === 150.75, 'next coupon after RWT');
+  // Coupons count back from 15 May 2029. "Next" is the first of those still on or after today in Auckland.
+  const today = aucklandToday();
+  const nextGovt = ['2026-11-15', '2027-05-15', '2027-11-15', '2028-05-15', '2028-11-15', '2029-05-15'].find((d) => d >= today);
+  assert(g.nextCoupon.date === nextGovt && g.nextCoupon.net === 150.75, `next coupon after RWT (today ${today}, got ${JSON.stringify(g.nextCoupon)})`);
   assert(t.nextCoupon.date === '2027-04-01' && t.nextCoupon.net === 498.63, 'TD interest at maturity');
   assert(r.json.totals.valueNzd === 29800 && r.json.totals.bondsNzd === 9800 && r.json.totals.termDepositsNzd === 20000, 'totals');
-  assert(r.json.plus && r.json.calendar.length >= 2 && r.json.calendar[0].date === '2026-11-15', 'Plus: calendar');
+  const soonest = ['2026-11-15', '2027-04-01', '2027-05-15', '2027-11-15', '2028-05-15', '2028-11-15', '2029-05-15'].find((d) => d >= today);
+  assert(r.json.plus && r.json.calendar.length >= 2 && r.json.calendar[0].date === soonest, `Plus: calendar (today ${today}, first ${r.json.calendar?.[0]?.date})`);
 
   // RWT 45% (no IRD number) and 28% (company) are accepted (KAN-95).
   for (const rwtPct of [45, 28]) {

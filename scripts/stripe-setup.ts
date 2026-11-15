@@ -2,6 +2,7 @@
  * Create KoruLedger's Stripe products and prices (KAN-52). Safe to run again: it only adds
  * what's missing, and moves a lookup key to a new price when an amount in
  * server/billing/catalog.ts changes (Stripe prices can't be edited).
+ * Plus, Pro and Business each get a product and a monthly and yearly price.
  *
  *   STRIPE_SECRET_KEY=sk_test_… npm run stripe:setup
  *   STRIPE_SECRET_KEY=sk_test_… npm run stripe:setup -- --gst   # also an inclusive 15% GST rate

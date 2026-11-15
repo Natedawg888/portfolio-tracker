@@ -23,7 +23,7 @@ export const DELETED_ITEMS: readonly string[] = [
   'How you sign in: password, passkeys, Google, Apple or Microsoft connections, two-factor setup, trusted devices, signed-in sessions and sign-in history',
   'Your money: accounts, transactions and receipts, holdings and their photos, KiwiSaver, crypto, bonds, commodities, vehicles, rentals, businesses with their assets, clients and logos, budgets and categories, savings goals, income, payslips, invoices, warranties and shopping lists',
   'Your Akahu bank connection',
-  'Your Plus or Pro subscription: it’s cancelled first, with no further charges',
+  'Your Plus, Pro or Business subscription: it’s cancelled first, with no further charges',
   'Supermarket prices you shared',
   'Your place in a household, what you shared with it, and your name in its history',
 ];
