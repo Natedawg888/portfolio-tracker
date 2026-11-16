@@ -54,12 +54,28 @@ function nonTerminalSubscriptions(db: Database, userId: string): SubRef[] {
   );
 }
 
-/** Stripe already finished this subscription, so the local row can be marked canceled. */
-function stripeCancelAlreadyDone(err: unknown): boolean {
-  const code = err && typeof err === 'object' && 'code' in err ? String((err as { code?: unknown }).code) : '';
-  if (code === 'resource_missing') return true;
-  const message = err instanceof Error ? err.message : String(err);
-  return /already cancell?ed|no such subscription/i.test(message);
+function stripeErrorCode(err: unknown): string {
+  if (!err || typeof err !== 'object' || !('code' in err)) return '';
+  const code = (err as { code?: unknown }).code;
+  return code == null ? '' : String(code);
+}
+
+/**
+ * Cancel failed. Ask Stripe what the subscription is now. canceled and
+ * incomplete_expired are finished. resource_missing on the retrieve, or on the
+ * cancel error, means it is already gone. The error wording is not used.
+ */
+async function subscriptionCancelFinished(
+  stripe: ReturnType<typeof stripeClient>,
+  subscriptionId: string,
+  cancelErr: unknown,
+): Promise<boolean> {
+  try {
+    const remote = await stripe.subscriptions.retrieve(subscriptionId);
+    return remote.status === 'canceled' || remote.status === 'incomplete_expired';
+  } catch (retrieveErr) {
+    return stripeErrorCode(retrieveErr) === 'resource_missing' || stripeErrorCode(cancelErr) === 'resource_missing';
+  }
 }
 
 function markSubscriptionCanceled(db: Database, userId: string, subscriptionId: string): void {
@@ -73,8 +89,8 @@ function markSubscriptionCanceled(db: Database, userId: string, subscriptionId: 
 /**
  * Cancel non-terminal subscriptions whose livemode matches the current billing
  * config (active, trialing, past_due, unpaid, incomplete, paused). Other-mode
- * rows are left in place. Already canceled or missing at Stripe counts as success.
- * Never throws.
+ * rows are left in place. A cancel error is followed by a retrieve: canceled,
+ * incomplete_expired, or resource_missing counts as success. Never throws.
  */
 export async function cancelMarkedSubscriptionBestEffort(db: Database, userId: string): Promise<{ cancelled: string[]; failed: string[] }> {
   const cancelled: string[] = [];
@@ -102,7 +118,7 @@ export async function cancelMarkedSubscriptionBestEffort(db: Database, userId: s
       markSubscriptionCanceled(db, userId, sub.stripe_subscription_id);
       cancelled.push(sub.stripe_subscription_id);
     } catch (err) {
-      if (stripeCancelAlreadyDone(err)) {
+      if (await subscriptionCancelFinished(stripe, sub.stripe_subscription_id, err)) {
         markSubscriptionCanceled(db, userId, sub.stripe_subscription_id);
         cancelled.push(sub.stripe_subscription_id);
         continue;

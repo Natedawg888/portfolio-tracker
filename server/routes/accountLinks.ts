@@ -42,7 +42,7 @@ router.get('/links', async (req: AuthedRequest, res) => {
     return;
   }
   const db = await getDb();
-  res.json(listAccountLinks(db, req.user.id));
+  res.json(listAccountLinks(db, req.user.id, req.user.sessionId));
 });
 
 router.post('/business', async (req: AuthedRequest, res) => {
@@ -56,7 +56,7 @@ router.post('/business', async (req: AuthedRequest, res) => {
     fail(res, result.status, result.code, result.error);
     return;
   }
-  res.status(201).json({ account: result.account, links: listAccountLinks(db, req.user.id) });
+  res.status(201).json({ account: result.account, links: listAccountLinks(db, req.user.id, req.user.sessionId) });
 });
 
 /** Same credential check and rate limit as POST /api/auth/login. 401, not a dead session. */
@@ -97,7 +97,7 @@ router.post('/links', async (req: AuthedRequest, res) => {
     return;
   }
   clearLoginFailures(email);
-  res.json({ links: listAccountLinks(db, req.user.id) });
+  res.json({ links: listAccountLinks(db, req.user.id, req.user.sessionId) });
 });
 
 router.delete('/links/:linkedUserId', async (req: AuthedRequest, res) => {
@@ -116,7 +116,7 @@ router.delete('/links/:linkedUserId', async (req: AuthedRequest, res) => {
     fail(res, result.status, result.code, result.error);
     return;
   }
-  res.json({ ok: true, links: listAccountLinks(db, req.user.id) });
+  res.json({ ok: true, links: listAccountLinks(db, req.user.id, req.user.sessionId) });
 });
 
 router.post('/switch', async (req: AuthedRequest, res) => {

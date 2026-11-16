@@ -164,14 +164,26 @@ export function activeAccountFor(db: Database, userId: string): ActiveAccount {
   };
 }
 
+function sessionOriginOwnerId(db: Database, userId: string, sessionId: string | null | undefined): string | null {
+  if (!sessionId) return null;
+  const row = queryOne<{ origin_owner_user_id: string | null }>(
+    db,
+    `SELECT origin_owner_user_id FROM sessions WHERE id = ? AND user_id = ?`,
+    [sessionId, userId],
+  );
+  return row?.origin_owner_user_id ?? null;
+}
+
 /** From either side: the owner sees linked businesses; a linked business sees its owner. */
-export function listAccountLinks(db: Database, userId: string): AccountLinksResponse {
+export function listAccountLinks(db: Database, userId: string, sessionId?: string | null): AccountLinksResponse {
   const ownerId = ownerUserIdOf(db, userId);
   const rows = queryOwned(db, userId);
+  const origin = sessionOriginOwnerId(db, userId, sessionId);
   return {
     current: party(db, userId),
     owner: ownerId ? party(db, ownerId) : null,
     linked: rows.map((id) => summary(db, id, userId)),
+    canSwitchToOwner: ownerId != null && origin === ownerId,
   };
 }
 

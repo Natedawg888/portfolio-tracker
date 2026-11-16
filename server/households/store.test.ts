@@ -190,6 +190,27 @@ try {
   process.env.PLAN_PLUS_EMAILS = '';
   assert((await call('DELETE', '/', C.olive)).status === 200, 'owner deletes without Plus');
   assert((await call('GET', '/', C.olive)).json.household === null, 'gone');
+
+  // A synthetic linked address is never shown. The display name is the fallback.
+  const synEmail = 'linked.household@accounts.koruledger.invalid';
+  const blankEmail = 'linked.blank@accounts.koruledger.invalid';
+  run(db, `INSERT INTO users (id, email, password_hash, display_name, created_at, updated_at) VALUES (?,?,?,?,?,?)`, ['syn', synEmail, 'h', 'Honey Shop', now, now]);
+  run(db, `INSERT INTO users (id, email, password_hash, created_at, updated_at) VALUES (?,?,?,?,?)`, ['blank', blankEmail, 'h', now, now]);
+  run(db, `INSERT INTO users (id, email, password_hash, created_at, updated_at) VALUES (?,?,?,?,?)`, ['local', 'till.local@example.com', 'h', now, now]);
+  setPlan(db, 'syn', 'plus');
+  const synCookie = `${SESSION_COOKIE}=${(await createSession('syn')).rawToken}`;
+  r = await call('POST', '/', synCookie, { name: 'Shop house' });
+  assert(r.status === 201, `household for a synthetic address (${r.status} ${r.text})`);
+  const hh = r.json.household.id as string;
+  for (const id of ['blank', 'local']) {
+    run(db, `INSERT INTO household_members (household_id, user_id, role, joined_at) VALUES (?,?, 'adult', ?)`, [hh, id, now]);
+  }
+  r = await call('GET', '/', synCookie);
+  const byId = Object.fromEntries(r.json.household.members.map((m: Json) => [m.userId, m]));
+  assert(byId.syn.name === 'Honey Shop' && byId.syn.email === 'Honey Shop', 'synthetic address falls back to the display name');
+  assert(byId.blank.name === 'Member' && byId.blank.email === 'Member', 'no name and a synthetic address stays Member');
+  assert(byId.local.name === 'till.local' && byId.local.email === 'till.local@example.com', 'a real address still shows');
+  assert(!r.text.includes('.invalid') && !r.text.includes('linked.'), 'household payload has no synthetic address');
   console.log('household tests passed');
 } finally {
   server.close();
