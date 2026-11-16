@@ -55,6 +55,14 @@ try {
   assert(planOf(db, 'pia') === 'business', 'a Business grant is not undone by the Pro list');
   setPlan(db, 'pia', 'free', 'test');
   assert(planOf(db, 'pia') === 'pro', 'dropping the grant falls back to the Pro list');
+  delete process.env.PRO_PLAN_ENABLED;
+  const { proPlanEnabled } = await import('../billing/proPlan.ts');
+  assert(proPlanEnabled() === false, 'Pro sales are off unless PRO_PLAN_ENABLED is set');
+  assert(planOf(db, 'pia') === 'pro' && hasFeature(db, 'pia', 'crypto_pro'), 'hiding Pro sales does not drop an existing Pro grant');
+  process.env.PRO_PLAN_ENABLED = 'yes';
+  assert(proPlanEnabled() === true, 'PRO_PLAN_ENABLED=yes turns Pro sales on');
+  delete process.env.PRO_PLAN_ENABLED;
+  assert(planOf(db, 'pia') === 'pro' && hasFeature(db, 'pia', 'crypto_pro'), 'turning the flag off again leaves the Pro grant');
 
   // Business unlocks the business reports and nothing personal; no other plan gets them.
   assert(hasFeature(db, 'bea', 'business_reports') && hasFeature(db, 'bob', 'business_reports'), 'Business has business_reports');

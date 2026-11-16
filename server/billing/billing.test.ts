@@ -16,7 +16,7 @@ const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pt-billing-'));
 process.env.DATABASE_PATH = path.join(dataDir, 'portfolio.db');
 process.env.AUTH_ENCRYPTION_KEY = 'd'.repeat(64);
 process.env.PUBLIC_URL = 'https://app.example.test/';
-for (const k of ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'STRIPE_LIVE_ENABLED', 'STRIPE_GST_TAX_RATE_ID', 'STRIPE_PORTAL_CONFIG_ID', 'PLAN_PLUS_EMAILS', 'PLAN_PRO_EMAILS', 'PLAN_BUSINESS_EMAILS']) {
+for (const k of ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'STRIPE_LIVE_ENABLED', 'STRIPE_GST_TAX_RATE_ID', 'STRIPE_PORTAL_CONFIG_ID', 'PLAN_PLUS_EMAILS', 'PLAN_PRO_EMAILS', 'PLAN_BUSINESS_EMAILS', 'PRO_PLAN_ENABLED']) {
   delete process.env[k];
 }
 
@@ -28,6 +28,7 @@ const { getDb, run, queryOne } = await import('../db/index.ts');
 const { planOf, hasFeature, setPlan } = await import('../lib/entitlements.ts');
 const { billingConfig } = await import('./config.ts');
 const { catalogByLookupKey, catalogPrice } = await import('./catalog.ts');
+const { proPlanEnabled } = await import('./proPlan.ts');
 const { catalogForSubscription } = await import('./service.ts');
 const { setStripeClientForTests } = await import('./client.ts');
 const { createSession, SESSION_COOKIE } = await import('../auth/sessions.ts');
@@ -53,6 +54,8 @@ assert(catalogPrice('pro', 'month').amountCents === 1999 && catalogPrice('pro', 
 assert(catalogPrice('business', 'month').amountCents === 2999 && catalogPrice('business', 'year').amountCents === 24999, 'Business NZ$29.99 / $249.99');
 assert(catalogPrice('business', 'month').lookupKey === 'koruledger_business_monthly' && catalogPrice('business', 'year').lookupKey === 'koruledger_business_yearly', 'Business lookup keys');
 assert(catalogByLookupKey('koruledger_pro_yearly')?.plan === 'pro' && catalogByLookupKey('koruledger_business_yearly')?.plan === 'business' && catalogByLookupKey('other') === null, 'lookup keys');
+assert(proPlanEnabled({}) === false && proPlanEnabled({ PRO_PLAN_ENABLED: '' }) === false && proPlanEnabled({ PRO_PLAN_ENABLED: '0' }) === false, 'Pro sales default off');
+assert(proPlanEnabled({ PRO_PLAN_ENABLED: '1' }) && proPlanEnabled({ PRO_PLAN_ENABLED: ' true ' }) && proPlanEnabled({ PRO_PLAN_ENABLED: 'YES' }) && proPlanEnabled({ PRO_PLAN_ENABLED: 'on' }), 'PRO_PLAN_ENABLED accepts 1, true, yes, on');
 assert(
   catalogForSubscription({
     items: {
@@ -178,7 +181,7 @@ try {
 
   // Billing off: the page says so, checkout and the webhook refuse.
   let st = await call('GET', '/api/billing', una);
-  assert(st.status === 200 && st.json.available === false && st.json.plan === 'free' && st.json.prices.length === 6, 'off: status shows prices, unavailable');
+  assert(st.status === 200 && st.json.available === false && st.json.plan === 'free' && st.json.prices.length === 6 && st.json.proPlanEnabled === false, 'off: status shows prices, unavailable, Pro hidden');
   assert(
     st.json.prices.some((p: { plan: string; interval: string; amountCents: number }) => p.plan === 'business' && p.interval === 'month' && p.amountCents === 2999) &&
       st.json.prices.some((p: { plan: string; interval: string; amountCents: number }) => p.plan === 'business' && p.interval === 'year' && p.amountCents === 24999),
@@ -198,6 +201,13 @@ try {
   assert((await call('GET', '/api/billing', null)).status === 401, 'signed out 401');
   assert((await call('POST', '/api/billing/checkout', una, { plan: 'enterprise', interval: 'month' })).json.code === 'BAD_PLAN', 'unknown plan refused');
   assert((await call('POST', '/api/billing/portal', una)).json.code === 'NO_CUSTOMER', 'no portal before a customer');
+
+  const proOff = await call('POST', '/api/billing/checkout', una, { plan: 'pro', interval: 'year' });
+  assert(proOff.status === 400 && proOff.json.error === 'Pro is not available yet' && proOff.json.code === 'PRO_UNAVAILABLE', 'pro checkout refused while PRO_PLAN_ENABLED is off');
+  assert(calls.checkout.length === 0, 'a refused Pro checkout does not open Stripe');
+  assert((await call('GET', '/api/billing', una)).json.proPlanEnabled === false, 'status says Pro is not for sale');
+  process.env.PRO_PLAN_ENABLED = '1';
+  assert((await call('GET', '/api/billing', una)).json.proPlanEnabled === true, 'PRO_PLAN_ENABLED=1 offers Pro');
 
   // Checkout: one customer per user, the price by lookup key, user id on the subscription.
   const co = await call('POST', '/api/billing/checkout', una, { plan: 'pro', interval: 'year' });
@@ -222,6 +232,8 @@ try {
   assert(bizYear.status === 200 && (calls.checkout[3] as any).line_items[0].price === 'price_koruledger_business_yearly', 'business yearly price by lookup key');
   assert(calls.customers === 1, 'business checkout reuses the customer');
   assert(planOf(db, 'una') === 'free', 'no plan until Stripe says paid');
+  delete process.env.PRO_PLAN_ENABLED;
+  assert((await call('GET', '/api/billing', una)).json.proPlanEnabled === false, 'Pro sales off again before the webhook');
 
   // Webhook security: bad signature, wrong mode.
   subs.set('sub_una', { id: 'sub_una', customer: 'cus_new1', status: 'active', lookupKey: 'koruledger_pro_yearly', metadata: { user_id: 'una' } });
@@ -267,6 +279,9 @@ try {
   setPlan(db, 'una', 'business', 'test');
   assert(planOf(db, 'una') === 'business' && hasFeature(db, 'una', 'business_reports'), 'operator Business grant');
   setPlan(db, 'una', 'free', 'test');
+  setPlan(db, 'una', 'pro', 'operator');
+  assert(planOf(db, 'una') === 'pro' && hasFeature(db, 'una', 'crypto_pro'), 'plan:set Pro still applies while checkout is off');
+  setPlan(db, 'una', 'free', 'test');
 
   // A Business subscription maps to the business tier and its reports, not Plus or Pro features.
   subs.set('sub_biz', { id: 'sub_biz', customer: 'cus_new1', status: 'active', lookupKey: 'koruledger_business_yearly', metadata: { user_id: 'una' } });
@@ -311,6 +326,13 @@ try {
   process.env.STRIPE_SECRET_KEY = 'sk_test_abc';
   del = await call('POST', '/api/auth/delete-account', vic, { password: 'correct horse battery', confirm: 'DELETE' });
   assert(del.status === 200 && del.json.deleted.subscriptionsCancelled === 1 && calls.cancelled.includes('sub_vic'), 'deletion cancels the subscription');
+  const wesCookie = await cookie('wes');
+  const wesPlus = await call('POST', '/api/billing/checkout', wesCookie, { plan: 'plus', interval: 'month' });
+  assert(wesPlus.status === 200 && (calls.checkout.at(-1) as any).line_items[0].price === 'price_koruledger_plus_monthly', 'plus checkout while Pro is hidden');
+  const wesBiz = await call('POST', '/api/billing/checkout', wesCookie, { plan: 'business', interval: 'year' });
+  assert(wesBiz.status === 200 && (calls.checkout.at(-1) as any).line_items[0].price === 'price_koruledger_business_yearly', 'business checkout while Pro is hidden');
+  const wesPro = await call('POST', '/api/billing/checkout', wesCookie, { plan: 'pro', interval: 'month' });
+  assert(wesPro.status === 400 && wesPro.json.error === 'Pro is not available yet', 'pro checkout still refused after other plans');
   assert(queryOne(db, `SELECT 1 AS x FROM billing_subscriptions WHERE user_id = 'vic'`) == null && queryOne(db, `SELECT 1 AS x FROM billing_customers WHERE user_id = 'vic'`) == null, 'billing rows removed');
 
   // No subscription: deletion is unaffected even with billing off.

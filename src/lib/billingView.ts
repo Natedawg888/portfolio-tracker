@@ -23,6 +23,14 @@ export const PLAN_LABELS: Record<AccountPlan, string> = {
   business: 'Business',
 };
 
+/**
+ * Paid plans offered for sale. Pro is omitted unless the API says PRO_PLAN_ENABLED is on.
+ * Free stays a plan (the label above); it is not a Stripe product.
+ */
+export function offeredPaidPlans(proPlanEnabled: boolean): PaidPlan[] {
+  return proPlanEnabled ? ['plus', 'pro', 'business'] : ['plus', 'business'];
+}
+
 /** What each paid plan adds (keep in step with server/lib/entitlements.ts). */
 export const PLAN_FEATURES: Record<PaidPlan, readonly string[]> = {
   plus: ['Share with your household', 'Payslips and the PAYE check', 'Bonds: coupons, maturities and projections', 'Commodities in your asset mix'],
