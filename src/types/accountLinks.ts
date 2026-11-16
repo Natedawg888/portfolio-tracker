@@ -9,9 +9,10 @@
  *
  * Created business users have no mailbox. users.email is NOT NULL UNIQUE, so the
  * server stores a synthetic address at accounts.koruledger.invalid (the .invalid
- * TLD is reserved and cannot receive mail). password_hash is the sentinel
- * !linked-no-login until that account sets its own password. It is reached only
- * by switching.
+ * TLD is reserved and cannot receive mail). That address never leaves the server:
+ * /api/auth/me, switch, and the account download return email: null. password_hash
+ * is the sentinel !linked-no-login until that account sets its own password.
+ * It is reached only by switching. activeAccount.hasOwnLogin is false until then.
  */
 import type { UsageMode } from '../lib/usageMode';
 
@@ -23,6 +24,8 @@ export type ActiveAccount = {
   usageMode: UsageMode;
   /** True when this user is a business account attached to a personal owner. */
   isLinkedBusiness: boolean;
+  /** Password, passkey, or single sign-on. False for a created account that is only reached by switching. */
+  hasOwnLogin: boolean;
   /** The personal owner's id when isLinkedBusiness, otherwise null. */
   ownerId: string | null;
 };

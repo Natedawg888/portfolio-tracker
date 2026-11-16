@@ -78,14 +78,18 @@ export function setEmailFetchForTest(f: FetchLike | null): void {
 export async function sendEmail(mail: OutboundEmail): Promise<SendResult> {
   const cfg = emailConfig();
   if (!cfg) return { ok: false, error: 'Email sending is not set up on this server.' };
+  const { isSyntheticLinkedEmail } = await import('../auth/syntheticEmail.ts');
+  const to = mail.to.filter((address) => !isSyntheticLinkedEmail(address));
+  const replyTo = mail.replyTo && !isSyntheticLinkedEmail(mail.replyTo) ? mail.replyTo : null;
+  if (to.length === 0) return { ok: true, id: null };
   const body: Record<string, unknown> = {
     from: `${safeDisplayName(mail.fromName)} <${cfg.from}>`,
-    to: mail.to,
+    to,
     subject: mail.subject,
     text: mail.text,
     html: mail.html,
   };
-  if (mail.replyTo) body.reply_to = mail.replyTo;
+  if (replyTo) body.reply_to = replyTo;
   if (mail.attachment) {
     body.attachments = [
       { filename: mail.attachment.filename, content: Buffer.from(mail.attachment.content).toString('base64') },

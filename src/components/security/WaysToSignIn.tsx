@@ -87,7 +87,7 @@ export function WaysToSignIn({
     setError(null);
     try {
       await addPasskey({ password: addPassword ?? undefined });
-      if (user) writeHint({ email: user.email, name: hintName(user) });
+      if (user?.email) writeHint({ email: user.email, name: hintName(user) });
       setAddPassword(null);
       toast('Passkey added. You can sign in on this device with one tap.');
       await reload();

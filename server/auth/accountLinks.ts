@@ -32,11 +32,11 @@ import { newId, queryAll, queryOne, run } from '../db/index.ts';
 import { planOf } from '../lib/entitlements.ts';
 import { destroySessionsForUser } from './sessions.ts';
 import { NO_LOGIN, composeDisplayName, createUserAccount, signInMethodCount } from './users.ts';
+import { LINKED_ACCOUNT_EMAIL_DOMAIN, isSyntheticLinkedEmail, publicEmail } from './syntheticEmail.ts';
+
+export { LINKED_ACCOUNT_EMAIL_DOMAIN, isSyntheticLinkedEmail, publicEmail };
 
 export const MAX_LINKED_ACCOUNTS = 5;
-
-/** Reserved domain (RFC 2606). Not a mailbox. Documented in the README. */
-export const LINKED_ACCOUNT_EMAIL_DOMAIN = 'accounts.koruledger.invalid';
 
 export const ACCOUNT_PENDING_DELETION = {
   status: 403 as const,
@@ -159,6 +159,7 @@ export function activeAccountFor(db: Database, userId: string): ActiveAccount {
     id: userId,
     usageMode: usageModeFor(db, userId),
     isLinkedBusiness: ownerId != null,
+    hasOwnLogin: accountHasOwnLogin(db, userId),
     ownerId,
   };
 }

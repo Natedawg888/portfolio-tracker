@@ -18,7 +18,7 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
-function initialsFor(user: { firstName: string | null; lastName: string | null; displayName: string | null; email: string } | null): string {
+function initialsFor(user: { firstName: string | null; lastName: string | null; displayName: string | null; email: string | null } | null): string {
   const f = (user?.firstName || '').trim();
   const l = (user?.lastName || '').trim();
   if (f && l) return (f[0] + l[0]).toUpperCase();

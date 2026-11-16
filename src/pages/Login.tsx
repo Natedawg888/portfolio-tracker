@@ -114,9 +114,10 @@ export function Login() {
 
   /** After a password (or 2FA) sign-in, offer a passkey once per account on this browser. */
   const done = (u: AuthUser) => {
-    const hasHint = hint?.email.toLowerCase() === u.email.toLowerCase();
-    if (canPasskey && !adding && !hasHint && !offerDismissed(u.email)) {
-      writeLastEmail(u.email);
+    const email = u.email ?? '';
+    const hasHint = hint?.email.toLowerCase() === email.toLowerCase();
+    if (canPasskey && !adding && email && !hasHint && !offerDismissed(email)) {
+      writeLastEmail(email);
       setError(null);
       setStep({ kind: 'offer', user: u });
       return;
@@ -129,7 +130,7 @@ export function Login() {
     setBusy(true);
     try {
       const u = await passkeySignIn(remember);
-      const next = { email: u.email, name: hintName(u) };
+      const next = u.email ? { email: u.email, name: hintName(u) } : null;
       writeHint(next);
       setHint(next);
       finish(u);
@@ -154,7 +155,7 @@ export function Login() {
     setBusy(true);
     try {
       await addPasskey();
-      writeHint({ email: step.user.email, name: hintName(step.user) });
+      if (step.user.email) writeHint({ email: step.user.email, name: hintName(step.user) });
       showQuietToast('Passkey added. Next time, sign in with one tap.', { kind: 'info' });
       finish(step.user);
     } catch (err) {
@@ -166,7 +167,7 @@ export function Login() {
 
   const onSkipPasskey = () => {
     if (step.kind !== 'offer') return;
-    dismissOffer(step.user.email);
+    if (step.user.email) dismissOffer(step.user.email);
     finish(step.user);
   };
 

@@ -11,6 +11,7 @@ import { verifyPassword } from '../auth/passwords.ts';
 import { listSessions, parseCookieHeader, revokeOtherSessions, revokeSession } from '../auth/sessions.ts';
 import { listAccounts, switchAccount } from '../auth/accounts.ts';
 import { hasPassword } from '../auth/users.ts';
+import { publicEmail } from '../auth/syntheticEmail.ts';
 import { configuredSsoProviders } from '../auth/sso.ts';
 import { lastPasswordSignInAt, listAuthEvents, markSignInsReviewed, unreviewedNewSignIns } from '../auth/authEvents.ts';
 import { recentSignInUntil } from '../auth/reauth.ts';
@@ -108,7 +109,7 @@ router.post('/2fa/setup', async (req: AuthedRequest, res) => {
     res.status(403).json({ error: 'Current password is incorrect', code: 'WRONG_PASSWORD' });
     return;
   }
-  res.json(beginTotpSetup(db, req.user.id, req.user.email));
+  res.json(beginTotpSetup(db, req.user.id, publicEmail(req.user.email) ?? req.user.displayName ?? req.user.id));
 });
 
 /** Step 2: first code from the app confirms setup; returns backup codes once. Body: { code }. */

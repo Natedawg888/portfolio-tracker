@@ -9,6 +9,7 @@
 import type Stripe from 'stripe';
 import type { Database } from 'sql.js';
 import { billingResultUrl } from '../../src/lib/billingReturn.ts';
+import { publicEmail } from '../auth/syntheticEmail.ts';
 import { ensureStarterBusiness } from '../business/starter.ts';
 import { queryOne } from '../db/index.ts';
 import { logger } from '../lib/logger.ts';
@@ -157,8 +158,9 @@ export async function handleBillingEvent(db: Database, config: BillingConfig, ev
 async function ensureCustomer(db: Database, config: BillingConfig, user: { id: string; email: string; name?: string }): Promise<string> {
   const existing = customerIdFor(db, user.id, config.live);
   if (existing) return existing;
+  const email = publicEmail(user.email);
   const customer = await stripeClient(config).customers.create({
-    email: user.email,
+    ...(email ? { email } : {}),
     name: user.name || undefined,
     metadata: { user_id: user.id },
   });

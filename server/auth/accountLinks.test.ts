@@ -45,6 +45,7 @@ const { setStripeClientForTests } = await import('../billing/client.ts');
 const { grantingSubscriptions, saveSubscription, userIdForCustomer } = await import('../billing/store.ts');
 const { settleMarkedLinkedAccounts } = await import('./linkedDeletion.ts');
 const { createSession } = await import('./sessions.ts');
+const { sendEmail, setEmailFetchForTest } = await import('../invoices/email.ts');
 const { beginTotpSetup, confirmTotpSetup } = await import('./twoFactor.ts');
 const { base32Decode, hotp, totpStep } = await import('./totp.ts');
 const { NO_LOGIN } = await import('./users.ts');
@@ -175,7 +176,11 @@ try {
   check(toHoney.status === 200, `switch to business (${toHoney.status} ${toHoney.text})`);
   const honeyUser = toHoney.json!.user as Json;
   const honeyActive = honeyUser.activeAccount as Json;
-  check(honeyUser.id === honeyId && honeyActive.isLinkedBusiness === true && honeyActive.ownerId === pat.id, 'switch response is the business');
+  check(honeyUser.id === honeyId && honeyUser.email === null && honeyActive.isLinkedBusiness === true && honeyActive.hasOwnLogin === false && honeyActive.ownerId === pat.id, 'switch response hides the synthetic email');
+  check(!toHoney.text.includes(LINKED_ACCOUNT_EMAIL_DOMAIN), 'switch body has no synthetic address');
+  const honeyMe = await call(pat.jar, 'GET', '/api/auth/me');
+  check((honeyMe.json!.user as Json).email === null && (honeyMe.json!.activeAccount as Json).hasOwnLogin === false, '/me hides the synthetic email');
+  check(!honeyMe.text.includes(LINKED_ACCOUNT_EMAIL_DOMAIN), '/me body has no synthetic address');
   check((toHoney.json!.activeAccount as Json).id === honeyId, 'switch activeAccount matches');
   check(pat.jar.get('pt_sid') !== oldSid, 'session cookie rotated');
 
@@ -289,7 +294,7 @@ try {
   const honeyParams = checkoutCalls[0] as { customer?: string; client_reference_id?: string; subscription_data?: { metadata?: { user_id?: string } }; line_items?: { price: string }[] };
   check(honeyParams.client_reference_id === honeyId && honeyParams.subscription_data?.metadata?.user_id === honeyId, 'checkout is tagged with the business user');
   check(honeyParams.line_items?.[0].price === 'price_koruledger_business_monthly', 'Business monthly NZD price');
-  check(createdCustomers[0].metadata?.user_id === honeyId && createdCustomers[0].email?.endsWith(`@${LINKED_ACCOUNT_EMAIL_DOMAIN}`), 'Stripe customer is the business user');
+  check(createdCustomers[0].metadata?.user_id === honeyId && createdCustomers[0].email == null, 'Stripe customer has metadata and no synthetic email');
   check(userIdForCustomer(db, createdCustomers[0].id) === honeyId, 'customer row maps to the business user');
 
   await call(pat.jar, 'POST', '/api/account/switch', { accountId: pat.id });
@@ -379,6 +384,12 @@ try {
   await call(pat.jar, 'POST', '/api/account/switch', { accountId: pat.id });
   const afterPw = linksOf((await call(pat.jar, 'GET', '/api/account/links')).json).linked.find((l) => l.id === honeyId);
   check(Boolean(afterPw?.hasOwnLogin && afterPw.canUnlink), 'canUnlink once it has a login');
+  const signedInHoney = await call(pat.jar, 'POST', '/api/account/switch', { accountId: honeyId });
+  check((signedInHoney.json!.user as Json).email === null && (signedInHoney.json!.activeAccount as Json).hasOwnLogin === true, 'a login does not reveal the synthetic email');
+  const downloaded = await call(pat.jar, 'GET', '/api/auth/export');
+  check(downloaded.status === 200 && !downloaded.text.includes(LINKED_ACCOUNT_EMAIL_DOMAIN), 'account download omits the synthetic address');
+  check((downloaded.json!.profile as Json).email === null, 'download profile email is null');
+  check((await call(pat.jar, 'POST', '/api/account/switch', { accountId: pat.id })).status === 200, 'back to the owner before unlink');
   const honeyEmail = queryOne<{ email: string }>(db, `SELECT email FROM users WHERE id = ?`, [honeyId])!.email;
   const direct = new Map<string, string>();
   check((await call(direct, 'POST', '/api/auth/login', { email: honeyEmail, password: 'Honey-login-123' })).status === 200, 'business signs in with its own password');
@@ -474,6 +485,42 @@ try {
   check((await call(pat.jar, 'GET', '/api/auth/me')).json && ((await call(pat.jar, 'GET', '/api/auth/me')).json!.user as Json).id === pat.id, 'other users stay signed in');
   check(queryOne<{ value: string }>(db, `SELECT value FROM meta WHERE key = 'data_owner_user_id'`)?.value === pat.id, 'data owner unchanged');
   check(process.env.STRIPE_LIVE_ENABLED == null, 'STRIPE_LIVE_ENABLED stays unset');
+
+  process.env.RESEND_API_KEY = 're_test';
+  process.env.INVOICE_EMAIL_FROM = 'hello@mail.example.test';
+  const postedTo: string[] = [];
+  setEmailFetchForTest(async (_url, init) => {
+    const body = JSON.parse(String(init?.body ?? '{}')) as { to?: string[]; reply_to?: string };
+    postedTo.push(...(body.to ?? []));
+    check(body.reply_to == null || !String(body.reply_to).includes(LINKED_ACCOUNT_EMAIL_DOMAIN), 'reply-to is not synthetic');
+    return { ok: true, status: 200, json: async () => ({ id: 'msg_1' }) };
+  });
+  const honeyAddress = queryOne<{ email: string }>(db, `SELECT email FROM users WHERE id = ?`, [honeyId])!.email;
+  const skipped = await sendEmail({
+    fromName: 'KoruLedger',
+    replyTo: honeyAddress,
+    to: [honeyAddress],
+    subject: 'skip',
+    text: 'skip',
+    html: 'skip',
+    attachment: null,
+    idempotencyKey: 'skip-synthetic',
+  });
+  check(skipped.ok === true && postedTo.length === 0, 'mail to the synthetic address is not sent');
+  const mixed = await sendEmail({
+    fromName: 'KoruLedger',
+    replyTo: honeyAddress,
+    to: ['person@example.test', honeyAddress],
+    subject: 'mixed',
+    text: 'mixed',
+    html: 'mixed',
+    attachment: null,
+    idempotencyKey: 'mixed-synthetic',
+  });
+  check(mixed.ok === true && postedTo.join() === 'person@example.test', 'only a real recipient is sent');
+  setEmailFetchForTest(null);
+  delete process.env.RESEND_API_KEY;
+  delete process.env.INVOICE_EMAIL_FROM;
 
   const bill = await register('bill@example.test', 'Bill', 'Owner');
   const withSub = (await call(bill.jar, 'POST', '/api/account/business', { businessName: 'Billed Shop' })).json!.account as Linked;

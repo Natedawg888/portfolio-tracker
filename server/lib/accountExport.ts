@@ -8,6 +8,7 @@ import type { Database } from 'sql.js';
 import { queryAll, queryOne } from '../db/index.ts';
 import { SCOPED_TABLES } from './userScope.ts';
 import { priceContributor } from '../shopping/prices.ts';
+import { isSyntheticLinkedEmail, publicEmail } from '../auth/syntheticEmail.ts';
 import { hasPassword } from '../auth/users.ts';
 import { pendingEmailFor } from '../auth/emailChange.ts';
 
@@ -89,12 +90,12 @@ export function exportAccountData(db: Database, userId: string, now = new Date()
       }
     : null;
 
-  return {
+  const body = {
     exportedAt: now.toISOString(),
     format: 'KoruLedger account export, version 1',
     note: 'Everything stored for your account, apart from passwords, security secrets and access tokens. Uploaded files are listed by name, not included.',
     profile: {
-      email: user.email,
+      email: publicEmail(user.email),
       pendingEmail: pendingEmailFor(db, userId, now)?.newEmail ?? null,
       firstName: user.first_name,
       lastName: user.last_name,
@@ -120,4 +121,20 @@ export function exportAccountData(db: Database, userId: string, now = new Date()
     uploadedFiles,
     data,
   };
+  return (isSyntheticLinkedEmail(user.email) ? redactAddress(body, user.email) : body) as Row;
+}
+
+/** Drop the synthetic address from every string in an export. */
+function redactAddress(value: unknown, secret: string): unknown {
+  if (typeof value === 'string') {
+    if (value === secret) return null;
+    return value.includes(secret) ? value.split(secret).join('') : value;
+  }
+  if (Array.isArray(value)) return value.map((item) => redactAddress(item, secret));
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) out[key] = redactAddress(item, secret);
+    return out;
+  }
+  return value;
 }

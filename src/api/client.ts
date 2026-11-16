@@ -264,7 +264,8 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 
 export type AuthUser = {
   id: string;
-  email: string;
+  /** Null for a created linked business. Its synthetic address stays on the server. */
+  email: string | null;
   firstName: string | null;
   lastName: string | null;
   displayName: string | null;

@@ -50,6 +50,7 @@ import { shareBase } from './invoices.ts';
 import { exportAccountData } from '../lib/accountExport.ts';
 import { composeDisplayName, createUserAccount, hasPassword } from '../auth/users.ts';
 import { ACCOUNT_PENDING_DELETION, activeAccountFor, detachLinksOnAccountDeletion, isPendingDeletion } from '../auth/accountLinks.ts';
+import { publicEmail } from '../auth/syntheticEmail.ts';
 import { settleMarkedLinkedAccounts } from '../auth/linkedDeletion.ts';
 import { logger } from '../lib/logger.ts';
 import { deleteScopedDataForUser, getDataOwnerUserId } from '../lib/userScope.ts';
@@ -122,7 +123,7 @@ function publicUser(u: {
   const onboarding: OnboardingFlags = parsed.flags ?? completedOnboardingFlags();
   return {
     id: u.id,
-    email: u.email,
+    email: publicEmail(u.email),
     firstName,
     lastName,
     displayName,
