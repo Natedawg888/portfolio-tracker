@@ -163,7 +163,7 @@ import {
   setMemberRole,
   sharedWithMe,
 } from '../business/members.ts';
-import { callerId, scopeTo as scopeRecord, scopeUid, type ScopedRequest as BusinessScopedRequest } from '../middleware/businessScope.ts';
+import { assertCallerCanManage, callerId, scopeTo as scopeRecord, scopeUid, type ScopedRequest as BusinessScopedRequest } from '../middleware/businessScope.ts';
 import { isYmd } from '../../src/lib/invoiceCalc.ts';
 
 const router = Router();
@@ -186,7 +186,7 @@ function ownerOnly(req: Request): boolean {
 
 /** Member management checks roles itself (a viewer may still leave). */
 const MEMBERS_PATH = /^\/[^/]+\/members(\/|$)/;
-const SCOPE = { ownerOnly, exempt: (req: Request) => MEMBERS_PATH.test(req.path) };
+const SCOPE = { ownerOnly, exempt: (req: Request) => MEMBERS_PATH.test(req.path), manage: true };
 const scopeTo = (kind: Parameters<typeof scopeRecord>[0]) => scopeRecord(kind, SCOPE);
 
 router.param('id', scopeTo((req) => (req.path.startsWith('/movements/') ? 'movement' : req.path.startsWith('/stock/adjustments/') ? 'stockAdjustment' : 'business')));
@@ -229,6 +229,7 @@ router.get('/', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
+  if (!(await assertCallerCanManage(req, res))) return;
   const parsed = parseBusiness(req.body);
   if (!parsed.ok) {
     res.status(400).json({ error: parsed.error });
@@ -297,6 +298,7 @@ router.get('/money/candidates', async (req, res) => {
 });
 
 router.post('/money/tag', async (req, res) => {
+  if (!(await assertCallerCanManage(req, res))) return;
   const b = (req.body ?? {}) as Record<string, unknown>;
   if ((b.kind !== 'transaction' && b.kind !== 'income') || typeof b.id !== 'string' || !b.id) {
     res.status(400).json({ error: 'kind (transaction or income) and id are required' });
@@ -313,6 +315,7 @@ router.get('/produce/candidates', async (req, res) => {
 });
 
 router.post('/produce/link', async (req, res) => {
+  if (!(await assertCallerCanManage(req, res))) return;
   const b = (req.body ?? {}) as Record<string, unknown>;
   if (typeof b.commodityId !== 'string' || !b.commodityId) {
     res.status(400).json({ error: 'commodityId is required' });

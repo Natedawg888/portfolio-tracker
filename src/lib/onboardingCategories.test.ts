@@ -1,7 +1,7 @@
 /**
  * Onboarding budget categories: the checklist starts from what is saved, built-in categories
  * can't be unticked, the draft survives a reload, and Continue removes / recreates the right ones.
- * Also the "Step 3 of 3" counter. Run: npm run test:onboarding-categories
+ * Also the step counter. Run: npm run test:onboarding-categories
  */
 import { DEFAULT_CATEGORY_SEEDS } from './categoryDefaults.ts';
 import {
@@ -81,13 +81,15 @@ assert(!defaults.some((r) => r.name === 'Tips'), 'defaults drop unsaved addition
 
 // Step counter.
 // Step 2 asks what the account is for (KAN-124), so personal steps start at 3.
-assert(stepLabel('budgets', { crypto: false, offerAkahu: false }) === 'Step 4 of 4', 'budgets is 4 of 4 without crypto');
-assert(stepLabel('budgets', { crypto: true, offerAkahu: false }) === 'Step 5 of 5', 'wallets step adds one');
-assert(stepLabel('assets', { crypto: true, offerAkahu: true }) === 'Step 3 of 6', 'Akahu step counted when offered');
+assert(stepLabel('budgets', { crypto: false, offerAkahu: false }) === 'Step 5 of 5', 'budgets is 5 of 5 without crypto');
+assert(stepLabel('budgets', { crypto: true, offerAkahu: false }) === 'Step 6 of 6', 'wallets step adds one');
+assert(stepLabel('assets', { crypto: true, offerAkahu: true }) === 'Step 4 of 7', 'Akahu step counted when offered');
 assert(stepLabel('wallets', { crypto: false, offerAkahu: false }) === null, 'a step that does not apply has no label');
-assert(stepLabel('usage', { crypto: false, offerAkahu: false }) === 'Step 2 of 4', 'what it is for is step 2');
-assert(stepLabel('budgets', { crypto: false, offerAkahu: false, mode: 'both' }) === 'Step 4 of 4', 'both keeps the personal steps');
-assert(stepLabel('business', { crypto: true, offerAkahu: true, mode: 'business' }) === 'Step 3 of 3', 'business only ends at business setup');
+assert(stepLabel('usage', { crypto: false, offerAkahu: false }) === 'Step 2 of 5', 'what it is for is step 2');
+assert(stepLabel('plan', { crypto: false, offerAkahu: false }) === 'Step 3 of 5', 'choosing a plan is step 3');
+assert(stepLabel('budgets', { crypto: false, offerAkahu: false, mode: 'both' }) === 'Step 5 of 5', 'both keeps the personal steps');
+assert(stepLabel('business', { crypto: true, offerAkahu: true, mode: 'business' }) === 'Step 4 of 4', 'business only ends at business setup');
+assert(stepLabel('plan', { crypto: false, offerAkahu: false, mode: 'business' }) === 'Step 3 of 4', 'business only still chooses a plan');
 assert(stepLabel('budgets', { crypto: false, offerAkahu: false, mode: 'business' }) === null, 'business only has no budget categories step');
 assert(stepLabel('assets', { crypto: false, offerAkahu: false, mode: 'business' }) === null, 'business only has no asset classes step');
 

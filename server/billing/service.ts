@@ -8,6 +8,8 @@
  */
 import type Stripe from 'stripe';
 import type { Database } from 'sql.js';
+import { billingResultUrl } from '../../src/lib/billingReturn.ts';
+import { ensureStarterBusiness } from '../business/starter.ts';
 import { queryOne } from '../db/index.ts';
 import { logger } from '../lib/logger.ts';
 import { BILLING_PLANS, catalogByLookupKey, catalogPrice, type BillingInterval, type BillingPlan, type CatalogPrice } from './catalog.ts';
@@ -89,6 +91,7 @@ export async function syncSubscription(db: Database, config: BillingConfig, subs
     live: sub.livemode,
   });
   logger.info('billing_subscription_synced', { subscription: sub.id, user: userId, plan: entry.plan, status: sub.status });
+  if (sub.status === 'active' || sub.status === 'trialing') ensureStarterBusiness(db, userId);
   return true;
 }
 
@@ -139,6 +142,7 @@ export async function createCheckout(
   plan: BillingPlan,
   interval: BillingInterval,
   baseUrl: string,
+  returnTo?: unknown,
 ): Promise<string> {
   if (grantingSubscriptions(db, user.id).some((s) => Boolean(s.livemode) === config.live)) {
     throw new BillingError(409, 'ALREADY_SUBSCRIBED', 'You already have a subscription. Use Manage billing to change or cancel it.');
@@ -159,8 +163,8 @@ export async function createCheckout(
     line_items: [{ price: price.id, quantity: 1, ...(config.gstTaxRateId ? { tax_rates: [config.gstTaxRateId] } : {}) }],
     subscription_data: { metadata: { user_id: user.id } },
     customer_update: { name: 'auto', address: 'auto' },
-    success_url: `${baseUrl}/settings?tab=account&billing=success`,
-    cancel_url: `${baseUrl}/settings?tab=account&billing=cancelled`,
+    success_url: billingResultUrl(baseUrl, returnTo, 'success'),
+    cancel_url: billingResultUrl(baseUrl, returnTo, 'cancelled'),
   });
   if (!session.url) throw new BillingError(502, 'CHECKOUT_FAILED', 'Stripe didn’t return a checkout page.');
   return session.url;

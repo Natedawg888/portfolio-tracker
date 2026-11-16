@@ -16,6 +16,7 @@ import { navKeysForMode, type NavKey, type UsageMode } from '../lib/usageMode';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
 import { ProfileMenu } from './ProfileMenu';
 import { QuietToast } from './QuietToast';
+import { CheckoutPendingNote } from './billing/CheckoutPendingNote';
 import { useMeetingReminders } from '../lib/useMeetingReminders';
 import { PageAds } from './PageAds';
 import { api } from '../api/client';
@@ -147,6 +148,25 @@ export function Layout({ children }: { children?: ReactNode }) {
     : routed;
   const { user } = useAuth();
   const mode: UsageMode = user?.usageMode ?? 'personal';
+  const [canManageBusiness, setCanManageBusiness] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!user) {
+      setCanManageBusiness(null);
+      return;
+    }
+    let cancelled = false;
+    api.settings
+      .plan()
+      .then((p) => {
+        if (!cancelled) setCanManageBusiness(p.features.business_manage);
+      })
+      .catch(() => {
+        if (!cancelled) setCanManageBusiness(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
   const visibleLinks = navKeysForMode(mode)
     .map((key) => linkFor(key, mode))
     .filter((l) => {
@@ -329,7 +349,8 @@ export function Layout({ children }: { children?: ReactNode }) {
               key={l.to}
               to={l.to}
               end={l.end}
-              className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
+              className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link') + (canManageBusiness === false && (l.to === '/business' || l.to.startsWith('/business/')) ? ' nav-link-locked' : '')}
+              title={canManageBusiness === false && (l.to === '/business' || l.to.startsWith('/business/')) ? 'Business management needs Plus or Business' : undefined}
               onClick={closeNav}
               onMouseEnter={() => prefetchNavTarget(l.to)}
               onFocus={() => prefetchNavTarget(l.to)}
@@ -356,6 +377,13 @@ export function Layout({ children }: { children?: ReactNode }) {
       </header>
       <MobileNavDrawer open={navOpen} onClose={closeNav} links={visibleLinks} tools={tools} returnFocusRef={menuButtonRef} />
       <main className="app-main">
+        {location.pathname !== '/settings' &&
+        ((location.state as { billingPending?: boolean } | null)?.billingPending === true ||
+          new URLSearchParams(location.search).get('billing') === 'success') ? (
+          <div className="billing-pending-banner">
+            <CheckoutPendingNote active />
+          </div>
+        ) : null}
         <MoneyHiddenProvider>
           <Suspense fallback={<div className="panel"><p className="muted">Loading…</p></div>}>
             {painted}

@@ -11,6 +11,7 @@ import {
   normalizeCategoryType,
   type CategoryType,
 } from '../../src/lib/categoryTypes.ts';
+import { isFreePlan, sendPlanLimit } from '../lib/freePlan.ts';
 
 const router = Router();
 
@@ -248,6 +249,10 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   const db = await getDb();
+  if (isFreePlan(db, uid(req))) {
+    sendPlanLimit(res, 'The free plan tracks money in and money out. Category budgets are part of KoruLedger Plus.');
+    return;
+  }
   const b = req.body ?? {};
   const id = newId('bud');
   run(
@@ -319,6 +324,10 @@ router.put('/plan', async (req, res) => {
     return;
   }
 
+  if (isFreePlan(db, uid(req))) {
+    sendPlanLimit(res, 'The free plan tracks money in and money out. Category budgets are part of KoruLedger Plus.');
+    return;
+  }
   const id = newId('bud');
   run(
     db,

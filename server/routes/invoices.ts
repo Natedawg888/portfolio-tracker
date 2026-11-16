@@ -28,7 +28,7 @@ import crypto from 'node:crypto';
 import { Router, type Request } from 'express';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { requireUserId } from '../lib/userScope.ts';
-import { scopeTo, scopeToBusiness, scopeUid, staysInBusiness, type ScopedRequest } from '../middleware/businessScope.ts';
+import { assertCallerCanManage, scopeTo, scopeToBusiness, scopeUid, staysInBusiness, type ScopedRequest } from '../middleware/businessScope.ts';
 import { getDb, queryOne } from '../db/index.ts';
 import { aucklandToday } from '../debts/model.ts';
 import { isYmd, INVOICE_STATUS_LABELS } from '../../src/lib/invoiceCalc.ts';
@@ -75,7 +75,7 @@ const uid = scopeUid;
 
 /** Emailing an invoice and its public link go out in the owner's name. */
 const ownerOnly = (req: Request) => /^\/[^/]+\/(send|share)$/.test(req.path);
-router.param('id', scopeTo((req) => (req.path.startsWith('/clients/') ? 'client' : 'invoice'), { ownerOnly }));
+router.param('id', scopeTo((req) => (req.path.startsWith('/clients/') ? 'client' : 'invoice'), { ownerOnly, manage: true }));
 
 /** Base for share links: PUBLIC_URL in production; the page's own origin locally. */
 export function shareBase(req: Request): string {
@@ -113,6 +113,7 @@ router.get('/business', async (req, res) => {
 });
 
 router.put('/business', async (req, res) => {
+  if (!(await assertCallerCanManage(req, res))) return;
   const parsed = parseBusinessProfile(req.body);
   if (!parsed.ok) {
     res.status(400).json({ error: parsed.error });
@@ -137,7 +138,8 @@ router.post('/clients', async (req, res) => {
     res.status(400).json({ error: parsed.error });
     return;
   }
-  if (!(await scopeToBusiness(req, res, parsed.value.businessId))) return;
+  if (!(await scopeToBusiness(req, res, parsed.value.businessId, { manage: true }))) return;
+  if (!parsed.value.businessId && !(await assertCallerCanManage(req, res))) return;
   const db = await getDb();
   const created = createClient(db, uid(req), parsed.value);
   if (!created) {
@@ -216,7 +218,8 @@ router.post('/', async (req, res) => {
     res.status(400).json({ error: parsed.error });
     return;
   }
-  if (!(await scopeToBusiness(req, res, parsed.value.businessId))) return;
+  if (!(await scopeToBusiness(req, res, parsed.value.businessId, { manage: true }))) return;
+  if (!parsed.value.businessId && !(await assertCallerCanManage(req, res))) return;
   const db = await getDb();
   reply(res, createInvoice(db, uid(req), parsed.value, today, shareBase(req)), true);
 });

@@ -230,6 +230,22 @@ export function Business() {
   const [searchParams, setSearchParams] = useSearchParams();
   // Business only signup ends here with ?setup=1 (KAN-124): open the form for the first business.
   const [adding, setAdding] = useState(() => searchParams.get('setup') === '1');
+  const [canManage, setCanManage] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api.settings
+      .plan()
+      .then((p) => {
+        if (!cancelled) setCanManage(p.features.business_manage);
+      })
+      .catch(() => {
+        if (!cancelled) setCanManage(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const allowAdd = canManage !== false;
   useEffect(() => {
     if (searchParams.get('setup') !== '1') return;
     const next = new URLSearchParams(searchParams);
@@ -311,11 +327,18 @@ export function Business() {
 
   return (
     <div className="stack bills-page warranties-page rentals-page business-page">
+      {canManage === false ? (
+        <section className="panel business-plan-note" aria-labelledby="business-manage-title">
+          <h3 id="business-manage-title">Business management needs Plus or Business</h3>
+          <p className="muted small">You can still open what is already here. Adding or editing clients, invoices, stock and the business budget is part of KoruLedger Plus. Profit and loss, GST and the accountant export stay on KoruLedger Business.</p>
+          <p><Link className="btn small primary" to="/settings?tab=account">See plans</Link></p>
+        </section>
+      ) : null}
       <header className="business-header">
         <div className="business-header-row">
           <h2 className="page-title">Business</h2>
           {shownYear != null && data && businesses.length > 0 ? <TaxYearSwitch year={shownYear} years={data.taxYears} onChange={setYear} /> : null}
-          {businesses.length > 0 && !adding ? (
+          {canManage === false ? null : businesses.length > 0 && !adding ? (
             <button ref={addRef} type="button" className="btn small primary business-header-add" onClick={() => setAdding(true)}>
               + Add business
             </button>
@@ -348,9 +371,11 @@ export function Business() {
             A card for each business you run, like a beekeeping operation, a farm or contracting work: its money in and costs, its
             livestock, hives and equipment, and its clients and invoices.
           </p>
-          <button type="button" className="btn primary" onClick={() => setAdding(true)}>
-            Add your first business
-          </button>
+          {allowAdd ? (
+            <button type="button" className="btn primary" onClick={() => setAdding(true)}>
+              Add your first business
+            </button>
+          ) : null}
         </section>
       ) : null}
 
@@ -420,7 +445,7 @@ export function Business() {
         </section>
       ) : null}
 
-      {data && businesses.length === 0 && !adding && shared.length > 0 ? (
+      {allowAdd && data && businesses.length === 0 && !adding && shared.length > 0 ? (
         <p className="small">
           <button type="button" className="link-btn" onClick={() => setAdding(true)}>
             + Add a business of your own

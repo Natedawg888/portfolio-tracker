@@ -217,6 +217,7 @@ try {
   assert(params.line_items[0].price === 'price_koruledger_pro_yearly' && !params.line_items[0].tax_rates, 'pro yearly price, no GST rate unless set');
   assert(params.subscription_data.metadata.user_id === 'una', 'subscription tagged with user');
   assert(params.success_url === 'https://app.example.test/settings?tab=account&billing=success', 'returns to settings on PUBLIC_URL');
+  assert(params.cancel_url === 'https://app.example.test/settings?tab=account&billing=cancelled', 'cancel returns to settings');
   process.env.STRIPE_GST_TAX_RATE_ID = 'txr_gst';
   await call('POST', '/api/billing/checkout', una, { plan: 'pro', interval: 'year' });
   assert(calls.customers === 1 && (calls.checkout[1] as any).customer === 'cus_new1', 'customer reused');
@@ -232,6 +233,19 @@ try {
   assert(bizYear.status === 200 && (calls.checkout[3] as any).line_items[0].price === 'price_koruledger_business_yearly', 'business yearly price by lookup key');
   assert(calls.customers === 1, 'business checkout reuses the customer');
   assert(planOf(db, 'una') === 'free', 'no plan until Stripe says paid');
+  const onboard = await call('POST', '/api/billing/checkout', una, { plan: 'plus', interval: 'month', returnTo: '/register' });
+  assert(onboard.status === 200 && onboard.json.url === 'https://checkout.stripe.test/cs_1', 'onboarding checkout url');
+  const onboardParams = calls.checkout.at(-1) as { success_url?: string; cancel_url?: string };
+  assert(onboardParams.success_url === 'https://app.example.test/register?billing=success', 'onboarding success returns to register');
+  assert(onboardParams.cancel_url === 'https://app.example.test/register?billing=cancelled', 'onboarding cancel returns to register');
+  await call('POST', '/api/billing/checkout', una, { plan: 'plus', interval: 'month', returnTo: 'https://evil.test/phish' });
+  assert((calls.checkout.at(-1) as { success_url?: string }).success_url === 'https://app.example.test/settings?tab=account&billing=success', 'an external returnTo is ignored');
+  await call('POST', '/api/billing/checkout', una, { plan: 'plus', interval: 'month', returnTo: '//evil.test' });
+  assert((calls.checkout.at(-1) as { success_url?: string }).success_url === 'https://app.example.test/settings?tab=account&billing=success', 'a protocol-relative returnTo is ignored');
+  await call('POST', '/api/billing/checkout', una, { plan: 'business', interval: 'year', returnTo: '/business' });
+  const bizReturn = calls.checkout.at(-1) as { success_url?: string; cancel_url?: string };
+  assert(bizReturn.success_url === 'https://app.example.test/business?setup=1&billing=success', 'business setup success URL');
+  assert(bizReturn.cancel_url === 'https://app.example.test/business?setup=1&billing=cancelled', 'business setup cancel URL');
   delete process.env.PRO_PLAN_ENABLED;
   assert((await call('GET', '/api/billing', una)).json.proPlanEnabled === false, 'Pro sales off again before the webhook');
 

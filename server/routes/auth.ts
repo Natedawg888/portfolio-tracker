@@ -60,10 +60,12 @@ import {
   saveUserAvatar,
 } from '../lib/uploads.ts';
 import {
+  completedOnboardingFlags,
   parseOnboardingFromPreferencesJson,
   preferencesWithAkahuSkippedUnlessRequired,
   type OnboardingFlags,
 } from '../../src/lib/onboardingPrefs.ts';
+import { parseRunsBusiness } from '../../src/lib/runsBusiness.ts';
 import { parseUsageMode } from '../../src/lib/usageMode.ts';
 
 const router = Router();
@@ -114,11 +116,7 @@ function publicUser(u: {
     u.preferencesJson ?? u.preferences_json ?? null,
   );
   const usage = parseUsageMode(u.preferencesJson ?? u.preferences_json ?? null);
-  const onboarding: OnboardingFlags = parsed.flags ?? {
-    assetClassesDone: true,
-    budgetCategoriesDone: true,
-    akahuStepDone: true,
-  };
+  const onboarding: OnboardingFlags = parsed.flags ?? completedOnboardingFlags();
   return {
     id: u.id,
     email: u.email,
@@ -131,6 +129,7 @@ function publicUser(u: {
     onboarding,
     usageMode: usage.mode,
     usageModeChosen: usage.chosen,
+    runsBusiness: parseRunsBusiness(u.preferencesJson ?? u.preferences_json ?? null),
   };
 }
 

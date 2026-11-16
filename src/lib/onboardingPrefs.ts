@@ -5,6 +5,10 @@
  * accounts are not locked out of the dashboard. New and in-progress users
  * must pass through asset classes and budget categories.
  *
+ * The plan step (`planStepDone`) is required for accounts created after it
+ * existed: initial preferences set it false. A missing flag means the account
+ * predates the step, so it counts as done and does not lock anyone out.
+ *
  * The Akahu connect step is offered only to Nathan McCormick
  * (mccormicknathan09@gmail.com). Every other account is stored as if they
  * chose Skip / do later (`akahuStepDone`), including when they sign in later
@@ -19,7 +23,26 @@ export type OnboardingFlags = {
   budgetCategoriesDone: boolean;
   /** The Akahu step was explicitly completed or skipped. */
   akahuStepDone: boolean;
+  /**
+   * The Choose your plan step was completed (Free, skip, or a return from Checkout).
+   * Missing on an older account means the step did not exist yet, so it is done.
+   */
+  planStepDone: boolean;
 };
+
+/** Flags for an account that already finished signup (no onboarding block stored). */
+export function completedOnboardingFlags(): OnboardingFlags {
+  return { assetClassesDone: true, budgetCategoriesDone: true, akahuStepDone: true, planStepDone: true };
+}
+
+/**
+ * Missing `planStepDone` is done (accounts created before the step). An explicit
+ * false is still open.
+ */
+export function planStepDoneFrom(raw: Record<string, unknown>): boolean {
+  if (!Object.prototype.hasOwnProperty.call(raw, 'planStepDone')) return true;
+  return raw.planStepDone === true;
+}
 
 /** True only for Nathan's account — everyone else auto-skips Akahu setup. */
 export function akahuOnboardingRequiredForEmail(email: string | null | undefined): boolean {
@@ -33,7 +56,7 @@ export type ParsedOnboarding = {
 };
 
 export function defaultIncompleteOnboarding(): OnboardingFlags {
-  return { assetClassesDone: false, budgetCategoriesDone: false, akahuStepDone: false };
+  return { assetClassesDone: false, budgetCategoriesDone: false, akahuStepDone: false, planStepDone: false };
 }
 
 export function parseOnboardingFromPreferencesJson(
@@ -55,10 +78,11 @@ export function parseOnboardingFromPreferencesJson(
       assetClassesDone: o.assetClassesDone === true,
       budgetCategoriesDone: o.budgetCategoriesDone === true,
       akahuStepDone: o.akahuStepDone === true,
+      planStepDone: planStepDoneFrom(o),
     };
     return {
       flags,
-      complete: flags.assetClassesDone && flags.budgetCategoriesDone && flags.akahuStepDone,
+      complete: flags.assetClassesDone && flags.budgetCategoriesDone && flags.akahuStepDone && flags.planStepDone,
     };
   } catch {
     return { flags: null, complete: true };
@@ -129,6 +153,7 @@ export function mergeOnboardingIntoPreferencesJson(
       patch.akahuStepDone !== undefined
         ? patch.akahuStepDone
         : prev.akahuStepDone === true,
+    planStepDone: patch.planStepDone !== undefined ? patch.planStepDone : planStepDoneFrom(prev),
   };
   return JSON.stringify({ ...existing, onboarding: nextFlags });
 }

@@ -33,6 +33,7 @@ const { default: initSqlJs } = await import('sql.js');
 const { default: invoicesRouter } = await import('../routes/invoices.ts');
 const { default: businessRouter } = await import('../routes/business.ts');
 const { default: calendarRouter } = await import('../routes/calendar.ts');
+const { setPlan } = await import('../lib/entitlements.ts');
 
 const userA = 'meet_user_a';
 const userB = 'meet_user_b';
@@ -45,6 +46,7 @@ for (const t of ['business_meetings', 'business_meeting_reminders']) {
 }
 for (const [id, email] of [[userA, 'a@example.com'], [userB, 'b@example.com']]) {
   run(db, `INSERT INTO users (id, email, password_hash, first_name, created_at, updated_at) VALUES (?,?,?,?,?,?)`, [id, email, 'hash', 'X', now, now]);
+  setPlan(db, id, 'plus', 'test');
 }
 
 const app = express();

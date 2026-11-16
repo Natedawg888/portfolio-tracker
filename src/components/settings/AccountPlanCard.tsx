@@ -8,16 +8,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ApiError, api, type BillingStatus } from '../../api/client';
 import { showQuietToast } from '../../lib/quietToast';
-import {
-  PLAN_FEATURES,
-  PLAN_LABELS,
-  offeredPaidPlans,
-  priceFor,
-  priceText,
-  subscriptionLine,
-  yearlySavingPct,
-  type BillingInterval,
-} from '../../lib/billingView';
+import { PLAN_LABELS, subscriptionLine, type BillingInterval } from '../../lib/billingView';
+import { BillingPlanPicker, BillingTestNote } from '../billing/BillingPlanPicker';
 
 export function AccountPlanCard() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -76,11 +68,7 @@ export function AccountPlanCard() {
         </p>
       </div>
 
-      {status.mode === 'test' ? (
-        <p className="billing-test-note small" role="note">
-          Test mode: no real charges. Use Stripe’s test card 4242 4242 4242 4242.
-        </p>
-      ) : null}
+      {status.mode === 'test' ? <BillingTestNote /> : null}
 
       {!status.available ? (
         <p className="muted small">Paid plans aren’t open yet.</p>
@@ -94,56 +82,15 @@ export function AccountPlanCard() {
       ) : null}
 
       {status.available && !sub ? (
-        <>
-          <div className="billing-interval" role="group" aria-label="Billing period">
-            {(['month', 'year'] as const).map((i) => (
-              <button
-                key={i}
-                type="button"
-                className={`billing-interval-btn${interval === i ? ' active' : ''}`}
-                aria-pressed={interval === i}
-                onClick={() => setBillingInterval(i)}
-              >
-                {i === 'month' ? 'Monthly' : 'Yearly'}
-              </button>
-            ))}
-          </div>
-          <ul className="billing-plans">
-            {offeredPaidPlans(status.proPlanEnabled === true).map((plan) => {
-              const price = priceFor(status.prices, plan, interval);
-              const saving = interval === 'year' ? yearlySavingPct(status.prices, plan) : null;
-              const current = status.plan === plan || (status.plan === 'pro' && plan === 'plus');
-              return (
-                <li key={plan} className={`billing-plan${status.plan === plan ? ' current' : ''}`}>
-                  <div className="billing-plan-head">
-                    <h3>{PLAN_LABELS[plan]}</h3>
-                    {price ? (
-                      <p className="billing-plan-price">
-                        {priceText(price)}
-                        {saving ? <span className="billing-saving"> · save {saving}%</span> : null}
-                      </p>
-                    ) : null}
-                    <p className="muted small">Includes GST.</p>
-                  </div>
-                  <ul className="billing-plan-features">
-                    {PLAN_FEATURES[plan].map((f) => (
-                      <li key={f}>{f}</li>
-                    ))}
-                  </ul>
-                  <button
-                    type="button"
-                    className="btn small primary"
-                    disabled={busy != null || current || !price}
-                    onClick={() => void go(plan, () => api.billing.checkout(plan, interval))}
-                  >
-                    {busy === plan ? 'Opening checkout…' : current ? 'Included in your plan' : `Choose ${PLAN_LABELS[plan]}`}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-          <p className="muted small">Payments are handled by Stripe. Cancel any time; your plan stays until the end of the period you paid for.</p>
-        </>
+        <BillingPlanPicker
+          prices={status.prices}
+          proPlanEnabled={status.proPlanEnabled === true}
+          interval={interval}
+          onInterval={setBillingInterval}
+          busy={busy}
+          currentPlan={status.plan}
+          onChoosePaid={(plan) => void go(plan, () => api.billing.checkout(plan, interval))}
+        />
       ) : null}
 
       {error ? (

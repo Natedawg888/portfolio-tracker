@@ -14,12 +14,15 @@ import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { isDataOwner } from '../lib/userScope.ts';
 import { featuresOf, planOf } from '../lib/entitlements.ts';
 import { isUsageMode, mergeUsageModeIntoPreferencesJson, parseUsageMode } from '../../src/lib/usageMode.ts';
+import { mergeRunsBusinessIntoPreferencesJson, parseRunsBusiness } from '../../src/lib/runsBusiness.ts';
+import { ensureStarterBusiness } from '../business/starter.ts';
 import {
   ASSET_CLASS_PREF_OPTIONS,
   normalizeAssetClassPrefs,
   type AssetClassPrefs,
 } from '../../src/lib/assetClassPrefs.ts';
 import {
+  completedOnboardingFlags,
   mergeOnboardingIntoPreferencesJson,
   parseOnboardingFromPreferencesJson,
   preferencesWithAkahuSkippedUnlessRequired,
@@ -688,15 +691,11 @@ router.get('/onboarding', async (req: AuthedRequest, res) => {
   const parsed = parseOnboardingFromPreferencesJson(preferencesJson);
   res.json({
     onboardingComplete: parsed.complete,
-    onboarding: parsed.flags ?? {
-      assetClassesDone: true,
-      budgetCategoriesDone: true,
-      akahuStepDone: true,
-    },
+    onboarding: parsed.flags ?? completedOnboardingFlags(),
   });
 });
 
-/** Mark required budget-categories signup step complete (after user confirms list). */
+/** Mark a signup step complete (budget categories, the plan choice, Akahu, or asset classes). */
 router.put('/onboarding', async (req: AuthedRequest, res) => {
   if (!req.user) {
     res.status(401).json({ error: 'Authentication required', code: 'UNAUTHORIZED' });
@@ -707,13 +706,15 @@ router.put('/onboarding', async (req: AuthedRequest, res) => {
     assetClassesDone?: boolean;
     budgetCategoriesDone?: boolean;
     akahuStepDone?: boolean;
+    planStepDone?: boolean;
   } = {};
   if (body.budgetCategoriesDone === true) patch.budgetCategoriesDone = true;
   if (body.assetClassesDone === true) patch.assetClassesDone = true;
   if (body.akahuStepDone === true) patch.akahuStepDone = true;
+  if (body.planStepDone === true) patch.planStepDone = true;
   if (Object.keys(patch).length === 0) {
     res.status(400).json({
-      error: 'Provide budgetCategoriesDone, assetClassesDone, and/or akahuStepDone as true',
+      error: 'Provide budgetCategoriesDone, assetClassesDone, akahuStepDone, and/or planStepDone as true',
       code: 'INVALID_BODY',
     });
     return;
@@ -736,19 +737,16 @@ router.put('/onboarding', async (req: AuthedRequest, res) => {
   const parsed = parseOnboardingFromPreferencesJson(nextJson);
   res.json({
     onboardingComplete: parsed.complete,
-    onboarding: parsed.flags ?? {
-      assetClassesDone: true,
-      budgetCategoriesDone: true,
-      akahuStepDone: true,
-    },
+    onboarding: parsed.flags ?? completedOnboardingFlags(),
   });
 });
 
 /**
  * What the account uses KoruLedger for (KAN-124): personal, business (Business only) or both.
  * Asked at signup and changeable in Settings. Choosing Business only during signup marks the
- * personal setup steps (asset classes, budget categories, Akahu) done: they don't apply, and the
- * next stop is setting up the first business. Nothing is deleted when the mode changes.
+ * personal setup steps (asset classes, budget categories, Akahu) done: they don't apply. The
+ * plan step still applies, and the next stop after that is setting up the first business.
+ * Nothing is deleted when the mode changes.
  */
 router.put('/usage-mode', async (req: AuthedRequest, res) => {
   if (!req.user) {
@@ -772,8 +770,30 @@ router.put('/usage-mode', async (req: AuthedRequest, res) => {
   res.json({
     usageMode: parseUsageMode(nextJson).mode,
     onboardingComplete: parsed.complete,
-    onboarding: parsed.flags ?? { assetClassesDone: true, budgetCategoriesDone: true, akahuStepDone: true },
+    onboarding: parsed.flags ?? completedOnboardingFlags(),
   });
+});
+
+/**
+ * Signup "I run a business". Saved on the profile. When the plan includes business management
+ * and they don't have a business yet, this opens one called My business.
+ */
+router.put('/runs-business', async (req: AuthedRequest, res) => {
+  if (!req.user) {
+    res.status(401).json({ error: 'Authentication required', code: 'UNAUTHORIZED' });
+    return;
+  }
+  const runsBusiness = (req.body ?? {}).runsBusiness;
+  if (typeof runsBusiness !== 'boolean') {
+    res.status(400).json({ error: 'runsBusiness must be true or false', code: 'INVALID_BODY' });
+    return;
+  }
+  const db = await getDb();
+  const row = queryOne<{ preferences_json: string | null }>(db, `SELECT preferences_json FROM users WHERE id = ?`, [req.user.id]);
+  const nextJson = mergeRunsBusinessIntoPreferencesJson(row?.preferences_json, runsBusiness);
+  run(db, `UPDATE users SET preferences_json = ?, updated_at = ? WHERE id = ?`, [nextJson, new Date().toISOString(), req.user.id]);
+  const created = runsBusiness ? ensureStarterBusiness(db, req.user.id) : false;
+  res.json({ runsBusiness: parseRunsBusiness(nextJson), businessCreated: created });
 });
 
 /** The account's plan and which plan features it has (KAN-125), so the app can show upgrade notes. */
