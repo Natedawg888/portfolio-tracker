@@ -8,7 +8,7 @@
  * subscription still shows as Pro.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiError, api, type BillingStatus } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { showQuietToast } from '../../lib/quietToast';
@@ -21,15 +21,31 @@ import {
   type BillingInterval,
 } from '../../lib/billingView';
 import type { UsageMode } from '../../lib/usageMode';
+import {
+  ACCOUNT_PLAN_SECTION_ID,
+  BUSINESS_ACCOUNT_HREF,
+  businessPlanNeededCopy,
+  personalChoosingBusiness,
+  routesPersonalToBusinessAccount,
+} from '../../lib/accountLinksView';
 import { BillingPlanPicker, BillingTestNote } from '../billing/BillingPlanPicker';
+import { BusinessPlanNeededLine } from '../business/BusinessPlanNote';
 
 export function AccountPlanCard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [interval, setBillingInterval] = useState<BillingInterval>('month');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [planNeeded, setPlanNeeded] = useState(false);
+
+  const openBusinessAccount = useCallback(() => {
+    setError(null);
+    setPlanNeeded(false);
+    navigate(BUSINESS_ACCOUNT_HREF);
+  }, [navigate]);
 
   const load = useCallback(async () => {
     try {
@@ -63,6 +79,18 @@ export function AccountPlanCard() {
       const { url } = await open();
       window.location.assign(url);
     } catch (e) {
+      if (e instanceof ApiError && routesPersonalToBusinessAccount(e.code)) {
+        openBusinessAccount();
+        setBusy(null);
+        return;
+      }
+      if (e instanceof ApiError && businessPlanNeededCopy(e.code)) {
+        setError(null);
+        setPlanNeeded(true);
+        setBusy(null);
+        return;
+      }
+      setPlanNeeded(false);
       setError(e instanceof ApiError ? e.message : 'Couldn’t reach billing. Try again in a minute.');
       setBusy(null);
     }
@@ -81,7 +109,7 @@ export function AccountPlanCard() {
   });
 
   return (
-    <section className="panel account-card" aria-labelledby="account-plan-title">
+    <section id={ACCOUNT_PLAN_SECTION_ID} className="panel account-card" aria-labelledby="account-plan-title">
       <div className="account-card-head">
         <h2 id="account-plan-title">Plan</h2>
         <p className="muted small">
@@ -125,6 +153,10 @@ export function AccountPlanCard() {
           busy={busy}
           currentPlan={status.plan}
           onChoosePaid={(plan) => {
+            if (personalChoosingBusiness(usage, plan)) {
+              openBusinessAccount();
+              return;
+            }
             const allowed = settingsCheckoutPlan(plan, usage, proForSale);
             if (!allowed) return;
             void go(allowed, () => api.billing.checkout(allowed, interval));
@@ -132,6 +164,7 @@ export function AccountPlanCard() {
         />
       ) : null}
 
+      {planNeeded ? <BusinessPlanNeededLine /> : null}
       {error ? (
         <p className="auth-error" role="alert">
           {error}

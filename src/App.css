@@ -15001,3 +15001,146 @@ html:not([data-theme]) { --chart-income: #199e70; --chart-expenses: #d95926; }
 /* Accountant export links (KAN-128). */
 .pnl-export-links { flex-wrap: wrap; align-items: center; }
 .pnl-export-links .btn { min-height: 2.5rem; display: inline-flex; align-items: center; }
+
+/* Account type pill. Light uses linen / pounamu / heather; dark uses the same theme's greens.
+   The header switcher reuses this, so the colours are on the theme, not only Settings. */
+.account-type-pill {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+html[data-theme="light"] .account-type-pill--personal {
+  background: #e7e0d4;
+  color: #1b4332;
+}
+html[data-theme="dark"] .account-type-pill--personal,
+html:not([data-theme]) .account-type-pill--personal {
+  background: #1c2822;
+  color: #c5d5c8;
+  border-color: #2f6b4f;
+}
+html[data-theme="light"] .account-type-pill--business {
+  background: #ede8f0;
+  color: #6e6278;
+}
+html[data-theme="dark"] .account-type-pill--business,
+html:not([data-theme]) .account-type-pill--business {
+  background: transparent;
+  color: #b7a8c4;
+  border-color: #b7a8c4;
+}
+
+.business-account-card,
+#account-plan {
+  scroll-margin-top: 1rem;
+}
+.business-account-card:focus {
+  outline: none;
+}
+.business-account-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.business-account-lead,
+.business-account-ready p {
+  margin: 0.35rem 0 0;
+}
+.business-account-linked-line {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+.business-account-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+.business-account-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.75rem;
+  min-height: 44px;
+  padding: 0.2rem 0;
+  border-top: 1px solid var(--border);
+}
+.business-account-name {
+  flex: 1 1 8rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.business-account-row .business-account-text-link {
+  flex: none;
+}
+.business-account-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  margin-top: 0.85rem;
+}
+.business-account-card .btn,
+.business-account-dialog .btn {
+  min-height: 44px;
+}
+.settings-page .business-account-text-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 0.15rem;
+  border: 0;
+  background: none;
+  color: var(--accent-2);
+  font: inherit;
+  font-size: 0.95rem;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.settings-page .business-account-text-link:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.settings-page .business-account-text-link.is-danger {
+  color: var(--btn-danger-text);
+}
+.business-account-dialog-copy {
+  margin: 0 0 0.85rem;
+  font-size: 1.02rem;
+}
+.business-plan-needed {
+  margin: 0.35rem 0 0.75rem;
+}
+.business-plan-needed-link {
+  color: #6e6278;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+html[data-theme="dark"] .business-plan-needed-link,
+html:not([data-theme]) .business-plan-needed-link {
+  color: #b7a8c4;
+}
+@media (max-width: 768px) {
+  .profile-menu-item {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    box-sizing: border-box;
+  }
+  .business-plan-needed-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}

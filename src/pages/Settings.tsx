@@ -18,6 +18,7 @@ import { BusinessDetailsPanel } from '../components/BusinessDetailsPanel';
 import { BusinessPlanCard } from '../components/business/BusinessPlanNote';
 import { AdPrefsPanel } from '../components/AdPrefsPanel';
 import { AccountProfileCard } from '../components/settings/AccountProfileCard';
+import { BusinessAccountCard } from '../components/settings/BusinessAccountCard';
 import { AccountSignInCard } from '../components/settings/AccountSignInCard';
 import { AccountDataCard } from '../components/settings/AccountDataCard';
 import { AccountPlanCard } from '../components/settings/AccountPlanCard';
@@ -144,6 +145,7 @@ function AccountPanel() {
   return (
     <>
       <AccountProfileCard />
+      <BusinessAccountCard />
       <AccountSignInCard security={security} />
       <AccountPlanCard />
       <AccountDataCard />
