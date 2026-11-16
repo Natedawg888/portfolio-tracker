@@ -81,11 +81,11 @@ export function businessSetupTarget(
 }
 
 /** Delays before each plan check while a paid business signup waits for the webhook. The first check is immediate. */
-export const PAID_BUSINESS_RETURN_WAITS_MS = [0, 800, 1600] as const;
+export const PAID_BUSINESS_RETURN_WAITS_MS = [0, 800, 1600, 3200] as const;
 
 /**
- * Business-only signup after Checkout. Free goes home at once. A paid return polls briefly
- * while payment is confirming, then opens business setup once business management is on.
+ * Business-only signup after Checkout. Free goes home at once. A paid return polls a little
+ * longer while payment is confirming, then opens business setup once business management is on.
  */
 export async function resolvePaidBusinessReturn(
   pending: boolean,

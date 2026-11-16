@@ -52,7 +52,7 @@ export type GrantedPrice = { plan: BillingPlan; interval: BillingInterval };
 
 export type PriceChangeDecision =
   | { applyPrice: true }
-  | { applyPrice: false; reason: 'business_price_change' | 'business_without_checkout' };
+  | { applyPrice: false; reason: 'business_price_change' | 'business_without_checkout' | 'pro_unavailable' };
 
 /**
  * Whether a sync may save the price Stripe currently shows.
@@ -61,6 +61,10 @@ export type PriceChangeDecision =
  * (the portal for Business is cancel-only; a price change must not grant Plus, Pro, or the
  * other Business interval). A non-Business subscription that moves to a Business price is
  * granted only when the sync follows Checkout for an account that may buy Business.
+ * Moving onto Pro from another plan is granted from a subscription update only while
+ * PRO_PLAN_ENABLED is on. A customer who already holds Pro may still change Pro monthly and
+ * yearly while the flag is off. Checkout completion can still finish a Pro session that
+ * started while the flag was on.
  * The same price (a cancel, a card failure, a period rolling forward) is always applied.
  * A subscription we have never stored is not a move, so its first price is applied.
  */
@@ -77,6 +81,9 @@ export function priceChangeDecision(input: {
   if (input.next.plan === 'business') {
     if (input.viaCheckout && accountMayBuyBusiness(input.usage)) return { applyPrice: true };
     return { applyPrice: false, reason: 'business_without_checkout' };
+  }
+  if (input.next.plan === 'pro' && previous.plan !== 'pro' && !input.viaCheckout && !proPlanEnabled()) {
+    return { applyPrice: false, reason: 'pro_unavailable' };
   }
   return { applyPrice: true };
 }
