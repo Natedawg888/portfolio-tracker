@@ -29,7 +29,7 @@ const { planOf, hasFeature, setPlan } = await import('../lib/entitlements.ts');
 const { billingConfig } = await import('./config.ts');
 const { catalogByLookupKey, catalogPrice } = await import('./catalog.ts');
 const { proPlanEnabled } = await import('./proPlan.ts');
-const { catalogForSubscription } = await import('./service.ts');
+const { catalogForSubscription, PRORATION_MATCH_WINDOW_SEC } = await import('./service.ts');
 const { BUSINESS_ACCOUNT_CHECKOUT_ERROR, PRO_CHECKOUT_ERROR, businessCheckoutBlock, priceChangeDecision, proCheckoutBlock } = await import('./planGuards.ts');
 const {
   BUSINESS_PORTAL_METADATA_KEY,
@@ -268,7 +268,22 @@ type FakeSub = {
   omitLookupKey?: boolean;
 };
 const subs = new Map<string, FakeSub>();
-type FakeInvoiceItem = { id: string; customer: string; subscription: string; proration: boolean };
+type FakeInvoiceOwner =
+  | { kind: 'parent'; subscription: string | { id: string } | null }
+  | { kind: 'legacy'; subscription: string | { id: string } | null }
+  | { kind: 'none' };
+type FakeInvoiceItem = {
+  id: string;
+  customer: string;
+  proration: boolean;
+  owner: FakeInvoiceOwner;
+  date?: number;
+  created?: number;
+  periodStart?: number;
+  periodEnd?: number;
+  /** Set with a parent owner to also send the legacy subscription field. */
+  legacySubscription?: string | { id: string } | null;
+};
 const invoiceItems = new Map<string, FakeInvoiceItem>();
 const calls: {
   checkout: Record<string, unknown>[];
@@ -279,6 +294,7 @@ const calls: {
   portalLists: number;
   subscriptionUpdates: Record<string, unknown>[];
   deletedInvoiceItems: string[];
+  invoiceItemLists: { customer?: string; pending?: boolean; limit?: number; starting_after?: string }[];
 } = {
   checkout: [],
   portal: [],
@@ -288,7 +304,30 @@ const calls: {
   portalLists: 0,
   subscriptionUpdates: [],
   deletedInvoiceItems: [],
+  invoiceItemLists: [],
 };
+
+function listedInvoiceItem(item: FakeInvoiceItem): Record<string, unknown> {
+  const row: Record<string, unknown> = {
+    id: item.id,
+    customer: item.customer,
+    proration: item.proration,
+    period: { start: item.periodStart ?? 0, end: item.periodEnd ?? item.periodStart ?? 0 },
+  };
+  if (item.date != null) row.date = item.date;
+  if (item.created != null) row.created = item.created;
+  if (item.owner.kind === 'parent') {
+    row.parent = { type: 'subscription_details', subscription_details: { subscription: item.owner.subscription } };
+    if (item.legacySubscription !== undefined) row.subscription = item.legacySubscription;
+  } else if (item.owner.kind === 'legacy') {
+    row.parent = null;
+    row.subscription = item.owner.subscription;
+  } else {
+    row.parent = null;
+    if (item.legacySubscription !== undefined) row.subscription = item.legacySubscription;
+  }
+  return row;
+}
 type FakePortalConfig = {
   id: string;
   active: boolean;
@@ -352,17 +391,32 @@ const fake = {
     },
   },
   invoiceItems: {
-    list: async (params: { customer?: string; pending?: boolean; subscription?: string }) => ({
-      data: [...invoiceItems.values()]
-        .filter((item) => !params.customer || item.customer === params.customer)
-        .filter((item) => !params.subscription || item.subscription === params.subscription)
-        .map((item) => ({
-          id: item.id,
-          proration: item.proration,
-          customer: item.customer,
-          parent: { type: 'subscription_details', subscription_details: { subscription: item.subscription } },
-        })),
-    }),
+    list: async (params: { customer?: string; pending?: boolean; limit?: number; starting_after?: string; subscription?: string } = {}) => {
+      if (Object.prototype.hasOwnProperty.call(params, 'subscription')) {
+        throw Object.assign(new Error('Received unknown parameter: subscription'), { statusCode: 400, code: 'parameter_unknown' });
+      }
+      calls.invoiceItemLists.push({
+        customer: params.customer,
+        pending: params.pending,
+        limit: params.limit,
+        starting_after: params.starting_after,
+      });
+      const limit = typeof params.limit === 'number' && params.limit > 0 ? params.limit : 10;
+      const rows = [...invoiceItems.values()].filter((item) => {
+        if (params.customer && item.customer !== params.customer) return false;
+        if (params.pending === false) return false;
+        return true;
+      });
+      rows.sort((a, b) => (b.date ?? b.created ?? 0) - (a.date ?? a.created ?? 0) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+      let start = 0;
+      if (params.starting_after) {
+        const idx = rows.findIndex((item) => item.id === params.starting_after);
+        if (idx < 0) throw Object.assign(new Error('No such invoiceitem'), { statusCode: 400 });
+        start = idx + 1;
+      }
+      const page = rows.slice(start, start + limit);
+      return { object: 'list', data: page.map(listedInvoiceItem), has_more: start + limit < rows.length };
+    },
     del: async (id: string) => {
       calls.deletedInvoiceItems.push(id);
       invoiceItems.delete(id);
@@ -464,8 +518,21 @@ try {
     return { status: r.status, json: (await r.json().catch(() => ({}))) as Record<string, any> };
   };
   let evtN = 0;
-  const webhook = async (type: string, object: Record<string, unknown>, opts: { id?: string; livemode?: boolean; secret?: string; signature?: string } = {}) => {
-    const payload = JSON.stringify({ id: opts.id ?? `evt_${++evtN}`, object: 'event', type, livemode: opts.livemode ?? false, data: { object } });
+  const webhook = async (
+    type: string,
+    object: Record<string, unknown>,
+    opts: { id?: string; livemode?: boolean; secret?: string; signature?: string; created?: number; previousAttributes?: unknown } = {},
+  ) => {
+    const data: Record<string, unknown> = { object };
+    if (opts.previousAttributes !== undefined) data.previous_attributes = opts.previousAttributes;
+    const payload = JSON.stringify({
+      id: opts.id ?? `evt_${++evtN}`,
+      object: 'event',
+      type,
+      livemode: opts.livemode ?? false,
+      ...(opts.created != null ? { created: opts.created } : {}),
+      data,
+    });
     const sig = opts.signature ?? Stripe.webhooks.generateTestHeaderString({ payload, secret: opts.secret ?? WHSEC });
     const r = await fetch(`${base}/api/billing/webhook`, {
       method: 'POST',
@@ -784,11 +851,28 @@ try {
   assert(pamPro.status === 400 && pamPro.json.code === 'PRO_UNAVAILABLE' && calls.checkout.length === checkoutsBeforePamPro, 'Personal pro checkout stays refused and does not open Stripe');
 
   // Subscription update must not grant Pro while the flag is off. The price is reverted, once per event.
-  invoiceItems.set('ii_pro', { id: 'ii_pro', customer: 'cus_pam', subscription: 'sub_pam', proration: true });
-  invoiceItems.set('ii_keep', { id: 'ii_keep', customer: 'cus_pam', subscription: 'sub_pam', proration: false });
-  invoiceItems.set('ii_other', { id: 'ii_other', customer: 'cus_pam', subscription: 'sub_other', proration: true });
+  const proAt = Math.floor(Date.parse('2026-11-16T03:00:00Z') / 1000);
+  const pamOwner = { kind: 'parent' as const, subscription: 'sub_pam' };
+  invoiceItems.set('ii_pro', { id: 'ii_pro', customer: 'cus_pam', proration: true, owner: pamOwner, date: proAt, periodStart: proAt });
+  invoiceItems.set('ii_keep', { id: 'ii_keep', customer: 'cus_pam', proration: false, owner: pamOwner, date: proAt, periodStart: proAt });
+  invoiceItems.set('ii_other', { id: 'ii_other', customer: 'cus_pam', proration: true, owner: { kind: 'parent', subscription: 'sub_other' }, date: proAt, periodStart: proAt });
+  invoiceItems.set('ii_old', {
+    id: 'ii_old',
+    customer: 'cus_pam',
+    proration: true,
+    owner: pamOwner,
+    date: proAt - PRORATION_MATCH_WINDOW_SEC - 1,
+    periodStart: proAt - PRORATION_MATCH_WINDOW_SEC - 1,
+  });
+  let rejectedSubscriptionFilter = false;
+  try {
+    await fake.invoiceItems.list({ customer: 'cus_pam', pending: true, subscription: 'sub_pam' });
+  } catch (err) {
+    rejectedSubscriptionFilter = err instanceof Error && err.message.includes('subscription');
+  }
+  assert(rejectedSubscriptionFilter, 'invoiceItems.list rejects a subscription parameter');
   subs.get('sub_pam')!.lookupKey = 'koruledger_pro_monthly';
-  const proIgnored = await captureWarns(() => webhook('customer.subscription.updated', { id: 'sub_pam' }, { id: 'evt_pam_pro' }));
+  const proIgnored = await captureWarns(() => webhook('customer.subscription.updated', { id: 'sub_pam' }, { id: 'evt_pam_pro', created: proAt }));
   assert(planOf(db, 'pam') === 'plus', 'a subscription update does not grant Pro while PRO_PLAN_ENABLED is off');
   assert(proIgnored.some((line) => line.includes('pro_unavailable') && line.includes('billing_plan_change_ignored')), 'the refused Pro grant is warned');
   assert(subs.get('sub_pam')!.lookupKey === 'koruledger_plus_yearly', 'the Plus price is restored');
@@ -797,21 +881,101 @@ try {
   const proAlert = queryOne<{ reason: string; to_plan: string; detail: string }>(db, `SELECT reason, to_plan, detail FROM billing_alerts WHERE stripe_event_id = ?`, ['evt_pam_pro']);
   assert(proAlert?.reason === 'pro_unavailable' && proAlert.to_plan === 'pro', 'the refused Pro grant is on billing_alerts');
   assert(proAlert.detail.includes('removed pending prorations: ii_pro'), 'the alert records the removed proration');
-  assert(calls.deletedInvoiceItems.includes('ii_pro') && invoiceItems.has('ii_keep') && invoiceItems.has('ii_other'), 'only that subscription’s pending proration is deleted');
+  assert(
+    calls.deletedInvoiceItems.includes('ii_pro') && invoiceItems.has('ii_keep') && invoiceItems.has('ii_other') && invoiceItems.has('ii_old'),
+    'only that subscription’s in-window proration is deleted',
+  );
+  assert(calls.invoiceItemLists.some((page) => page.customer === 'cus_pam' && page.pending === true && page.limit === 100 && page.starting_after == null), 'prorations are listed by customer, pending, without a subscription filter');
+  invoiceItems.set('ii_retry', { id: 'ii_retry', customer: 'cus_pam', proration: true, owner: pamOwner, date: proAt, periodStart: proAt });
   subs.get('sub_pam')!.lookupKey = 'koruledger_pro_yearly';
   const proUpdates = calls.subscriptionUpdates.length;
-  await webhook('customer.subscription.updated', { id: 'sub_pam' }, { id: 'evt_pam_pro' });
+  const listsAtRetry = calls.invoiceItemLists.length;
+  const deletedAtRetry = calls.deletedInvoiceItems.length;
+  await webhook('customer.subscription.updated', { id: 'sub_pam' }, { id: 'evt_pam_pro', created: proAt });
   assert(calls.subscriptionUpdates.length === proUpdates && planOf(db, 'pam') === 'plus', 'retrying the Pro event does not update Stripe again');
+  assert(calls.invoiceItemLists.length === listsAtRetry && calls.deletedInvoiceItems.length === deletedAtRetry && invoiceItems.has('ii_retry'), 'a duplicate event does not clean prorations');
+
+  // Paging, owner, and the change window. previous_attributes carries the old period, which is not this change.
+  invoiceItems.clear();
+  const at = proAt + 10_000;
+  const deleteIds = new Set<string>();
+  const keepIds = new Set<string>();
+  const addItem = (item: FakeInvoiceItem, remove: boolean) => {
+    invoiceItems.set(item.id, item);
+    (remove ? deleteIds : keepIds).add(item.id);
+  };
+  for (let i = 0; i < 101; i++) {
+    const id = `ii_page_${String(i).padStart(3, '0')}`;
+    addItem({ id, customer: 'cus_pam', proration: true, owner: pamOwner, date: at, periodStart: at }, true);
+  }
+  addItem({ id: 'ii_legacy', customer: 'cus_pam', proration: true, owner: { kind: 'legacy', subscription: 'sub_pam' }, date: at, periodStart: at }, true);
+  addItem({ id: 'ii_legacy_expanded', customer: 'cus_pam', proration: true, owner: { kind: 'legacy', subscription: { id: 'sub_pam' } }, date: at }, true);
+  addItem({ id: 'ii_expanded', customer: 'cus_pam', proration: true, owner: { kind: 'parent', subscription: { id: 'sub_pam' } }, date: at, periodStart: at }, true);
+  addItem({ id: 'ii_other_sub', customer: 'cus_pam', proration: true, owner: { kind: 'parent', subscription: 'sub_other' }, date: at, periodStart: at }, false);
+  addItem({ id: 'ii_unknown_none', customer: 'cus_pam', proration: true, owner: { kind: 'none' }, date: at, periodStart: at }, false);
+  addItem({ id: 'ii_unknown_null', customer: 'cus_pam', proration: true, owner: { kind: 'parent', subscription: null }, date: at, periodStart: at }, false);
+  addItem({ id: 'ii_unknown_blank', customer: 'cus_pam', proration: true, owner: { kind: 'parent', subscription: '' }, date: at, periodStart: at }, false);
+  addItem({
+    id: 'ii_parent_other_legacy_ours',
+    customer: 'cus_pam',
+    proration: true,
+    owner: { kind: 'parent', subscription: 'sub_other' },
+    legacySubscription: 'sub_pam',
+    date: at,
+    periodStart: at,
+  }, false);
+  addItem({ id: 'ii_not_proration', customer: 'cus_pam', proration: false, owner: pamOwner, date: at, periodStart: at }, false);
+  addItem({ id: 'ii_edge_before', customer: 'cus_pam', proration: true, owner: pamOwner, date: at - PRORATION_MATCH_WINDOW_SEC, periodStart: at - 86400 }, true);
+  addItem({ id: 'ii_edge_after', customer: 'cus_pam', proration: true, owner: pamOwner, date: at + PRORATION_MATCH_WINDOW_SEC, periodStart: at - 86400 }, true);
+  addItem({ id: 'ii_before', customer: 'cus_pam', proration: true, owner: pamOwner, date: at - PRORATION_MATCH_WINDOW_SEC - 1, periodStart: at - PRORATION_MATCH_WINDOW_SEC - 1 }, false);
+  addItem({ id: 'ii_after', customer: 'cus_pam', proration: true, owner: pamOwner, date: at + PRORATION_MATCH_WINDOW_SEC + 1, periodStart: at + PRORATION_MATCH_WINDOW_SEC + 1 }, false);
+  addItem({ id: 'ii_period', customer: 'cus_pam', proration: true, owner: pamOwner, date: at - 86400, periodStart: at }, true);
+  addItem({ id: 'ii_period_end', customer: 'cus_pam', proration: true, owner: pamOwner, date: at - 86400, periodStart: at - 86400, periodEnd: at }, false);
+  addItem({ id: 'ii_legacy_created', customer: 'cus_pam', proration: true, owner: pamOwner, created: at, periodStart: 0 }, true);
+  addItem({ id: 'ii_date_wins', customer: 'cus_pam', proration: true, owner: pamOwner, date: at - 86400, created: at, periodStart: at - 86400 }, false);
+  addItem({ id: 'ii_old_period_attr', customer: 'cus_pam', proration: true, owner: pamOwner, date: at - 3600, periodStart: at - 3600 }, false);
+  addItem({ id: 'ii_other_customer', customer: 'cus_other', proration: true, owner: pamOwner, date: at, periodStart: at }, false);
+  const pamItemCount = [...invoiceItems.values()].filter((item) => item.customer === 'cus_pam').length;
+  subs.get('sub_pam')!.lookupKey = 'koruledger_pro_monthly';
+  const listsBeforePages = calls.invoiceItemLists.length;
+  const paged = await webhook('customer.subscription.updated', { id: 'sub_pam' }, {
+    id: 'evt_pam_pro_pages',
+    created: at,
+    previousAttributes: { items: { data: [{ current_period_start: at - 86400, current_period_end: at + 86400 * 30 }] } },
+  });
+  assert(paged === 200 && subs.get('sub_pam')!.lookupKey === 'koruledger_plus_yearly', 'the paged cleanup still restores Plus');
+  const pages = calls.invoiceItemLists.slice(listsBeforePages);
+  assert(pages.length === Math.ceil(pamItemCount / 100), 'invoice items are paged until has_more is false');
+  assert(pages[0].customer === 'cus_pam' && pages[0].pending === true && pages[0].limit === 100 && pages[0].starting_after == null, 'the first page lists this customer’s pending items');
+  assert(typeof pages[1].starting_after === 'string' && pages[1].starting_after.length > 0, 'the next page starts after the previous page’s last id');
+  for (const id of deleteIds) assert(calls.deletedInvoiceItems.includes(id) && !invoiceItems.has(id), `deleted ${id}`);
+  for (const id of keepIds) assert(!calls.deletedInvoiceItems.includes(id) && invoiceItems.has(id), `kept ${id}`);
+
+  invoiceItems.set('ii_noclock', { id: 'ii_noclock', customer: 'cus_pam', proration: true, owner: pamOwner, date: at, periodStart: at });
+  subs.get('sub_pam')!.lookupKey = 'koruledger_pro_monthly';
+  const listsBeforeClock = calls.invoiceItemLists.length;
+  const deletedBeforeClock = calls.deletedInvoiceItems.length;
+  const noClock = await webhook('customer.subscription.updated', { id: 'sub_pam' }, { id: 'evt_pam_pro_noclock' });
+  assert(noClock === 200 && subs.get('sub_pam')!.lookupKey === 'koruledger_plus_yearly', 'a revert without event.created still restores the price');
+  assert(calls.invoiceItemLists.length === listsBeforeClock && calls.deletedInvoiceItems.length === deletedBeforeClock && invoiceItems.has('ii_noclock'), 'no event time means no proration cleanup');
+
   failRevert = true;
+  invoiceItems.set('ii_fail', { id: 'ii_fail', customer: 'cus_pam', proration: true, owner: pamOwner, date: proAt, periodStart: proAt });
   subs.get('sub_pam')!.lookupKey = 'koruledger_pro_monthly';
   subs.get('sub_pam')!.status = 'past_due';
-  const failedRevert = await webhook('customer.subscription.updated', { id: 'sub_pam' }, { id: 'evt_pam_pro_fail' });
+  const listsBeforeFail = calls.invoiceItemLists.length;
+  const deletedBeforeFail = calls.deletedInvoiceItems.length;
+  const failedRevert = await webhook('customer.subscription.updated', { id: 'sub_pam' }, { id: 'evt_pam_pro_fail', created: proAt });
   assert(failedRevert === 200, 'a revert failure still acknowledges the webhook');
   assert(planOf(db, 'pam') === 'plus', 'a failed revert does not grant Pro');
   const pamSaved = queryOne<{ status: string; plan: string }>(db, `SELECT status, plan FROM billing_subscriptions WHERE stripe_subscription_id = 'sub_pam'`);
   assert(pamSaved?.status === 'past_due' && pamSaved.plan === 'plus', 'the status is saved with the granted plan');
-  const failAlert = queryOne<{ error: string }>(db, `SELECT error FROM billing_alerts WHERE stripe_event_id = ?`, ['evt_pam_pro_fail']);
+  const failAlert = queryOne<{ error: string; detail: string }>(db, `SELECT error, detail FROM billing_alerts WHERE stripe_event_id = ?`, ['evt_pam_pro_fail']);
   assert(failAlert?.error.includes('Stripe is down'), 'the alert records the revert error');
+  assert(
+    !failAlert.detail.includes('removed pending') && calls.invoiceItemLists.length === listsBeforeFail && calls.deletedInvoiceItems.length === deletedBeforeFail && invoiceItems.has('ii_fail'),
+    'a failed revert does not delete prorations',
+  );
   failRevert = false;
   subs.get('sub_pam')!.status = 'active';
   subs.get('sub_pam')!.lookupKey = 'koruledger_plus_yearly';
@@ -878,9 +1042,13 @@ try {
 
   // A deleted subscription whose Stripe price differs from the granted price must still be saved.
   const updatesBeforeDelete = calls.subscriptionUpdates.length;
+  const nedAt = proAt + 20_000;
+  invoiceItems.set('ii_ned', { id: 'ii_ned', customer: 'cus_ned', proration: true, owner: { kind: 'parent', subscription: 'sub_ned' }, date: nedAt, periodStart: nedAt });
   subs.get('sub_ned')!.status = 'canceled';
   subs.get('sub_ned')!.lookupKey = 'koruledger_plus_monthly';
-  const deleted = await webhook('customer.subscription.deleted', { id: 'sub_ned' }, { id: 'evt_ned_deleted' });
+  const listsBeforeNed = calls.invoiceItemLists.length;
+  const deletedBeforeNed = calls.deletedInvoiceItems.length;
+  const deleted = await webhook('customer.subscription.deleted', { id: 'sub_ned' }, { id: 'evt_ned_deleted', created: nedAt });
   assert(deleted === 200, 'a deleted event with a different price is accepted');
   assert(calls.subscriptionUpdates.length === updatesBeforeDelete, 'a canceled subscription is not updated in Stripe');
   assert(planOf(db, 'ned') === 'free', 'cancel drops Business');
@@ -892,6 +1060,10 @@ try {
     ['evt_ned_deleted'],
   );
   assert(nedAlert?.reason === 'business_price_change' && nedAlert.error === '' && nedAlert.detail.includes('canceled'), 'the closed subscription is alerted without a revert error');
+  assert(
+    !nedAlert.detail.includes('removed pending') && calls.invoiceItemLists.length === listsBeforeNed && calls.deletedInvoiceItems.length === deletedBeforeNed && invoiceItems.has('ii_ned'),
+    'a canceled subscription does not delete prorations',
+  );
 
   assert(process.env.STRIPE_LIVE_ENABLED == null, 'tests never set STRIPE_LIVE_ENABLED');
   assert(process.env.PRO_PLAN_ENABLED == null, 'tests leave Pro sales off');
