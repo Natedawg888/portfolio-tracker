@@ -882,6 +882,15 @@ function migrateSchema(database: Database) {
   // KiwiSaver activity external ids are account-scoped; keep global unique on activity
   // but KS accounts themselves are user-scoped via user_id column.
 
+  // Ignored billing price changes. The table is new; these columns cover a DB created
+  // before error and detail were added.
+  const alertCols = tableColumns(database, 'billing_alerts');
+  if (alertCols.size > 0 && !alertCols.has('error')) {
+    database.run(`ALTER TABLE billing_alerts ADD COLUMN error TEXT NOT NULL DEFAULT ''`);
+  }
+  if (alertCols.size > 0 && !alertCols.has('detail')) {
+    database.run(`ALTER TABLE billing_alerts ADD COLUMN detail TEXT NOT NULL DEFAULT ''`);
+  }
 }
 
 function seedDefaults(database: Database) {

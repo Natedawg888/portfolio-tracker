@@ -111,7 +111,7 @@ eq(businessSetupTarget(true, [{ id: 'only' }]), { kind: 'edit', id: 'only' }, 't
     return false;
   }, async () => {});
   eq(home, 'home', 'a paid return that never confirms goes home after the brief wait');
-  eq(probes, 3, 'it polls three times');
+  eq(probes, 4, 'it polls four times');
 }
 
 eq(checkoutResume(null, false), { action: 'none' }, 'no billing flag changes nothing');

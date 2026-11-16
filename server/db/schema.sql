@@ -1407,6 +1407,25 @@ CREATE TABLE IF NOT EXISTS billing_subscriptions (
 );
 CREATE INDEX IF NOT EXISTS idx_billing_subscriptions_user ON billing_subscriptions(user_id);
 
+-- Ignored Stripe price changes (portal or subscription update). The granted plan is unchanged.
+-- stripe_event_id makes a webhook retry a no-op so reverting the price cannot loop.
+CREATE TABLE IF NOT EXISTS billing_alerts (
+  id                       TEXT PRIMARY KEY,
+  stripe_event_id          TEXT NOT NULL,
+  stripe_subscription_id   TEXT NOT NULL,
+  user_id                  TEXT NOT NULL,
+  reason                   TEXT NOT NULL,
+  from_plan                TEXT NOT NULL,
+  from_interval            TEXT NOT NULL,
+  to_plan                  TEXT NOT NULL,
+  to_interval              TEXT NOT NULL,
+  error                    TEXT NOT NULL DEFAULT '',  -- revert failed; empty when the price was put back or the sub was already closed
+  detail                   TEXT NOT NULL DEFAULT '',  -- pending prorations removed, or why the Stripe price was left as-is
+  created_at               TEXT NOT NULL,
+  UNIQUE (stripe_event_id, stripe_subscription_id)
+);
+CREATE INDEX IF NOT EXISTS idx_billing_alerts_user ON billing_alerts(user_id, created_at);
+
 -- Households (KAN-77). A user belongs to at most one household. Roles: owner (one per
 -- household), adult (edits shared items), viewer (read-only). Invites are single-use links
 -- tied to an email address; only the token's hash is stored.

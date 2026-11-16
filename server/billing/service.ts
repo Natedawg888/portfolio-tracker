@@ -15,14 +15,25 @@ import { logger } from '../lib/logger.ts';
 import { BILLING_PLANS, catalogByLookupKey, catalogPrice, type BillingInterval, type BillingPlan, type CatalogPrice } from './catalog.ts';
 import { stripeClient } from './client.ts';
 import type { BillingConfig } from './config.ts';
-import { businessCheckoutBlock, priceChangeDecision, proCheckoutBlock, usageModeFor } from './planGuards.ts';
-import { businessCancelOnlyPortalConfigId } from './portalConfig.ts';
+import { businessCheckoutBlock, priceChangeDecision, proCheckoutBlock, usageModeFor, type GrantedPrice } from './planGuards.ts';
+import { proPlanEnabled } from './proPlan.ts';
 import {
+  businessCancelOnlyPortalConfigId,
+  knownBusinessPriceIds,
+  personalPortalConfigId,
+  portalHoldsPro,
+  priceIsBusiness,
+  rowsForPortal,
+} from './portalConfig.ts';
+import {
+  billingAlertExists,
   customerIdFor,
   grantingSubscriptions,
   linkCustomer,
+  recordBillingAlert,
   saveSubscription,
   subscriptionById,
+  subscriptionsForUser,
   userIdForCustomer,
 } from './store.ts';
 
@@ -68,13 +79,18 @@ function userExists(db: Database, userId: string): boolean {
  *
  * `viaCheckout` is set for Checkout completion. Moving onto a Business price is granted only
  * then, and only for an account that may buy Business. Moving a Business subscription onto
- * any other price is logged and not granted. Cancel and payment status still update.
+ * any other price is kept at the granted price. Moving onto Pro while PRO_PLAN_ENABLED is off
+ * is kept unless this customer already held Pro or this sync is Checkout completion.
+ * An ignored price is put back on the subscription in Stripe (no proration) and recorded in
+ * billing_alerts. The same webhook event does not revert twice. A canceled or incomplete_expired
+ * subscription cannot be updated, and a failed revert is recorded on the alert: either way the
+ * subscription status is still saved, so a cancel drops the paid plan.
  */
 export async function syncSubscription(
   db: Database,
   config: BillingConfig,
   subscriptionId: string,
-  options: { viaCheckout?: boolean } = {},
+  options: { viaCheckout?: boolean; eventId?: string } = {},
 ): Promise<boolean> {
   const sub = await stripeClient(config).subscriptions.retrieve(subscriptionId);
   const customerId = idOf(sub.customer);
@@ -101,13 +117,7 @@ export async function syncSubscription(
   const plan = decision.applyPrice || !previous ? entry.plan : previous.plan;
   const interval = decision.applyPrice || !previous ? entry.interval : previous.interval;
   if (!decision.applyPrice && previous) {
-    logger.warn('billing_plan_change_ignored', {
-      subscription: sub.id,
-      user: userId,
-      reason: decision.reason,
-      from: `${previous.plan}/${previous.interval}`,
-      to: `${entry.plan}/${entry.interval}`,
-    });
+    await revertIgnoredPrice(db, config, sub, userId, previous, entry, decision.reason, options.eventId);
   }
   if (!userIdForCustomer(db, customerId)) linkCustomer(db, userId, customerId, sub.livemode);
   saveSubscription(db, {
@@ -139,7 +149,7 @@ export async function handleBillingEvent(db: Database, config: BillingConfig, ev
         linkCustomer(db, userId, customerId, event.livemode);
       }
       const subId = idOf(session.subscription);
-      if (subId) await syncSubscription(db, config, subId, { viaCheckout: true });
+      if (subId) await syncSubscription(db, config, subId, { viaCheckout: true, eventId: event.id });
       return;
     }
     case 'customer.subscription.created':
@@ -147,7 +157,7 @@ export async function handleBillingEvent(db: Database, config: BillingConfig, ev
     case 'customer.subscription.deleted':
     case 'customer.subscription.paused':
     case 'customer.subscription.resumed':
-      await syncSubscription(db, config, event.data.object.id);
+      await syncSubscription(db, config, event.data.object.id, { eventId: event.id });
       return;
     default:
       return;
@@ -209,18 +219,196 @@ export async function createPortal(db: Database, config: BillingConfig, userId: 
   const customerId = customerIdFor(db, userId, config.live);
   if (!customerId) throw new BillingError(404, 'NO_CUSTOMER', 'There’s no billing account to manage yet.');
   const stripe = stripeClient(config);
-  const sub = grantingSubscriptions(db, userId).find((s) => Boolean(s.livemode) === config.live) ?? null;
-  // Business is cancel-only. Never fall back to the default portal, which can change the plan.
-  const configuration =
-    sub?.plan === 'business'
-      ? await businessCancelOnlyPortalConfigId(stripe, config.portalBusinessConfigId)
-      : config.portalConfigId;
+  const rows = subscriptionsForUser(db, userId, config.live);
+  const considered = rowsForPortal(rows);
+  // A stored Business row is enough, at any open status (unpaid and incomplete included).
+  // Otherwise read the Stripe price: a refused change can still sit on a Business price id
+  // or lookup key (koruledger_business_monthly / koruledger_business_yearly).
+  let businessPrice = false;
+  if (!considered.some((row) => row.plan === 'business') && considered.length > 0) {
+    let businessPriceIds: ReadonlySet<string> | null = null;
+    for (const row of considered) {
+      const remote = await stripe.subscriptions.retrieve(row.stripe_subscription_id);
+      for (const item of remote.items.data) {
+        const price = item.price;
+        const ref =
+          typeof price === 'string'
+            ? { id: price, lookup_key: null, metadata: null }
+            : { id: price.id, lookup_key: price.lookup_key, metadata: price.metadata };
+        if (priceIsBusiness(ref, new Set())) {
+          businessPrice = true;
+          break;
+        }
+        if (!ref.lookup_key && ref.id) {
+          businessPriceIds = businessPriceIds ?? (await knownBusinessPriceIds(stripe));
+          if (priceIsBusiness(ref, businessPriceIds)) {
+            businessPrice = true;
+            break;
+          }
+        }
+      }
+      if (businessPrice) break;
+    }
+  }
+  const business = considered.some((row) => row.plan === 'business') || businessPrice;
+  const configuration = business
+    ? await businessCancelOnlyPortalConfigId(stripe, config.portalBusinessConfigId)
+    : await personalPortalConfigId(stripe, config.portalPersonalConfigId, {
+        proEnabled: proPlanEnabled(),
+        holdsPro: portalHoldsPro(rows),
+      });
   const session = await stripe.billingPortal.sessions.create({
     customer: customerId,
     return_url: `${baseUrl}/settings?tab=account`,
-    ...(configuration ? { configuration } : {}),
+    configuration,
   });
   return session.url;
+}
+
+function priceIdOf(price: Stripe.SubscriptionItem['price'] | string | null | undefined): string | null {
+  if (!price) return null;
+  return typeof price === 'string' ? price : price.id;
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** Stripe rejects subscription updates once the subscription is over. */
+function subscriptionIsClosed(status: string): boolean {
+  return status === 'canceled' || status === 'incomplete_expired';
+}
+
+function prorationSubscriptionId(item: Stripe.InvoiceItem): string | null {
+  const parent = item.parent?.subscription_details?.subscription;
+  if (typeof parent === 'string' && parent) return parent;
+  const legacy = (item as { subscription?: unknown }).subscription;
+  return typeof legacy === 'string' && legacy ? legacy : null;
+}
+
+/**
+ * Pending proration invoice items from the price change we are undoing. Deleted when Stripe
+ * allows it. The note is what the alert stores.
+ */
+async function removePendingProrations(stripe: Stripe, sub: Stripe.Subscription): Promise<string> {
+  const customer = idOf(sub.customer);
+  if (!customer) return '';
+  const listed = await stripe.invoiceItems.list({
+    customer,
+    pending: true,
+    limit: 100,
+    // Current SDK types omit this filter. Stripe still accepts it and narrows the list.
+    subscription: sub.id,
+  } as Stripe.InvoiceItemListParams);
+  const removed: string[] = [];
+  const failed: string[] = [];
+  for (const item of listed.data) {
+    if (!item.proration) continue;
+    const owner = prorationSubscriptionId(item);
+    if (owner && owner !== sub.id) continue;
+    try {
+      await stripe.invoiceItems.del(item.id);
+      removed.push(item.id);
+    } catch (err) {
+      failed.push(`${item.id}: ${errorText(err)}`);
+    }
+  }
+  const parts: string[] = [];
+  if (removed.length) parts.push(`removed pending prorations: ${removed.join(', ')}`);
+  if (failed.length) parts.push(`pending prorations not removed: ${failed.join('; ')}`);
+  return parts.join('; ');
+}
+
+async function revertStripePrice(stripe: Stripe, sub: Stripe.Subscription, entitled: GrantedPrice, rejected: CatalogPrice): Promise<void> {
+  const entitledPrice = catalogPrice(entitled.plan, entitled.interval);
+  const listed = await stripe.prices.list({ lookup_keys: [entitledPrice.lookupKey], active: true, limit: 1 });
+  const priceId = listed.data[0]?.id;
+  if (!priceId) throw new Error(`Missing Stripe price for ${entitledPrice.lookupKey}`);
+  const item =
+    sub.items.data.find((candidate) => {
+      const key = typeof candidate.price === 'string' ? null : candidate.price.lookup_key;
+      const entry = catalogByLookupKey(key);
+      return entry?.plan === rejected.plan && entry.interval === rejected.interval;
+    }) ??
+    sub.items.data.find((candidate) => {
+      const key = typeof candidate.price === 'string' ? null : candidate.price.lookup_key;
+      return catalogByLookupKey(key) != null;
+    }) ??
+    sub.items.data[0];
+  if (!item?.id) throw new Error(`Subscription ${sub.id} has no item to revert`);
+  if (priceIdOf(item.price) !== priceId) {
+    await stripe.subscriptions.update(sub.id, {
+      items: [{ id: item.id, price: priceId }],
+      proration_behavior: 'none',
+    });
+  }
+}
+
+/**
+ * Put the subscription item back on the price we still grant. proration_behavior none, so
+ * Stripe does not bill for the switch we are undoing. The same event id is stored once:
+ * a retry sees the alert and does not update Stripe again.
+ *
+ * Never throws. A closed subscription is not updated. Any other Stripe error is stored on the
+ * alert so the caller can still save the subscription status.
+ */
+async function revertIgnoredPrice(
+  db: Database,
+  config: BillingConfig,
+  sub: Stripe.Subscription,
+  userId: string,
+  entitled: GrantedPrice,
+  rejected: CatalogPrice,
+  reason: string,
+  eventId: string | undefined,
+): Promise<void> {
+  const id = eventId?.trim() || `local:${sub.id}:${entitled.plan}/${entitled.interval}:${rejected.plan}/${rejected.interval}`;
+  const base = {
+    subscription: sub.id,
+    user: userId,
+    reason,
+    from: `${entitled.plan}/${entitled.interval}`,
+    to: `${rejected.plan}/${rejected.interval}`,
+  };
+  if (billingAlertExists(db, id, sub.id)) {
+    logger.info('billing_plan_change_ignored', { ...base, duplicate: true });
+    return;
+  }
+  const stripe = stripeClient(config);
+  const closed = subscriptionIsClosed(sub.status);
+  let error = '';
+  const notes: string[] = [];
+  if (closed) {
+    notes.push(`Stripe price left unchanged; a ${sub.status} subscription cannot be updated`);
+  } else {
+    try {
+      await revertStripePrice(stripe, sub, entitled, rejected);
+    } catch (err) {
+      error = errorText(err);
+      logger.error('billing_plan_change_revert_failed', { ...base, error });
+    }
+  }
+  try {
+    const cleaned = await removePendingProrations(stripe, sub);
+    if (cleaned) notes.push(cleaned);
+  } catch (err) {
+    const note = `pending prorations not removed: ${errorText(err)}`;
+    notes.push(note);
+    logger.warn('billing_proration_cleanup_failed', { ...base, error: errorText(err) });
+  }
+  const alert = recordBillingAlert(db, {
+    eventId: id,
+    subscriptionId: sub.id,
+    userId,
+    reason,
+    fromPlan: entitled.plan,
+    fromInterval: entitled.interval,
+    toPlan: rejected.plan,
+    toInterval: rejected.interval,
+    error,
+    detail: notes.join('; '),
+  });
+  logger.warn('billing_plan_change_ignored', { ...base, alert, reverted: !closed && !error, error: error || undefined });
 }
 
 /**

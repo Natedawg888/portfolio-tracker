@@ -115,8 +115,17 @@ try {
   assert(starter.json.businesses?.some((b: { name: string }) => b.name === 'My business'), 'the starter business is listed');
   run(db, `DELETE FROM businesses WHERE user_id = ?`, ['fresh']);
   assert(ensureStarterBusiness(db, 'fresh') === false, 'the created starter is not made again');
-  setPlan(db, 'plus', 'free', 'test');
-  assert(ensureStarterBusiness(db, 'plus') === false, 'Free does not get a starter business');
+  run(
+    db,
+    `INSERT INTO users (id, email, password_hash, first_name, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
+    ['freeuser', 'freeuser@example.com', 'hash', 'X', now, now],
+  );
+  run(db, `UPDATE users SET preferences_json = ? WHERE id = ?`, [mergeRunsBusinessIntoPreferencesJson(null, true), 'freeuser']);
+  assert(ensureStarterBusiness(db, 'freeuser') === false, 'Free does not get a starter business');
+  assert(
+    queryOne<{ id: string }>(db, `SELECT id FROM businesses WHERE user_id = ?`, ['freeuser']) == null,
+    'an unflagged Free account does not get My business',
+  );
 
   console.log('business manage: ok');
 } finally {
