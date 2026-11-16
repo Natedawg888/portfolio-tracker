@@ -94,6 +94,7 @@ export function ProfileMenu({ triggerClassName }: { triggerClassName?: string })
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Account menu for ${label}`}
+        data-tour="account"
         onClick={() => setOpen((v) => !v)}
       >
         {user.avatarUrl ? (

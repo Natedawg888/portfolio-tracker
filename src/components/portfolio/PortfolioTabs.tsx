@@ -20,6 +20,7 @@ export function PortfolioTabs({
     <div
       ref={listRef}
       className="portfolio-tabs"
+      data-tour="portfolio-tabs"
       role="tablist"
       aria-label="Portfolio sections"
       onKeyDown={(e) => {

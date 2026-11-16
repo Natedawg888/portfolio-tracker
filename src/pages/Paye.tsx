@@ -588,7 +588,7 @@ export function Paye() {
     <div className="stack paye-page">
       <PayeTabs />
       <header className="paye-intro">
-        <h2 className="page-title">Take-home pay</h2>
+        <h2 className="page-title" data-tour="paye-title">Take-home pay</h2>
         <p className="paye-subtitle">{payePageSubtitle(rates.start, rates.end)}</p>
         <label className="paye-year">
           <span>Tax year</span>

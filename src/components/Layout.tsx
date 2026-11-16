@@ -276,7 +276,8 @@ export function Layout({ children }: { children?: ReactNode }) {
   const closeNav = () => setNavOpen(false);
 
   // Hide-amounts and theme controls: in the header, and again at the bottom of the phone drawer.
-  const tools = (
+  // data-tour is only on the header control, so a later tour step matches one element.
+  const headerTools = (forHeader: boolean) => (
     <div className="header-tools">
       <button
         type="button"
@@ -285,6 +286,7 @@ export function Layout({ children }: { children?: ReactNode }) {
         aria-label={moneyHidden ? 'Show monetary values' : 'Hide monetary values'}
         aria-pressed={moneyHidden}
         title={moneyHidden ? 'Show amounts' : 'Hide amounts'}
+        data-tour={forHeader ? 'hide-amounts' : undefined}
       >
         {moneyHidden ? <EyeOffIcon /> : <EyeOpenIcon />}
       </button>
@@ -340,11 +342,12 @@ export function Layout({ children }: { children?: ReactNode }) {
           ))}
         </nav>
         <div className="header-actions">
-          {tools}
+          {headerTools(true)}
           <button
             ref={menuButtonRef}
             type="button"
             className="nav-toggle"
+            data-tour="nav-toggle"
             aria-label={navOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={navOpen}
             aria-controls={MOBILE_NAV_ID}
@@ -354,7 +357,7 @@ export function Layout({ children }: { children?: ReactNode }) {
           </button>
         </div>
       </header>
-      <MobileNavDrawer open={navOpen} onClose={closeNav} links={visibleLinks} tools={tools} returnFocusRef={menuButtonRef} />
+      <MobileNavDrawer open={navOpen} onClose={closeNav} links={visibleLinks} tools={headerTools(false)} returnFocusRef={menuButtonRef} />
       <main className="app-main">
         <MoneyHiddenProvider>
           <Suspense fallback={<div className="panel"><p className="muted">Loading…</p></div>}>

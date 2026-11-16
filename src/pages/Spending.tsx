@@ -1033,7 +1033,7 @@ export function Spending() {
   if (error && (!txns || txns.length === 0)) {
     return (
       <div className="panel warn budget-page">
-        <h2 className="page-title">Budget</h2>
+        <h2 className="page-title" data-tour="budget-header">Budget</h2>
         <p>{error}</p>
       </div>
     );

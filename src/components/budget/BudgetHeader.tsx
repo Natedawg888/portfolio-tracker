@@ -55,7 +55,7 @@ export function BudgetHeader({
   }, [menuOpen]);
 
   return (
-    <header className="budget-header">
+    <header className="budget-header" data-tour="budget-header">
       <div className="budget-header-month">
         <h2 className="page-title budget-header-title">Budget</h2>
         <nav className="budget-month-switch" aria-label="Budget month">
