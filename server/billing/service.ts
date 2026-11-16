@@ -82,7 +82,9 @@ function userExists(db: Database, userId: string): boolean {
  * any other price is kept at the granted price. Moving onto Pro while PRO_PLAN_ENABLED is off
  * is kept unless this customer already held Pro or this sync is Checkout completion.
  * An ignored price is put back on the subscription in Stripe (no proration) and recorded in
- * billing_alerts. The same webhook event does not revert twice. Cancel and payment status still update.
+ * billing_alerts. The same webhook event does not revert twice. A canceled or incomplete_expired
+ * subscription cannot be updated, and a failed revert is recorded on the alert: either way the
+ * subscription status is still saved, so a cancel drops the paid plan.
  */
 export async function syncSubscription(
   db: Database,
@@ -268,10 +270,87 @@ function priceIdOf(price: Stripe.SubscriptionItem['price'] | string | null | und
   return typeof price === 'string' ? price : price.id;
 }
 
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** Stripe rejects subscription updates once the subscription is over. */
+function subscriptionIsClosed(status: string): boolean {
+  return status === 'canceled' || status === 'incomplete_expired';
+}
+
+function prorationSubscriptionId(item: Stripe.InvoiceItem): string | null {
+  const parent = item.parent?.subscription_details?.subscription;
+  if (typeof parent === 'string' && parent) return parent;
+  const legacy = (item as { subscription?: unknown }).subscription;
+  return typeof legacy === 'string' && legacy ? legacy : null;
+}
+
+/**
+ * Pending proration invoice items from the price change we are undoing. Deleted when Stripe
+ * allows it. The note is what the alert stores.
+ */
+async function removePendingProrations(stripe: Stripe, sub: Stripe.Subscription): Promise<string> {
+  const customer = idOf(sub.customer);
+  if (!customer) return '';
+  const listed = await stripe.invoiceItems.list({
+    customer,
+    pending: true,
+    limit: 100,
+    // Current SDK types omit this filter. Stripe still accepts it and narrows the list.
+    subscription: sub.id,
+  } as Stripe.InvoiceItemListParams);
+  const removed: string[] = [];
+  const failed: string[] = [];
+  for (const item of listed.data) {
+    if (!item.proration) continue;
+    const owner = prorationSubscriptionId(item);
+    if (owner && owner !== sub.id) continue;
+    try {
+      await stripe.invoiceItems.del(item.id);
+      removed.push(item.id);
+    } catch (err) {
+      failed.push(`${item.id}: ${errorText(err)}`);
+    }
+  }
+  const parts: string[] = [];
+  if (removed.length) parts.push(`removed pending prorations: ${removed.join(', ')}`);
+  if (failed.length) parts.push(`pending prorations not removed: ${failed.join('; ')}`);
+  return parts.join('; ');
+}
+
+async function revertStripePrice(stripe: Stripe, sub: Stripe.Subscription, entitled: GrantedPrice, rejected: CatalogPrice): Promise<void> {
+  const entitledPrice = catalogPrice(entitled.plan, entitled.interval);
+  const listed = await stripe.prices.list({ lookup_keys: [entitledPrice.lookupKey], active: true, limit: 1 });
+  const priceId = listed.data[0]?.id;
+  if (!priceId) throw new Error(`Missing Stripe price for ${entitledPrice.lookupKey}`);
+  const item =
+    sub.items.data.find((candidate) => {
+      const key = typeof candidate.price === 'string' ? null : candidate.price.lookup_key;
+      const entry = catalogByLookupKey(key);
+      return entry?.plan === rejected.plan && entry.interval === rejected.interval;
+    }) ??
+    sub.items.data.find((candidate) => {
+      const key = typeof candidate.price === 'string' ? null : candidate.price.lookup_key;
+      return catalogByLookupKey(key) != null;
+    }) ??
+    sub.items.data[0];
+  if (!item?.id) throw new Error(`Subscription ${sub.id} has no item to revert`);
+  if (priceIdOf(item.price) !== priceId) {
+    await stripe.subscriptions.update(sub.id, {
+      items: [{ id: item.id, price: priceId }],
+      proration_behavior: 'none',
+    });
+  }
+}
+
 /**
  * Put the subscription item back on the price we still grant. proration_behavior none, so
  * Stripe does not bill for the switch we are undoing. The same event id is stored once:
  * a retry sees the alert and does not update Stripe again.
+ *
+ * Never throws. A closed subscription is not updated. Any other Stripe error is stored on the
+ * alert so the caller can still save the subscription status.
  */
 async function revertIgnoredPrice(
   db: Database,
@@ -296,27 +375,26 @@ async function revertIgnoredPrice(
     return;
   }
   const stripe = stripeClient(config);
-  const entitledPrice = catalogPrice(entitled.plan, entitled.interval);
-  const listed = await stripe.prices.list({ lookup_keys: [entitledPrice.lookupKey], active: true, limit: 1 });
-  const priceId = listed.data[0]?.id;
-  if (!priceId) throw new Error(`Missing Stripe price for ${entitledPrice.lookupKey}`);
-  const item =
-    sub.items.data.find((candidate) => {
-      const key = typeof candidate.price === 'string' ? null : candidate.price.lookup_key;
-      const entry = catalogByLookupKey(key);
-      return entry?.plan === rejected.plan && entry.interval === rejected.interval;
-    }) ??
-    sub.items.data.find((candidate) => {
-      const key = typeof candidate.price === 'string' ? null : candidate.price.lookup_key;
-      return catalogByLookupKey(key) != null;
-    }) ??
-    sub.items.data[0];
-  if (!item?.id) throw new Error(`Subscription ${sub.id} has no item to revert`);
-  if (priceIdOf(item.price) !== priceId) {
-    await stripe.subscriptions.update(sub.id, {
-      items: [{ id: item.id, price: priceId }],
-      proration_behavior: 'none',
-    });
+  const closed = subscriptionIsClosed(sub.status);
+  let error = '';
+  const notes: string[] = [];
+  if (closed) {
+    notes.push(`Stripe price left unchanged; a ${sub.status} subscription cannot be updated`);
+  } else {
+    try {
+      await revertStripePrice(stripe, sub, entitled, rejected);
+    } catch (err) {
+      error = errorText(err);
+      logger.error('billing_plan_change_revert_failed', { ...base, error });
+    }
+  }
+  try {
+    const cleaned = await removePendingProrations(stripe, sub);
+    if (cleaned) notes.push(cleaned);
+  } catch (err) {
+    const note = `pending prorations not removed: ${errorText(err)}`;
+    notes.push(note);
+    logger.warn('billing_proration_cleanup_failed', { ...base, error: errorText(err) });
   }
   const alert = recordBillingAlert(db, {
     eventId: id,
@@ -327,8 +405,10 @@ async function revertIgnoredPrice(
     fromInterval: entitled.interval,
     toPlan: rejected.plan,
     toInterval: rejected.interval,
+    error,
+    detail: notes.join('; '),
   });
-  logger.warn('billing_plan_change_ignored', { ...base, alert, reverted: true });
+  logger.warn('billing_plan_change_ignored', { ...base, alert, reverted: !closed && !error, error: error || undefined });
 }
 
 /**

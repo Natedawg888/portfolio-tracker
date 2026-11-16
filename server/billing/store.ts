@@ -130,6 +130,10 @@ export type BillingAlertInput = {
   fromInterval: BillingInterval;
   toPlan: BillingPlan;
   toInterval: BillingInterval;
+  /** Set when putting the Stripe price back failed. Empty when it succeeded or was skipped. */
+  error?: string;
+  /** Pending prorations removed, or why the Stripe price was left unchanged. */
+  detail?: string;
 };
 
 /** True when this webhook delivery already reverted this subscription. Retries must not do it again. */
@@ -149,8 +153,9 @@ export function recordBillingAlert(db: Database, alert: BillingAlertInput): stri
   run(
     db,
     `INSERT OR IGNORE INTO billing_alerts
-       (id, stripe_event_id, stripe_subscription_id, user_id, reason, from_plan, from_interval, to_plan, to_interval, created_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+       (id, stripe_event_id, stripe_subscription_id, user_id, reason, from_plan, from_interval, to_plan, to_interval,
+        error, detail, created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       id,
       alert.eventId,
@@ -161,6 +166,8 @@ export function recordBillingAlert(db: Database, alert: BillingAlertInput): stri
       alert.fromInterval,
       alert.toPlan,
       alert.toInterval,
+      alert.error ?? '',
+      alert.detail ?? '',
       new Date().toISOString(),
     ],
   );

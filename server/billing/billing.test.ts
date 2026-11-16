@@ -268,6 +268,8 @@ type FakeSub = {
   omitLookupKey?: boolean;
 };
 const subs = new Map<string, FakeSub>();
+type FakeInvoiceItem = { id: string; customer: string; subscription: string; proration: boolean };
+const invoiceItems = new Map<string, FakeInvoiceItem>();
 const calls: {
   checkout: Record<string, unknown>[];
   portal: Record<string, unknown>[];
@@ -276,6 +278,7 @@ const calls: {
   portalConfigs: Record<string, unknown>[];
   portalLists: number;
   subscriptionUpdates: Record<string, unknown>[];
+  deletedInvoiceItems: string[];
 } = {
   checkout: [],
   portal: [],
@@ -284,6 +287,7 @@ const calls: {
   portalConfigs: [],
   portalLists: 0,
   subscriptionUpdates: [],
+  deletedInvoiceItems: [],
 };
 type FakePortalConfig = {
   id: string;
@@ -345,6 +349,24 @@ const fake = {
       calls.cancelled.push(id);
       subs.get(id)!.status = 'canceled';
       return { id, status: 'canceled' };
+    },
+  },
+  invoiceItems: {
+    list: async (params: { customer?: string; pending?: boolean; subscription?: string }) => ({
+      data: [...invoiceItems.values()]
+        .filter((item) => !params.customer || item.customer === params.customer)
+        .filter((item) => !params.subscription || item.subscription === params.subscription)
+        .map((item) => ({
+          id: item.id,
+          proration: item.proration,
+          customer: item.customer,
+          parent: { type: 'subscription_details', subscription_details: { subscription: item.subscription } },
+        })),
+    }),
+    del: async (id: string) => {
+      calls.deletedInvoiceItems.push(id);
+      invoiceItems.delete(id);
+      return { id, deleted: true };
     },
   },
   prices: {
@@ -762,6 +784,9 @@ try {
   assert(pamPro.status === 400 && pamPro.json.code === 'PRO_UNAVAILABLE' && calls.checkout.length === checkoutsBeforePamPro, 'Personal pro checkout stays refused and does not open Stripe');
 
   // Subscription update must not grant Pro while the flag is off. The price is reverted, once per event.
+  invoiceItems.set('ii_pro', { id: 'ii_pro', customer: 'cus_pam', subscription: 'sub_pam', proration: true });
+  invoiceItems.set('ii_keep', { id: 'ii_keep', customer: 'cus_pam', subscription: 'sub_pam', proration: false });
+  invoiceItems.set('ii_other', { id: 'ii_other', customer: 'cus_pam', subscription: 'sub_other', proration: true });
   subs.get('sub_pam')!.lookupKey = 'koruledger_pro_monthly';
   const proIgnored = await captureWarns(() => webhook('customer.subscription.updated', { id: 'sub_pam' }, { id: 'evt_pam_pro' }));
   assert(planOf(db, 'pam') === 'plus', 'a subscription update does not grant Pro while PRO_PLAN_ENABLED is off');
@@ -769,17 +794,26 @@ try {
   assert(subs.get('sub_pam')!.lookupKey === 'koruledger_plus_yearly', 'the Plus price is restored');
   const proRevert = calls.subscriptionUpdates.at(-1) as { proration_behavior?: string; items?: { price: string }[] };
   assert(proRevert.proration_behavior === 'none' && proRevert.items?.[0].price === 'price_koruledger_plus_yearly', 'the Pro revert does not prorate');
-  const proAlert = queryOne<{ reason: string; to_plan: string }>(db, `SELECT reason, to_plan FROM billing_alerts WHERE stripe_event_id = ?`, ['evt_pam_pro']);
+  const proAlert = queryOne<{ reason: string; to_plan: string; detail: string }>(db, `SELECT reason, to_plan, detail FROM billing_alerts WHERE stripe_event_id = ?`, ['evt_pam_pro']);
   assert(proAlert?.reason === 'pro_unavailable' && proAlert.to_plan === 'pro', 'the refused Pro grant is on billing_alerts');
+  assert(proAlert.detail.includes('removed pending prorations: ii_pro'), 'the alert records the removed proration');
+  assert(calls.deletedInvoiceItems.includes('ii_pro') && invoiceItems.has('ii_keep') && invoiceItems.has('ii_other'), 'only that subscription’s pending proration is deleted');
   subs.get('sub_pam')!.lookupKey = 'koruledger_pro_yearly';
   const proUpdates = calls.subscriptionUpdates.length;
   await webhook('customer.subscription.updated', { id: 'sub_pam' }, { id: 'evt_pam_pro' });
   assert(calls.subscriptionUpdates.length === proUpdates && planOf(db, 'pam') === 'plus', 'retrying the Pro event does not update Stripe again');
   failRevert = true;
   subs.get('sub_pam')!.lookupKey = 'koruledger_pro_monthly';
-  assert((await webhook('customer.subscription.updated', { id: 'sub_pam' }, { id: 'evt_pam_pro_fail' })) === 500, 'a failed revert is retried');
+  subs.get('sub_pam')!.status = 'past_due';
+  const failedRevert = await webhook('customer.subscription.updated', { id: 'sub_pam' }, { id: 'evt_pam_pro_fail' });
+  assert(failedRevert === 200, 'a revert failure still acknowledges the webhook');
   assert(planOf(db, 'pam') === 'plus', 'a failed revert does not grant Pro');
+  const pamSaved = queryOne<{ status: string; plan: string }>(db, `SELECT status, plan FROM billing_subscriptions WHERE stripe_subscription_id = 'sub_pam'`);
+  assert(pamSaved?.status === 'past_due' && pamSaved.plan === 'plus', 'the status is saved with the granted plan');
+  const failAlert = queryOne<{ error: string }>(db, `SELECT error FROM billing_alerts WHERE stripe_event_id = ?`, ['evt_pam_pro_fail']);
+  assert(failAlert?.error.includes('Stripe is down'), 'the alert records the revert error');
   failRevert = false;
+  subs.get('sub_pam')!.status = 'active';
   subs.get('sub_pam')!.lookupKey = 'koruledger_plus_yearly';
 
   // A current Pro subscriber can still change interval. Checkout completion can still grant Pro.
@@ -841,6 +875,23 @@ try {
   assert(byPriceId.status === 200 && (calls.portal.at(-1) as { configuration?: string }).configuration === businessPortalId, 'a Business price id without a lookup key uses the cancel-only portal');
   subs.get('sub_pam')!.omitLookupKey = false;
   delete subs.get('sub_pam')!.priceId;
+
+  // A deleted subscription whose Stripe price differs from the granted price must still be saved.
+  const updatesBeforeDelete = calls.subscriptionUpdates.length;
+  subs.get('sub_ned')!.status = 'canceled';
+  subs.get('sub_ned')!.lookupKey = 'koruledger_plus_monthly';
+  const deleted = await webhook('customer.subscription.deleted', { id: 'sub_ned' }, { id: 'evt_ned_deleted' });
+  assert(deleted === 200, 'a deleted event with a different price is accepted');
+  assert(calls.subscriptionUpdates.length === updatesBeforeDelete, 'a canceled subscription is not updated in Stripe');
+  assert(planOf(db, 'ned') === 'free', 'cancel drops Business');
+  const nedSaved = queryOne<{ status: string; plan: string }>(db, `SELECT status, plan FROM billing_subscriptions WHERE stripe_subscription_id = 'sub_ned'`);
+  assert(nedSaved?.status === 'canceled' && nedSaved.plan === 'business', 'the cancel is saved and the granted plan is unchanged');
+  const nedAlert = queryOne<{ reason: string; error: string; detail: string }>(
+    db,
+    `SELECT reason, error, detail FROM billing_alerts WHERE stripe_event_id = ?`,
+    ['evt_ned_deleted'],
+  );
+  assert(nedAlert?.reason === 'business_price_change' && nedAlert.error === '' && nedAlert.detail.includes('canceled'), 'the closed subscription is alerted without a revert error');
 
   assert(process.env.STRIPE_LIVE_ENABLED == null, 'tests never set STRIPE_LIVE_ENABLED');
   assert(process.env.PRO_PLAN_ENABLED == null, 'tests leave Pro sales off');

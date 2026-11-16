@@ -1419,6 +1419,8 @@ CREATE TABLE IF NOT EXISTS billing_alerts (
   from_interval            TEXT NOT NULL,
   to_plan                  TEXT NOT NULL,
   to_interval              TEXT NOT NULL,
+  error                    TEXT NOT NULL DEFAULT '',  -- revert failed; empty when the price was put back or the sub was already closed
+  detail                   TEXT NOT NULL DEFAULT '',  -- pending prorations removed, or why the Stripe price was left as-is
   created_at               TEXT NOT NULL,
   UNIQUE (stripe_event_id, stripe_subscription_id)
 );
