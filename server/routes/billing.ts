@@ -12,6 +12,7 @@ import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { billingReturnPath } from '../../src/lib/billingReturn.ts';
 import { CATALOG, isBillingInterval, isBillingPlan } from '../billing/catalog.ts';
 import { billingConfig } from '../billing/config.ts';
+import { businessCheckoutBlock, proCheckoutBlock, usageModeFor } from '../billing/planGuards.ts';
 import { proPlanEnabled } from '../billing/proPlan.ts';
 import { BillingError, createCheckout, createPortal, handleBillingEvent } from '../billing/service.ts';
 import { customerIdFor, grantingSubscriptions } from '../billing/store.ts';
@@ -61,8 +62,9 @@ router.post('/checkout', async (req: AuthedRequest, res) => {
   const cfg = billingConfig();
   if (!cfg.ok) return unavailable(res);
   const { plan, interval, returnTo } = (req.body ?? {}) as { plan?: unknown; interval?: unknown; returnTo?: unknown };
-  if (plan === 'pro' && !proPlanEnabled()) {
-    res.status(400).json({ error: 'Pro is not available yet', code: 'PRO_UNAVAILABLE' });
+  const proBlocked = proCheckoutBlock(plan);
+  if (proBlocked) {
+    res.status(proBlocked.status).json({ error: proBlocked.error, code: proBlocked.code });
     return;
   }
   if (!isBillingPlan(plan) || !isBillingInterval(interval)) {
@@ -82,6 +84,11 @@ router.post('/checkout', async (req: AuthedRequest, res) => {
   );
   if (!user) {
     res.status(401).json({ error: 'Authentication required', code: 'UNAUTHORIZED' });
+    return;
+  }
+  const businessBlocked = businessCheckoutBlock(plan, usageModeFor(db, user.id));
+  if (businessBlocked) {
+    res.status(businessBlocked.status).json({ error: businessBlocked.error, code: businessBlocked.code });
     return;
   }
   const name = [user.first_name, user.last_name].filter(Boolean).join(' ').trim();

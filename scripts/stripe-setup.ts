@@ -3,16 +3,19 @@
  * what's missing, and moves a lookup key to a new price when an amount in
  * server/billing/catalog.ts changes (Stripe prices can't be edited).
  * Plus, Pro and Business each get a product and a monthly and yearly price.
+ * Business also gets a cancel-only Customer Portal configuration (no plan changes).
  *
  *   STRIPE_SECRET_KEY=sk_test_… npm run stripe:setup
  *   STRIPE_SECRET_KEY=sk_test_… npm run stripe:setup -- --gst   # also an inclusive 15% GST rate
  *
  * A live key is refused unless STRIPE_LIVE_ENABLED=1 (see server/billing/config.ts).
+ * This script never sets that flag.
  */
 import Stripe from 'stripe';
 import { loadDotEnv } from '../server/akahu/loadEnv.ts';
 import { BILLING_CURRENCY, CATALOG, PRODUCTS } from '../server/billing/catalog.ts';
 import { billingConfig } from '../server/billing/config.ts';
+import { BUSINESS_PORTAL_METADATA_KEY, findOrCreateBusinessCancelOnlyPortal } from '../server/billing/portalConfig.ts';
 
 loadDotEnv();
 const cfg = billingConfig();
@@ -78,6 +81,18 @@ if (process.argv.includes('--gst')) {
   console.log(`\nSet STRIPE_GST_TAX_RATE_ID=${rate.id} to show GST on invoices.`);
 }
 
+const portal = await findOrCreateBusinessCancelOnlyPortal(stripe);
+console.log(
+  `Business portal (cancel only): ${portal.created ? 'created' : portal.updated ? 'updated' : 'exists'} (${portal.id}, metadata ${BUSINESS_PORTAL_METADATA_KEY})`,
+);
+const pinnedPortal = process.env.STRIPE_PORTAL_CONFIG_BUSINESS?.trim();
+if (pinnedPortal && pinnedPortal !== portal.id) {
+  console.log(`STRIPE_PORTAL_CONFIG_BUSINESS=${pinnedPortal} is set, so Business portal sessions use that id.`);
+} else if (!pinnedPortal) {
+  console.log(`Optional: set STRIPE_PORTAL_CONFIG_BUSINESS=${portal.id} to pin it. Unset, sessions look it up by metadata.`);
+}
+
 console.log('\nNext: point a webhook at <PUBLIC_URL>/api/billing/webhook (checkout.session.completed and');
 console.log('customer.subscription.*), set STRIPE_WEBHOOK_SECRET, and save the Customer Portal settings');
-console.log('once in the Stripe dashboard (Settings → Billing → Customer portal).');
+console.log('once in the Stripe dashboard (Settings → Billing → Customer portal) for Plus and Pro.');
+console.log('Business subscriptions use the cancel-only configuration above.');

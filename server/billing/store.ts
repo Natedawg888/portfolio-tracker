@@ -91,6 +91,12 @@ export function saveSubscription(db: Database, s: SubscriptionInput): void {
   );
 }
 
+export function subscriptionById(db: Database, subscriptionId: string): SubscriptionRow | null {
+  return (
+    queryOne<SubscriptionRow>(db, `SELECT * FROM billing_subscriptions WHERE stripe_subscription_id = ?`, [subscriptionId]) ?? null
+  );
+}
+
 /** Subscriptions that currently grant a plan (any mode), best plan first (Business, then Pro, then Plus). */
 export function grantingSubscriptions(db: Database, userId: string): SubscriptionRow[] {
   return queryAll<SubscriptionRow>(
