@@ -80,6 +80,31 @@ export function businessSetupTarget(
   return { kind: 'create' };
 }
 
+/** Delays before each plan check while a paid business signup waits for the webhook. The first check is immediate. */
+export const PAID_BUSINESS_RETURN_WAITS_MS = [0, 800, 1600] as const;
+
+/**
+ * Business-only signup after Checkout. Free goes home at once. A paid return polls briefly
+ * while payment is confirming, then opens business setup once business management is on.
+ */
+export async function resolvePaidBusinessReturn(
+  pending: boolean,
+  probe: () => Promise<boolean>,
+  wait: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<'business-setup' | 'home'> {
+  const waits = pending ? PAID_BUSINESS_RETURN_WAITS_MS : ([0] as const);
+  for (const ms of waits) {
+    if (ms > 0) await wait(ms);
+    try {
+      if (await probe()) return 'business-setup';
+    } catch {
+      /* A failed read keeps waiting only while payment is still confirming. */
+    }
+    if (!pending) return 'home';
+  }
+  return 'home';
+}
+
 /** Where Free, Skip, or a successful Checkout goes next. */
 export function continueAfterPlan(user: OnboardingProgress): PlanContinue {
   if ((user.usageMode ?? 'personal') === 'business') return { kind: 'business-setup' };

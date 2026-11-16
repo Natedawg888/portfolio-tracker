@@ -15,7 +15,12 @@ export function ensureStarterBusiness(db: Database, userId: string): boolean {
   const json = prefs?.preferences_json ?? null;
   if (!parseRunsBusiness(json) || starterBusinessCreated(json)) return false;
   const existing = queryOne<{ id: string }>(db, `SELECT id FROM businesses WHERE user_id = ? LIMIT 1`, [userId]);
-  if (existing) return false;
+  if (existing) {
+    // They already have a business, so the one-time starter is done. A later renewal must not
+    // invent "My business" after they delete the ones they had.
+    run(db, `UPDATE users SET preferences_json = ?, updated_at = ? WHERE id = ?`, [withStarterBusinessCreated(json), new Date().toISOString(), userId]);
+    return false;
+  }
   const parsed = parseBusiness({ name: 'My business', type: 'sole_trader' });
   if (!parsed.ok) return false;
   createBusiness(db, userId, parsed.value);
