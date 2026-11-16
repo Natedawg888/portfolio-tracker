@@ -85,6 +85,14 @@ function normalizeUser(raw: AuthUser | null | undefined): AuthUser | null {
     usageMode: isUsageMode(raw.usageMode) ? raw.usageMode : 'personal',
     usageModeChosen: raw.usageModeChosen === true,
     runsBusiness: raw.runsBusiness === true,
+    activeAccount: raw.activeAccount?.id
+      ? raw.activeAccount
+      : {
+          id: raw.id,
+          usageMode: isUsageMode(raw.usageMode) ? raw.usageMode : 'personal',
+          isLinkedBusiness: false,
+          ownerId: null,
+        },
   };
 }
 

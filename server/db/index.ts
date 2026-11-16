@@ -753,9 +753,21 @@ function migrateSchema(database: Database) {
     ['passkey_id', 'TEXT'],
     // The trusted device this browser holds, so Settings → Security shows them as one device.
     ['trusted_device_id', 'TEXT'],
+    // Personal owner remembered when a session was opened by switching into a linked business.
+    ['origin_owner_user_id', 'TEXT'],
   ] as const) {
     if (sessionCols.size > 0 && !sessionCols.has(col)) database.run(`ALTER TABLE sessions ADD COLUMN ${col} ${type}`);
   }
+  // Linked business accounts. schema.sql creates this on new databases; existing files need it too.
+  database.run(`
+    CREATE TABLE IF NOT EXISTS account_links (
+      id TEXT PRIMARY KEY,
+      owner_user_id TEXT NOT NULL,
+      linked_user_id TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL
+    )
+  `);
+  database.run(`CREATE INDEX IF NOT EXISTS idx_account_links_owner ON account_links(owner_user_id)`);
   // Sign-in log detail (security page redesign): provider, passkey, session, "it was me".
   const authEventCols = tableColumns(database, 'auth_events');
   for (const col of ['provider', 'passkey_id', 'session_id', 'acknowledged_at'] as const) {

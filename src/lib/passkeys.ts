@@ -116,6 +116,7 @@ const METHOD_WORDS: Record<string, string> = {
 export function authEventText(kind: string, method: string | null): string {
   if (kind === 'passkey_added') return 'Passkey added';
   if (kind === 'passkey_removed') return 'Passkey removed';
+  if (kind === 'account_switch') return 'Switched account';
   const how = method ? METHOD_WORDS[method] : null;
   return how ? `Signed in ${how}` : 'Signed in';
 }

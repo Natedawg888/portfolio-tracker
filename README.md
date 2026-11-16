@@ -215,7 +215,104 @@ Paid plans are sold through Stripe in NZD, GST included. Settings → Account �
 
 `POST /api/billing/checkout` starts Checkout for `plus`, `pro` or `business` (monthly or yearly). While `PRO_PLAN_ENABLED` is unset, `pro` is refused with `PRO_UNAVAILABLE`. A Personal account (`usageMode` missing or `personal`) is refused `business` with `BUSINESS_PLAN_REQUIRES_BUSINESS_ACCOUNT`. Business only and Both can check out Business. Plus is offered for every account type; Pro is not hidden by account type. The webhook at `POST /api/billing/webhook` fetches the subscription from Stripe and saves it. A `customer.subscription.updated` event that moves a Business subscription onto a different price, or moves another plan onto Business without Checkout for an allowed account, is logged and does not change the granted plan. `GET /api/billing` reports the plan, the subscription and the prices. An `active`, `trialing` or `past_due` Business subscription grants the Business plan used by the business reports (profit & loss, the GST return, the accountant export and accountant access). It does not include Plus or Pro features. `unpaid` and `canceled` drop the paid plan. Opening the portal for a Business subscription uses the cancel-only configuration (cancel and card update, no plan change).
 
-`npm run plan:set` and `PLAN_BUSINESS_EMAILS` still grant Business without a subscription. Deleting an account cancels its Plus, Pro or Business subscription first. Variables are in `.env.example`. `npm run test:billing`.
+`npm run plan:set` and `PLAN_BUSINESS_EMAILS` still grant Business without a subscription. Deleting an account cancels its Plus, Pro or Business subscription first. A linked business account is billed on its own customer; deleting the personal account does not cancel that subscription (see below). Variables are in `.env.example`. `npm run test:billing`.
+
+## Linked business accounts
+
+A Personal account cannot turn into a Business account, and it still cannot buy the Business plan on itself (`403 BUSINESS_PLAN_REQUIRES_BUSINESS_ACCOUNT`). It can attach a **separate** business user. Account type stays `users.preferences_json.usageMode` (`personal`, `business`, or `both`; missing counts as personal). Each user has its own books, plan, and Stripe customer. `planOf` and the webhook map a subscription by that user's id and Stripe customer, never by the link. NZD prices are unchanged. `STRIPE_LIVE_ENABLED` stays off unless an operator sets it. `npm run test:links`.
+
+**Email on an account created here.** `users.email` is `NOT NULL UNIQUE`, so the row cannot have a blank address. The server stores a synthetic address `linked.<uuid>@accounts.koruledger.invalid`. `.invalid` is a reserved TLD and is not a mailbox. `password_hash` is `!linked-no-login` (not a password hash) until that user sets a password, passkey, or single sign-on. There is no separate email login; it is opened only by switching.
+
+**Session.** `POST /api/account/switch` creates a new session and replaces the `pt_sid` cookie, the same way login does, and deletes the previous session. `sessions.origin_owner_user_id` is the personal owner's id when the new session is a linked business, and null on a normal sign-in or when switching back. Switching does not ask for a password. The link row is what allows it. An audit row with kind `account_switch` is written for both users.
+
+**After a switch, reload user-scoped data.** Bank accounts, holdings, budgets, invoices, businesses, and anything else loaded for the previous user now belong to someone else. A full page load is the safe choice. `GET /api/auth/me` returns `activeAccount` both on `user` and next to `user`, so the client can see which account is active:
+
+```json
+{ "id": "<user id>", "usageMode": "business", "isLinkedBusiness": true, "ownerId": "<personal user id or null>" }
+```
+
+`ownerId` is null unless this session is a linked business.
+
+**Deleting the personal account** detaches every link and marks those business users for deletion (`preferences_json.pendingDeletion`: `at`, `reason: "owner_account_deleted"`, `formerOwnerUserId`). Their sessions are destroyed and sign-in is refused (`403 ACCOUNT_PENDING_DELETION`). Their books and Stripe customer are **not** deleted in that request, and their subscription is **not** cancelled, so a billing failure on a linked account cannot block the personal deletion. Cancel the business plan on that account first if it should stop being charged. Deleting a linked business user only removes that user's link.
+
+An owner may attach at most 5 business users. A business user belongs to at most one owner. Only a personal or both account that is not itself linked can create or link. A linked business can switch back to its owner.
+
+### `GET /api/account/links`
+
+Auth required.
+
+```json
+{
+  "current": { "id": "", "displayName": "", "usageMode": "personal", "plan": "free", "isLinkedBusiness": false },
+  "owner": null,
+  "linked": [
+    { "id": "", "displayName": "", "businessName": "", "plan": "free", "hasOwnLogin": false, "canUnlink": false }
+  ]
+}
+```
+
+`owner` is the personal account when the caller is a linked business, otherwise null. `linked` is the business users this caller owns (empty from a linked business). `businessName` is that user's default business, or null. `plan` is `free`, `plus`, `pro`, or `business`. `canUnlink` is true only when the caller is the owner and `hasOwnLogin` is true (password, passkey, or single sign-on).
+
+### `POST /api/account/business`
+
+Body: `{ "businessName": "Koru Honey" }`. Creates a business user with the owner's first and last name, `usageMode` `business`, a starter business of that name, and the free plan. No password.
+
+`201` `{ "account": <linked item>, "links": <GET shape> }`
+
+| Status | Code | When |
+|--------|------|------|
+| 400 | `INVALID_BUSINESS_NAME` | Missing, blank, or over 120 characters |
+| 401 | `UNAUTHORIZED` | Signed out |
+| 403 | `NOT_PERSONAL_ACCOUNT` | Caller is business-only |
+| 403 | `LINKED_BUSINESS_CANNOT_OWN` | Caller is itself a linked business |
+| 409 | `LINK_LIMIT` | Owner already has 5 |
+
+### `POST /api/account/links`
+
+Body: `{ "email": "bee@example.com", "password": "…" }`. Checks the password and rate limit the same way as `POST /api/auth/login` (10 failures per account and 50 per client in 15 minutes). The target must be `usageMode` `business` and not already linked.
+
+`200` `{ "links": <GET shape> }`
+
+| Status | Code | When |
+|--------|------|------|
+| 400 | `MISSING_FIELDS` | Email or password missing |
+| 401 | `INVALID_CREDENTIALS` | Wrong email or password. The personal session stays signed in. |
+| 401 | `UNAUTHORIZED` | Signed out |
+| 403 | `NOT_PERSONAL_ACCOUNT` | Caller cannot own a link |
+| 403 | `LINKED_BUSINESS_CANNOT_OWN` | Caller is itself linked |
+| 403 | `NOT_BUSINESS_ACCOUNT` | Password matched an account that is not business-only |
+| 403 | `TWO_FACTOR_REQUIRED` | That account has two-factor on. Turn it off, then link. |
+| 409 | `CANNOT_LINK_SELF` | Email is the signed-in user |
+| 409 | `ALREADY_LINKED` | Already attached to a personal account |
+| 409 | `LINK_LIMIT` | Owner already has 5 |
+| 409 | `ACCOUNT_PENDING_DELETION` | That user is marked for deletion |
+| 429 | `TOO_MANY_ATTEMPTS` | Rate limit. `Retry-After` is set. |
+
+### `DELETE /api/account/links/:linkedUserId`
+
+Only the owner. `200` `{ "ok": true, "links": <GET shape> }`
+
+| Status | Code | When |
+|--------|------|------|
+| 403 | `NOT_LINK_OWNER` | Caller does not own that link |
+| 404 | `NOT_FOUND` | No such link |
+| 409 | `LINKED_ACCOUNT_HAS_NO_LOGIN` | Created without a login, and it still has none |
+
+### `POST /api/account/switch`
+
+Body: `{ "accountId": "<owner or linked user id>" }`. Allowed only between an owner and its linked accounts, either way. Not from one linked business straight to another.
+
+`200` `{ "ok": true, "user": <same shape as GET /api/auth/me user>, "activeAccount": <activeAccount> }` plus a new `pt_sid` cookie.
+
+| Status | Code | When |
+|--------|------|------|
+| 400 | `MISSING_FIELDS` | `accountId` missing |
+| 400 | `SAME_ACCOUNT` | Already the active user |
+| 401 | `UNAUTHORIZED` | Signed out |
+| 403 | `SWITCH_NOT_ALLOWED` | Not an owner/linked pair |
+| 403 | `ACCOUNT_PENDING_DELETION` | Target is marked for deletion |
+
+Client helpers in `src/api/client.ts`: `getAccountLinks`, `createLinkedBusiness`, `linkExistingBusiness`, `unlinkAccount`, `switchAccount` (also on `api.accountLinks`). Types live in `src/types/accountLinks.ts`.
 
 ## Branch / release flow
 

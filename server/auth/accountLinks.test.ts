@@ -1,0 +1,414 @@
+/**
+ * Linked business accounts: create, link, list, switch, billing isolation, deletion.
+ * Run: npm run test:links
+ *
+ * Throwaway sqlite file. Does not read or write data/portfolio.db.
+ * Stripe is faked. STRIPE_LIVE_ENABLED is not set.
+ */
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import type { AddressInfo } from 'node:net';
+import type { Server } from 'node:http';
+import express from 'express';
+import type Stripe from 'stripe';
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pt-links-'));
+process.env.DATABASE_PATH = path.join(tmp, 'portfolio.db');
+process.env.PUBLIC_URL = 'https://app.example.test';
+delete process.env.STRIPE_SECRET_KEY;
+delete process.env.STRIPE_WEBHOOK_SECRET;
+delete process.env.STRIPE_LIVE_ENABLED;
+delete process.env.STRIPE_GST_TAX_RATE_ID;
+delete process.env.PRO_PLAN_ENABLED;
+delete process.env.PLAN_PLUS_EMAILS;
+delete process.env.PLAN_PRO_EMAILS;
+delete process.env.PLAN_BUSINESS_EMAILS;
+
+let passed = 0;
+function check(cond: unknown, msg: string): void {
+  if (!cond) throw new Error(`FAIL: ${msg}`);
+  passed++;
+}
+
+const { getDb, queryAll, queryOne } = await import('../db/index.ts');
+const { attachUser, requireAuth, isPublicApiPath } = await import('../middleware/requireAuth.ts');
+const { default: authRouter } = await import('../routes/auth.ts');
+const { default: settingsRouter } = await import('../routes/settings.ts');
+const { default: accountsRouter } = await import('../routes/accounts.ts');
+const { default: accountLinksRouter } = await import('../routes/accountLinks.ts');
+const { default: billingRouter } = await import('../routes/billing.ts');
+const { planOf, setPlan } = await import('../lib/entitlements.ts');
+const { billingConfig } = await import('../billing/config.ts');
+const { handleBillingEvent } = await import('../billing/service.ts');
+const { setStripeClientForTests } = await import('../billing/client.ts');
+const { grantingSubscriptions, userIdForCustomer } = await import('../billing/store.ts');
+const { NO_LOGIN } = await import('./users.ts');
+const { LINKED_ACCOUNT_EMAIL_DOMAIN } = await import('./accountLinks.ts');
+const { resetLoginRateLimitForTest } = await import('./loginRateLimit.ts');
+
+const app = express();
+app.use(express.json());
+app.use('/api', attachUser);
+app.use('/api', (req, res, next) => (isPublicApiPath(req.path) ? next() : requireAuth(req, res, next)));
+app.use('/api/auth', authRouter);
+app.use('/api/settings', settingsRouter);
+app.use('/api/accounts', accountsRouter);
+app.use('/api/account', accountLinksRouter);
+app.use('/api/billing', billingRouter);
+
+const server: Server = await new Promise((resolve) => {
+  const s = app.listen(0, '127.0.0.1', () => resolve(s));
+});
+const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+type Jar = Map<string, string>;
+type Json = Record<string, unknown>;
+async function call(jar: Jar, method: string, p: string, body?: unknown) {
+  const res = await fetch(`${base}${p}`, {
+    method,
+    headers: { 'content-type': 'application/json', cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; ') },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  for (const c of res.headers.getSetCookie()) {
+    const [kv] = c.split(';');
+    const i = kv.indexOf('=');
+    const value = kv.slice(i + 1);
+    if (value && !/Max-Age=0/.test(c)) jar.set(kv.slice(0, i), value);
+    else jar.delete(kv.slice(0, i));
+  }
+  const text = await res.text();
+  let json: Json | null = null;
+  try {
+    json = text ? (JSON.parse(text) as Json) : null;
+  } catch {
+    json = null;
+  }
+  return { status: res.status, json, text };
+}
+
+const PASS = 'Link-test-12345';
+async function register(email: string, firstName: string, lastName: string) {
+  const jar: Jar = new Map();
+  const r = await call(jar, 'POST', '/api/auth/register', { email, password: PASS, firstName, lastName });
+  check(r.status === 201, `register ${email} (${r.status} ${r.text})`);
+  const user = r.json!.user as Json;
+  return { jar, id: String(user.id), email };
+}
+
+type Party = { id: string; displayName: string | null; usageMode: string; plan: string; isLinkedBusiness: boolean };
+type Linked = { id: string; displayName: string | null; businessName: string | null; plan: string; hasOwnLogin: boolean; canUnlink: boolean };
+type LinksBody = { current: Party; owner: Party | null; linked: Linked[] };
+
+function linksOf(json: Json | null): LinksBody {
+  return json as unknown as LinksBody;
+}
+
+const db = await getDb();
+
+try {
+  const linkCols = queryAll<{ name: string }>(db, `PRAGMA table_info(account_links)`).map((c) => c.name);
+  check(
+    ['id', 'owner_user_id', 'linked_user_id', 'created_at'].every((c) => linkCols.includes(c)),
+    `account_links columns (${linkCols.join(',')})`,
+  );
+  const linkSql = String(queryOne<{ sql: string }>(db, `SELECT sql FROM sqlite_master WHERE name = 'account_links'`)?.sql ?? '');
+  check(/linked_user_id[^,]*UNIQUE/i.test(linkSql), 'linked_user_id is unique');
+  const sessionCols = queryAll<{ name: string }>(db, `PRAGMA table_info(sessions)`).map((c) => c.name);
+  check(sessionCols.includes('origin_owner_user_id'), 'sessions.origin_owner_user_id');
+
+  const pat = await register('pat@example.test', 'Pat', 'Ng');
+  const bea = await register('bea@example.test', 'Bea', 'Bee');
+  const vic = await register('vic@example.test', 'Vic', 'Out');
+  check(
+    queryOne<{ value: string }>(db, `SELECT value FROM meta WHERE key = 'data_owner_user_id'`)?.value === pat.id,
+    'first account stays the data owner',
+  );
+
+  const patMe = await call(pat.jar, 'GET', '/api/auth/me');
+  const patUser = patMe.json!.user as Json;
+  const patActive = patUser.activeAccount as Json;
+  check(patMe.json!.activeAccount && (patActive.isLinkedBusiness === false) && patActive.ownerId === null && patActive.id === pat.id, 'personal /me activeAccount');
+  check(patUser.usageMode === 'personal', 'unset usage counts as personal');
+
+  const created = await call(pat.jar, 'POST', '/api/account/business', { businessName: 'Koru Honey' });
+  check(created.status === 201, `create linked business (${created.status} ${created.text})`);
+  const createdAccount = (created.json!.account as Linked);
+  const honeyId = createdAccount.id;
+  check(createdAccount.businessName === 'Koru Honey' && createdAccount.plan === 'free', 'starter business on the free plan');
+  check(createdAccount.hasOwnLogin === false && createdAccount.canUnlink === false, 'created account cannot be unlinked yet');
+  check(createdAccount.displayName === 'Pat Ng', 'created account keeps the owner’s name');
+
+  const honeyRow = queryOne<{ email: string; password_hash: string; preferences_json: string; first_name: string }>(
+    db,
+    `SELECT email, password_hash, preferences_json, first_name FROM users WHERE id = ?`,
+    [honeyId],
+  );
+  check(Boolean(honeyRow?.email.endsWith(`@${LINKED_ACCOUNT_EMAIL_DOMAIN}`)) && honeyRow?.password_hash === NO_LOGIN, 'synthetic email and no-login sentinel');
+  const honeyPrefs = JSON.parse(honeyRow!.preferences_json) as { usageMode?: string; runsBusiness?: boolean; starterBusinessCreated?: boolean };
+  check(honeyPrefs.usageMode === 'business' && honeyPrefs.runsBusiness === true && honeyPrefs.starterBusinessCreated === true, 'business usage, no second starter later');
+  check(
+    queryOne<{ name: string }>(db, `SELECT name FROM businesses WHERE user_id = ?`, [honeyId])?.name === 'Koru Honey',
+    'business row is the requested name',
+  );
+  check(planOf(db, honeyId) === 'free' && planOf(db, pat.id) === 'free', 'new account does not copy a plan');
+  check(
+    Number(queryOne<{ c: number }>(db, `SELECT COUNT(*) AS c FROM account_links WHERE owner_user_id = ? AND linked_user_id = ?`, [pat.id, honeyId])?.c) === 1,
+    'one link row',
+  );
+
+  const fromPat = linksOf((await call(pat.jar, 'GET', '/api/account/links')).json);
+  check(fromPat.owner === null && fromPat.current.id === pat.id && fromPat.current.isLinkedBusiness === false, 'owner list has no parent');
+  check(fromPat.linked.length === 1 && fromPat.linked[0].id === honeyId && fromPat.linked[0].hasOwnLogin === false && fromPat.linked[0].canUnlink === false, 'owner list flags');
+
+  const banks = await call(pat.jar, 'GET', '/api/accounts');
+  check(banks.status === 200 && Array.isArray(banks.json), 'bank accounts route is not the link route');
+  const personalBank = await call(pat.jar, 'POST', '/api/accounts', { name: 'Personal cheque', accountType: 'cheque', balance: 10, currency: 'NZD' });
+  check(personalBank.status === 201, `personal bank account (${personalBank.status})`);
+
+  const oldSid = pat.jar.get('pt_sid');
+  const toHoney = await call(pat.jar, 'POST', '/api/account/switch', { accountId: honeyId });
+  check(toHoney.status === 200, `switch to business (${toHoney.status} ${toHoney.text})`);
+  const honeyUser = toHoney.json!.user as Json;
+  const honeyActive = honeyUser.activeAccount as Json;
+  check(honeyUser.id === honeyId && honeyActive.isLinkedBusiness === true && honeyActive.ownerId === pat.id, 'switch response is the business');
+  check((toHoney.json!.activeAccount as Json).id === honeyId, 'switch activeAccount matches');
+  check(pat.jar.get('pt_sid') !== oldSid, 'session cookie rotated');
+
+  const stale = await call(new Map([['pt_sid', oldSid!]]), 'GET', '/api/auth/me');
+  check((stale.json!.user as Json | null) == null, 'old session no longer authenticates');
+  const honeySession = queryOne<{ origin_owner_user_id: string | null }>(
+    db,
+    `SELECT origin_owner_user_id FROM sessions WHERE user_id = ?`,
+    [honeyId],
+  );
+  check(honeySession?.origin_owner_user_id === pat.id, 'session remembers the personal owner');
+  check(!queryOne(db, `SELECT id FROM sessions WHERE user_id = ?`, [pat.id]), 'owner session was rotated away');
+  check(
+    Number(queryOne<{ c: number }>(db, `SELECT COUNT(*) AS c FROM auth_events WHERE user_id = ? AND kind = 'account_switch'`, [honeyId])?.c) >= 1,
+    'audit log records the switch',
+  );
+
+  const fromHoney = linksOf((await call(pat.jar, 'GET', '/api/account/links')).json);
+  check(fromHoney.current.id === honeyId && fromHoney.current.isLinkedBusiness === true, 'list current is the business');
+  check(fromHoney.owner?.id === pat.id && fromHoney.owner.usageMode === 'personal' && fromHoney.linked.length === 0, 'business sees its owner and no children');
+
+  const honeyBanks = (await call(pat.jar, 'GET', '/api/accounts')).json as { name?: string }[];
+  check(Array.isArray(honeyBanks) && honeyBanks.every((a) => a.name !== 'Personal cheque'), 'switched session does not see the personal bank account');
+  const shop = await call(pat.jar, 'POST', '/api/accounts', { name: 'Shop till', accountType: 'cheque', balance: 4, currency: 'NZD' });
+  check(shop.status === 201, `business bank account (${shop.status} ${shop.text})`);
+
+  const back = await call(pat.jar, 'POST', '/api/account/switch', { accountId: pat.id });
+  check(back.status === 200 && (back.json!.user as Json).id === pat.id, 'switch back to the owner without a password');
+  const backActive = (back.json!.user as Json).activeAccount as Json;
+  check(backActive.isLinkedBusiness === false && backActive.ownerId === null, 'owner activeAccount after switch back');
+  const patSession = queryOne<{ origin_owner_user_id: string | null }>(db, `SELECT origin_owner_user_id FROM sessions WHERE user_id = ?`, [pat.id]);
+  check(patSession?.origin_owner_user_id == null, 'owner session has no origin owner');
+  check(!queryOne(db, `SELECT id FROM sessions WHERE user_id = ?`, [honeyId]), 'business session rotated away');
+  const patBanks = (await call(pat.jar, 'GET', '/api/accounts')).json as { name?: string }[];
+  check(patBanks.length === 1 && patBanks[0].name === 'Personal cheque', 'owner does not see the business bank account');
+  await call(pat.jar, 'POST', '/api/account/switch', { accountId: honeyId });
+  const shopBanks = (await call(pat.jar, 'GET', '/api/accounts')).json as { name?: string }[];
+  check(shopBanks.length === 1 && shopBanks[0].name === 'Shop till', 'business still has only its own account');
+  await call(pat.jar, 'POST', '/api/account/switch', { accountId: pat.id });
+
+  const refused = await call(pat.jar, 'POST', '/api/account/switch', { accountId: vic.id });
+  check(refused.status === 403 && refused.json!.code === 'SWITCH_NOT_ALLOWED', 'non-linked switch refused');
+  check((await call(pat.jar, 'GET', '/api/auth/me')).json!.user && ((await call(pat.jar, 'GET', '/api/auth/me')).json!.user as Json).id === pat.id, 'refused switch leaves the session');
+
+  const vicLinks = linksOf((await call(vic.jar, 'GET', '/api/account/links')).json);
+  check(vicLinks.linked.length === 0 && vicLinks.owner === null, 'another user does not see the link');
+
+  setPlan(db, pat.id, 'plus');
+  check(planOf(db, pat.id) === 'plus' && planOf(db, honeyId) === 'free', 'planOf does not read the other account');
+  const plans = linksOf((await call(pat.jar, 'GET', '/api/account/links')).json);
+  check(plans.current.plan === 'plus' && plans.linked[0].plan === 'free', 'list shows each account’s own plan');
+
+  // Billing: fake Stripe. Live mode stays off.
+  process.env.STRIPE_SECRET_KEY = 'sk_test_linked_accounts';
+  process.env.STRIPE_WEBHOOK_SECRET = 'whsec_linked_accounts';
+  delete process.env.STRIPE_LIVE_ENABLED;
+  const cfg = billingConfig();
+  check(cfg.ok && cfg.config.live === false, 'test key, live stays off');
+  type FakeSub = { id: string; customer: string; status: string; lookupKey: string; metadata: Record<string, string> };
+  const subs = new Map<string, FakeSub>();
+  const checkoutCalls: Record<string, unknown>[] = [];
+  const createdCustomers: { id: string; email?: string; metadata?: { user_id?: string } }[] = [];
+  const fake = {
+    customers: {
+      create: async (params: { email?: string; metadata?: { user_id?: string } }) => {
+        const row = { id: `cus_${createdCustomers.length + 1}`, email: params.email, metadata: params.metadata };
+        createdCustomers.push(row);
+        return row;
+      },
+    },
+    prices: {
+      list: async ({ lookup_keys }: { lookup_keys: string[] }) => ({ data: [{ id: `price_${lookup_keys[0]}`, lookup_key: lookup_keys[0] }] }),
+    },
+    checkout: {
+      sessions: {
+        create: async (params: Record<string, unknown>) => {
+          checkoutCalls.push(params);
+          return { url: 'https://checkout.stripe.test/cs_1', id: 'cs_1' };
+        },
+      },
+    },
+    subscriptions: {
+      retrieve: async (id: string) => {
+        const s = subs.get(id);
+        if (!s) throw new Error(`missing ${id}`);
+        return {
+          id: s.id,
+          customer: s.customer,
+          status: s.status,
+          livemode: false,
+          metadata: s.metadata,
+          cancel_at_period_end: false,
+          cancel_at: null,
+          items: { data: [{ current_period_end: 1_800_000_000, price: { lookup_key: s.lookupKey } }] },
+        };
+      },
+    },
+  };
+  setStripeClientForTests(fake as never);
+
+  await call(pat.jar, 'POST', '/api/account/switch', { accountId: honeyId });
+  const honeyCheckout = await call(pat.jar, 'POST', '/api/billing/checkout', { plan: 'business', interval: 'month' });
+  check(honeyCheckout.status === 200 && honeyCheckout.json!.url === 'https://checkout.stripe.test/cs_1', `linked business checkout (${honeyCheckout.status} ${honeyCheckout.text})`);
+  const honeyParams = checkoutCalls[0] as { customer?: string; client_reference_id?: string; subscription_data?: { metadata?: { user_id?: string } }; line_items?: { price: string }[] };
+  check(honeyParams.client_reference_id === honeyId && honeyParams.subscription_data?.metadata?.user_id === honeyId, 'checkout is tagged with the business user');
+  check(honeyParams.line_items?.[0].price === 'price_koruledger_business_monthly', 'Business monthly NZD price');
+  check(createdCustomers[0].metadata?.user_id === honeyId && createdCustomers[0].email?.endsWith(`@${LINKED_ACCOUNT_EMAIL_DOMAIN}`), 'Stripe customer is the business user');
+  check(userIdForCustomer(db, createdCustomers[0].id) === honeyId, 'customer row maps to the business user');
+
+  await call(pat.jar, 'POST', '/api/account/switch', { accountId: pat.id });
+  const beforePersonal = checkoutCalls.length;
+  const personalBiz = await call(pat.jar, 'POST', '/api/billing/checkout', { plan: 'business', interval: 'year' });
+  check(personalBiz.status === 403 && personalBiz.json!.code === 'BUSINESS_PLAN_REQUIRES_BUSINESS_ACCOUNT', 'personal still cannot buy Business');
+  check(checkoutCalls.length === beforePersonal, 'refused checkout does not open Stripe');
+  const personalPlus = await call(pat.jar, 'POST', '/api/billing/checkout', { plan: 'plus', interval: 'month' });
+  check(personalPlus.status === 200, `personal plus checkout (${personalPlus.status} ${personalPlus.text})`);
+  check(createdCustomers[1].metadata?.user_id === pat.id && createdCustomers[1].id !== createdCustomers[0].id, 'personal Stripe customer is a different user');
+
+  subs.set('sub_honey', { id: 'sub_honey', customer: createdCustomers[0].id, status: 'active', lookupKey: 'koruledger_business_monthly', metadata: {} });
+  if (!cfg.ok) throw new Error('billing config');
+  await handleBillingEvent(db, cfg.config, { type: 'customer.subscription.created', livemode: false, data: { object: { id: 'sub_honey' } } } as Stripe.Event);
+  check(planOf(db, honeyId) === 'business' && planOf(db, pat.id) === 'plus', 'webhook grants Business only to the mapped customer');
+  check(grantingSubscriptions(db, pat.id).every((s) => s.plan !== 'business'), 'owner subscriptions do not include the business price');
+
+  subs.set('sub_pat', { id: 'sub_pat', customer: createdCustomers[1].id, status: 'active', lookupKey: 'koruledger_plus_monthly', metadata: {} });
+  await handleBillingEvent(db, cfg.config, { type: 'customer.subscription.updated', livemode: false, data: { object: { id: 'sub_pat' } } } as Stripe.Event);
+  check(planOf(db, pat.id) === 'plus' && planOf(db, honeyId) === 'business', 'each webhook stays on its own user');
+  check(userIdForCustomer(db, createdCustomers[0].id) === honeyId && userIdForCustomer(db, createdCustomers[1].id) === pat.id, 'customer map unchanged');
+  const subRows = queryAll<{ user_id: string; plan: string }>(db, `SELECT user_id, plan FROM billing_subscriptions ORDER BY plan`);
+  check(subRows.some((r) => r.user_id === honeyId && r.plan === 'business') && subRows.some((r) => r.user_id === pat.id && r.plan === 'plus'), 'subscription rows are per user');
+
+  const both = await call(pat.jar, 'PUT', '/api/settings/usage-mode', { mode: 'both' });
+  check(both.status === 200 && both.json!.usageMode === 'both', 'both may own links');
+  const second = await call(pat.jar, 'POST', '/api/account/business', { businessName: 'Second Shop' });
+  check(second.status === 201, `second business (${second.status} ${second.text})`);
+  const secondId = (second.json!.account as Linked).id;
+  await call(pat.jar, 'POST', '/api/account/switch', { accountId: secondId });
+  const sibling = await call(pat.jar, 'POST', '/api/account/switch', { accountId: honeyId });
+  check(sibling.status === 403 && sibling.json!.code === 'SWITCH_NOT_ALLOWED', 'cannot switch from one linked business to another');
+  const backFromSecond = await call(pat.jar, 'POST', '/api/account/switch', { accountId: pat.id });
+  check(backFromSecond.status === 200, 'linked business switches back to the owner');
+
+  const wrong = await call(pat.jar, 'POST', '/api/account/links', { email: bea.email, password: 'not-the-password' });
+  check(wrong.status === 401 && wrong.json!.code === 'INVALID_CREDENTIALS', 'wrong password refused');
+  check(!queryOne(db, `SELECT id FROM account_links WHERE linked_user_id = ?`, [bea.id]), 'wrong password does not link');
+  const notBiz = await call(pat.jar, 'POST', '/api/account/links', { email: vic.email, password: PASS });
+  check(notBiz.status === 403 && notBiz.json!.code === 'NOT_BUSINESS_ACCOUNT', 'personal account cannot be linked');
+  await call(bea.jar, 'PUT', '/api/settings/usage-mode', { mode: 'business' });
+  const linked = await call(pat.jar, 'POST', '/api/account/links', { email: bea.email, password: PASS });
+  check(linked.status === 200, `link existing business (${linked.status} ${linked.text})`);
+  const beaItem = linksOf(linked.json!.links as Json).linked.find((l) => l.id === bea.id);
+  check(Boolean(beaItem && beaItem.hasOwnLogin && beaItem.canUnlink && beaItem.plan === 'free'), 'linked existing account can be unlinked');
+  const beaView = linksOf((await call(bea.jar, 'GET', '/api/account/links')).json);
+  check(beaView.owner?.id === pat.id && beaView.current.isLinkedBusiness === true && beaView.linked.length === 0, 'existing business lists its owner');
+  const toBea = await call(pat.jar, 'POST', '/api/account/switch', { accountId: bea.id });
+  check(toBea.status === 200 && (toBea.json!.user as Json).id === bea.id, 'switch to a linked existing account');
+  check((await call(pat.jar, 'POST', '/api/account/switch', { accountId: pat.id })).status === 200, 'switch back from the linked account');
+
+  const nia = await register('nia@example.test', 'Nia', 'Ng');
+  const stolen = await call(nia.jar, 'POST', '/api/account/links', { email: bea.email, password: PASS });
+  check(stolen.status === 409 && stolen.json!.code === 'ALREADY_LINKED', 'already linked to one owner');
+
+  await call(pat.jar, 'POST', '/api/account/switch', { accountId: honeyId });
+  const selfUnlink = await call(pat.jar, 'DELETE', `/api/account/links/${honeyId}`);
+  check(selfUnlink.status === 403 && selfUnlink.json!.code === 'NOT_LINK_OWNER', 'the business cannot unlink itself');
+  await call(pat.jar, 'POST', '/api/account/switch', { accountId: pat.id });
+  const blockedUnlink = await call(pat.jar, 'DELETE', `/api/account/links/${honeyId}`);
+  check(blockedUnlink.status === 409 && blockedUnlink.json!.code === 'LINKED_ACCOUNT_HAS_NO_LOGIN', 'no-login account cannot be unlinked');
+
+  await call(pat.jar, 'POST', '/api/account/switch', { accountId: honeyId });
+  const setPw = await call(pat.jar, 'POST', '/api/auth/change-password', { newPassword: 'Honey-login-123' });
+  check(setPw.status === 200, `set a password on the created account (${setPw.status} ${setPw.text})`);
+  await call(pat.jar, 'POST', '/api/account/switch', { accountId: pat.id });
+  const afterPw = linksOf((await call(pat.jar, 'GET', '/api/account/links')).json).linked.find((l) => l.id === honeyId);
+  check(Boolean(afterPw?.hasOwnLogin && afterPw.canUnlink), 'canUnlink once it has a login');
+  const unlinked = await call(pat.jar, 'DELETE', `/api/account/links/${honeyId}`);
+  check(unlinked.status === 200 && unlinked.json!.ok === true, 'owner unlinks');
+  check(!linksOf(unlinked.json!.links as Json).linked.some((l) => l.id === honeyId), 'unlinked account leaves the list');
+  const honeyEmail = queryOne<{ email: string }>(db, `SELECT email FROM users WHERE id = ?`, [honeyId])!.email;
+  const honeyLogin = await call(new Map(), 'POST', '/api/auth/login', { email: honeyEmail, password: 'Honey-login-123' });
+  check(honeyLogin.status === 200, 'unlinked account can sign in on its own');
+
+  resetLoginRateLimitForTest();
+  let limited = 0;
+  for (let i = 0; i < 10; i++) {
+    const attempt = await call(pat.jar, 'POST', '/api/account/links', { email: 'nobody-rate@example.test', password: 'nope-1234' });
+    if (attempt.status === 401) limited++;
+  }
+  const blocked = await call(pat.jar, 'POST', '/api/account/links', { email: 'nobody-rate@example.test', password: 'nope-1234' });
+  check(limited === 10 && blocked.status === 429 && blocked.json!.code === 'TOO_MANY_ATTEMPTS', 'link endpoint rate limit matches login');
+
+  const bizOnly = await register('bizonly@example.test', 'Biz', 'Only');
+  await call(bizOnly.jar, 'PUT', '/api/settings/usage-mode', { mode: 'business' });
+  const bizCreate = await call(bizOnly.jar, 'POST', '/api/account/business', { businessName: 'Nope' });
+  check(bizCreate.status === 403 && bizCreate.json!.code === 'NOT_PERSONAL_ACCOUNT', 'business-only cannot create a linked account');
+
+  const max = await register('max@example.test', 'Max', 'Owner');
+  for (let i = 0; i < 5; i++) {
+    const made = await call(max.jar, 'POST', '/api/account/business', { businessName: `Shop ${i + 1}` });
+    check(made.status === 201, `cap slot ${i + 1} (${made.status} ${made.text})`);
+  }
+  const over = await call(max.jar, 'POST', '/api/account/business', { businessName: 'Shop 6' });
+  check(over.status === 409 && over.json!.code === 'LINK_LIMIT', 'sixth business refused');
+
+  const del = await register('del@example.test', 'Del', 'Owner');
+  const dee = await register('dee@example.test', 'Dee', 'Books');
+  await call(dee.jar, 'PUT', '/api/settings/usage-mode', { mode: 'business' });
+  const deeBank = await call(dee.jar, 'POST', '/api/accounts', { name: 'Dee trading', accountType: 'cheque', balance: 20, currency: 'NZD' });
+  check(deeBank.status === 201, 'dee bank account');
+  const made = await call(del.jar, 'POST', '/api/account/business', { businessName: 'Del Honey' });
+  check(made.status === 201, 'del creates a business');
+  const delChild = (made.json!.account as Linked).id;
+  check((await call(del.jar, 'POST', '/api/account/links', { email: dee.email, password: PASS })).status === 200, 'del links dee');
+  const removed = await call(del.jar, 'POST', '/api/auth/delete-account', { password: PASS, confirm: 'DELETE' });
+  check(removed.status === 200, `delete personal account (${removed.status} ${removed.text})`);
+  const detached = ((removed.json!.deleted as Json).linkedAccountsDetached as string[]) ?? [];
+  check(detached.includes(delChild) && detached.includes(dee.id), 'both linked accounts are reported');
+  check(!queryOne(db, `SELECT id FROM users WHERE id = ?`, [del.id]), 'personal user row is gone');
+  check(!queryOne(db, `SELECT id FROM account_links WHERE owner_user_id = ? OR linked_user_id IN (?, ?)`, [del.id, delChild, dee.id]), 'links removed');
+  for (const id of [delChild, dee.id]) {
+    const prefs = JSON.parse(queryOne<{ preferences_json: string }>(db, `SELECT preferences_json FROM users WHERE id = ?`, [id])!.preferences_json) as {
+      pendingDeletion?: { reason?: string; formerOwnerUserId?: string };
+    };
+    check(prefs.pendingDeletion?.reason === 'owner_account_deleted' && prefs.pendingDeletion.formerOwnerUserId === del.id, `marked for deletion ${id}`);
+    check(!queryOne(db, `SELECT id FROM sessions WHERE user_id = ?`, [id]), `sessions destroyed ${id}`);
+  }
+  check(Boolean(queryOne(db, `SELECT id FROM businesses WHERE user_id = ? AND name = 'Del Honey'`, [delChild])), 'created business books kept');
+  check(Boolean(queryOne(db, `SELECT id FROM bank_accounts WHERE user_id = ? AND name = 'Dee trading'`, [dee.id])), 'linked account books kept');
+  const deeLogin = await call(new Map(), 'POST', '/api/auth/login', { email: dee.email, password: PASS });
+  check(deeLogin.status === 403 && deeLogin.json!.code === 'ACCOUNT_PENDING_DELETION', 'marked account cannot sign in');
+  check((await call(pat.jar, 'GET', '/api/auth/me')).json && ((await call(pat.jar, 'GET', '/api/auth/me')).json!.user as Json).id === pat.id, 'other users stay signed in');
+  check(queryOne<{ value: string }>(db, `SELECT value FROM meta WHERE key = 'data_owner_user_id'`)?.value === pat.id, 'data owner unchanged');
+  check(process.env.STRIPE_LIVE_ENABLED == null, 'STRIPE_LIVE_ENABLED stays unset');
+} finally {
+  setStripeClientForTests(null);
+  server.close();
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+console.log(`account links: ${passed} checks passed`);

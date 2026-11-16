@@ -2660,3 +2660,19 @@ export interface GstReturnView {
   boxes: Record<'box5' | 'box6' | 'box7' | 'box8' | 'box9' | 'box10' | 'box11' | 'box12' | 'box13' | 'box14' | 'box15', number>;
   items: GstItem[];
 }
+
+export type {
+  AccountLinkErrorCode,
+  AccountLinkParty,
+  AccountLinksResponse,
+  AccountPlan,
+  ActiveAccount,
+  CreateLinkedBusinessRequest,
+  CreateLinkedBusinessResponse,
+  LinkExistingBusinessRequest,
+  LinkExistingBusinessResponse,
+  LinkedAccountSummary,
+  SwitchAccountRequest,
+  SwitchAccountResponse,
+  UnlinkAccountResponse,
+} from './accountLinks';

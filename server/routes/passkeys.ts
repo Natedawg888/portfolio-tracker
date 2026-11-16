@@ -127,7 +127,7 @@ router.post('/passkeys/login/verify', async (req, res) => {
   }
   clearLoginFailures(passkeyAccountKey(client));
   // A verified passkey is two factors (the device and its unlock), so 2FA is satisfied.
-  await startSession(req, res, result.value.userId, result.value.persistent, { method: 'passkey', passkeyId: result.value.passkeyId });
+  if (!(await startSession(req, res, result.value.userId, result.value.persistent, { method: 'passkey', passkeyId: result.value.passkeyId }))) return;
   res.json({ user: publicUserById(db, result.value.userId) });
 });
 
