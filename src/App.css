@@ -163,6 +163,21 @@ a { color: var(--accent-2); }
 .brand { display: flex; gap: 0.85rem; align-items: center; }
 .brand h1 { margin: 0; font-size: 1.2rem; font-weight: 650; letter-spacing: -0.01em; }
 .brand .sub { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.8rem; }
+.brand-copy { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
+.account-context {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  max-width: 100%;
+}
+.account-context-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-context-meta { flex: none; white-space: nowrap; }
 .brand-mark {
   display: grid; place-items: center;
   width: 2.45rem; height: 2.45rem;
@@ -3204,12 +3219,17 @@ body.nav-drawer-open {
     font-size: 1.05rem;
   }
 
-  .brand .sub {
+  .brand .sub:not(.account-context) {
     font-size: 0.72rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     max-width: min(100%, 16rem);
+  }
+
+  .brand .sub.account-context {
+    font-size: 0.72rem;
+    max-width: 100%;
   }
 
   .header-actions {
@@ -3461,7 +3481,11 @@ body.nav-drawer-open {
     padding: 0.7rem 0.55rem 2rem;
   }
 
-  .brand .sub {
+  .brand .sub:not(.account-context) {
+    display: none;
+  }
+
+  .account-context-meta {
     display: none;
   }
 
@@ -15130,12 +15154,78 @@ html[data-theme="dark"] .business-plan-needed-link,
 html:not([data-theme]) .business-plan-needed-link {
   color: #b7a8c4;
 }
+.profile-menu-accounts-label {
+  padding: 0.35rem 0.55rem 0.15rem;
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.profile-menu-switch-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.15rem;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.35rem 0.55rem 0.35rem 0.45rem;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+html[data-theme="light"] .profile-menu-switch-row[aria-current="true"] {
+  border-left-color: #1b4332;
+}
+html[data-theme="dark"] .profile-menu-switch-row[aria-current="true"],
+html:not([data-theme]) .profile-menu-switch-row[aria-current="true"] {
+  border-left-color: #2f6b4f;
+}
+.profile-menu-switch-row:disabled {
+  cursor: default;
+}
+.profile-menu-switch-row.is-blocked {
+  opacity: 0.55;
+}
+.profile-menu-switch-row-line {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+.profile-menu-switch-row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-menu-switch-row-status,
+.profile-menu-switch-row-error {
+  flex: none;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+.profile-menu-switch-row-error {
+  white-space: normal;
+}
 @media (max-width: 768px) {
-  .profile-menu-item {
+  .profile-menu-item,
+  .profile-menu-switch-row {
     display: flex;
     align-items: center;
     min-height: 44px;
     box-sizing: border-box;
+  }
+  .profile-menu-switch-row {
+    align-items: stretch;
   }
   .business-plan-needed-link {
     display: inline-flex;

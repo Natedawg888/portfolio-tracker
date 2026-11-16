@@ -52,11 +52,14 @@ export function AccountSignInCard({ security }: { security: AccountSecurity | nu
     try {
       const res = await api.auth.changeEmail({ currentPassword: password, email: email.trim() });
       setUser(res.user);
+      const changed = visibleAccountEmail(res.user.email);
       const message = res.pendingEmail
         ? res.message
         : res.message === 'Email unchanged.'
           ? 'That is already your email'
-          : `Email changed to ${res.user.email}`;
+          : changed
+            ? `Email changed to ${changed}`
+            : 'Email changed.';
       showQuietToast(message, { kind: 'info', ttlMs: 6000 });
       close();
     } catch (err) {
@@ -80,17 +83,20 @@ export function AccountSignInCard({ security }: { security: AccountSecurity | nu
     }
   };
 
+  if (!allowSignIn) return null;
+
   return (
     <section className="panel account-card" aria-labelledby="account-signin-title">
       <div className="account-card-head">
-        <h2 id="account-signin-title">Email and password</h2>
+        <h2 id="account-signin-title">{shownEmail ? 'Email and password' : 'Password'}</h2>
       </div>
 
       <ul className="account-rows">
+        {shownEmail ? (
         <li className="account-row">
           <div className="account-row-main">
             <p className="account-row-label">Email</p>
-            <p className="account-row-value">{shownEmail ?? 'No email'}</p>
+            <p className="account-row-value">{shownEmail}</p>
             {pendingEmail ? (
               <p className="account-row-sub">
                 Check {pendingEmail} to confirm. Your current email works until then.{' '}
@@ -181,6 +187,7 @@ export function AccountSignInCard({ security }: { security: AccountSecurity | nu
             </div>
           ) : null}
         </li>
+        ) : null}
 
         <li className="account-row">
           <div className="account-row-main">

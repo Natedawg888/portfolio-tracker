@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useLocation } from 'react-router-dom';
-import { ApiError, createLinkedBusiness, getAccountLinks, linkExistingBusiness, switchAccount, unlinkAccount } from '../../api/client';
+import { ApiError, api, createLinkedBusiness, getAccountLinks, linkExistingBusiness, switchAccount, unlinkAccount } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { clearPageCache } from '../../lib/pageDataCache';
 import {
@@ -21,6 +21,8 @@ import {
   readyCopy,
   showBackToPersonal,
   showCreateAndLink,
+  readBusinessName,
+  selfUnlinkName,
   showSelfUnlink,
   showUnlink,
   switchAccountErrorCopy,
@@ -46,6 +48,7 @@ export function BusinessAccountCard() {
   const [switching, setSwitching] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [unlink, setUnlink] = useState<UnlinkTarget | null>(null);
+  const [selfBusinessName, setSelfBusinessName] = useState<string | null>(null);
 
   useEffect(() => {
     if (!section) return;
@@ -64,6 +67,24 @@ export function BusinessAccountCard() {
       live = false;
     };
   }, [section, reload]);
+
+  useEffect(() => {
+    if (section !== 'linked') return;
+    let live = true;
+    api.business
+      .list()
+      .then((res) => {
+        if (!live) return;
+        const row = res.businesses.find((business) => business.isDefault) ?? res.businesses[0];
+        setSelfBusinessName(row?.name?.trim() || null);
+      })
+      .catch(() => {
+        if (live) setSelfBusinessName(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [section]);
 
   useEffect(() => {
     if (location.hash !== `#${BUSINESS_ACCOUNT_SECTION_ID}`) return;
@@ -118,7 +139,7 @@ export function BusinessAccountCard() {
               setError(null);
               setUnlink({
                 id: current.id,
-                name: current.displayName?.trim() || 'this business account',
+                name: selfUnlinkName(readBusinessName(current) || selfBusinessName),
                 returnFocus,
                 reload: true,
               });
