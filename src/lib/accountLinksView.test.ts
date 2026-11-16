@@ -23,8 +23,16 @@ import {
   routesPersonalToBusinessAccount,
   showAddBusinessAccountRow,
   showCreateAndLink,
+  offerAccountSignIn,
+  planRequiredHref,
+  showBackToPersonal,
+  showSelfUnlink,
   showUnlink,
+  signOutMenuLabel,
+  switchAccountErrorCopy,
   unlinkConfirmCopy,
+  unlinkControlDisabled,
+  visibleAccountEmail,
 } from './accountLinksView.ts';
 
 function eq(a: unknown, b: unknown, msg: string): void {
@@ -134,5 +142,55 @@ eq(businessPlanNeededCopy(undefined), null, 'no code, no line');
 eq(BUSINESS_ACCOUNT_HREF, '/settings?tab=account#business-account', 'section anchor');
 eq(SETTINGS_BILLING_HREF, '/settings?tab=account#account-plan', 'See Business opens billing');
 eq(DASHBOARD_AFTER_SWITCH, '/', 'a switch reloads the dashboard');
+
+eq(showBackToPersonal(null), false, 'no links yet: no Back to personal');
+eq(showBackToPersonal({}), false, 'canSwitchToOwner missing hides Back to personal');
+eq(showBackToPersonal({ canSwitchToOwner: false }), false, 'canSwitchToOwner false hides the button');
+eq(showBackToPersonal({ canSwitchToOwner: true }), true, 'canSwitchToOwner true shows Back to personal');
+eq(showBackToPersonal({ canSwitchToOwner: 'true' }), false, 'only a real boolean true counts');
+
+eq(showSelfUnlink(null), false, 'no current account: no self unlink');
+eq(showSelfUnlink({ canUnlink: false }), false, 'a created business cannot unlink itself');
+eq(showSelfUnlink({ canUnlink: true }), true, 'a linked business with its own login can unlink itself');
+
+eq(unlinkControlDisabled(false), false, 'unlink stays usable when nothing is switching');
+eq(unlinkControlDisabled(true), true, 'unlink is disabled while a switch is running');
+
+eq(accountLinkErrorCopy('NOT_LINK_OWNER'), 'Only the account that linked this business can unlink it.', 'NOT_LINK_OWNER');
+eq(
+  accountLinkErrorCopy('TWO_FACTOR_REQUIRED'),
+  'That account uses two-step sign-in, so it can’t be linked here yet.',
+  'linking keeps its two-step sentence',
+);
+eq(
+  switchAccountErrorCopy('TWO_FACTOR_REQUIRED'),
+  'That business account uses two-step sign-in. Sign in to it directly.',
+  'switching has its own two-step sentence',
+);
+eq(switchAccountErrorCopy('SWITCH_NOT_ALLOWED'), 'That account can’t be opened from here.', 'switch not allowed uses the switch map');
+eq(switchAccountErrorCopy('INVALID_CREDENTIALS'), 'That didn’t work. Try again.', 'a link error is not a switch sentence');
+
+eq(visibleAccountEmail(null), null, 'null email is not shown');
+eq(visibleAccountEmail(undefined), null, 'missing email is not shown');
+eq(visibleAccountEmail('null'), null, 'the word null is not shown');
+eq(visibleAccountEmail('  '), null, 'blank email is not shown');
+eq(visibleAccountEmail('linked.abc@accounts.koruledger.invalid'), null, 'the synthetic address is not shown');
+eq(visibleAccountEmail('pat@example.com'), 'pat@example.com', 'a real email is shown');
+
+eq(offerAccountSignIn(null), false, 'no account: no sign-in actions');
+eq(offerAccountSignIn({ hasOwnLogin: false }), false, 'a no-login business gets no email or sign-in actions');
+eq(offerAccountSignIn({ hasOwnLogin: true }), true, 'an account that can sign in keeps email and password actions');
+eq(offerAccountSignIn({}), false, 'a missing hasOwnLogin flag hides the actions');
+
+eq(signOutMenuLabel(null, true), 'Sign out', 'sign out does not say null');
+eq(signOutMenuLabel('linked.x@accounts.koruledger.invalid', true), 'Sign out', 'sign out does not name the synthetic address');
+eq(signOutMenuLabel('pat@example.com', true), 'Sign out of pat@example.com', 'other accounts name the real email');
+eq(signOutMenuLabel('pat@example.com', false), 'Sign out', 'one account just says sign out');
+
+eq(planRequiredHref(personal), BUSINESS_ACCOUNT_HREF, 'personal locked reports open the business-account card');
+eq(planRequiredHref(null), BUSINESS_ACCOUNT_HREF, 'an unknown account is treated as personal');
+eq(planRequiredHref(both), SETTINGS_BILLING_HREF, 'both can open the Business plan');
+eq(planRequiredHref(business), SETTINGS_BILLING_HREF, 'a business account opens billing');
+eq(planRequiredHref(linked), SETTINGS_BILLING_HREF, 'a linked business opens billing');
 
 console.log('accountLinksView tests passed');

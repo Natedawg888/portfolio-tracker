@@ -55,7 +55,7 @@ export const ACCOUNT_LINK_ERROR_COPY: Record<string, string> = {
   CANNOT_LINK_SELF: 'That is this account.',
   ACCOUNT_PENDING_DELETION: 'That account is being deleted.',
   NOT_FOUND: 'That link is already gone.',
-  NOT_LINK_OWNER: 'Only the personal account can unlink this.',
+  NOT_LINK_OWNER: 'Only the account that linked this business can unlink it.',
   LINKED_ACCOUNT_HAS_NO_LOGIN: 'This business account has no sign-in of its own yet, so it stays linked.',
   SAME_ACCOUNT: 'You’re already on this account.',
   SWITCH_NOT_ALLOWED: 'That account can’t be opened from here.',
@@ -103,9 +103,32 @@ export function showCreateAndLink(linkedCount: number): boolean {
   return linkedCount < MAX_LINKED_BUSINESS_ACCOUNTS;
 }
 
-/** Unlink is offered only when the API says this owner may remove that link. */
+/** Unlink is offered only when the API says this session may remove that link. */
 export function showUnlink(account: { canUnlink: boolean }): boolean {
   return account.canUnlink === true;
+}
+
+/**
+ * A linked business with its own login can unlink itself.
+ * `current.canUnlink` is that flag on GET /api/account/links.
+ */
+export function showSelfUnlink(current: { canUnlink?: boolean } | null | undefined): boolean {
+  return current?.canUnlink === true;
+}
+
+/** The Unlink control stays visible but does nothing while a switch is in flight. */
+export function unlinkControlDisabled(switching: boolean): boolean {
+  return switching;
+}
+
+/**
+ * Back to personal only works from a session the owner opened.
+ * TODO: canSwitchToOwner — session-aware flag on GET /api/account/links, not in AccountLinksResponse yet.
+ * Hide the button when the field is missing or false.
+ */
+export function showBackToPersonal(links: object | null | undefined): boolean {
+  if (!links) return false;
+  return (links as { canSwitchToOwner?: unknown }).canSwitchToOwner === true;
 }
 
 /** Business name, then the person's name. Never an email (created accounts have a synthetic one). */
@@ -135,6 +158,56 @@ export function unlinkConfirmCopy(name: string): string {
 export function accountLinkErrorCopy(code: string | undefined): string {
   if (code && ACCOUNT_LINK_ERROR_COPY[code]) return ACCOUNT_LINK_ERROR_COPY[code];
   return ACCOUNT_LINK_ERROR_FALLBACK;
+}
+
+/**
+ * Switch has its own sentences. Linking keeps TWO_FACTOR_REQUIRED as
+ * "that account can't be linked here yet".
+ */
+export const SWITCH_ACCOUNT_ERROR_COPY: Record<string, string> = {
+  TWO_FACTOR_REQUIRED: 'That business account uses two-step sign-in. Sign in to it directly.',
+  SAME_ACCOUNT: 'You’re already on this account.',
+  SWITCH_NOT_ALLOWED: 'That account can’t be opened from here.',
+  ACCOUNT_PENDING_DELETION: 'That account is being deleted.',
+  MISSING_FIELDS: 'Choose an account to switch to.',
+  UNAUTHORIZED: 'Sign in again to do that.',
+  NOT_FOUND: 'That account is no longer there.',
+};
+
+export function switchAccountErrorCopy(code: string | undefined): string {
+  if (code && SWITCH_ACCOUNT_ERROR_COPY[code]) return SWITCH_ACCOUNT_ERROR_COPY[code];
+  return ACCOUNT_LINK_ERROR_FALLBACK;
+}
+
+const SYNTHETIC_EMAIL_HOST = '@accounts.koruledger.invalid';
+
+/** What to show for /api/auth/me email. Null, the word "null", and the synthetic address stay off screen. */
+export function visibleAccountEmail(email: string | null | undefined): string | null {
+  if (typeof email !== 'string') return null;
+  const trimmed = email.trim();
+  if (!trimmed || trimmed.toLowerCase() === 'null') return null;
+  if (trimmed.toLowerCase().endsWith(SYNTHETIC_EMAIL_HOST)) return null;
+  return trimmed;
+}
+
+/** Email and password actions. A created business has hasOwnLogin false until it can sign in alone. */
+export function offerAccountSignIn(active: { hasOwnLogin?: boolean } | null | undefined): boolean {
+  return active?.hasOwnLogin === true;
+}
+
+export function signOutMenuLabel(email: string | null | undefined, hasOtherAccounts: boolean): string {
+  const shown = visibleAccountEmail(email);
+  if (hasOtherAccounts && shown) return `Sign out of ${shown}`;
+  return 'Sign out';
+}
+
+/**
+ * Locked GST and P&L. A Personal account has no Business plan to buy, so the link
+ * opens the business-account card. Business and Both can open billing.
+ */
+export function planRequiredHref(active: { usageMode: UsageMode; isLinkedBusiness: boolean } | null | undefined): string {
+  if (active && active.usageMode !== 'personal') return SETTINGS_BILLING_HREF;
+  return BUSINESS_ACCOUNT_HREF;
 }
 
 /** Plan checkout (or a Business choice on a Personal account) opens the business-account card, not an error. */

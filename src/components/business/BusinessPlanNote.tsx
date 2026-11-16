@@ -6,14 +6,19 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../api/client';
-import { BUSINESS_PLAN_NEEDED_COPY, SETTINGS_BILLING_HREF } from '../../lib/accountLinksView';
+import { useAuth } from '../../auth/AuthContext';
+import { BUSINESS_PLAN_NEEDED_COPY, planRequiredHref } from '../../lib/accountLinksView';
 
-/** One calm line when the API says the Business plan is required. "See Business" opens Settings billing. */
+/**
+ * One calm line when the API says the Business plan is required.
+ * Personal accounts go to the business-account card. Business and Both open billing.
+ */
 export function BusinessPlanNeededLine() {
+  const { user } = useAuth();
   return (
     <p className="business-plan-needed">
       {BUSINESS_PLAN_NEEDED_COPY}{' '}
-      <Link className="business-plan-needed-link" to={SETTINGS_BILLING_HREF}>
+      <Link className="business-plan-needed-link" to={planRequiredHref(user?.activeAccount)}>
         See Business
       </Link>
     </p>

@@ -7,6 +7,7 @@ import { ApiError, api, type AuthUser, type SsoProvider } from '../api/client';
 import { showQuietToast } from '../lib/quietToast';
 import { BusyLabel, FormError, GoogleButton, PasswordField } from '../components/auth/AuthControls';
 import { ssoErrorMessage, ssoStartUrl } from '../lib/sso';
+import { visibleAccountEmail } from '../lib/accountLinksView';
 import {
   addPasskey,
   dismissOffer,
@@ -311,7 +312,7 @@ export function Login() {
           <>
             <h1 className="auth-title">{adding ? 'Add another account' : returning ? 'Welcome back' : 'Sign in'}</h1>
             {adding && user ? (
-              <p className="muted small">You&apos;ll stay signed in as {user.email} and can switch from the profile menu.</p>
+              <p className="muted small">You&apos;ll stay signed in as {visibleAccountEmail(user.email) ?? 'this account'} and can switch from the profile menu.</p>
             ) : null}
 
             {returning ? (

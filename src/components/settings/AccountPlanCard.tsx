@@ -7,8 +7,8 @@
  * webhook, so after checkout it can take a few seconds to show. An existing Pro grant or
  * subscription still shows as Pro.
  */
-import { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiError, api, type BillingStatus } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { showQuietToast } from '../../lib/quietToast';
@@ -34,6 +34,8 @@ import { BusinessPlanNeededLine } from '../business/BusinessPlanNote';
 export function AccountPlanCard() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const planRef = useRef<HTMLElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [interval, setBillingInterval] = useState<BillingInterval>('month');
@@ -58,6 +60,12 @@ export function AccountPlanCard() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // The section is absent until billing status loads, so the browser's hash scroll misses it.
+  useEffect(() => {
+    if (!status || location.hash !== `#${ACCOUNT_PLAN_SECTION_ID}`) return;
+    planRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [status, location.hash]);
 
   // Back from Stripe Checkout: say so, and check again while the webhook lands.
   useEffect(() => {
@@ -109,7 +117,7 @@ export function AccountPlanCard() {
   });
 
   return (
-    <section id={ACCOUNT_PLAN_SECTION_ID} className="panel account-card" aria-labelledby="account-plan-title">
+    <section ref={planRef} id={ACCOUNT_PLAN_SECTION_ID} className="panel account-card" aria-labelledby="account-plan-title">
       <div className="account-card-head">
         <h2 id="account-plan-title">Plan</h2>
         <p className="muted small">

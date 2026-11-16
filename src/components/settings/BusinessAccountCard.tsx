@@ -19,14 +19,19 @@ import {
   linkedAccountTitle,
   linkedOwnerLine,
   readyCopy,
+  showBackToPersonal,
   showCreateAndLink,
+  showSelfUnlink,
   showUnlink,
+  switchAccountErrorCopy,
   unlinkConfirmCopy,
+  unlinkControlDisabled,
 } from '../../lib/accountLinksView';
-import type { AccountLinksResponse, LinkedAccountSummary } from '../../types/accountLinks';
+import type { AccountLinksResponse } from '../../types/accountLinks';
 import { AccountTypePill } from '../AccountTypePill';
 
 type Panel = { kind: 'idle' } | { kind: 'create' } | { kind: 'link' } | { kind: 'ready'; accountId: string; name: string };
+type UnlinkTarget = { id: string; name: string; returnFocus: HTMLElement | null; reload: boolean };
 
 export function BusinessAccountCard() {
   const { user } = useAuth();
@@ -40,7 +45,7 @@ export function BusinessAccountCard() {
   const [busy, setBusy] = useState(false);
   const [switching, setSwitching] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [unlink, setUnlink] = useState<LinkedAccountSummary | null>(null);
+  const [unlink, setUnlink] = useState<UnlinkTarget | null>(null);
 
   useEffect(() => {
     if (!section) return;
@@ -76,7 +81,7 @@ export function BusinessAccountCard() {
       clearPageCache();
       window.location.assign(DASHBOARD_AFTER_SWITCH);
     } catch (err) {
-      setError(accountLinkErrorCopy(err instanceof ApiError ? err.code : undefined));
+      setError(switchAccountErrorCopy(err instanceof ApiError ? err.code : undefined));
       setSwitching(null);
     }
   }, []);
@@ -101,9 +106,23 @@ export function BusinessAccountCard() {
           <LinkedBusinessBody
             line={linkedOwnerLine(links?.owner ?? null)}
             ownerId={links?.owner?.id ?? user.activeAccount.ownerId}
-            switching={switching !== null}
+            // TODO: canSwitchToOwner — hide Back to personal until GET /api/account/links sets it true.
+            canSwitch={showBackToPersonal(links)}
+            canUnlink={showSelfUnlink(links?.current)}
+            switching={unlinkControlDisabled(switching !== null)}
             error={error}
             onBack={(id) => void goToAccount(id)}
+            onUnlink={(returnFocus) => {
+              const current = links?.current;
+              if (!current) return;
+              setError(null);
+              setUnlink({
+                id: current.id,
+                name: current.displayName?.trim() || 'this business account',
+                returnFocus,
+                reload: true,
+              });
+            }}
           />
           {load === 'error' && !links?.owner && !user.activeAccount.ownerId ? (
             <p className="muted small">
@@ -154,26 +173,33 @@ export function BusinessAccountCard() {
               onBusy={setBusy}
               onLinks={setLinks}
               onSwitch={(id) => void goToAccount(id)}
-              onUnlink={setUnlink}
+              onUnlink={(target) => setUnlink(target)}
             />
           ) : null}
         </>
       )}
       {unlink ? (
         <UnlinkDialog
-          name={linkedAccountTitle(unlink)}
+          name={unlink.name}
           busy={busy}
           error={error}
+          returnFocus={unlink.returnFocus}
           onCancel={() => {
             if (busy) return;
             setError(null);
             setUnlink(null);
           }}
           onConfirm={() => {
+            const target = unlink;
             setBusy(true);
             setError(null);
-            unlinkAccount(unlink.id)
+            unlinkAccount(target.id)
               .then((res) => {
+                if (target.reload) {
+                  clearPageCache();
+                  window.location.reload();
+                  return;
+                }
                 setLinks(res.links);
                 setUnlink(null);
               })
@@ -191,33 +217,53 @@ export function BusinessAccountCard() {
 function LinkedBusinessBody({
   line,
   ownerId,
+  canSwitch,
+  canUnlink,
   switching,
   error,
   onBack,
+  onUnlink,
 }: {
   line: string;
   ownerId: string | null;
+  canSwitch: boolean;
+  canUnlink: boolean;
   switching: boolean;
   error: string | null;
   onBack: (accountId: string) => void;
+  onUnlink: (returnFocus: HTMLElement) => void;
 }) {
   return (
     <>
       <h2 id="business-account-title" className="business-account-linked-line">
         {line}
       </h2>
-      <div className="account-actions">
-        <button
-          type="button"
-          className="btn primary"
-          disabled={!ownerId || switching}
-          onClick={() => {
-            if (ownerId) onBack(ownerId);
-          }}
-        >
-          {switching ? 'Switching…' : 'Back to personal'}
-        </button>
-      </div>
+      {canSwitch || canUnlink ? (
+        <div className="account-actions">
+          {canSwitch ? (
+            <button
+              type="button"
+              className="btn primary"
+              disabled={!ownerId || switching}
+              onClick={() => {
+                if (ownerId) onBack(ownerId);
+              }}
+            >
+              {switching ? 'Switching…' : 'Back to personal'}
+            </button>
+          ) : null}
+          {canUnlink ? (
+            <button
+              type="button"
+              className="business-account-text-link is-danger"
+              disabled={switching}
+              onClick={(e) => onUnlink(e.currentTarget)}
+            >
+              Unlink
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {error ? (
         <p className="auth-error" role="alert">
           {error}
@@ -250,7 +296,7 @@ function OwnerBody({
   onBusy: (busy: boolean) => void;
   onLinks: (links: AccountLinksResponse) => void;
   onSwitch: (accountId: string) => void;
-  onUnlink: (account: LinkedAccountSummary) => void;
+  onUnlink: (target: UnlinkTarget) => void;
 }) {
   const linked = links.linked;
   const room = showCreateAndLink(linked.length);
@@ -281,9 +327,15 @@ function OwnerBody({
                     type="button"
                     className="business-account-text-link is-danger"
                     aria-label={`Unlink ${name}`}
-                    onClick={() => {
+                    disabled={unlinkControlDisabled(switching !== null)}
+                    onClick={(e) => {
                       onError(null);
-                      onUnlink(account);
+                      onUnlink({
+                        id: account.id,
+                        name: linkedAccountTitle(account),
+                        returnFocus: e.currentTarget,
+                        reload: false,
+                      });
                     }}
                   >
                     Unlink
@@ -472,8 +524,10 @@ function LinkForm({
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const trimmed = email.trim();
-    if (!trimmed || !password) return;
-    onSubmit(trimmed, password);
+    const secret = password;
+    setPassword('');
+    if (!trimmed || !secret) return;
+    onSubmit(trimmed, secret);
   };
   return (
     <form className="account-inline-form" onSubmit={submit}>
@@ -531,30 +585,39 @@ function UnlinkDialog({
   name,
   busy,
   error,
+  returnFocus,
   onConfirm,
   onCancel,
 }: {
   name: string;
   busy: boolean;
   error: string | null;
+  returnFocus: HTMLElement | null;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const onCancelRef = useRef(onCancel);
   const busyRef = useRef(busy);
+  const returnFocusRef = useRef(returnFocus);
   const titleId = useId();
   useEffect(() => {
     onCancelRef.current = onCancel;
     busyRef.current = busy;
-  }, [onCancel, busy]);
+    returnFocusRef.current = returnFocus;
+  }, [onCancel, busy, returnFocus]);
   useEffect(() => {
     cancelRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !busyRef.current) onCancelRef.current();
     };
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      const back = returnFocusRef.current;
+      if (back?.isConnected) back.focus();
+      else document.getElementById(BUSINESS_ACCOUNT_SECTION_ID)?.focus();
+    };
   }, []);
 
   const copy = unlinkConfirmCopy(name);
