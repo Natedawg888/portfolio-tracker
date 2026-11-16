@@ -84,13 +84,14 @@ function userExists(db: Database, userId: string): boolean {
  * An ignored price is put back on the subscription in Stripe (no proration) and recorded in
  * billing_alerts. The same webhook event does not revert twice. A canceled or incomplete_expired
  * subscription cannot be updated, and a failed revert is recorded on the alert: either way the
- * subscription status is still saved, so a cancel drops the paid plan.
+ * subscription status is still saved, so a cancel drops the paid plan. Pending prorations for
+ * that rejected change are removed only after the revert succeeds.
  */
 export async function syncSubscription(
   db: Database,
   config: BillingConfig,
   subscriptionId: string,
-  options: { viaCheckout?: boolean; eventId?: string } = {},
+  options: { viaCheckout?: boolean; eventId?: string; eventCreated?: number } = {},
 ): Promise<boolean> {
   const sub = await stripeClient(config).subscriptions.retrieve(subscriptionId);
   const customerId = idOf(sub.customer);
@@ -117,7 +118,17 @@ export async function syncSubscription(
   const plan = decision.applyPrice || !previous ? entry.plan : previous.plan;
   const interval = decision.applyPrice || !previous ? entry.interval : previous.interval;
   if (!decision.applyPrice && previous) {
-    await revertIgnoredPrice(db, config, sub, userId, previous, entry, decision.reason, options.eventId);
+    await revertIgnoredPrice(
+      db,
+      config,
+      sub,
+      userId,
+      previous,
+      entry,
+      decision.reason,
+      options.eventId,
+      typeof options.eventCreated === 'number' ? options.eventCreated : null,
+    );
   }
   if (!userIdForCustomer(db, customerId)) linkCustomer(db, userId, customerId, sub.livemode);
   saveSubscription(db, {
@@ -149,7 +160,7 @@ export async function handleBillingEvent(db: Database, config: BillingConfig, ev
         linkCustomer(db, userId, customerId, event.livemode);
       }
       const subId = idOf(session.subscription);
-      if (subId) await syncSubscription(db, config, subId, { viaCheckout: true, eventId: event.id });
+      if (subId) await syncSubscription(db, config, subId, { viaCheckout: true, eventId: event.id, eventCreated: eventCreatedSeconds(event) });
       return;
     }
     case 'customer.subscription.created':
@@ -157,7 +168,7 @@ export async function handleBillingEvent(db: Database, config: BillingConfig, ev
     case 'customer.subscription.deleted':
     case 'customer.subscription.paused':
     case 'customer.subscription.resumed':
-      await syncSubscription(db, config, event.data.object.id, { eventId: event.id });
+      await syncSubscription(db, config, event.data.object.id, { eventId: event.id, eventCreated: eventCreatedSeconds(event) });
       return;
     default:
       return;
@@ -279,33 +290,121 @@ function subscriptionIsClosed(status: string): boolean {
   return status === 'canceled' || status === 'incomplete_expired';
 }
 
-function prorationSubscriptionId(item: Stripe.InvoiceItem): string | null {
-  const parent = item.parent?.subscription_details?.subscription;
-  if (typeof parent === 'string' && parent) return parent;
-  const legacy = (item as { subscription?: unknown }).subscription;
-  return typeof legacy === 'string' && legacy ? legacy : null;
+/** invoiceItems.list pages at most 100 (Stripe API 2026-10-28.endive, stripe-node 23). */
+const INVOICE_ITEM_PAGE = 100;
+
+/**
+ * A pending proration counts as this rejected change when its period start or
+ * creation time is within two minutes of the webhook. That covers Stripe
+ * stamping the invoice item slightly before or after the event.
+ */
+export const PRORATION_MATCH_WINDOW_SEC = 120;
+
+/** Unix seconds. Amounts and quantities must not be read as timestamps. */
+const UNIX_STAMP_MIN = 1_000_000_000;
+const UNIX_STAMP_MAX = 4_000_000_000;
+
+function eventCreatedSeconds(event: Stripe.Event): number | undefined {
+  return typeof event.created === 'number' ? event.created : undefined;
+}
+
+function unixStamp(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  if (value < UNIX_STAMP_MIN || value > UNIX_STAMP_MAX) return null;
+  return value;
+}
+
+function idString(value: unknown): string | null {
+  if (typeof value === 'string') return value || null;
+  if (value && typeof value === 'object' && 'id' in value) {
+    const id = (value as { id?: unknown }).id;
+    if (typeof id === 'string' && id) return id;
+  }
+  return null;
 }
 
 /**
- * Pending proration invoice items from the price change we are undoing. Deleted when Stripe
- * allows it. The note is what the alert stores.
+ * Subscription that owns the invoice item. API 2026-10-28.endive puts it on
+ * parent.subscription_details.subscription (a string, or an expanded id).
+ * Older invoice items used a top-level subscription field. Null when neither
+ * is a non-empty id.
  */
-async function removePendingProrations(stripe: Stripe, sub: Stripe.Subscription): Promise<string> {
+function prorationSubscriptionId(item: Stripe.InvoiceItem): string | null {
+  const fromParent = idString(item.parent?.subscription_details?.subscription);
+  if (fromParent) return fromParent;
+  return idString((item as { subscription?: unknown }).subscription);
+}
+
+/**
+ * Stamps that can place the proration on the rejected change. Creation time
+ * is InvoiceItem.date on this API version; a legacy created number is used
+ * only when date is not a unix time. period.end is the billing-period end,
+ * not the moment of the change, so it is not a stamp.
+ */
+function prorationStamps(item: Stripe.InvoiceItem): number[] {
+  const created = unixStamp(item.date) ?? unixStamp((item as { created?: unknown }).created);
+  const periodStart = unixStamp(item.period?.start);
+  return [created, periodStart].filter((stamp): stamp is number => stamp != null);
+}
+
+/**
+ * Pending-proration cleanup rule.
+ *
+ * Runs only after the granted price is restored. A closed subscription, a
+ * failed revert, or a duplicate event does not delete invoice items.
+ *
+ * invoiceItems.list on API 2026-10-28.endive takes customer, pending, created,
+ * and cursor paging. It does not take subscription (Stripe returns 400). The
+ * customer's pending items are listed 100 at a time with starting_after until
+ * has_more is false, then filtered here. Every page is read before any delete,
+ * so the cursor still exists.
+ *
+ * An item is deleted only when all of these hold:
+ * 1. proration is true.
+ * 2. The owner is exactly this subscription id. The owner is
+ *    parent.subscription_details.subscription, otherwise the legacy
+ *    subscription field. A null, missing, or other owner is skipped.
+ * 3. period.start or the creation time falls in the change window.
+ *
+ * The change is the webhook update. previous_attributes is the subscription
+ * before that update; the time of the change is event.created. The window is
+ * event.created ± PRORATION_MATCH_WINDOW_SEC, so a stamp at or after the
+ * change still matches when Stripe wrote the invoice item a few seconds
+ * early, and a stamp later than the window is a later change. Timestamps
+ * inside previous_attributes (for example the previous current_period_start)
+ * are the old billing period and do not widen the window. With no
+ * event.created, the window is unknown and nothing is deleted.
+ */
+function prorationInChangeWindow(item: Stripe.InvoiceItem, eventCreated: number): boolean {
+  const earliest = eventCreated - PRORATION_MATCH_WINDOW_SEC;
+  const latest = eventCreated + PRORATION_MATCH_WINDOW_SEC;
+  return prorationStamps(item).some((stamp) => stamp >= earliest && stamp <= latest);
+}
+
+async function removePendingProrations(stripe: Stripe, sub: Stripe.Subscription, eventCreated: number | null): Promise<string> {
   const customer = idOf(sub.customer);
-  if (!customer) return '';
-  const listed = await stripe.invoiceItems.list({
-    customer,
-    pending: true,
-    limit: 100,
-    // Current SDK types omit this filter. Stripe still accepts it and narrows the list.
-    subscription: sub.id,
-  } as Stripe.InvoiceItemListParams);
+  if (!customer || eventCreated == null) return '';
+  const pending: Stripe.InvoiceItem[] = [];
+  let startingAfter: string | undefined;
+  for (;;) {
+    const listed = await stripe.invoiceItems.list({
+      customer,
+      pending: true,
+      limit: INVOICE_ITEM_PAGE,
+      ...(startingAfter ? { starting_after: startingAfter } : {}),
+    });
+    pending.push(...listed.data);
+    if (!listed.has_more) break;
+    const lastId = listed.data[listed.data.length - 1]?.id;
+    if (!lastId || lastId === startingAfter) break;
+    startingAfter = lastId;
+  }
   const removed: string[] = [];
   const failed: string[] = [];
-  for (const item of listed.data) {
+  for (const item of pending) {
     if (!item.proration) continue;
-    const owner = prorationSubscriptionId(item);
-    if (owner && owner !== sub.id) continue;
+    if (prorationSubscriptionId(item) !== sub.id) continue;
+    if (!prorationInChangeWindow(item, eventCreated)) continue;
     try {
       await stripe.invoiceItems.del(item.id);
       removed.push(item.id);
@@ -361,6 +460,7 @@ async function revertIgnoredPrice(
   rejected: CatalogPrice,
   reason: string,
   eventId: string | undefined,
+  eventCreated: number | null,
 ): Promise<void> {
   const id = eventId?.trim() || `local:${sub.id}:${entitled.plan}/${entitled.interval}:${rejected.plan}/${rejected.interval}`;
   const base = {
@@ -377,24 +477,28 @@ async function revertIgnoredPrice(
   const stripe = stripeClient(config);
   const closed = subscriptionIsClosed(sub.status);
   let error = '';
+  let reverted = false;
   const notes: string[] = [];
   if (closed) {
     notes.push(`Stripe price left unchanged; a ${sub.status} subscription cannot be updated`);
   } else {
     try {
       await revertStripePrice(stripe, sub, entitled, rejected);
+      reverted = true;
     } catch (err) {
       error = errorText(err);
       logger.error('billing_plan_change_revert_failed', { ...base, error });
     }
   }
-  try {
-    const cleaned = await removePendingProrations(stripe, sub);
-    if (cleaned) notes.push(cleaned);
-  } catch (err) {
-    const note = `pending prorations not removed: ${errorText(err)}`;
-    notes.push(note);
-    logger.warn('billing_proration_cleanup_failed', { ...base, error: errorText(err) });
+  if (reverted) {
+    try {
+      const cleaned = await removePendingProrations(stripe, sub, eventCreated);
+      if (cleaned) notes.push(cleaned);
+    } catch (err) {
+      const note = `pending prorations not removed: ${errorText(err)}`;
+      notes.push(note);
+      logger.warn('billing_proration_cleanup_failed', { ...base, error: errorText(err) });
+    }
   }
   const alert = recordBillingAlert(db, {
     eventId: id,
