@@ -158,18 +158,15 @@ try {
   assert(queryOne(db, `SELECT 1 FROM transactions WHERE id = 't_pay'`), 'the bank deposit is still there');
   assert(!fs.existsSync(fileAbs), 'file gone');
 
-  // Free plan: no check, no Income, 12 a tax year.
+  // Free plan: no PAYE check and no Income, and no yearly count.
   r = await call('POST', '/api/payslips', B, slip);
   assert(r.status === 201 && r.json.check === null && !r.json.income.inIncome && r.json.income.reason.includes('Plus'), 'free: recorded only');
-  for (let i = 1; i < 12; i++) {
+  for (let i = 1; i < 13; i++) {
     const s = await call('POST', '/api/payslips', B, { ...slip, periodStart: `2026-11-${String(i + 10).padStart(2, '0')}`, periodEnd: `2026-11-${String(i + 10).padStart(2, '0')}`, payDate: '2026-11-28' });
     assert(s.status === 201, `free payslip ${i + 1}`);
   }
-  r = await call('POST', '/api/payslips', B, { ...slip, periodStart: '2026-12-01', periodEnd: '2026-12-07', payDate: '2026-12-08' });
-  assert(r.status === 402 && r.json.code === 'PLAN_LIMIT', 'the 13th is refused on the free plan');
-  assert((await call('POST', '/api/payslips', B, { ...slip, periodStart: '2027-04-01', periodEnd: '2027-04-07', payDate: '2027-04-08' })).status === 201, 'a new tax year starts a new count');
   r = await call('GET', '/api/payslips', B);
-  assert(r.json.plan.plus === false && r.json.plan.usedThisYear === 12 && r.json.plan.freeLimit === 12, 'plan shown');
+  assert(r.json.plan.plus === false && r.json.plan.freeLimit === undefined, 'free has no payslip cap');
 
   // Account deletion removes payslips and files.
   const q = await call('POST', '/api/payslips', A, { ...slip, periodStart: '2027-01-01', periodEnd: '2027-01-07', payDate: '2027-01-08' });

@@ -3,7 +3,7 @@
  * Run: npm run test:billing
  */
 import { AKAHU_SETUP_EMAIL } from './onboardingPrefs.ts';
-import { checkoutResume, continueAfterPlan, onboardingSteps, stepFromOnboarding, stepLabel, type OnboardingProgress } from './onboardingSteps.ts';
+import { businessSetupTarget, checkoutResume, continueAfterPlan, onboardingSteps, stepFromOnboarding, stepLabel, type OnboardingProgress } from './onboardingSteps.ts';
 
 function eq(actual: unknown, expected: unknown, msg: string): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -71,6 +71,12 @@ eq(
   { kind: 'home' },
   'when the later steps are already done, the plan choice opens the app',
 );
+
+eq(businessSetupTarget(false, []), { kind: 'home' }, 'Free business signup does not open the add form');
+eq(businessSetupTarget(false, [{ id: 'biz' }]), { kind: 'home' }, 'Free with a business still does not open the form');
+eq(businessSetupTarget(true, []), { kind: 'create' }, 'a plan that can manage and has none opens the form');
+eq(businessSetupTarget(true, [{ id: 'starter', isDefault: true }, { id: 'other' }]), { kind: 'edit', id: 'starter' }, 'an existing starter is edited, not created again');
+eq(businessSetupTarget(true, [{ id: 'only' }]), { kind: 'edit', id: 'only' }, 'the only business is the one opened');
 
 eq(checkoutResume(null, false), { action: 'none' }, 'no billing flag changes nothing');
 eq(checkoutResume('success', false), { action: 'finish', pending: true }, 'success finishes the step and shows payment confirming');

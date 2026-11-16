@@ -42,10 +42,10 @@ export function offeredPlans(proPlanEnabled: boolean): AccountPlan[] {
 /**
  * What Free includes. Paid plans say what they add (PLAN_FEATURES), in the same short style.
  * Free is one budget of money in and out, one bank or cash account, and no net worth.
- * Savings goals and receipts are not capped. Payslips stay limited; the PAYE calculator is included.
+ * Savings goals, receipts and payslips are not capped. Plus adds the PAYE check and net pay into Income.
  */
 export const FREE_FEATURES: readonly string[] = [
-  'PAYE and salary tools',
+  'PAYE, salary tools and payslips',
   'One budget: money in and money out',
   'One bank or cash account',
   'Savings goals and receipts, with no limit',
@@ -56,7 +56,7 @@ export const PLAN_FEATURES: Record<PaidPlan, readonly string[]> = {
   plus: [
     'Full budgeting, bills and subscriptions',
     'Dividends, projections, donations and news',
-    'Net worth, household, payslips, bonds and commodities',
+    'Net worth, household, payslip PAYE check and Income, bonds and commodities',
     'CSV import and public crypto wallets',
     'Business management if you run a business',
   ],

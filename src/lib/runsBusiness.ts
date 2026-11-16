@@ -26,3 +26,24 @@ export function mergeRunsBusinessIntoPreferencesJson(preferencesJson: string | n
   }
   return JSON.stringify({ ...existing, runsBusiness });
 }
+
+function prefsObject(preferencesJson: string | null | undefined): Record<string, unknown> {
+  if (!preferencesJson) return {};
+  try {
+    const parsed = JSON.parse(preferencesJson);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+  } catch {
+    /* start fresh */
+  }
+  return {};
+}
+
+/** True after the one-time “My business” starter has been created. */
+export function starterBusinessCreated(preferencesJson: string | null | undefined): boolean {
+  return prefsObject(preferencesJson).starterBusinessCreated === true;
+}
+
+/** preferences_json marked so a later sync does not create another starter business. */
+export function withStarterBusinessCreated(preferencesJson: string | null | undefined): string {
+  return JSON.stringify({ ...prefsObject(preferencesJson), starterBusinessCreated: true });
+}

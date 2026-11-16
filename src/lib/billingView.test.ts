@@ -32,7 +32,7 @@ eq(offeredPaidPlans(false).includes('plus') && offeredPaidPlans(false).includes(
 eq(offeredPlans(false).join(), 'free,plus,business', 'signup offers Free, Plus and Business');
 eq(offeredPlans(true).join(), 'free,plus,pro,business', 'signup offers Pro only when the flag is on');
 eq(FREE_FEATURES.length >= 3 && FREE_FEATURES.every((line) => !/NZ\$/.test(line)), true, 'Free has a short summary and no hardcoded price');
-eq(FREE_FEATURES.some((line) => line.includes('PAYE')) && FREE_FEATURES.some((line) => line.includes('One budget')), true, 'Free copy matches the new limits');
+eq(FREE_FEATURES.some((line) => line.includes('PAYE') && line.includes('payslips')) && FREE_FEATURES.some((line) => line.includes('One budget')), true, 'Free copy matches the new limits');
 eq(PLAN_FEATURES.plus.some((line) => line.includes('Net worth')) && PLAN_FEATURES.plus.some((line) => line.includes('Business management')), true, 'Plus copy includes net worth and business management');
 eq(PLAN_FEATURES.pro.some((line) => line.includes('AI assistant')) && PLAN_FEATURES.pro.some((line) => line.includes('Akahu')), true, 'Pro copy includes the assistant and Akahu');
 eq(PLAN_FEATURES.business.some((line) => line.includes('clients, invoices and stock')) && PLAN_FEATURES.business.some((line) => line.includes('GST return')), true, 'Business copy is management plus reports');

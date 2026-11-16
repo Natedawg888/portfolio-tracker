@@ -103,6 +103,10 @@ try {
   assert(ensureStarterBusiness(db, 'plus') === true, 'a ticked Plus account with none gets My business');
   const starter = await call('GET', '/api/business', plus);
   assert(starter.json.businesses?.some((b: { name: string }) => b.name === 'My business'), 'the starter business is listed');
+  run(db, `DELETE FROM businesses WHERE user_id = ?`, ['plus']);
+  assert(ensureStarterBusiness(db, 'plus') === false, 'deleting every business does not create another starter');
+  const gone = await call('GET', '/api/business', plus);
+  assert((gone.json.businesses ?? []).length === 0, 'My business stays deleted');
   setPlan(db, 'plus', 'free', 'test');
   assert(ensureStarterBusiness(db, 'plus') === false, 'Free does not get a starter business');
 

@@ -66,6 +66,20 @@ export function stepFromOnboarding(user: OnboardingProgress): OnboardingStep | '
 
 export type PlanContinue = { kind: 'step'; step: OnboardingStep } | { kind: 'business-setup' } | { kind: 'home' };
 
+/**
+ * Where ?setup=1 goes. Free (no business management) does not open the add form.
+ * A business that already exists, including the starter one, is edited instead of created again.
+ */
+export function businessSetupTarget(
+  canManage: boolean,
+  businesses: readonly { id: string; isDefault?: boolean }[],
+): { kind: 'home' } | { kind: 'edit'; id: string } | { kind: 'create' } {
+  if (!canManage) return { kind: 'home' };
+  const existing = businesses.find((b) => b.isDefault) ?? businesses[0];
+  if (existing) return { kind: 'edit', id: existing.id };
+  return { kind: 'create' };
+}
+
 /** Where Free, Skip, or a successful Checkout goes next. */
 export function continueAfterPlan(user: OnboardingProgress): PlanContinue {
   if ((user.usageMode ?? 'personal') === 'business') return { kind: 'business-setup' };

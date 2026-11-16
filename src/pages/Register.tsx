@@ -61,6 +61,18 @@ export function Register() {
   const [akahu, setAkahu] = useState<AkahuConnectionStatus | null>(null);
   const [walletsAdded, setWalletsAdded] = useState<string[]>([]);
 
+  /** Business only opens the add form when this account can manage a business. Free goes home. */
+  const destinationFor = useCallback(async (dest: PlanContinue): Promise<PlanContinue> => {
+    if (dest.kind !== 'business-setup') return dest;
+    try {
+      const plan = await api.settings.plan();
+      if (plan.features.business_manage) return dest;
+    } catch {
+      /* Treat a failed plan check like Free: don't open a form that would be refused. */
+    }
+    return { kind: 'home' };
+  }, []);
+
   const leaveAfterPlan = useCallback((dest: PlanContinue, pending: boolean) => {
     const state = pending ? { billingPending: true } : undefined;
     if (dest.kind === 'business-setup') {
@@ -78,11 +90,10 @@ export function Register() {
 
   /** Free, Skip, or a successful Checkout: record the step and continue signup. */
   const finishPlan = useCallback(async (current: AuthUser, pending: boolean, action: string | null, runsBusiness?: boolean) => {
-    const dest = continueAfterPlan({
+    const chosen = continueAfterPlan({
       ...current,
       onboarding: { ...current.onboarding, planStepDone: true },
     });
-    setPlanExit(dest.kind === 'step' ? null : { dest, pending });
     if (action) setPlanAction(action);
     setError(null);
     try {
@@ -90,6 +101,8 @@ export function Register() {
         await api.settings.setRunsBusiness(runsBusiness);
         if (runsBusiness && !pending) setRunsNote(true);
       }
+      const dest = await destinationFor(chosen);
+      setPlanExit(dest.kind === 'step' ? null : { dest, pending });
       let nextUser = current;
       if (current.onboarding.planStepDone === false) {
         const r = await api.settings.setOnboarding({ planStepDone: true });
@@ -106,7 +119,7 @@ export function Register() {
     } finally {
       setPlanAction(null);
     }
-  }, [leaveAfterPlan, refresh, setUser]);
+  }, [destinationFor, leaveAfterPlan, refresh, setUser]);
 
   // Resume incomplete onboarding after refresh / login redirect, including a return from Stripe.
   useEffect(() => {
@@ -296,14 +309,13 @@ export function Register() {
     try {
       const r = await api.settings.setUsageMode(usageMode);
       const planAlreadyDone = r.onboarding.planStepDone !== false;
-      if (usageMode === 'business' && planAlreadyDone) {
-        setPlanExit({ dest: { kind: 'business-setup' }, pending: false });
-      }
+      const exit = usageMode === 'business' && planAlreadyDone ? await destinationFor({ kind: 'business-setup' }) : null;
+      if (exit) setPlanExit({ dest: exit, pending: false });
       if (user) setUser({ ...user, usageMode: r.usageMode, usageModeChosen: true, onboardingComplete: r.onboardingComplete, onboarding: r.onboarding });
       await refresh();
-      if (usageMode === 'business' && planAlreadyDone) {
+      if (exit) {
         midSignupRef.current = false;
-        navigate('/business?setup=1', { replace: true });
+        leaveAfterPlan(exit, false);
         return;
       }
       setStep('plan');
