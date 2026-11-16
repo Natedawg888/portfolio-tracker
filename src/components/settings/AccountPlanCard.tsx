@@ -1,17 +1,30 @@
 /**
- * Settings → Account → Plan (KAN-52): the account's plan, and Plus or Business through Stripe.
- * Pro is listed only when the server has PRO_PLAN_ENABLED set. Checkout and plan changes happen
- * on Stripe's own pages; the plan here follows Stripe's webhook, so after checkout it can take
- * a few seconds to show. An existing Pro grant or subscription still shows as Pro.
+ * Settings → Account → Plan (KAN-52): the account's plan, and a change of plan through Stripe.
+ * What is offered follows the usage saved at signup. Personal does not see Business.
+ * Pro stays hidden until PRO_PLAN_FOR_SALE, and is never sent to checkout before that.
+ * A Business plan cannot change plan: cancel only, through the billing portal.
+ * Checkout and plan changes happen on Stripe's own pages; the plan here follows Stripe's
+ * webhook, so after checkout it can take a few seconds to show. An existing Pro grant or
+ * subscription still shows as Pro.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ApiError, api, type BillingStatus } from '../../api/client';
+import { useAuth } from '../../auth/AuthContext';
 import { showQuietToast } from '../../lib/quietToast';
-import { PLAN_LABELS, subscriptionLine, type BillingInterval } from '../../lib/billingView';
+import {
+  PLAN_LABELS,
+  PRO_PLAN_FOR_SALE,
+  settingsCheckoutPlan,
+  settingsPlanOffer,
+  subscriptionLine,
+  type BillingInterval,
+} from '../../lib/billingView';
+import type { UsageMode } from '../../lib/usageMode';
 import { BillingPlanPicker, BillingTestNote } from '../billing/BillingPlanPicker';
 
 export function AccountPlanCard() {
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [interval, setBillingInterval] = useState<BillingInterval>('month');
@@ -57,6 +70,15 @@ export function AccountPlanCard() {
 
   if (!status) return null;
   const sub = status.subscription;
+  const usage: UsageMode = user?.usageMode ?? 'personal';
+  const proForSale = PRO_PLAN_FOR_SALE && status.proPlanEnabled === true;
+  const offer = settingsPlanOffer({
+    usage,
+    plan: status.plan,
+    canChoosePlan: status.available && !sub,
+    canOpenPortal: status.available && Boolean(sub || status.canManage),
+    proForSale,
+  });
 
   return (
     <section className="panel account-card" aria-labelledby="account-plan-title">
@@ -70,9 +92,11 @@ export function AccountPlanCard() {
 
       {status.mode === 'test' ? <BillingTestNote /> : null}
 
-      {!status.available ? (
+      {status.plan !== 'business' && !status.available ? (
         <p className="muted small">Paid plans aren’t open yet.</p>
-      ) : sub || status.canManage ? (
+      ) : null}
+
+      {offer.portalAction === 'manage' ? (
         <div className="account-actions billing-manage">
           <button type="button" className="btn small" disabled={busy != null} onClick={() => void go('portal', api.billing.portal)}>
             {busy === 'portal' ? 'Opening…' : 'Manage billing'}
@@ -81,15 +105,30 @@ export function AccountPlanCard() {
         </div>
       ) : null}
 
-      {status.available && !sub ? (
+      {offer.portalAction === 'cancel' ? (
+        <div className="account-actions billing-manage">
+          <button type="button" className="btn small" disabled={busy != null} onClick={() => void go('cancel', api.billing.portal)}>
+            {busy === 'cancel' ? 'Opening…' : 'Cancel subscription'}
+          </button>
+          <span className="muted small">Cancel any time; your plan stays until the end of the period you paid for.</span>
+        </div>
+      ) : null}
+
+      {offer.showIntervalToggle ? (
         <BillingPlanPicker
           prices={status.prices}
-          proPlanEnabled={status.proPlanEnabled === true}
+          proPlanEnabled={proForSale}
+          paidPlans={offer.cards}
+          plusLines={offer.plusLines}
           interval={interval}
           onInterval={setBillingInterval}
           busy={busy}
           currentPlan={status.plan}
-          onChoosePaid={(plan) => void go(plan, () => api.billing.checkout(plan, interval))}
+          onChoosePaid={(plan) => {
+            const allowed = settingsCheckoutPlan(plan, usage, proForSale);
+            if (!allowed) return;
+            void go(allowed, () => api.billing.checkout(allowed, interval));
+          }}
         />
       ) : null}
 

@@ -24,7 +24,7 @@ import {
 import { akahuOnboardingRequiredForEmail } from '../lib/onboardingPrefs';
 import { checkoutResume, continueAfterPlan, resolvePaidBusinessReturn, stepFromOnboarding, stepLabel, type OnboardingStep, type PlanContinue } from '../lib/onboardingSteps';
 import { USAGE_MODES, type UsageMode } from '../lib/usageMode';
-import type { BillingInterval, PaidPlan } from '../lib/billingView';
+import { canCheckoutPlan, type BillingInterval, type PaidPlan } from '../lib/billingView';
 import { CheckoutPendingNote } from '../components/billing/CheckoutPendingNote';
 import { BudgetCategoriesStep } from '../components/onboarding/BudgetCategoriesStep';
 import { ChoosePlanStep } from '../components/onboarding/ChoosePlanStep';
@@ -457,6 +457,10 @@ export function Register() {
   };
 
   const onPlanPaid = async (plan: PaidPlan, interval: BillingInterval, runsBusiness: boolean) => {
+    if (!canCheckoutPlan(plan)) {
+      setError('Pro is not available yet.');
+      return;
+    }
     setError(null);
     setInfo(null);
     setPlanAction(plan);
@@ -615,7 +619,9 @@ export function Register() {
         ) : step === 'usage' ? (
           <>
             <h2>What will you use KoruLedger for?</h2>
-            <p className="page-lead">This sets what you see first. You can change it any time in Settings, and nothing is deleted when you do.</p>
+            <p className="page-lead">
+              Sets the menu and your home page. Business only hides the personal pages from the menu; their data is kept and they still open by address.
+            </p>
             {info ? <p className="auth-info" role="status">{info}</p> : null}
             <form className="auth-form" onSubmit={onUsage}>
               <fieldset className="usage-mode-choices">

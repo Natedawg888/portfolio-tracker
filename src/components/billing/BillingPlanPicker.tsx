@@ -7,6 +7,7 @@ import {
   FREE_FEATURES,
   PLAN_FEATURES,
   PLAN_LABELS,
+  canCheckoutPlan,
   offeredPaidPlans,
   plusFeatureLines,
   priceFor,
@@ -36,6 +37,8 @@ export function BillingPlanPicker({
   paidEnabled = true,
   showFree = false,
   runsBusiness = false,
+  paidPlans,
+  plusLines,
   onChooseFree,
   onChoosePaid,
 }: {
@@ -51,10 +54,14 @@ export function BillingPlanPicker({
   showFree?: boolean;
   /** Signup tick: Plus then lists clients, invoices and stock. */
   runsBusiness?: boolean;
+  /** Settings passes the plans this account may see. Signup leaves this unset. */
+  paidPlans?: readonly PaidPlan[];
+  /** Settings passes Plus lines for the saved usage. Signup leaves this unset. */
+  plusLines?: readonly string[];
   onChooseFree?: () => void;
   onChoosePaid: (plan: PaidPlan) => void;
 }) {
-  const paid = offeredPaidPlans(proPlanEnabled);
+  const paid = (paidPlans ?? offeredPaidPlans(proPlanEnabled)).filter((plan) => canCheckoutPlan(plan));
 
   return (
     <>
@@ -106,15 +113,18 @@ export function BillingPlanPicker({
                 <p className="muted small">Includes GST.</p>
               </div>
               <ul className="billing-plan-features">
-                {(plan === 'plus' ? plusFeatureLines(runsBusiness) : PLAN_FEATURES[plan]).map((f) => (
+                {(plan === 'plus' ? (plusLines ?? plusFeatureLines(runsBusiness)) : PLAN_FEATURES[plan]).map((f) => (
                   <li key={f}>{f}</li>
                 ))}
               </ul>
               <button
                 type="button"
                 className="btn small primary"
-                disabled={busy != null || !canBuy}
-                onClick={() => onChoosePaid(plan)}
+                disabled={busy != null || !canBuy || !canCheckoutPlan(plan)}
+                onClick={() => {
+                  if (!canCheckoutPlan(plan)) return;
+                  onChoosePaid(plan);
+                }}
               >
                 {busy === plan ? 'Opening checkout…' : included ? 'Included in your plan' : `Choose ${PLAN_LABELS[plan]}`}
               </button>
