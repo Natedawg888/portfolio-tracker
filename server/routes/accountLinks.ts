@@ -134,7 +134,16 @@ router.post('/switch', async (req: AuthedRequest, res) => {
     return;
   }
   const db = await getDb();
-  const relation = switchRelation(db, req.user.id, accountId);
+  const current = queryOne<{ persistent: number; device_label: string | null; origin_owner_user_id: string | null }>(
+    db,
+    `SELECT persistent, device_label, origin_owner_user_id FROM sessions WHERE id = ? AND user_id = ?`,
+    [req.user.sessionId, req.user.id],
+  );
+  if (!current) {
+    fail(res, 401, 'UNAUTHORIZED', 'Authentication required');
+    return;
+  }
+  const relation = switchRelation(db, req.user.id, accountId, current.origin_owner_user_id);
   if (!relation) {
     fail(res, 403, 'SWITCH_NOT_ALLOWED', 'You can only switch between your account and a business account linked to it.');
     return;
@@ -146,15 +155,6 @@ router.post('/switch', async (req: AuthedRequest, res) => {
   // Switching into the business (not back to the owner). 2FA must be the account's own login.
   if (relation.originOwnerUserId && isTwoFactorEnabled(db, accountId)) {
     fail(res, 403, 'TWO_FACTOR_REQUIRED', 'That business account uses two-factor authentication, so it can’t be opened by switching.');
-    return;
-  }
-  const current = queryOne<{ persistent: number; device_label: string | null }>(
-    db,
-    `SELECT persistent, device_label FROM sessions WHERE id = ? AND user_id = ?`,
-    [req.user.sessionId, req.user.id],
-  );
-  if (!current) {
-    fail(res, 401, 'UNAUTHORIZED', 'Authentication required');
     return;
   }
   const user = publicUserById(db, accountId);

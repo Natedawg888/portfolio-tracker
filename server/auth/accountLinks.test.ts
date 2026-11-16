@@ -44,6 +44,7 @@ const { handleBillingEvent } = await import('../billing/service.ts');
 const { setStripeClientForTests } = await import('../billing/client.ts');
 const { grantingSubscriptions, saveSubscription, userIdForCustomer } = await import('../billing/store.ts');
 const { settleMarkedLinkedAccounts } = await import('./linkedDeletion.ts');
+const { createSession } = await import('./sessions.ts');
 const { beginTotpSetup, confirmTotpSetup } = await import('./twoFactor.ts');
 const { base32Decode, hotp, totpStep } = await import('./totp.ts');
 const { NO_LOGIN } = await import('./users.ts');
@@ -378,12 +379,45 @@ try {
   await call(pat.jar, 'POST', '/api/account/switch', { accountId: pat.id });
   const afterPw = linksOf((await call(pat.jar, 'GET', '/api/account/links')).json).linked.find((l) => l.id === honeyId);
   check(Boolean(afterPw?.hasOwnLogin && afterPw.canUnlink), 'canUnlink once it has a login');
+  const honeyEmail = queryOne<{ email: string }>(db, `SELECT email FROM users WHERE id = ?`, [honeyId])!.email;
+  const direct = new Map<string, string>();
+  check((await call(direct, 'POST', '/api/auth/login', { email: honeyEmail, password: 'Honey-login-123' })).status === 200, 'business signs in with its own password');
+  const directSwitch = await call(direct, 'POST', '/api/account/switch', { accountId: pat.id });
+  check(directSwitch.status === 403 && directSwitch.json!.code === 'SWITCH_NOT_ALLOWED', 'own-login session cannot switch to the owner');
+  check(((await call(direct, 'GET', '/api/auth/me')).json!.user as Json).id === honeyId, 'refused switch leaves the business signed in');
+  check((await call(pat.jar, 'POST', '/api/account/switch', { accountId: honeyId })).status === 200, 'owner can still switch in');
+  check((await call(pat.jar, 'POST', '/api/account/switch', { accountId: pat.id })).status === 200, 'owner-originated session can switch back');
+
+  const switchedByOwner = new Map<string, string>();
+  check((await call(pat.jar, 'POST', '/api/account/switch', { accountId: honeyId })).status === 200, 'switch in to capture the session');
+  switchedByOwner.set('pt_sid', pat.jar.get('pt_sid')!);
+  check((await call(pat.jar, 'POST', '/api/account/switch', { accountId: pat.id })).status === 200, 'owner returns');
   const unlinked = await call(pat.jar, 'DELETE', `/api/account/links/${honeyId}`);
   check(unlinked.status === 200 && unlinked.json!.ok === true, 'owner unlinks');
   check(!linksOf(unlinked.json!.links as Json).linked.some((l) => l.id === honeyId), 'unlinked account leaves the list');
-  const honeyEmail = queryOne<{ email: string }>(db, `SELECT email FROM users WHERE id = ?`, [honeyId])!.email;
-  const honeyLogin = await call(new Map(), 'POST', '/api/auth/login', { email: honeyEmail, password: 'Honey-login-123' });
-  check(honeyLogin.status === 200, 'unlinked account can sign in on its own');
+  check((await call(switchedByOwner, 'GET', '/api/accounts')).status === 401, 'owner-switched session dies when the owner unlinks');
+  const orphan = await createSession(honeyId, { originOwnerUserId: pat.id });
+  check((await call(new Map([['pt_sid', orphan.rawToken]]), 'GET', '/api/accounts')).status === 401, 'a switched-in session with no link is destroyed');
+  check(!queryOne(db, `SELECT id FROM sessions WHERE id = ?`, [orphan.id]), 'orphan switch session row is gone');
+
+  check((await call(pat.jar, 'POST', '/api/account/links', { email: honeyEmail, password: 'Honey-login-123' })).status === 200, 'relink honey');
+  const switchedForSelf = new Map<string, string>();
+  check((await call(pat.jar, 'POST', '/api/account/switch', { accountId: honeyId })).status === 200, 'switch in before self-unlink');
+  switchedForSelf.set('pt_sid', pat.jar.get('pt_sid')!);
+  check((await call(pat.jar, 'POST', '/api/account/switch', { accountId: pat.id })).status === 200, 'owner returns before self-unlink');
+  check((await call(direct, 'DELETE', `/api/account/links/${honeyId}`)).status === 200, 'business unlinks itself');
+  check((await call(switchedForSelf, 'GET', '/api/accounts')).status === 401, 'owner-switched session dies when the business unlinks');
+
+  check((await call(pat.jar, 'POST', '/api/account/links', { email: honeyEmail, password: 'Honey-login-123' })).status === 200, 'relink honey for 2FA');
+  const switchedFor2fa = new Map<string, string>();
+  check((await call(pat.jar, 'POST', '/api/account/switch', { accountId: honeyId })).status === 200, 'switch in before 2FA');
+  switchedFor2fa.set('pt_sid', pat.jar.get('pt_sid')!);
+  check((await call(pat.jar, 'POST', '/api/account/switch', { accountId: pat.id })).status === 200, 'owner returns before 2FA');
+  const honeySetup = beginTotpSetup(db, honeyId, honeyEmail);
+  const honeyEnabled = confirmTotpSetup(db, honeyId, hotp(base32Decode(honeySetup.secret)!, totpStep()));
+  check(honeyEnabled.ok === true, '2FA enabled on the linked business');
+  check((await call(switchedFor2fa, 'GET', '/api/accounts')).status === 401, 'owner-switched session dies when 2FA is enabled');
+  check(((await call(pat.jar, 'GET', '/api/auth/me')).json!.user as Json).id === pat.id, 'owner session is untouched by 2FA on the business');
 
   resetLoginRateLimitForTest();
   let limited = 0;
@@ -424,7 +458,8 @@ try {
   const purgedNow = (deleted.linkedAccountsPurged as string[]) ?? [];
   check(detached.includes(delChild) && detached.includes(dee.id), 'both links are removed');
   check(marked.includes(delChild) && !marked.includes(dee.id), 'only the no-login business is marked');
-  check(purgedNow.includes(delChild), 'no-login business with no subscription is purged');
+  check(purgedNow.length === 0, 'delete response does not wait for the purge');
+  await settleMarkedLinkedAccounts(db, [delChild]);
   check(!queryOne(db, `SELECT id FROM users WHERE id = ?`, [del.id]), 'personal user row is gone');
   check(!queryOne(db, `SELECT id FROM users WHERE id = ?`, [delChild]), 'purged business user is gone');
   check(!queryOne(db, `SELECT id FROM businesses WHERE user_id = ?`, [delChild]), 'purged business books are gone');
@@ -481,6 +516,42 @@ try {
   check(settled.purged.includes(withSub.id) && !queryOne(db, `SELECT id FROM users WHERE id = ?`, [withSub.id]), 'sweep purges after cancel succeeds');
   check(settled.waiting.includes(liveOnly.id) && Boolean(queryOne(db, `SELECT id FROM users WHERE id = ?`, [liveOnly.id])), 'live subscription still blocks purge');
   check(!stripeCancels.includes('sub_live_only'), 'live subscription is never sent to the test-mode client');
+
+  const parked = await register('park@example.test', 'Park', 'Owner');
+  const unpaidBiz = (await call(parked.jar, 'POST', '/api/account/business', { businessName: 'Unpaid Shop' })).json!.account as Linked;
+  const goneBiz = (await call(parked.jar, 'POST', '/api/account/business', { businessName: 'Gone Shop' })).json!.account as Linked;
+  saveSubscription(db, {
+    id: 'sub_unpaid',
+    userId: unpaidBiz.id,
+    customerId: 'cus_unpaid',
+    plan: 'business',
+    interval: 'month',
+    status: 'unpaid',
+    cancelAtPeriodEnd: false,
+    currentPeriodEnd: null,
+    live: false,
+  });
+  saveSubscription(db, {
+    id: 'sub_missing',
+    userId: goneBiz.id,
+    customerId: 'cus_missing',
+    plan: 'business',
+    interval: 'month',
+    status: 'paused',
+    cancelAtPeriodEnd: false,
+    currentPeriodEnd: null,
+    live: false,
+  });
+  const missingError = Object.assign(new Error('No such subscription'), { code: 'resource_missing' });
+  fake.subscriptions.cancel = async (id: string) => {
+    stripeCancels.push(id);
+    if (id === 'sub_missing') throw missingError;
+    return { id, status: 'canceled' };
+  };
+  check((await call(parked.jar, 'POST', '/api/auth/delete-account', { password: PASS, confirm: 'DELETE' })).status === 200, 'owner of non-terminal subs deletes');
+  await settleMarkedLinkedAccounts(db, [unpaidBiz.id, goneBiz.id]);
+  check(stripeCancels.includes('sub_unpaid') && !queryOne(db, `SELECT id FROM users WHERE id = ?`, [unpaidBiz.id]), 'unpaid subscription is cancelled and the user is purged');
+  check(stripeCancels.includes('sub_missing') && !queryOne(db, `SELECT id FROM users WHERE id = ?`, [goneBiz.id]), 'resource_missing counts as canceled and the user is purged');
 } finally {
   setStripeClientForTests(null);
   server.close();

@@ -322,17 +322,50 @@ export function unlinkBusiness(db: Database, actorId: string, linkedUserId: stri
       error: 'This business account has no login of its own, so it can’t be unlinked. Set a password on it first.',
     };
   }
+  destroySwitchedInSessions(db, linkedUserId, row.owner_user_id);
   run(db, `DELETE FROM account_links WHERE linked_user_id = ?`, [linkedUserId]);
   return { ok: true };
 }
 
+/** Sessions opened by the owner switching in. A direct sign-in has no origin and is kept. */
+export function destroySwitchedInSessions(db: Database, linkedUserId: string, ownerUserId: string): void {
+  run(db, `DELETE FROM sessions WHERE user_id = ? AND origin_owner_user_id = ?`, [linkedUserId, ownerUserId]);
+}
+
 /**
- * Owner → one of its linked accounts, or a linked account → its owner.
- * originOwnerUserId is stored on the new session when the target is the business
- * user, so that session remembers who switched in. Switching back does not ask
- * for a password; the link row is the permission.
+ * Drop a switched-in session whose link is gone. Returns true when the session was destroyed.
+ * Direct sign-ins (no origin) are left alone.
  */
-export function switchRelation(db: Database, fromUserId: string, toUserId: string): { originOwnerUserId: string | null } | null {
+export function destroyOrphanSwitchSession(db: Database, sessionId: string, userId: string): boolean {
+  const row = queryOne<{ origin_owner_user_id: string | null }>(
+    db,
+    `SELECT origin_owner_user_id FROM sessions WHERE id = ? AND user_id = ?`,
+    [sessionId, userId],
+  );
+  const origin = row?.origin_owner_user_id ?? null;
+  if (!origin) return false;
+  const link = queryOne(
+    db,
+    `SELECT id FROM account_links WHERE owner_user_id = ? AND linked_user_id = ?`,
+    [origin, userId],
+  );
+  if (link) return false;
+  run(db, `DELETE FROM sessions WHERE id = ?`, [sessionId]);
+  return true;
+}
+
+/**
+ * Owner → one of its linked accounts, or back to that owner.
+ * Switching back is allowed only when this session was opened by that owner
+ * (origin_owner_user_id). A business that signed in with its own password has
+ * no origin and cannot enter the owner account.
+ */
+export function switchRelation(
+  db: Database,
+  fromUserId: string,
+  toUserId: string,
+  sessionOriginOwnerId: string | null,
+): { originOwnerUserId: string | null } | null {
   const owned = queryOne(
     db,
     `SELECT id FROM account_links WHERE owner_user_id = ? AND linked_user_id = ?`,
@@ -344,7 +377,7 @@ export function switchRelation(db: Database, fromUserId: string, toUserId: strin
     `SELECT id FROM account_links WHERE owner_user_id = ? AND linked_user_id = ?`,
     [toUserId, fromUserId],
   );
-  if (back) return { originOwnerUserId: null };
+  if (back && sessionOriginOwnerId === toUserId) return { originOwnerUserId: null };
   return null;
 }
 
@@ -358,7 +391,8 @@ export type DetachOnDeletion = {
 /**
  * Remove every link this user owns or belongs to.
  * A linked business that can sign in (password, passkey, or single sign-on) is
- * only detached: no pendingDeletion, sessions stay, the account keeps working.
+ * only detached: no pendingDeletion. Sessions the owner switched into are
+ * deleted. A session that business opened itself stays, and the account keeps working.
  * A created account with no login is marked pendingDeletion and signed out.
  * Stripe cancel and the purge run after the personal user is gone
  * (settleMarkedLinkedAccounts) so a billing failure cannot block this deletion.
@@ -368,6 +402,7 @@ export function detachLinksOnAccountDeletion(db: Database, userId: string): Deta
   const markedForDeletion: string[] = [];
   const now = new Date().toISOString();
   for (const linkedId of owned) {
+    destroySwitchedInSessions(db, linkedId, userId);
     if (accountHasOwnLogin(db, linkedId)) continue;
     const prefs = queryOne<{ preferences_json: string | null }>(db, `SELECT preferences_json FROM users WHERE id = ?`, [linkedId]);
     if (prefs) {
@@ -388,6 +423,7 @@ export function detachLinksOnAccountDeletion(db: Database, userId: string): Deta
 export function detachLinkForTwoFactor(db: Database, linkedUserId: string): boolean {
   const ownerId = ownerUserIdOf(db, linkedUserId);
   if (!ownerId) return false;
+  destroySwitchedInSessions(db, linkedUserId, ownerId);
   run(db, `DELETE FROM account_links WHERE linked_user_id = ?`, [linkedUserId]);
   return true;
 }

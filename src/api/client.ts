@@ -526,7 +526,7 @@ export const api = {
           linkedAccountsDetached: string[];
           /** Created accounts with no login, marked for deletion. */
           linkedAccountsMarkedForDeletion: string[];
-          /** Marked accounts purged in this request because no subscription was still granting. */
+          /** Always empty on this response. Purge runs after the response, in the sweep. */
           linkedAccountsPurged: string[];
         };
         sharedDataRemaining: string[];

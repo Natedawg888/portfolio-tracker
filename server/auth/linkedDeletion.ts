@@ -12,7 +12,7 @@
 import type { Database } from 'sql.js';
 import { billingConfig } from '../billing/config.ts';
 import { stripeClient } from '../billing/client.ts';
-import { deleteBillingRowsForUser, grantingSubscriptions } from '../billing/store.ts';
+import { deleteBillingRowsForUser } from '../billing/store.ts';
 import { getDb, queryAll, run } from '../db/index.ts';
 import { logger } from '../lib/logger.ts';
 import { deleteScopedDataForUser, getDataOwnerUserId } from '../lib/userScope.ts';
@@ -20,6 +20,11 @@ import { deleteAvatarFile } from '../lib/uploads.ts';
 import { destroySessionsForUser } from './sessions.ts';
 
 export const LINKED_DELETION_SWEEP_MS = 15 * 60 * 1000;
+
+/** Stripe statuses that are not finished. Canceled and incomplete_expired are terminal. */
+export const NON_TERMINAL_SUBSCRIPTION_STATUSES = ['active', 'trialing', 'past_due', 'unpaid', 'incomplete', 'paused'] as const;
+
+const nonTerminalList = NON_TERMINAL_SUBSCRIPTION_STATUSES.map((s) => `'${s}'`).join(',');
 
 type PendingRow = { id: string; preferences_json: string | null; avatar_url: string | null };
 
@@ -38,14 +43,43 @@ export function listOwnerDeletionPending(db: Database): PendingRow[] {
   });
 }
 
+type SubRef = { stripe_subscription_id: string; livemode: number; status: string };
+
+function nonTerminalSubscriptions(db: Database, userId: string): SubRef[] {
+  return queryAll<SubRef>(
+    db,
+    `SELECT stripe_subscription_id, livemode, status FROM billing_subscriptions
+     WHERE user_id = ? AND status IN (${nonTerminalList})`,
+    [userId],
+  );
+}
+
+/** Stripe already finished this subscription, so the local row can be marked canceled. */
+function stripeCancelAlreadyDone(err: unknown): boolean {
+  const code = err && typeof err === 'object' && 'code' in err ? String((err as { code?: unknown }).code) : '';
+  if (code === 'resource_missing') return true;
+  const message = err instanceof Error ? err.message : String(err);
+  return /already cancell?ed|no such subscription/i.test(message);
+}
+
+function markSubscriptionCanceled(db: Database, userId: string, subscriptionId: string): void {
+  run(db, `UPDATE billing_subscriptions SET status = 'canceled', updated_at = ? WHERE stripe_subscription_id = ? AND user_id = ?`, [
+    new Date().toISOString(),
+    subscriptionId,
+    userId,
+  ]);
+}
+
 /**
- * Cancel granting subscriptions whose livemode matches the current billing
- * config. Other-mode rows are left in place. Never throws.
+ * Cancel non-terminal subscriptions whose livemode matches the current billing
+ * config (active, trialing, past_due, unpaid, incomplete, paused). Other-mode
+ * rows are left in place. Already canceled or missing at Stripe counts as success.
+ * Never throws.
  */
 export async function cancelMarkedSubscriptionBestEffort(db: Database, userId: string): Promise<{ cancelled: string[]; failed: string[] }> {
   const cancelled: string[] = [];
   const failed: string[] = [];
-  const subs = grantingSubscriptions(db, userId);
+  const subs = nonTerminalSubscriptions(db, userId);
   if (subs.length === 0) return { cancelled, failed };
   const cfg = billingConfig();
   if (!cfg.ok) {
@@ -65,13 +99,14 @@ export async function cancelMarkedSubscriptionBestEffort(db: Database, userId: s
     }
     try {
       await stripe.subscriptions.cancel(sub.stripe_subscription_id);
-      run(db, `UPDATE billing_subscriptions SET status = 'canceled', updated_at = ? WHERE stripe_subscription_id = ? AND user_id = ?`, [
-        new Date().toISOString(),
-        sub.stripe_subscription_id,
-        userId,
-      ]);
+      markSubscriptionCanceled(db, userId, sub.stripe_subscription_id);
       cancelled.push(sub.stripe_subscription_id);
     } catch (err) {
+      if (stripeCancelAlreadyDone(err)) {
+        markSubscriptionCanceled(db, userId, sub.stripe_subscription_id);
+        cancelled.push(sub.stripe_subscription_id);
+        continue;
+      }
       logger.error('linked_deletion_cancel_failed', {
         user: userId,
         subscription: sub.stripe_subscription_id,
@@ -116,14 +151,20 @@ export function purgeMarkedLinkedUser(db: Database, userId: string): void {
 
 export type SettleResult = { purged: string[]; waiting: string[] };
 
-/** Retry cancels, then purge anyone who no longer has a granting subscription. */
-export async function settleMarkedLinkedAccounts(db: Database): Promise<SettleResult> {
+/**
+ * Retry cancels, then purge a marked user once no non-terminal subscription
+ * remains in any mode. `onlyUserIds` limits the pass to those accounts
+ * (the personal deletion that just marked them).
+ */
+export async function settleMarkedLinkedAccounts(db: Database, onlyUserIds?: readonly string[]): Promise<SettleResult> {
   const purged: string[] = [];
   const waiting: string[] = [];
+  const only = onlyUserIds ? new Set(onlyUserIds) : null;
   for (const row of listOwnerDeletionPending(db)) {
+    if (only && !only.has(row.id)) continue;
     try {
       await cancelMarkedSubscriptionBestEffort(db, row.id);
-      if (grantingSubscriptions(db, row.id).length > 0) {
+      if (nonTerminalSubscriptions(db, row.id).length > 0) {
         waiting.push(row.id);
         continue;
       }

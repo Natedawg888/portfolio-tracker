@@ -987,12 +987,11 @@ router.post('/delete-account', async (req: AuthedRequest, res) => {
   // 6) User row (preferences_json lives here)
   run(db, `DELETE FROM users WHERE id = ?`, [userId]);
 
-  let linkedAccountsPurged: string[] = [];
-  try {
-    linkedAccountsPurged = (await settleMarkedLinkedAccounts(db)).purged;
-  } catch (err) {
+  // Only the accounts this deletion marked. Do not wait: Stripe must not hold the response.
+  const markedIds = linkDetach.markedForDeletion;
+  void settleMarkedLinkedAccounts(db, markedIds).catch((err) => {
     logger.error('linked_deletion_settle_failed', { error: err instanceof Error ? err.message : String(err) });
-  }
+  });
 
   // Clear cookie for this browser
   res.setHeader('Set-Cookie', clearSessionCookieHeader());
@@ -1009,7 +1008,7 @@ router.post('/delete-account', async (req: AuthedRequest, res) => {
       subscriptionsCancelled,
       linkedAccountsDetached: linkDetach.detached,
       linkedAccountsMarkedForDeletion: linkDetach.markedForDeletion,
-      linkedAccountsPurged,
+      linkedAccountsPurged: [] as string[],
     },
     sharedDataRemaining: [
       'app_settings (locale, currency, timezone defaults)',
