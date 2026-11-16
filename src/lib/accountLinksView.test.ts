@@ -23,6 +23,7 @@ import {
   selfUnlinkName,
   personalBusinessCheckoutRoute,
   personalChoosingBusiness,
+  resetSwitchOnMenuOpen,
   readyCopy,
   routesPersonalToBusinessAccount,
   showAddBusinessAccountMenuRow,
@@ -341,6 +342,9 @@ eq(accountSwitchRowState({ id: 'hive', current: false }, { kind: 'switching', ac
 eq(accountSwitchTarget(otherRow, { kind: 'idle' }), 'honey', 'an inactive row can be switched to');
 eq(accountSwitchTarget(currentRow, { kind: 'idle' }), null, 'the current row does not switch');
 eq(accountSwitchTarget(otherRow, { kind: 'switching', accountId: 'honey' }), null, 'a second switch waits');
+eq(resetSwitchOnMenuOpen({ kind: 'failed', accountId: 'honey', message: 'x' }), true, 'reopening clears a failed switch');
+eq(resetSwitchOnMenuOpen({ kind: 'switching', accountId: 'honey' }), false, 'reopening leaves an in-flight switch locked');
+eq(resetSwitchOnMenuOpen({ kind: 'idle' }), false, 'an idle menu does not reset the lock');
 const failed = accountSwitchRowState(otherRow, {
   kind: 'failed',
   accountId: 'honey',
@@ -385,16 +389,26 @@ eq(
 );
 eq(
   headerAccountContext({ links: null, active: { isLinkedBusiness: true, ownerId: 'pat' } }),
-  { name: null, pill: 'business' },
-  'before the list returns, a linked business shows no person’s name',
+  { name: 'Business account', pill: 'business' },
+  'before the list returns, a linked business is not the person’s name',
 );
 eq(
   headerAccountContext({
     links: businessLinksAllowed,
     active: { isLinkedBusiness: true, ownerId: 'pat' },
+    activeBusinessName: '  ',
   }),
-  { name: null, pill: 'business' },
-  'before the business name is known, the header does not use the person’s name',
+  { name: 'Business account', pill: 'business' },
+  'an empty business-name lookup falls back to Business account',
+);
+eq(
+  headerAccountContext({
+    links: businessLinksAllowed,
+    active: { isLinkedBusiness: true, ownerId: 'pat' },
+    activeBusinessName: null,
+  }),
+  { name: 'Business account', pill: 'business' },
+  'a failed business-name lookup falls back to Business account',
 );
 
 console.log('accountLinksView tests passed');

@@ -383,6 +383,14 @@ export function accountSwitchErrorId(accountId: string): string {
   return `account-switch-error-${accountId}`;
 }
 
+/**
+ * Reopening the menu clears a failed switch so it can be tried again.
+ * An in-flight switch stays locked, so a second tap cannot start another one.
+ */
+export function resetSwitchOnMenuOpen(phase: AccountSwitchPhase): boolean {
+  return phase.kind === 'failed';
+}
+
 /** Only an inactive row, and only while nothing is already switching. */
 export function accountSwitchTarget(row: { id: string; current: boolean }, phase: AccountSwitchPhase): string | null {
   if (row.current || phase.kind === 'switching') return null;
@@ -391,25 +399,26 @@ export function accountSwitchTarget(row: { id: string; current: boolean }, phase
 
 /**
  * Header line for a linked account. Unlinked accounts get null so the header stays as it is.
- * `name` is null until the list (and, for a business, its business name) is known.
- * The person's display name is not used as a stand-in, so the header does not flash it.
+ * A linked business with no business name yet (the lookup is empty or it failed)
+ * uses linkedAccountTitle, which is "Business account", not the person's name.
  */
 export function headerAccountContext(input: {
   links: AccountLinksResponse | null;
   active: { isLinkedBusiness: boolean; ownerId: string | null } | null | undefined;
   activeBusinessName?: string | null;
-}): { name: string | null; pill: 'personal' | 'business' } | null {
+}): { name: string; pill: 'personal' | 'business' } | null {
+  const unnamedBusiness = linkedAccountTitle({ businessName: null, displayName: null });
   if (input.links && showAccountsGroup(input.links)) {
     const current = accountSwitcherRows(input.links, input.activeBusinessName).find((row) => row.current);
     if (current) {
       if (current.pill === 'business' && !input.activeBusinessName?.trim()) {
-        return { name: null, pill: 'business' };
+        return { name: unnamedBusiness, pill: 'business' };
       }
       return { name: current.name, pill: current.pill };
     }
   }
   if (input.active?.isLinkedBusiness && input.active.ownerId) {
-    return { name: null, pill: 'business' };
+    return { name: unnamedBusiness, pill: 'business' };
   }
   return null;
 }

@@ -13,6 +13,7 @@ import {
   accountSwitcherRows,
   businessNameForAccount,
   otherAccountLine,
+  resetSwitchOnMenuOpen,
   showAccountsGroup,
   showAddBusinessAccountMenuRow,
   signOutMenuLabel,
@@ -147,7 +148,7 @@ export function ProfileMenu({
         aria-expanded={open}
         aria-label={`Account menu for ${label}`}
         onClick={() => {
-          if (!open) {
+          if (!open && resetSwitchOnMenuOpen(phase)) {
             setPhase({ kind: 'idle' });
             switchLock.current = false;
           }
