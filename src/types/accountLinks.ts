@@ -27,13 +27,18 @@ export type ActiveAccount = {
   ownerId: string | null;
 };
 
-/** The signed-in account, or the personal owner shown from a linked business. */
+/**
+ * The signed-in account, or the personal owner shown from a linked business.
+ * canUnlink on current is true only when this session is a linked business that
+ * has its own login, so it may DELETE /api/account/links/:itsOwnId.
+ */
 export type AccountLinkParty = {
   id: string;
   displayName: string | null;
   usageMode: UsageMode;
   plan: AccountPlan;
   isLinkedBusiness: boolean;
+  canUnlink: boolean;
 };
 
 /**

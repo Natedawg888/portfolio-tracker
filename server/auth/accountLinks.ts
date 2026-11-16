@@ -128,12 +128,14 @@ function businessNameOf(db: Database, userId: string): string | null {
 
 function party(db: Database, userId: string): AccountLinkParty {
   const row = loadUser(db, userId);
+  const isLinkedBusiness = ownerUserIdOf(db, userId) != null;
   return {
     id: userId,
     displayName: row ? displayNameOf(row) : null,
     usageMode: usageModeFor(db, userId),
     plan: planOf(db, userId),
-    isLinkedBusiness: ownerUserIdOf(db, userId) != null,
+    isLinkedBusiness,
+    canUnlink: isLinkedBusiness && accountHasOwnLogin(db, userId),
   };
 }
 
@@ -307,8 +309,10 @@ export function unlinkBusiness(db: Database, actorId: string, linkedUserId: stri
     [linkedUserId],
   );
   if (!row) return { ok: false, status: 404, code: 'NOT_FOUND', error: 'That linked account was not found.' };
-  if (row.owner_user_id !== actorId) {
-    return { ok: false, status: 403, code: 'NOT_LINK_OWNER', error: 'Only the personal account that linked this business can unlink it.' };
+  const isOwner = row.owner_user_id === actorId;
+  const isSelf = actorId === linkedUserId;
+  if (!isOwner && !isSelf) {
+    return { ok: false, status: 403, code: 'NOT_LINK_OWNER', error: 'Only the personal owner, or this business account itself, can unlink it.' };
   }
   if (!accountHasOwnLogin(db, linkedUserId)) {
     return {
@@ -318,7 +322,7 @@ export function unlinkBusiness(db: Database, actorId: string, linkedUserId: stri
       error: 'This business account has no login of its own, so it can’t be unlinked. Set a password on it first.',
     };
   }
-  run(db, `DELETE FROM account_links WHERE owner_user_id = ? AND linked_user_id = ?`, [actorId, linkedUserId]);
+  run(db, `DELETE FROM account_links WHERE linked_user_id = ?`, [linkedUserId]);
   return { ok: true };
 }
 
@@ -344,18 +348,27 @@ export function switchRelation(db: Database, fromUserId: string, toUserId: strin
   return null;
 }
 
+export type DetachOnDeletion = {
+  /** Every link removed, including businesses that can still sign in. */
+  detached: string[];
+  /** Created accounts with no login. Marked for deletion; sign-in is refused. */
+  markedForDeletion: string[];
+};
+
 /**
- * Safest deletion: detach (remove the link) and mark each owned business user for
- * deletion. Do not wipe their books or cancel their Stripe subscription in this
- * request. A billing failure on a linked account must not stop the personal
- * account from being deleted, and each account keeps its own customer.
- * Sessions for those users are destroyed. Login is refused while the mark is set.
- * When the deleted user is themselves a linked business, only that link is removed.
+ * Remove every link this user owns or belongs to.
+ * A linked business that can sign in (password, passkey, or single sign-on) is
+ * only detached: no pendingDeletion, sessions stay, the account keeps working.
+ * A created account with no login is marked pendingDeletion and signed out.
+ * Stripe cancel and the purge run after the personal user is gone
+ * (settleMarkedLinkedAccounts) so a billing failure cannot block this deletion.
  */
-export function detachLinksOnAccountDeletion(db: Database, userId: string): string[] {
+export function detachLinksOnAccountDeletion(db: Database, userId: string): DetachOnDeletion {
   const owned = queryOwned(db, userId);
+  const markedForDeletion: string[] = [];
   const now = new Date().toISOString();
   for (const linkedId of owned) {
+    if (accountHasOwnLogin(db, linkedId)) continue;
     const prefs = queryOne<{ preferences_json: string | null }>(db, `SELECT preferences_json FROM users WHERE id = ?`, [linkedId]);
     if (prefs) {
       run(db, `UPDATE users SET preferences_json = ?, updated_at = ? WHERE id = ?`, [
@@ -365,7 +378,16 @@ export function detachLinksOnAccountDeletion(db: Database, userId: string): stri
       ]);
     }
     destroySessionsForUser(db, linkedId);
+    markedForDeletion.push(linkedId);
   }
   run(db, `DELETE FROM account_links WHERE owner_user_id = ? OR linked_user_id = ?`, [userId, userId]);
-  return owned;
+  return { detached: owned, markedForDeletion };
+}
+
+/** Drop the link when this business user turns on two-factor sign-in. */
+export function detachLinkForTwoFactor(db: Database, linkedUserId: string): boolean {
+  const ownerId = ownerUserIdOf(db, linkedUserId);
+  if (!ownerId) return false;
+  run(db, `DELETE FROM account_links WHERE linked_user_id = ?`, [linkedUserId]);
+  return true;
 }

@@ -401,7 +401,10 @@ export function linkExistingBusiness(body: LinkExistingBusinessRequest) {
   return req<LinkExistingBusinessResponse>('/account/links', { method: 'POST', body: JSON.stringify(body) });
 }
 
-/** Owner only. Refused with 409 LINKED_ACCOUNT_HAS_NO_LOGIN when that user cannot sign in alone. */
+/**
+ * Owner, or the linked business deleting its own id.
+ * Refused with 409 LINKED_ACCOUNT_HAS_NO_LOGIN when that user cannot sign in alone.
+ */
 export function unlinkAccount(linkedUserId: string) {
   return req<UnlinkAccountResponse>(`/account/links/${encodeURIComponent(linkedUserId)}`, { method: 'DELETE' });
 }
@@ -519,8 +522,12 @@ export const api = {
           scopedTables: Record<string, number>;
           holdingPhotos: number;
           wasDataOwner: boolean;
-          /** Business users detached and marked for deletion. Their books are not wiped here. */
+          /** Every linked business whose connection was removed. */
           linkedAccountsDetached: string[];
+          /** Created accounts with no login, marked for deletion. */
+          linkedAccountsMarkedForDeletion: string[];
+          /** Marked accounts purged in this request because no subscription was still granting. */
+          linkedAccountsPurged: string[];
         };
         sharedDataRemaining: string[];
       }>('/auth/delete-account', {

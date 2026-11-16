@@ -266,6 +266,13 @@ try {
   check((await call(a2, 'DELETE', `/api/auth/identities/${onlySso.identities[0].id}`, { password: 'First-password-1' })).status === 200, 'then it can disconnect');
   check((await call(new Map(), 'POST', '/api/auth/login', { email: 'new@example.test', password: 'First-password-1' })).json!.user, 'and sign in with the password');
 
+  run(db, `UPDATE users SET preferences_json = ? WHERE email = 'linker@example.test'`, [
+    JSON.stringify({ pendingDeletion: { at: new Date().toISOString(), reason: 'owner_account_deleted', formerOwnerUserId: 'former' } }),
+  ]);
+  const pending = await ssoRoundTrip(new Map(), 'google', g('g-sub-3', 'personal@gmail.test'));
+  check(pending.cb.status === 303 && pending.cb.location === '/login?sso_error=ACCOUNT_PENDING_DELETION', 'pending deletion SSO redirects instead of JSON');
+  check(pending.cb.json == null, 'pending deletion SSO body is not JSON');
+
   // Apple: form_post → 303 GET; client secret is an ES256 JWT; name arrives outside the token.
   const appleJar: Jar = new Map();
   const ap = await ssoRoundTrip(

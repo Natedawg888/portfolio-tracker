@@ -143,6 +143,11 @@ router.post('/switch', async (req: AuthedRequest, res) => {
     fail(res, ACCOUNT_PENDING_DELETION.status, ACCOUNT_PENDING_DELETION.code, ACCOUNT_PENDING_DELETION.error);
     return;
   }
+  // Switching into the business (not back to the owner). 2FA must be the account's own login.
+  if (relation.originOwnerUserId && isTwoFactorEnabled(db, accountId)) {
+    fail(res, 403, 'TWO_FACTOR_REQUIRED', 'That business account uses two-factor authentication, so it can’t be opened by switching.');
+    return;
+  }
   const current = queryOne<{ persistent: number; device_label: string | null }>(
     db,
     `SELECT persistent, device_label FROM sessions WHERE id = ? AND user_id = ?`,
@@ -150,6 +155,11 @@ router.post('/switch', async (req: AuthedRequest, res) => {
   );
   if (!current) {
     fail(res, 401, 'UNAUTHORIZED', 'Authentication required');
+    return;
+  }
+  const user = publicUserById(db, accountId);
+  if (!user) {
+    fail(res, 404, 'NOT_FOUND', 'That account was not found.');
     return;
   }
   const created = await createSession(accountId, {
@@ -162,11 +172,6 @@ router.post('/switch', async (req: AuthedRequest, res) => {
   const label = current.device_label;
   recordAuthEvent(db, accountId, 'account_switch', { method: 'account_switch', deviceLabel: label, sessionId: created.id });
   recordAuthEvent(db, req.user.id, 'account_switch', { method: 'account_switch', deviceLabel: label });
-  const user = publicUserById(db, accountId);
-  if (!user) {
-    fail(res, 401, 'UNAUTHORIZED', 'Authentication required');
-    return;
-  }
   res.json({ ok: true, user, activeAccount: user.activeAccount });
 });
 

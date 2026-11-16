@@ -50,6 +50,8 @@ import { shareBase } from './invoices.ts';
 import { exportAccountData } from '../lib/accountExport.ts';
 import { composeDisplayName, createUserAccount, hasPassword } from '../auth/users.ts';
 import { ACCOUNT_PENDING_DELETION, activeAccountFor, detachLinksOnAccountDeletion, isPendingDeletion } from '../auth/accountLinks.ts';
+import { settleMarkedLinkedAccounts } from '../auth/linkedDeletion.ts';
+import { logger } from '../lib/logger.ts';
 import { deleteScopedDataForUser, getDataOwnerUserId } from '../lib/userScope.ts';
 import { mayClaimExistingFinance } from '../lib/dataClaim.ts';
 import { billingConfig } from '../billing/config.ts';
@@ -968,10 +970,10 @@ router.post('/delete-account', async (req: AuthedRequest, res) => {
   deleteBillingRowsForUser(db, userId);
   run(db, `DELETE FROM email_changes WHERE user_id = ?`, [userId]);
 
-  // Linked business accounts: detach and mark them for deletion. Their books and Stripe
-  // customer stay (see detachLinksOnAccountDeletion). Do this only after this account's
-  // own subscription cancel succeeded, so a billing failure here does not mark them.
-  const linkedAccountsDetached = detachLinksOnAccountDeletion(db, userId);
+  // Links come off after this account's own subscription cancel succeeded.
+  // Login-capable businesses are only detached. No-login ones are marked; their
+  // Stripe cancel is best-effort after this user is gone and never blocks this response.
+  const linkDetach = detachLinksOnAccountDeletion(db, userId);
 
   // 5) data owner: cleared, never handed to another account. The owner role unlocks the
   //    server's shared Akahu token (the owner's bank feed) and the owner's legacy GoMining /
@@ -984,6 +986,13 @@ router.post('/delete-account', async (req: AuthedRequest, res) => {
 
   // 6) User row (preferences_json lives here)
   run(db, `DELETE FROM users WHERE id = ?`, [userId]);
+
+  let linkedAccountsPurged: string[] = [];
+  try {
+    linkedAccountsPurged = (await settleMarkedLinkedAccounts(db)).purged;
+  } catch (err) {
+    logger.error('linked_deletion_settle_failed', { error: err instanceof Error ? err.message : String(err) });
+  }
 
   // Clear cookie for this browser
   res.setHeader('Set-Cookie', clearSessionCookieHeader());
@@ -998,7 +1007,9 @@ router.post('/delete-account', async (req: AuthedRequest, res) => {
       holdingPhotos: scoped.photosRemoved,
       wasDataOwner: wasOwner,
       subscriptionsCancelled,
-      linkedAccountsDetached,
+      linkedAccountsDetached: linkDetach.detached,
+      linkedAccountsMarkedForDeletion: linkDetach.markedForDeletion,
+      linkedAccountsPurged,
     },
     sharedDataRemaining: [
       'app_settings (locale, currency, timezone defaults)',

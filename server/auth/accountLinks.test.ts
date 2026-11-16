@@ -31,7 +31,7 @@ function check(cond: unknown, msg: string): void {
   passed++;
 }
 
-const { getDb, queryAll, queryOne } = await import('../db/index.ts');
+const { getDb, queryAll, queryOne, run } = await import('../db/index.ts');
 const { attachUser, requireAuth, isPublicApiPath } = await import('../middleware/requireAuth.ts');
 const { default: authRouter } = await import('../routes/auth.ts');
 const { default: settingsRouter } = await import('../routes/settings.ts');
@@ -42,7 +42,10 @@ const { planOf, setPlan } = await import('../lib/entitlements.ts');
 const { billingConfig } = await import('../billing/config.ts');
 const { handleBillingEvent } = await import('../billing/service.ts');
 const { setStripeClientForTests } = await import('../billing/client.ts');
-const { grantingSubscriptions, userIdForCustomer } = await import('../billing/store.ts');
+const { grantingSubscriptions, saveSubscription, userIdForCustomer } = await import('../billing/store.ts');
+const { settleMarkedLinkedAccounts } = await import('./linkedDeletion.ts');
+const { beginTotpSetup, confirmTotpSetup } = await import('./twoFactor.ts');
+const { base32Decode, hotp, totpStep } = await import('./totp.ts');
 const { NO_LOGIN } = await import('./users.ts');
 const { LINKED_ACCOUNT_EMAIL_DOMAIN } = await import('./accountLinks.ts');
 const { resetLoginRateLimitForTest } = await import('./loginRateLimit.ts');
@@ -190,7 +193,7 @@ try {
   );
 
   const fromHoney = linksOf((await call(pat.jar, 'GET', '/api/account/links')).json);
-  check(fromHoney.current.id === honeyId && fromHoney.current.isLinkedBusiness === true, 'list current is the business');
+  check(fromHoney.current.id === honeyId && fromHoney.current.isLinkedBusiness === true && fromHoney.current.canUnlink === false, 'list current is the business without a login');
   check(fromHoney.owner?.id === pat.id && fromHoney.owner.usageMode === 'personal' && fromHoney.linked.length === 0, 'business sees its owner and no children');
 
   const honeyBanks = (await call(pat.jar, 'GET', '/api/accounts')).json as { name?: string }[];
@@ -234,6 +237,8 @@ try {
   const subs = new Map<string, FakeSub>();
   const checkoutCalls: Record<string, unknown>[] = [];
   const createdCustomers: { id: string; email?: string; metadata?: { user_id?: string } }[] = [];
+  const stripeCancels: string[] = [];
+  let failStripeCancel = false;
   const fake = {
     customers: {
       create: async (params: { email?: string; metadata?: { user_id?: string } }) => {
@@ -254,6 +259,11 @@ try {
       },
     },
     subscriptions: {
+      cancel: async (id: string) => {
+        stripeCancels.push(id);
+        if (failStripeCancel) throw new Error('stripe down');
+        return { id, status: 'canceled' };
+      },
       retrieve: async (id: string) => {
         const s = subs.get(id);
         if (!s) throw new Error(`missing ${id}`);
@@ -313,6 +323,11 @@ try {
   check(sibling.status === 403 && sibling.json!.code === 'SWITCH_NOT_ALLOWED', 'cannot switch from one linked business to another');
   const backFromSecond = await call(pat.jar, 'POST', '/api/account/switch', { accountId: pat.id });
   check(backFromSecond.status === 200, 'linked business switches back to the owner');
+  const ownerSid = pat.jar.get('pt_sid');
+  run(db, `DELETE FROM users WHERE id = ?`, [secondId]);
+  const missingUser = await call(pat.jar, 'POST', '/api/account/switch', { accountId: secondId });
+  check(missingUser.status === 404 && missingUser.json!.code === 'NOT_FOUND', 'missing target does not switch');
+  check(pat.jar.get('pt_sid') === ownerSid && queryOne(db, `SELECT id FROM sessions WHERE user_id = ?`, [pat.id]), 'failed switch leaves the original session');
 
   const wrong = await call(pat.jar, 'POST', '/api/account/links', { email: bea.email, password: 'not-the-password' });
   check(wrong.status === 401 && wrong.json!.code === 'INVALID_CREDENTIALS', 'wrong password refused');
@@ -325,7 +340,7 @@ try {
   const beaItem = linksOf(linked.json!.links as Json).linked.find((l) => l.id === bea.id);
   check(Boolean(beaItem && beaItem.hasOwnLogin && beaItem.canUnlink && beaItem.plan === 'free'), 'linked existing account can be unlinked');
   const beaView = linksOf((await call(bea.jar, 'GET', '/api/account/links')).json);
-  check(beaView.owner?.id === pat.id && beaView.current.isLinkedBusiness === true && beaView.linked.length === 0, 'existing business lists its owner');
+  check(beaView.owner?.id === pat.id && beaView.owner.canUnlink === false && beaView.current.isLinkedBusiness === true && beaView.current.canUnlink === true && beaView.linked.length === 0, 'existing business lists its owner and can unlink itself');
   const toBea = await call(pat.jar, 'POST', '/api/account/switch', { accountId: bea.id });
   check(toBea.status === 200 && (toBea.json!.user as Json).id === bea.id, 'switch to a linked existing account');
   check((await call(pat.jar, 'POST', '/api/account/switch', { accountId: pat.id })).status === 200, 'switch back from the linked account');
@@ -334,9 +349,25 @@ try {
   const stolen = await call(nia.jar, 'POST', '/api/account/links', { email: bea.email, password: PASS });
   check(stolen.status === 409 && stolen.json!.code === 'ALREADY_LINKED', 'already linked to one owner');
 
+  run(db, `UPDATE users SET totp_secret_enc = 'sealed', totp_enabled_at = ? WHERE id = ?`, [new Date().toISOString(), bea.id]);
+  const patSid = pat.jar.get('pt_sid');
+  const twoFactorSwitch = await call(pat.jar, 'POST', '/api/account/switch', { accountId: bea.id });
+  check(twoFactorSwitch.status === 403 && twoFactorSwitch.json!.code === 'TWO_FACTOR_REQUIRED', 'cannot switch into a business with 2FA');
+  check(pat.jar.get('pt_sid') === patSid && ((await call(pat.jar, 'GET', '/api/auth/me')).json!.user as Json).id === pat.id, 'refused 2FA switch keeps the owner session');
+  run(db, `UPDATE users SET totp_secret_enc = NULL, totp_enabled_at = NULL WHERE id = ?`, [bea.id]);
+  const selfFromBea = await call(bea.jar, 'DELETE', `/api/account/links/${bea.id}`);
+  check(selfFromBea.status === 200 && !linksOf(selfFromBea.json!.links as Json).owner, 'linked business with a login unlinks itself');
+  check((await call(pat.jar, 'POST', '/api/account/links', { email: bea.email, password: PASS })).status === 200, 'owner can link the business again');
+  const setup = beginTotpSetup(db, bea.id, bea.email);
+  const enabled = confirmTotpSetup(db, bea.id, hotp(base32Decode(setup.secret)!, totpStep()));
+  check(enabled.ok === true && !queryOne(db, `SELECT id FROM account_links WHERE linked_user_id = ?`, [bea.id]), 'turning 2FA on removes the link');
+  check((await call(pat.jar, 'POST', '/api/account/switch', { accountId: bea.id })).json!.code === 'SWITCH_NOT_ALLOWED', 'no link left to switch into');
+  const relink = await call(pat.jar, 'POST', '/api/account/links', { email: bea.email, password: PASS });
+  check(relink.status === 403 && relink.json!.code === 'TWO_FACTOR_REQUIRED', 'cannot re-link while 2FA is on');
+
   await call(pat.jar, 'POST', '/api/account/switch', { accountId: honeyId });
   const selfUnlink = await call(pat.jar, 'DELETE', `/api/account/links/${honeyId}`);
-  check(selfUnlink.status === 403 && selfUnlink.json!.code === 'NOT_LINK_OWNER', 'the business cannot unlink itself');
+  check(selfUnlink.status === 409 && selfUnlink.json!.code === 'LINKED_ACCOUNT_HAS_NO_LOGIN', 'a no-login business cannot unlink itself');
   await call(pat.jar, 'POST', '/api/account/switch', { accountId: pat.id });
   const blockedUnlink = await call(pat.jar, 'DELETE', `/api/account/links/${honeyId}`);
   check(blockedUnlink.status === 409 && blockedUnlink.json!.code === 'LINKED_ACCOUNT_HAS_NO_LOGIN', 'no-login account cannot be unlinked');
@@ -387,24 +418,69 @@ try {
   check((await call(del.jar, 'POST', '/api/account/links', { email: dee.email, password: PASS })).status === 200, 'del links dee');
   const removed = await call(del.jar, 'POST', '/api/auth/delete-account', { password: PASS, confirm: 'DELETE' });
   check(removed.status === 200, `delete personal account (${removed.status} ${removed.text})`);
-  const detached = ((removed.json!.deleted as Json).linkedAccountsDetached as string[]) ?? [];
-  check(detached.includes(delChild) && detached.includes(dee.id), 'both linked accounts are reported');
+  const deleted = removed.json!.deleted as Json;
+  const detached = (deleted.linkedAccountsDetached as string[]) ?? [];
+  const marked = (deleted.linkedAccountsMarkedForDeletion as string[]) ?? [];
+  const purgedNow = (deleted.linkedAccountsPurged as string[]) ?? [];
+  check(detached.includes(delChild) && detached.includes(dee.id), 'both links are removed');
+  check(marked.includes(delChild) && !marked.includes(dee.id), 'only the no-login business is marked');
+  check(purgedNow.includes(delChild), 'no-login business with no subscription is purged');
   check(!queryOne(db, `SELECT id FROM users WHERE id = ?`, [del.id]), 'personal user row is gone');
+  check(!queryOne(db, `SELECT id FROM users WHERE id = ?`, [delChild]), 'purged business user is gone');
+  check(!queryOne(db, `SELECT id FROM businesses WHERE user_id = ?`, [delChild]), 'purged business books are gone');
   check(!queryOne(db, `SELECT id FROM account_links WHERE owner_user_id = ? OR linked_user_id IN (?, ?)`, [del.id, delChild, dee.id]), 'links removed');
-  for (const id of [delChild, dee.id]) {
-    const prefs = JSON.parse(queryOne<{ preferences_json: string }>(db, `SELECT preferences_json FROM users WHERE id = ?`, [id])!.preferences_json) as {
-      pendingDeletion?: { reason?: string; formerOwnerUserId?: string };
-    };
-    check(prefs.pendingDeletion?.reason === 'owner_account_deleted' && prefs.pendingDeletion.formerOwnerUserId === del.id, `marked for deletion ${id}`);
-    check(!queryOne(db, `SELECT id FROM sessions WHERE user_id = ?`, [id]), `sessions destroyed ${id}`);
-  }
-  check(Boolean(queryOne(db, `SELECT id FROM businesses WHERE user_id = ? AND name = 'Del Honey'`, [delChild])), 'created business books kept');
+  const deePrefs = JSON.parse(queryOne<{ preferences_json: string }>(db, `SELECT preferences_json FROM users WHERE id = ?`, [dee.id])!.preferences_json) as {
+    pendingDeletion?: unknown;
+  };
+  check(deePrefs.pendingDeletion == null, 'login-capable business is not marked for deletion');
   check(Boolean(queryOne(db, `SELECT id FROM bank_accounts WHERE user_id = ? AND name = 'Dee trading'`, [dee.id])), 'linked account books kept');
   const deeLogin = await call(new Map(), 'POST', '/api/auth/login', { email: dee.email, password: PASS });
-  check(deeLogin.status === 403 && deeLogin.json!.code === 'ACCOUNT_PENDING_DELETION', 'marked account cannot sign in');
+  check(deeLogin.status === 200, 'login-capable business can still sign in');
   check((await call(pat.jar, 'GET', '/api/auth/me')).json && ((await call(pat.jar, 'GET', '/api/auth/me')).json!.user as Json).id === pat.id, 'other users stay signed in');
   check(queryOne<{ value: string }>(db, `SELECT value FROM meta WHERE key = 'data_owner_user_id'`)?.value === pat.id, 'data owner unchanged');
   check(process.env.STRIPE_LIVE_ENABLED == null, 'STRIPE_LIVE_ENABLED stays unset');
+
+  const bill = await register('bill@example.test', 'Bill', 'Owner');
+  const withSub = (await call(bill.jar, 'POST', '/api/account/business', { businessName: 'Billed Shop' })).json!.account as Linked;
+  const liveOnly = (await call(bill.jar, 'POST', '/api/account/business', { businessName: 'Live Shop' })).json!.account as Linked;
+  saveSubscription(db, {
+    id: 'sub_marked',
+    userId: withSub.id,
+    customerId: 'cus_marked',
+    plan: 'business',
+    interval: 'month',
+    status: 'active',
+    cancelAtPeriodEnd: false,
+    currentPeriodEnd: null,
+    live: false,
+  });
+  saveSubscription(db, {
+    id: 'sub_live_only',
+    userId: liveOnly.id,
+    customerId: 'cus_live_only',
+    plan: 'business',
+    interval: 'month',
+    status: 'active',
+    cancelAtPeriodEnd: false,
+    currentPeriodEnd: null,
+    live: true,
+  });
+  failStripeCancel = true;
+  const beforeCancels = stripeCancels.length;
+  const billGone = await call(bill.jar, 'POST', '/api/auth/delete-account', { password: PASS, confirm: 'DELETE' });
+  check(billGone.status === 200, `personal deletion proceeds when Stripe cancel fails (${billGone.status} ${billGone.text})`);
+  check(stripeCancels.includes('sub_marked') && !stripeCancels.includes('sub_live_only'), 'test-mode subscription is cancelled; live mode is not, while the key is a test key');
+  check(stripeCancels.length === beforeCancels + 1, 'one cancel attempt');
+  check(Boolean(queryOne(db, `SELECT id FROM users WHERE id = ?`, [withSub.id])), 'failed cancel leaves the marked user');
+  check(!((billGone.json!.deleted as Json).linkedAccountsPurged as string[]).includes(withSub.id), 'failed cancel does not purge');
+  check(!((billGone.json!.deleted as Json).linkedAccountsPurged as string[]).includes(liveOnly.id), 'live subscription blocks purge');
+  const stillWaiting = await settleMarkedLinkedAccounts(db);
+  check(stillWaiting.waiting.includes(withSub.id) && stillWaiting.waiting.includes(liveOnly.id) && stripeCancels.filter((id) => id === 'sub_marked').length === 2, 'sweep retries the failed cancel');
+  failStripeCancel = false;
+  const settled = await settleMarkedLinkedAccounts(db);
+  check(settled.purged.includes(withSub.id) && !queryOne(db, `SELECT id FROM users WHERE id = ?`, [withSub.id]), 'sweep purges after cancel succeeds');
+  check(settled.waiting.includes(liveOnly.id) && Boolean(queryOne(db, `SELECT id FROM users WHERE id = ?`, [liveOnly.id])), 'live subscription still blocks purge');
+  check(!stripeCancels.includes('sub_live_only'), 'live subscription is never sent to the test-mode client');
 } finally {
   setStripeClientForTests(null);
   server.close();

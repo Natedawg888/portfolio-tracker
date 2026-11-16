@@ -26,7 +26,7 @@ export const DELETED_ITEMS: readonly string[] = [
   'Your Plus, Pro or Business subscription: it’s cancelled first, with no further charges',
   'Supermarket prices you shared',
   'Your place in a household, what you shared with it, and your name in its history',
-  'Business accounts created or linked from this personal account: the connection is removed, they are signed out, and they are marked for deletion',
+  'A business account created from this one that cannot sign in on its own: the connection is removed and the account is marked for deletion. Its subscription is cancelled when billing can reach it, then its books are removed',
 ];
 
 /** What stays after deletion. Only what truly remains; keep in step with the delete route. */
@@ -38,6 +38,6 @@ export const KEPT_ITEMS: readonly { text: string; link?: { href: string; label: 
   { text: 'Your consent with Akahu itself. End it at', link: { href: 'https://my.akahu.nz', label: 'my.akahu.nz' } },
   { text: 'Receipts for anything you paid. Stripe, who takes the payments, keeps them for tax records. KoruLedger never sees your card number.' },
   {
-    text: 'The books on a linked business account, until that deletion is finished. Deleting this account does not cancel a subscription billed to a linked business account. Cancel that plan on the business account first if you do not want further charges.',
+    text: 'A business account you linked that can sign in on its own. Deleting this personal account only removes the connection. That account, its books, and its subscription stay.',
   },
 ];
