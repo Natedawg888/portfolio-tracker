@@ -6,6 +6,9 @@
  * Business (KAN-125) is sold here too. A Business subscription grants the business reports
  * (P&L, GST return, accountant export, accountant access) and not the Plus or Pro features.
  * An operator can still grant Business with `npm run plan:set` or PLAN_BUSINESS_EMAILS.
+ *
+ * Pro stays in this catalog (lookup keys and amounts). New checkout for Pro is gated by
+ * PRO_PLAN_ENABLED in proPlan.ts, off unless that variable is set.
  */
 export const BILLING_PLANS = ['plus', 'pro', 'business'] as const;
 export type BillingPlan = (typeof BILLING_PLANS)[number];

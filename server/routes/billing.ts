@@ -11,6 +11,7 @@ import { logger } from '../lib/logger.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { CATALOG, isBillingInterval, isBillingPlan } from '../billing/catalog.ts';
 import { billingConfig } from '../billing/config.ts';
+import { proPlanEnabled } from '../billing/proPlan.ts';
 import { BillingError, createCheckout, createPortal, handleBillingEvent } from '../billing/service.ts';
 import { customerIdFor, grantingSubscriptions } from '../billing/store.ts';
 import { shareBase } from './invoices.ts';
@@ -50,6 +51,7 @@ router.get('/', async (req: AuthedRequest, res) => {
         }
       : null,
     canManage: cfg.ok && customerIdFor(db, userId, live) != null,
+    proPlanEnabled: proPlanEnabled(),
     prices: CATALOG.map((c) => ({ plan: c.plan, interval: c.interval, amountCents: c.amountCents })),
   });
 });
@@ -58,8 +60,17 @@ router.post('/checkout', async (req: AuthedRequest, res) => {
   const cfg = billingConfig();
   if (!cfg.ok) return unavailable(res);
   const { plan, interval } = (req.body ?? {}) as { plan?: unknown; interval?: unknown };
+  if (plan === 'pro' && !proPlanEnabled()) {
+    res.status(400).json({ error: 'Pro is not available yet', code: 'PRO_UNAVAILABLE' });
+    return;
+  }
   if (!isBillingPlan(plan) || !isBillingInterval(interval)) {
-    res.status(400).json({ error: 'Choose Plus, Pro or Business, monthly or yearly.', code: 'BAD_PLAN' });
+    res.status(400).json({
+      error: proPlanEnabled()
+        ? 'Choose Plus, Pro or Business, monthly or yearly.'
+        : 'Choose Plus or Business, monthly or yearly.',
+      code: 'BAD_PLAN',
+    });
     return;
   }
   const db = await getDb();

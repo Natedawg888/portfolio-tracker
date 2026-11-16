@@ -1,5 +1,5 @@
 /** Settings → Plan wording (KAN-52). Run: npm run test:billing */
-import { formatNzd, priceFor, priceText, subscriptionLine, yearlySavingPct, type BillingPrice } from './billingView.ts';
+import { formatNzd, offeredPaidPlans, priceFor, priceText, subscriptionLine, yearlySavingPct, type BillingPrice } from './billingView.ts';
 
 function eq(a: unknown, b: unknown, msg: string): void {
   if (a !== b) throw new Error(`FAIL: ${msg}: got ${JSON.stringify(a)}, want ${JSON.stringify(b)}`);
@@ -26,6 +26,9 @@ eq(yearlySavingPct(prices, 'plus'), 33, 'Plus yearly saves 33%');
 eq(yearlySavingPct(prices, 'pro'), 37, 'Pro yearly saves 37%');
 eq(yearlySavingPct(prices, 'business'), 30, 'Business yearly saves 30%');
 eq(yearlySavingPct([{ plan: 'plus', interval: 'month', amountCents: 100 }, { plan: 'plus', interval: 'year', amountCents: 1200 }], 'plus'), null, 'no saving, no badge');
+eq(offeredPaidPlans(false).join(), 'plus,business', 'Pro is hidden unless the flag is on');
+eq(offeredPaidPlans(true).join(), 'plus,pro,business', 'PRO_PLAN_ENABLED offers Pro again');
+eq(offeredPaidPlans(false).includes('plus') && offeredPaidPlans(false).includes('business'), true, 'Plus and Business stay on sale');
 
 const base = { plan: 'plus' as const, interval: 'year' as const, status: 'active', cancelAtPeriodEnd: false, currentPeriodEnd: '2026-12-02T00:00:00.000Z' };
 eq(subscriptionLine(base), 'Billed yearly. Renews on 2 December 2026.', 'active, NZ date');

@@ -68,15 +68,15 @@ const FEATURES: { title: string; text: string; icon: ReactNode }[] = [
   },
 ];
 
-/** Only claims confirmed against the code: Akahu reads only, no provider passwords, no invented prices. */
+/** Only claims confirmed against the code: you enter or import figures, no bank passwords, no invented prices. */
 const PRIVACY_POINTS: { title: string; text: string }[] = [
   {
-    title: 'Bank connections are read-only',
-    text: 'Accounts connect through Akahu, and the app only reads balances and transactions. It has no way to move money.',
+    title: 'You add the bank numbers',
+    text: 'Enter bank balances and transactions yourself, or import them from a CSV. KoruLedger records what you give it and has no way to move money.',
   },
   {
-    title: 'No bank or KiwiSaver passwords stored',
-    text: 'You sign in to your bank on Akahu’s side, and KiwiSaver comes in through Akahu or a file you export. Your own password is stored hashed.',
+    title: 'No bank passwords stored',
+    text: 'KiwiSaver comes from a file you export or amounts you type in. Your KoruLedger password is stored hashed.',
   },
   {
     title: 'Missing numbers stay missing',
@@ -135,7 +135,7 @@ export function Home() {
             <CallToAction />
             <p className="home-padlock">
               <Padlock />
-              Bank connections are read-only through Akahu
+              Enter balances yourself, or import a CSV
             </p>
           </div>
           <PreviewCard />
@@ -157,7 +157,7 @@ export function Home() {
         <section id="privacy" className="home-section home-privacy" aria-labelledby="privacy-title">
           <h2 id="privacy-title">Your numbers, kept honest</h2>
           <p className="home-section-lead">
-            KoruLedger shows what is really there: balances from your bank, prices from real sources, and an empty
+            KoruLedger shows what is really there: balances you enter or import, prices from real sources, and an empty
             space where something isn’t known.
           </p>
           <ul className="home-checklist">

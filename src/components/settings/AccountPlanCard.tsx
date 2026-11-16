@@ -1,7 +1,8 @@
 /**
- * Settings → Account → Plan (KAN-52): the account's plan, and Plus, Pro or Business through Stripe.
- * Checkout and plan changes happen on Stripe's own pages; the plan here follows Stripe's
- * webhook, so after checkout it can take a few seconds to show.
+ * Settings → Account → Plan (KAN-52): the account's plan, and Plus or Business through Stripe.
+ * Pro is listed only when the server has PRO_PLAN_ENABLED set. Checkout and plan changes happen
+ * on Stripe's own pages; the plan here follows Stripe's webhook, so after checkout it can take
+ * a few seconds to show. An existing Pro grant or subscription still shows as Pro.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -10,15 +11,13 @@ import { showQuietToast } from '../../lib/quietToast';
 import {
   PLAN_FEATURES,
   PLAN_LABELS,
+  offeredPaidPlans,
   priceFor,
   priceText,
   subscriptionLine,
   yearlySavingPct,
   type BillingInterval,
-  type PaidPlan,
 } from '../../lib/billingView';
-
-const PAID: PaidPlan[] = ['plus', 'pro', 'business'];
 
 export function AccountPlanCard() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -110,7 +109,7 @@ export function AccountPlanCard() {
             ))}
           </div>
           <ul className="billing-plans">
-            {PAID.map((plan) => {
+            {offeredPaidPlans(status.proPlanEnabled === true).map((plan) => {
               const price = priceFor(status.prices, plan, interval);
               const saving = interval === 'year' ? yearlySavingPct(status.prices, plan) : null;
               const current = status.plan === plan || (status.plan === 'pro' && plan === 'plus');

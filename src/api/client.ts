@@ -347,6 +347,8 @@ export type BillingStatus = {
     currentPeriodEnd: string | null;
   } | null;
   canManage: boolean;
+  /** False unless the server has PRO_PLAN_ENABLED set. Existing Pro plans still report plan: 'pro'. */
+  proPlanEnabled: boolean;
   prices: { plan: 'plus' | 'pro' | 'business'; interval: 'month' | 'year'; amountCents: number }[];
 };
 
