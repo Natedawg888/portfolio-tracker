@@ -16,7 +16,7 @@ const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pt-billing-'));
 process.env.DATABASE_PATH = path.join(dataDir, 'portfolio.db');
 process.env.AUTH_ENCRYPTION_KEY = 'd'.repeat(64);
 process.env.PUBLIC_URL = 'https://app.example.test/';
-for (const k of ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'STRIPE_LIVE_ENABLED', 'STRIPE_GST_TAX_RATE_ID', 'STRIPE_PORTAL_CONFIG_ID', 'PLAN_PLUS_EMAILS', 'PLAN_PRO_EMAILS', 'PLAN_BUSINESS_EMAILS', 'PRO_PLAN_ENABLED']) {
+for (const k of ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'STRIPE_LIVE_ENABLED', 'STRIPE_GST_TAX_RATE_ID', 'STRIPE_PORTAL_CONFIG_ID', 'STRIPE_PORTAL_CONFIG_BUSINESS', 'PLAN_PLUS_EMAILS', 'PLAN_PRO_EMAILS', 'PLAN_BUSINESS_EMAILS', 'PRO_PLAN_ENABLED']) {
   delete process.env[k];
 }
 
@@ -30,6 +30,8 @@ const { billingConfig } = await import('./config.ts');
 const { catalogByLookupKey, catalogPrice } = await import('./catalog.ts');
 const { proPlanEnabled } = await import('./proPlan.ts');
 const { catalogForSubscription } = await import('./service.ts');
+const { BUSINESS_ACCOUNT_CHECKOUT_ERROR, PRO_CHECKOUT_ERROR, businessCheckoutBlock, priceChangeDecision, proCheckoutBlock } = await import('./planGuards.ts');
+const { BUSINESS_PORTAL_METADATA_KEY, BUSINESS_PORTAL_METADATA_VALUE, findOrCreateBusinessCancelOnlyPortal } = await import('./portalConfig.ts');
 const { setStripeClientForTests } = await import('./client.ts');
 const { createSession, SESSION_COOKIE } = await import('../auth/sessions.ts');
 const { hashPassword } = await import('../auth/passwords.ts');
@@ -47,6 +49,9 @@ const liveOn = billingConfig({ STRIPE_SECRET_KEY: 'sk_live_1', STRIPE_LIVE_ENABL
 assert(liveOn.ok && liveOn.config.live, 'live only with STRIPE_LIVE_ENABLED=1');
 const testCfg = billingConfig({ STRIPE_SECRET_KEY: ' sk_test_1 ', STRIPE_WEBHOOK_SECRET: 'whsec_x' });
 assert(testCfg.ok && !testCfg.config.live && testCfg.config.secretKey === 'sk_test_1', 'test key on, trimmed');
+const pinnedPortal = billingConfig({ STRIPE_SECRET_KEY: 'sk_test_1', STRIPE_PORTAL_CONFIG_BUSINESS: ' bpc_biz ' });
+assert(pinnedPortal.ok && pinnedPortal.config.portalBusinessConfigId === 'bpc_biz' && pinnedPortal.config.portalConfigId === null && !pinnedPortal.config.live, 'business portal id is trimmed and does not enable live');
+assert(!billingConfig({ STRIPE_SECRET_KEY: 'sk_live_1', STRIPE_PORTAL_CONFIG_BUSINESS: 'bpc_biz' }).ok, 'a portal id does not turn a live key on');
 
 // --- Catalog: the prices in the ticket, GST included.
 assert(catalogPrice('plus', 'month').amountCents === 999 && catalogPrice('plus', 'year').amountCents === 7999, 'Plus NZ$9.99 / $79.99');
@@ -55,7 +60,101 @@ assert(catalogPrice('business', 'month').amountCents === 2999 && catalogPrice('b
 assert(catalogPrice('business', 'month').lookupKey === 'koruledger_business_monthly' && catalogPrice('business', 'year').lookupKey === 'koruledger_business_yearly', 'Business lookup keys');
 assert(catalogByLookupKey('koruledger_pro_yearly')?.plan === 'pro' && catalogByLookupKey('koruledger_business_yearly')?.plan === 'business' && catalogByLookupKey('other') === null, 'lookup keys');
 assert(proPlanEnabled({}) === false && proPlanEnabled({ PRO_PLAN_ENABLED: '' }) === false && proPlanEnabled({ PRO_PLAN_ENABLED: '0' }) === false, 'Pro sales default off');
+assert(proPlanEnabled({ PRO_PLAN_ENABLED: 'false' }) === false && proPlanEnabled({ PRO_PLAN_ENABLED: 'no' }) === false && proPlanEnabled({ PRO_PLAN_ENABLED: 'off' }) === false && proPlanEnabled({ PRO_PLAN_ENABLED: ' 2 ' }) === false, 'only the on-values enable Pro');
 assert(proPlanEnabled({ PRO_PLAN_ENABLED: '1' }) && proPlanEnabled({ PRO_PLAN_ENABLED: ' true ' }) && proPlanEnabled({ PRO_PLAN_ENABLED: 'YES' }) && proPlanEnabled({ PRO_PLAN_ENABLED: 'on' }), 'PRO_PLAN_ENABLED accepts 1, true, yes, on');
+assert(proCheckoutBlock('pro')?.code === 'PRO_UNAVAILABLE' && proCheckoutBlock('pro')?.error === PRO_CHECKOUT_ERROR && proCheckoutBlock('pro')?.status === 400, 'pro checkout block while the flag is off');
+assert(proCheckoutBlock('plus') === null && proCheckoutBlock('business') === null && proCheckoutBlock('nope') === null, 'the pro block ignores every other plan');
+for (const usage of ['personal', 'business', 'both'] as const) {
+  const blocked = businessCheckoutBlock('business', usage);
+  if (usage === 'personal') {
+    assert(blocked?.status === 403 && blocked.code === 'BUSINESS_PLAN_REQUIRES_BUSINESS_ACCOUNT' && blocked.error === BUSINESS_ACCOUNT_CHECKOUT_ERROR, 'personal cannot buy Business');
+  } else {
+    assert(blocked === null, `${usage} can buy Business`);
+  }
+  assert(businessCheckoutBlock('plus', usage) === null && businessCheckoutBlock('pro', usage) === null, `${usage} is not refused Plus or Pro by account type`);
+}
+assert(process.env.PRO_PLAN_ENABLED == null, 'plan guard checks did not set PRO_PLAN_ENABLED');
+process.env.PRO_PLAN_ENABLED = '1';
+assert(proCheckoutBlock('pro') === null && proCheckoutBlock('plus') === null, 'PRO_PLAN_ENABLED=1 lets every account type check out Pro');
+delete process.env.PRO_PLAN_ENABLED;
+assert(proCheckoutBlock('pro')?.code === 'PRO_UNAVAILABLE', 'clearing the flag refuses Pro again');
+const samePrice = { plan: 'business' as const, interval: 'year' as const };
+assert(priceChangeDecision({ previous: null, next: samePrice, viaCheckout: false, usage: 'personal' }).applyPrice, 'a first subscription is not a move');
+assert(priceChangeDecision({ previous: samePrice, next: samePrice, viaCheckout: false, usage: 'personal' }).applyPrice, 'the same Business price still syncs');
+assert(priceChangeDecision({ previous: samePrice, next: { plan: 'business', interval: 'month' }, viaCheckout: true, usage: 'both' }).applyPrice === false, 'Business cannot move to another price, even from Checkout');
+assert(
+  priceChangeDecision({ previous: samePrice, next: { plan: 'plus', interval: 'month' }, viaCheckout: false, usage: 'both' }).applyPrice === false,
+  'Business cannot move to Plus',
+);
+assert(priceChangeDecision({ previous: { plan: 'pro', interval: 'year' }, next: { plan: 'plus', interval: 'month' }, viaCheckout: false, usage: 'personal' }).applyPrice, 'Plus and Pro can still change into each other');
+const portalUpgrade = priceChangeDecision({ previous: { plan: 'plus', interval: 'month' }, next: samePrice, viaCheckout: false, usage: 'both' });
+assert(portalUpgrade.applyPrice === false && portalUpgrade.reason === 'business_without_checkout', 'a portal move onto Business is refused');
+const checkoutUpgrade = priceChangeDecision({ previous: { plan: 'plus', interval: 'month' }, next: samePrice, viaCheckout: true, usage: 'both' });
+assert(checkoutUpgrade.applyPrice, 'Checkout can move Both onto Business');
+assert(priceChangeDecision({ previous: { plan: 'plus', interval: 'month' }, next: samePrice, viaCheckout: true, usage: 'business' }).applyPrice, 'Checkout can move Business only onto Business');
+const personalUpgrade = priceChangeDecision({ previous: { plan: 'plus', interval: 'month' }, next: samePrice, viaCheckout: true, usage: 'personal' });
+assert(personalUpgrade.applyPrice === false && personalUpgrade.reason === 'business_without_checkout', 'Checkout does not grant Business to Personal');
+
+// Portal configuration: lookup by metadata, repair a config that still allows plan changes, create once.
+{
+  const repaired: { id: string; features: { subscription_update?: { enabled?: boolean }; subscription_cancel?: { enabled?: boolean }; payment_method_update?: { enabled?: boolean } } }[] = [
+    {
+      id: 'bpc_old',
+      features: { subscription_update: { enabled: true }, subscription_cancel: { enabled: false }, payment_method_update: { enabled: false } },
+    },
+  ];
+  const updates: unknown[] = [];
+  const repairStripe = {
+    billingPortal: {
+      configurations: {
+        list: async () => ({
+          data: repaired.map((c) => ({ ...c, active: true, metadata: { [BUSINESS_PORTAL_METADATA_KEY]: BUSINESS_PORTAL_METADATA_VALUE } })),
+          has_more: false,
+        }),
+        create: async () => {
+          throw new Error('repair should update, not create');
+        },
+        update: async (id: string, params: { features: (typeof repaired)[number]['features'] }) => {
+          updates.push(params);
+          const row = repaired.find((c) => c.id === id)!;
+          row.features = params.features;
+          return row;
+        },
+      },
+    },
+  };
+  const repairedId = await findOrCreateBusinessCancelOnlyPortal(repairStripe as never);
+  assert(repairedId.id === 'bpc_old' && repairedId.updated && !repairedId.created, 'a tagged portal config is updated in place');
+  const repairedFeatures = repaired[0].features;
+  assert(repairedFeatures.subscription_update?.enabled === false && repairedFeatures.subscription_cancel?.enabled === true && repairedFeatures.payment_method_update?.enabled === true, 'updated portal config is cancel-only');
+  const again = await findOrCreateBusinessCancelOnlyPortal(repairStripe as never);
+  assert(again.id === 'bpc_old' && !again.updated && updates.length === 1, 'a cancel-only config is reused');
+
+  const stored: { id: string; active: boolean; metadata: Record<string, string>; features: unknown }[] = [];
+  const creates: { metadata?: Record<string, string>; features?: { subscription_update?: { enabled?: boolean } }; name?: string }[] = [];
+  const createStripe = {
+    billingPortal: {
+      configurations: {
+        list: async () => ({ data: stored, has_more: false }),
+        create: async (params: { metadata?: Record<string, string>; features?: unknown; name?: string }) => {
+          creates.push(params);
+          const row = { id: 'bpc_new', active: true, metadata: params.metadata ?? {}, features: params.features };
+          stored.push(row);
+          return row;
+        },
+        update: async () => {
+          throw new Error('create path should not update');
+        },
+      },
+    },
+  };
+  const created = await findOrCreateBusinessCancelOnlyPortal(createStripe as never);
+  assert(created.created && created.id === 'bpc_new', 'missing portal config is created');
+  assert(creates[0].metadata?.[BUSINESS_PORTAL_METADATA_KEY] === BUSINESS_PORTAL_METADATA_VALUE, 'created config is tagged');
+  assert(creates[0].features?.subscription_update?.enabled === false, 'created config disables plan changes');
+  const reused = await findOrCreateBusinessCancelOnlyPortal(createStripe as never);
+  assert(reused.id === 'bpc_new' && !reused.created && creates.length === 1, 'the created config is looked up next time');
+}
 assert(
   catalogForSubscription({
     items: {
@@ -72,12 +171,15 @@ assert(
 // --- A fake Stripe: subscriptions live in a map the tests change.
 type FakeSub = { id: string; customer: string; status: string; lookupKey: string; metadata: Record<string, string>; cancel_at_period_end?: boolean; livemode?: boolean };
 const subs = new Map<string, FakeSub>();
-const calls: { checkout: Record<string, unknown>[]; portal: Record<string, unknown>[]; cancelled: string[]; customers: number } = {
+const calls: { checkout: Record<string, unknown>[]; portal: Record<string, unknown>[]; cancelled: string[]; customers: number; portalConfigs: Record<string, unknown>[] } = {
   checkout: [],
   portal: [],
   cancelled: [],
   customers: 0,
+  portalConfigs: [],
 };
+type FakePortalConfig = { id: string; active: boolean; metadata: Record<string, string>; features: Record<string, { enabled?: boolean }> };
+const portalConfigs: FakePortalConfig[] = [];
 let failCancel = false;
 const periodEnd = Math.floor(Date.parse('2026-12-02T00:00:00Z') / 1000);
 const fake = {
@@ -121,6 +223,27 @@ const fake = {
     },
   },
   billingPortal: {
+    configurations: {
+      list: async () => ({ data: portalConfigs, has_more: false }),
+      create: async (params: { metadata?: Record<string, string>; features?: FakePortalConfig['features'] }) => {
+        calls.portalConfigs.push(params as Record<string, unknown>);
+        const row: FakePortalConfig = {
+          id: `bpc_${portalConfigs.length + 1}`,
+          active: true,
+          metadata: params.metadata ?? {},
+          features: params.features ?? {},
+        };
+        portalConfigs.push(row);
+        return row;
+      },
+      update: async (id: string, params: { features?: FakePortalConfig['features'] }) => {
+        calls.portalConfigs.push(params as Record<string, unknown>);
+        const row = portalConfigs.find((c) => c.id === id);
+        if (!row) throw new Error('No such portal configuration');
+        if (params.features) row.features = params.features;
+        return row;
+      },
+    },
     sessions: {
       create: async (params: Record<string, unknown>) => {
         calls.portal.push(params);
@@ -138,9 +261,15 @@ for (const [id, email] of [
   ['una', 'una@example.com'],
   ['vic', 'vic@example.com'],
   ['wes', 'wes@example.com'],
+  ['pam', 'pam@example.com'],
 ]) {
   run(db, `INSERT INTO users (id, email, password_hash, first_name, created_at, updated_at) VALUES (?,?,?,?,?,?)`, [id, email, pw, 'X', now, now]);
 }
+// una is Both and wes is Business only, so the existing Business checkout still applies.
+// vic has never chosen (Personal). pam chose Personal.
+run(db, `UPDATE users SET preferences_json = ? WHERE id = ?`, [JSON.stringify({ usageMode: 'both' }), 'una']);
+run(db, `UPDATE users SET preferences_json = ? WHERE id = ?`, [JSON.stringify({ usageMode: 'business' }), 'wes']);
+run(db, `UPDATE users SET preferences_json = ? WHERE id = ?`, [JSON.stringify({ usageMode: 'personal' }), 'pam']);
 
 const WHSEC = 'whsec_test_secret';
 const app = express();
@@ -178,6 +307,20 @@ try {
   };
   const una = await cookie('una');
   const vic = await cookie('vic');
+  const pam = await cookie('pam');
+  const captureWarns = async (run: () => Promise<unknown>): Promise<string[]> => {
+    const lines: string[] = [];
+    const orig = console.warn;
+    console.warn = (...args: unknown[]) => {
+      lines.push(args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '));
+    };
+    try {
+      await run();
+      return lines;
+    } finally {
+      console.warn = orig;
+    }
+  };
 
   // Billing off: the page says so, checkout and the webhook refuse.
   let st = await call('GET', '/api/billing', una);
@@ -204,6 +347,16 @@ try {
 
   const proOff = await call('POST', '/api/billing/checkout', una, { plan: 'pro', interval: 'year' });
   assert(proOff.status === 400 && proOff.json.error === 'Pro is not available yet' && proOff.json.code === 'PRO_UNAVAILABLE', 'pro checkout refused while PRO_PLAN_ENABLED is off');
+  const proMonth = await call('POST', '/api/billing/checkout', una, { plan: 'pro', interval: 'month' });
+  assert(proMonth.status === 400 && proMonth.json.code === 'PRO_UNAVAILABLE', 'pro monthly is refused too');
+  const proBadInterval = await call('POST', '/api/billing/checkout', una, { plan: 'pro', interval: 'week' });
+  assert(proBadInterval.status === 400 && proBadInterval.json.code === 'PRO_UNAVAILABLE', 'pro is refused before the interval is checked');
+  for (const flag of ['0', 'false', 'no', 'off', '2', ' ']) {
+    process.env.PRO_PLAN_ENABLED = flag;
+    const refused = await call('POST', '/api/billing/checkout', pam, { plan: 'pro', interval: 'year' });
+    assert(refused.status === 400 && refused.json.code === 'PRO_UNAVAILABLE' && refused.json.error === 'Pro is not available yet', `PRO_PLAN_ENABLED=${JSON.stringify(flag)} still refuses pro`);
+  }
+  delete process.env.PRO_PLAN_ENABLED;
   assert(calls.checkout.length === 0, 'a refused Pro checkout does not open Stripe');
   assert((await call('GET', '/api/billing', una)).json.proPlanEnabled === false, 'status says Pro is not for sale');
   process.env.PRO_PLAN_ENABLED = '1';
@@ -232,6 +385,14 @@ try {
   const bizYear = await call('POST', '/api/billing/checkout', una, { plan: 'business', interval: 'year' });
   assert(bizYear.status === 200 && (calls.checkout[3] as any).line_items[0].price === 'price_koruledger_business_yearly', 'business yearly price by lookup key');
   assert(calls.customers === 1, 'business checkout reuses the customer');
+  const checkoutsBeforePersonal = calls.checkout.length;
+  const unsetBiz = await call('POST', '/api/billing/checkout', vic, { plan: 'business', interval: 'month' });
+  assert(unsetBiz.status === 403 && unsetBiz.json.code === 'BUSINESS_PLAN_REQUIRES_BUSINESS_ACCOUNT' && unsetBiz.json.error === 'Business is for a business account. Personal accounts can choose Plus.', 'an account that never chose usage is Personal and cannot buy Business');
+  const personalBiz = await call('POST', '/api/billing/checkout', pam, { plan: 'business', interval: 'year' });
+  assert(personalBiz.status === 403 && personalBiz.json.code === 'BUSINESS_PLAN_REQUIRES_BUSINESS_ACCOUNT', 'explicit Personal cannot buy Business');
+  const personalPlus = await call('POST', '/api/billing/checkout', pam, { plan: 'plus', interval: 'month' });
+  assert(personalPlus.status === 200 && (calls.checkout.at(-1) as { line_items?: { price: string }[] }).line_items?.[0].price === 'price_koruledger_plus_monthly', 'Personal can check out Plus');
+  assert(calls.checkout.length === checkoutsBeforePersonal + 1, 'refused Business checkouts do not open Stripe');
   assert(planOf(db, 'una') === 'free', 'no plan until Stripe says paid');
   const onboard = await call('POST', '/api/billing/checkout', una, { plan: 'plus', interval: 'month', returnTo: '/register' });
   assert(onboard.status === 200 && onboard.json.url === 'https://checkout.stripe.test/cs_1', 'onboarding checkout url');
@@ -266,9 +427,10 @@ try {
   assert(st.json.plan === 'pro' && st.json.subscription.interval === 'year' && st.json.subscription.currentPeriodEnd === '2026-12-02T00:00:00.000Z' && st.json.canManage === true, 'status shows the subscription');
   assert((await call('POST', '/api/billing/checkout', una, { plan: 'plus', interval: 'month' })).json.code === 'ALREADY_SUBSCRIBED', 'no second subscription');
 
-  // Portal.
+  // Portal. Pro is not Business, so this session uses the default configuration.
   const portal = await call('POST', '/api/billing/portal', una);
   assert(portal.json.url === 'https://billing.stripe.test/p_1' && (calls.portal[0] as any).customer === 'cus_new1', 'portal for the customer');
+  assert((calls.portal[0] as { configuration?: string }).configuration === undefined && calls.portalConfigs.length === 0, 'a Pro subscription does not use the Business portal');
 
   // A switch to Plus in the portal, then cancel at period end (keeps the plan), then failed payments.
   subs.get('sub_una')!.lookupKey = 'koruledger_plus_monthly';
@@ -304,9 +466,40 @@ try {
   assert(!hasFeature(db, 'una', 'household') && !hasFeature(db, 'una', 'crypto_pro') && !hasFeature(db, 'una', 'payslips'), 'Business subscription does not include Plus or Pro');
   st = await call('GET', '/api/billing', una);
   assert(st.json.plan === 'business' && st.json.subscription.plan === 'business' && st.json.subscription.interval === 'year' && st.json.subscription.status === 'active', 'GET /api/billing reports Business');
-  subs.get('sub_biz')!.lookupKey = 'koruledger_business_monthly';
+
+  // Business portal: cancel and card update, no plan change. Created once, then looked up.
+  const bizPortal = await call('POST', '/api/billing/portal', una);
+  assert(bizPortal.status === 200 && bizPortal.json.url === 'https://billing.stripe.test/p_1', 'business portal opens');
+  const createdPortal = calls.portalConfigs[0] as { metadata?: Record<string, string>; features?: { subscription_update?: { enabled?: boolean }; subscription_cancel?: { enabled?: boolean; mode?: string }; payment_method_update?: { enabled?: boolean }; invoice_history?: { enabled?: boolean } }; name?: string };
+  assert(createdPortal.metadata?.[BUSINESS_PORTAL_METADATA_KEY] === '1', 'portal config is tagged koruledger_business_cancel_only');
+  assert(createdPortal.features?.subscription_update?.enabled === false, 'business portal disables subscription updates');
+  assert(createdPortal.features?.subscription_cancel?.enabled === true && createdPortal.features.subscription_cancel.mode === 'at_period_end', 'business portal can cancel at period end');
+  assert(createdPortal.features?.payment_method_update?.enabled === true, 'business portal can update the card');
+  assert((calls.portal.at(-1) as { configuration?: string }).configuration === 'bpc_1', 'business portal session uses the cancel-only configuration');
+  const writesAfterCreate = calls.portalConfigs.length;
+  const bizPortalAgain = await call('POST', '/api/billing/portal', una);
+  assert(bizPortalAgain.status === 200 && calls.portalConfigs.length === writesAfterCreate, 'the cancel-only configuration is reused');
+  assert((calls.portal.at(-1) as { configuration?: string }).configuration === 'bpc_1', 'the second session uses the same configuration');
+  process.env.STRIPE_PORTAL_CONFIG_BUSINESS = 'bpc_pinned';
+  const pinned = await call('POST', '/api/billing/portal', una);
+  assert(pinned.status === 200 && (calls.portal.at(-1) as { configuration?: string }).configuration === 'bpc_pinned' && calls.portalConfigs.length === writesAfterCreate, 'STRIPE_PORTAL_CONFIG_BUSINESS pins the configuration');
+  delete process.env.STRIPE_PORTAL_CONFIG_BUSINESS;
+
+  subs.get('sub_biz')!.cancel_at_period_end = true;
   await webhook('customer.subscription.updated', { id: 'sub_biz' });
-  assert(planOf(db, 'una') === 'business' && (await call('GET', '/api/billing', una)).json.subscription.interval === 'month', 'business monthly price stays on Business');
+  assert(planOf(db, 'una') === 'business' && (await call('GET', '/api/billing', una)).json.subscription.cancelAtPeriodEnd === true && (await call('GET', '/api/billing', una)).json.subscription.interval === 'year', 'cancelling Business keeps the plan and the price');
+  subs.get('sub_biz')!.cancel_at_period_end = false;
+  subs.get('sub_biz')!.lookupKey = 'koruledger_business_monthly';
+  const priceIgnored = await captureWarns(() => webhook('customer.subscription.updated', { id: 'sub_biz' }));
+  assert(planOf(db, 'una') === 'business' && (await call('GET', '/api/billing', una)).json.subscription.interval === 'year', 'a Business price change is not granted');
+  assert(priceIgnored.some((line) => line.includes('billing_plan_change_ignored') && line.includes('business_price_change')), 'a Business price change is logged');
+  subs.get('sub_biz')!.lookupKey = 'koruledger_plus_monthly';
+  const downgradeIgnored = await captureWarns(() => webhook('customer.subscription.updated', { id: 'sub_biz' }));
+  assert(planOf(db, 'una') === 'business' && (await call('GET', '/api/billing', una)).json.subscription.plan === 'business' && (await call('GET', '/api/billing', una)).json.subscription.interval === 'year', 'Business cannot be moved to Plus from the portal');
+  assert(downgradeIgnored.some((line) => line.includes('business_price_change')), 'the Plus move is logged');
+  subs.get('sub_biz')!.lookupKey = 'koruledger_business_yearly';
+  await webhook('customer.subscription.updated', { id: 'sub_biz' });
+  assert((await call('GET', '/api/billing', una)).json.subscription.cancelAtPeriodEnd === false, 'a status-only Business update still applies');
   setPlan(db, 'una', 'business', 'test');
   subs.get('sub_biz')!.status = 'canceled';
   await webhook('customer.subscription.updated', { id: 'sub_biz' });
@@ -320,6 +513,32 @@ try {
   subs.set('sub_odd', { id: 'sub_odd', customer: 'cus_new1', status: 'active', lookupKey: 'something_else', metadata: { user_id: 'una' } });
   await webhook('customer.subscription.created', { id: 'sub_odd' });
   assert(planOf(db, 'una') === 'free', 'a price we do not sell grants nothing');
+
+  // A portal change onto Business is not granted. Checkout completion is, for Both / Business only.
+  subs.set('sub_move', { id: 'sub_move', customer: 'cus_new1', status: 'active', lookupKey: 'koruledger_plus_monthly', metadata: { user_id: 'una' } });
+  assert((await webhook('customer.subscription.created', { id: 'sub_move' })) === 200, 'plus subscription to move');
+  assert(planOf(db, 'una') === 'plus', 'the move starts on Plus');
+  subs.get('sub_move')!.lookupKey = 'koruledger_business_monthly';
+  const moveIgnored = await captureWarns(() => webhook('customer.subscription.updated', { id: 'sub_move' }));
+  assert(planOf(db, 'una') === 'plus' && (await call('GET', '/api/billing', una)).json.subscription.plan === 'plus', 'subscription.updated onto Business is not granted');
+  assert(moveIgnored.some((line) => line.includes('billing_plan_change_ignored') && line.includes('business_without_checkout')), 'a Business upgrade without checkout is logged');
+  assert(
+    (await webhook('checkout.session.completed', { id: 'cs_move', mode: 'subscription', customer: 'cus_new1', client_reference_id: 'una', subscription: 'sub_move' })) === 200,
+    'checkout completion for an allowed account',
+  );
+  assert(planOf(db, 'una') === 'business' && (await call('GET', '/api/billing', una)).json.subscription.plan === 'business', 'Checkout grants Business for Both');
+
+  subs.set('sub_pam', { id: 'sub_pam', customer: 'cus_pam', status: 'active', lookupKey: 'koruledger_plus_yearly', metadata: { user_id: 'pam' } });
+  await webhook('customer.subscription.created', { id: 'sub_pam' });
+  assert(planOf(db, 'pam') === 'plus', 'Personal can be granted Plus');
+  subs.get('sub_pam')!.lookupKey = 'koruledger_business_yearly';
+  const pamPortal = await captureWarns(() => webhook('customer.subscription.updated', { id: 'sub_pam' }));
+  assert(planOf(db, 'pam') === 'plus', 'Personal cannot be moved onto Business from the portal');
+  assert(pamPortal.some((line) => line.includes('business_without_checkout')), 'the Personal portal move is logged');
+  const pamCheckout = await captureWarns(() => webhook('checkout.session.completed', { id: 'cs_pam', mode: 'subscription', customer: 'cus_pam', client_reference_id: 'pam', subscription: 'sub_pam' }));
+  assert(planOf(db, 'pam') === 'plus' && (await call('GET', '/api/billing', pam)).json.subscription.plan === 'plus', 'Checkout completion does not grant Business to Personal');
+  assert(pamCheckout.some((line) => line.includes('business_without_checkout')), 'the Personal checkout move is logged');
+
   assert((await webhook('invoice.paid', { id: 'in_1' })) === 200, 'other events acknowledged');
 
   // Stripe unreachable → 500 so Stripe retries.
@@ -329,6 +548,10 @@ try {
   subs.set('sub_vic', { id: 'sub_vic', customer: 'cus_vic', status: 'active', lookupKey: 'koruledger_plus_yearly', metadata: { user_id: 'vic' } });
   await webhook('customer.subscription.created', { id: 'sub_vic' });
   assert(planOf(db, 'vic') === 'plus', 'vic on Plus via subscription metadata');
+  const portalWrites = calls.portalConfigs.length;
+  const vicPortal = await call('POST', '/api/billing/portal', vic);
+  assert(vicPortal.status === 200 && (calls.portal.at(-1) as { configuration?: string; customer?: string }).customer === 'cus_vic', 'plus portal opens');
+  assert((calls.portal.at(-1) as { configuration?: string }).configuration === undefined && calls.portalConfigs.length === portalWrites, 'a Plus subscription does not use the Business portal configuration');
   failCancel = true;
   let del = await call('POST', '/api/auth/delete-account', vic, { password: 'correct horse battery', confirm: 'DELETE' });
   assert(del.status === 502 && del.json.code === 'SUBSCRIPTION_CANCEL_FAILED', 'cancel failure blocks deletion');
@@ -347,6 +570,10 @@ try {
   assert(wesBiz.status === 200 && (calls.checkout.at(-1) as any).line_items[0].price === 'price_koruledger_business_yearly', 'business checkout while Pro is hidden');
   const wesPro = await call('POST', '/api/billing/checkout', wesCookie, { plan: 'pro', interval: 'month' });
   assert(wesPro.status === 400 && wesPro.json.error === 'Pro is not available yet', 'pro checkout still refused after other plans');
+  const checkoutsBeforePamPro = calls.checkout.length;
+  const pamPro = await call('POST', '/api/billing/checkout', pam, { plan: 'pro', interval: 'month' });
+  assert(pamPro.status === 400 && pamPro.json.code === 'PRO_UNAVAILABLE' && calls.checkout.length === checkoutsBeforePamPro, 'Personal pro checkout stays refused and does not open Stripe');
+  assert(process.env.STRIPE_LIVE_ENABLED == null, 'tests never set STRIPE_LIVE_ENABLED');
   assert(queryOne(db, `SELECT 1 AS x FROM billing_subscriptions WHERE user_id = 'vic'`) == null && queryOne(db, `SELECT 1 AS x FROM billing_customers WHERE user_id = 'vic'`) == null, 'billing rows removed');
 
   // No subscription: deletion is unaffected even with billing off.

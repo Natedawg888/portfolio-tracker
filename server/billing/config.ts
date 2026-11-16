@@ -6,6 +6,11 @@
  *   STRIPE_GST_TAX_RATE_ID     optional txr_…: an inclusive 15% GST rate, so Stripe invoices
  *                              show the GST in the price. Totals are the same either way.
  *   STRIPE_PORTAL_CONFIG_ID    optional bpc_…; otherwise the account's default portal settings.
+ *   STRIPE_PORTAL_CONFIG_BUSINESS
+ *                              optional bpc_… for Business subscriptions: cancel and card
+ *                              update only, no plan change. Unset: look up or create the
+ *                              configuration tagged koruledger_business_cancel_only
+ *                              (npm run stripe:setup creates it).
  *   STRIPE_LIVE_ENABLED=1      required before a live key (sk_live_/rk_live_) is used. Without
  *                              it a live key is refused and billing stays off: nobody is charged
  *                              real money until Nathan says go.
@@ -16,6 +21,7 @@ export type BillingConfig = {
   live: boolean;
   gstTaxRateId: string | null;
   portalConfigId: string | null;
+  portalBusinessConfigId: string | null;
 };
 
 export type BillingConfigResult =
@@ -41,6 +47,7 @@ export function billingConfig(env: NodeJS.ProcessEnv = process.env): BillingConf
       live,
       gstTaxRateId: val(env, 'STRIPE_GST_TAX_RATE_ID'),
       portalConfigId: val(env, 'STRIPE_PORTAL_CONFIG_ID'),
+      portalBusinessConfigId: val(env, 'STRIPE_PORTAL_CONFIG_BUSINESS'),
     },
   };
 }

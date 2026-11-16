@@ -15,11 +15,14 @@ import { logger } from '../lib/logger.ts';
 import { BILLING_PLANS, catalogByLookupKey, catalogPrice, type BillingInterval, type BillingPlan, type CatalogPrice } from './catalog.ts';
 import { stripeClient } from './client.ts';
 import type { BillingConfig } from './config.ts';
+import { businessCheckoutBlock, priceChangeDecision, proCheckoutBlock, usageModeFor } from './planGuards.ts';
+import { businessCancelOnlyPortalConfigId } from './portalConfig.ts';
 import {
   customerIdFor,
   grantingSubscriptions,
   linkCustomer,
   saveSubscription,
+  subscriptionById,
   userIdForCustomer,
 } from './store.ts';
 
@@ -62,8 +65,17 @@ function userExists(db: Database, userId: string): boolean {
 /**
  * Fetch a subscription from Stripe and save it against its user. Returns false when it can't
  * be tied to an account or isn't for anything we sell (logged, not retried).
+ *
+ * `viaCheckout` is set for Checkout completion. Moving onto a Business price is granted only
+ * then, and only for an account that may buy Business. Moving a Business subscription onto
+ * any other price is logged and not granted. Cancel and payment status still update.
  */
-export async function syncSubscription(db: Database, config: BillingConfig, subscriptionId: string): Promise<boolean> {
+export async function syncSubscription(
+  db: Database,
+  config: BillingConfig,
+  subscriptionId: string,
+  options: { viaCheckout?: boolean } = {},
+): Promise<boolean> {
   const sub = await stripeClient(config).subscriptions.retrieve(subscriptionId);
   const customerId = idOf(sub.customer);
   if (!customerId) return false;
@@ -78,19 +90,38 @@ export async function syncSubscription(db: Database, config: BillingConfig, subs
     logger.warn('billing_subscription_unknown_price', { subscription: sub.id });
     return false;
   }
+  const stored = subscriptionById(db, sub.id);
+  const previous = stored ? { plan: stored.plan, interval: stored.billing_interval } : null;
+  const decision = priceChangeDecision({
+    previous,
+    next: { plan: entry.plan, interval: entry.interval },
+    viaCheckout: options.viaCheckout === true,
+    usage: usageModeFor(db, userId),
+  });
+  const plan = decision.applyPrice || !previous ? entry.plan : previous.plan;
+  const interval = decision.applyPrice || !previous ? entry.interval : previous.interval;
+  if (!decision.applyPrice && previous) {
+    logger.warn('billing_plan_change_ignored', {
+      subscription: sub.id,
+      user: userId,
+      reason: decision.reason,
+      from: `${previous.plan}/${previous.interval}`,
+      to: `${entry.plan}/${entry.interval}`,
+    });
+  }
   if (!userIdForCustomer(db, customerId)) linkCustomer(db, userId, customerId, sub.livemode);
   saveSubscription(db, {
     id: sub.id,
     userId,
     customerId,
-    plan: entry.plan,
-    interval: entry.interval,
+    plan,
+    interval,
     status: sub.status,
     cancelAtPeriodEnd: Boolean(sub.cancel_at_period_end || sub.cancel_at),
     currentPeriodEnd: periodEndOf(sub),
     live: sub.livemode,
   });
-  logger.info('billing_subscription_synced', { subscription: sub.id, user: userId, plan: entry.plan, status: sub.status });
+  logger.info('billing_subscription_synced', { subscription: sub.id, user: userId, plan, status: sub.status });
   if (sub.status === 'active' || sub.status === 'trialing') ensureStarterBusiness(db, userId);
   return true;
 }
@@ -108,7 +139,7 @@ export async function handleBillingEvent(db: Database, config: BillingConfig, ev
         linkCustomer(db, userId, customerId, event.livemode);
       }
       const subId = idOf(session.subscription);
-      if (subId) await syncSubscription(db, config, subId);
+      if (subId) await syncSubscription(db, config, subId, { viaCheckout: true });
       return;
     }
     case 'customer.subscription.created':
@@ -144,6 +175,10 @@ export async function createCheckout(
   baseUrl: string,
   returnTo?: unknown,
 ): Promise<string> {
+  const proBlocked = proCheckoutBlock(plan);
+  if (proBlocked) throw new BillingError(proBlocked.status, proBlocked.code, proBlocked.error);
+  const businessBlocked = businessCheckoutBlock(plan, usageModeFor(db, user.id));
+  if (businessBlocked) throw new BillingError(businessBlocked.status, businessBlocked.code, businessBlocked.error);
   if (grantingSubscriptions(db, user.id).some((s) => Boolean(s.livemode) === config.live)) {
     throw new BillingError(409, 'ALREADY_SUBSCRIBED', 'You already have a subscription. Use Manage billing to change or cancel it.');
   }
@@ -173,10 +208,17 @@ export async function createCheckout(
 export async function createPortal(db: Database, config: BillingConfig, userId: string, baseUrl: string): Promise<string> {
   const customerId = customerIdFor(db, userId, config.live);
   if (!customerId) throw new BillingError(404, 'NO_CUSTOMER', 'There’s no billing account to manage yet.');
-  const session = await stripeClient(config).billingPortal.sessions.create({
+  const stripe = stripeClient(config);
+  const sub = grantingSubscriptions(db, userId).find((s) => Boolean(s.livemode) === config.live) ?? null;
+  // Business is cancel-only. Never fall back to the default portal, which can change the plan.
+  const configuration =
+    sub?.plan === 'business'
+      ? await businessCancelOnlyPortalConfigId(stripe, config.portalBusinessConfigId)
+      : config.portalConfigId;
+  const session = await stripe.billingPortal.sessions.create({
     customer: customerId,
     return_url: `${baseUrl}/settings?tab=account`,
-    ...(config.portalConfigId ? { configuration: config.portalConfigId } : {}),
+    ...(configuration ? { configuration } : {}),
   });
   return session.url;
 }
