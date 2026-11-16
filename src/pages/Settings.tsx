@@ -20,7 +20,6 @@ import { AdPrefsPanel } from '../components/AdPrefsPanel';
 import { AccountProfileCard } from '../components/settings/AccountProfileCard';
 import { AccountSignInCard } from '../components/settings/AccountSignInCard';
 import { AccountDataCard } from '../components/settings/AccountDataCard';
-import { AccountUsageModeCard } from '../components/settings/AccountUsageModeCard';
 import { AccountPlanCard } from '../components/settings/AccountPlanCard';
 import { AccountDeleteCard } from '../components/settings/AccountDeleteCard';
 import { AssetClassSettings } from '../components/settings/AssetClassSettings';
@@ -146,7 +145,6 @@ function AccountPanel() {
     <>
       <AccountProfileCard />
       <AccountSignInCard security={security} />
-      <AccountUsageModeCard />
       <AccountPlanCard />
       <AccountDataCard />
       <AdPrefsPanel />

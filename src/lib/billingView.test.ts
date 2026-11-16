@@ -1,5 +1,5 @@
 /** Settings → Plan wording (KAN-52). Run: npm run test:billing */
-import { BILLING_TEST_NOTE, FREE_FEATURES, PLAN_FEATURES, checkoutPendingText, formatNzd, offeredPaidPlans, offeredPlans, plusFeatureLines, priceFor, priceText, subscriptionLine, yearlySavingPct, type BillingPrice } from './billingView.ts';
+import { BILLING_TEST_NOTE, FREE_FEATURES, PLAN_FEATURES, PLUS_BUSINESS_MANAGEMENT_LINE, canCheckoutPlan, checkoutPendingText, formatNzd, offeredPaidPlans, offeredPlans, plusFeatureLines, priceFor, priceText, settingsCheckoutPlan, settingsPlanOffer, subscriptionLine, yearlySavingPct, type BillingPrice } from './billingView.ts';
 
 function eq(a: unknown, b: unknown, msg: string): void {
   if (a !== b) throw new Error(`FAIL: ${msg}: got ${JSON.stringify(a)}, want ${JSON.stringify(b)}`);
@@ -27,10 +27,61 @@ eq(yearlySavingPct(prices, 'pro'), 37, 'Pro yearly saves 37%');
 eq(yearlySavingPct(prices, 'business'), 30, 'Business yearly saves 30%');
 eq(yearlySavingPct([{ plan: 'plus', interval: 'month', amountCents: 100 }, { plan: 'plus', interval: 'year', amountCents: 1200 }], 'plus'), null, 'no saving, no badge');
 eq(offeredPaidPlans(false).join(), 'plus,business', 'Pro is hidden unless the flag is on');
-eq(offeredPaidPlans(true).join(), 'plus,pro,business', 'PRO_PLAN_ENABLED offers Pro again');
+eq(offeredPaidPlans(true).join(), 'plus,business', 'Pro stays hidden while PRO_PLAN_FOR_SALE is off, even if the server flag is on');
+eq(offeredPaidPlans(true, true).join(), 'plus,pro,business', 'Pro is offered only when the sale flag and the server flag are on');
+eq(offeredPaidPlans(false, true).join(), 'plus,business', 'the sale flag does not override a server that has Pro off');
 eq(offeredPaidPlans(false).includes('plus') && offeredPaidPlans(false).includes('business'), true, 'Plus and Business stay on sale');
 eq(offeredPlans(false).join(), 'free,plus,business', 'signup offers Free, Plus and Business');
-eq(offeredPlans(true).join(), 'free,plus,pro,business', 'signup offers Pro only when the flag is on');
+eq(offeredPlans(true).join(), 'free,plus,business', 'signup hides Pro until PRO_PLAN_FOR_SALE is on');
+eq(offeredPlans(true, true).join(), 'free,plus,pro,business', 'signup offers Pro only when the sale flag is on');
+eq(canCheckoutPlan('pro'), false, 'checkout is not sent plan pro while it is hidden');
+eq(canCheckoutPlan('pro', true), true, 'flipping the sale flag allows pro checkout');
+eq(canCheckoutPlan('plus') && canCheckoutPlan('business'), true, 'Plus and Business can still check out');
+
+const personalFree = settingsPlanOffer({ usage: 'personal', plan: 'free', canChoosePlan: true, canOpenPortal: false });
+eq(personalFree.cards.join(), 'plus', 'personal Settings offers Plus only');
+eq(personalFree.cards.includes('business'), false, 'personal hides the Business plan');
+eq(personalFree.cards.includes('pro'), false, 'Pro stays hidden for personal');
+eq((personalFree.cards as readonly string[]).includes('free'), false, 'Free is the current plan, not a card');
+eq(personalFree.showIntervalToggle, true, 'personal still chooses Monthly or Yearly for Plus');
+eq(personalFree.portalAction, null, 'a free personal account has nothing to cancel');
+eq(personalFree.plusLines.includes(PLUS_BUSINESS_MANAGEMENT_LINE), false, 'personal Plus drops the business management line');
+eq(personalFree.plusLines.some((line) => line.includes('Full budgeting')), true, 'the other Plus lines stay');
+
+const personalProLater = settingsPlanOffer({ usage: 'personal', plan: 'free', canChoosePlan: true, canOpenPortal: false, proForSale: true });
+eq(personalProLater.cards.join(), 'plus,pro', 'personal shows Pro only after the sale flag is on');
+eq(personalProLater.cards.includes('business'), false, 'personal still hides Business when Pro is on sale');
+
+const personalPlus = settingsPlanOffer({ usage: 'personal', plan: 'plus', canChoosePlan: false, canOpenPortal: true });
+eq(personalPlus.cards.join(), '', 'a personal Plus subscription does not list Business');
+eq(personalPlus.showIntervalToggle, false, 'no Monthly/Yearly toggle without a plan to buy');
+eq(personalPlus.portalAction, 'manage', 'a non-Business subscription keeps Manage billing');
+
+const bothFree = settingsPlanOffer({ usage: 'both', plan: 'free', canChoosePlan: true, canOpenPortal: false });
+eq(bothFree.cards.join(), 'plus,business', 'Both keeps Plus and Business');
+eq(bothFree.cards.includes('pro'), false, 'Pro stays hidden for Both');
+eq(bothFree.plusLines.includes(PLUS_BUSINESS_MANAGEMENT_LINE), true, 'Both keeps the Plus business line');
+
+const businessOnly = settingsPlanOffer({ usage: 'business', plan: 'free', canChoosePlan: true, canOpenPortal: false });
+eq(businessOnly.cards.join(), 'plus,business', 'Business only on a non-Business plan keeps Plus and Business');
+eq(businessOnly.cards.includes('pro'), false, 'Pro stays hidden for Business only');
+
+const onBusiness = settingsPlanOffer({ usage: 'both', plan: 'business', canChoosePlan: true, canOpenPortal: true });
+eq(onBusiness.cards.join(), '', 'a Business plan offers no other plan');
+eq(onBusiness.showIntervalToggle, false, 'a Business plan hides the Monthly/Yearly toggle');
+eq(onBusiness.portalAction, 'cancel', 'a Business plan can only cancel');
+
+const personalOnBusiness = settingsPlanOffer({ usage: 'personal', plan: 'business', canChoosePlan: true, canOpenPortal: false });
+eq(personalOnBusiness.cards.join(), '', 'Business plan wins over a personal usage');
+eq(personalOnBusiness.showIntervalToggle, false, 'personal on Business still has no interval toggle');
+eq(personalOnBusiness.portalAction, 'cancel', 'personal on Business can only cancel');
+
+eq(settingsCheckoutPlan('pro', 'personal'), null, 'personal never sends pro to checkout while it is hidden');
+eq(settingsCheckoutPlan('pro', 'both', true), 'pro', 'pro checkout is allowed only when the sale flag is on');
+eq(settingsCheckoutPlan('business', 'personal'), null, 'personal never sends business to checkout');
+eq(settingsCheckoutPlan('business', 'business'), 'business', 'Business only can check out Business');
+eq(settingsCheckoutPlan('business', 'both'), 'business', 'Both can check out Business');
+eq(settingsCheckoutPlan('plus', 'personal'), 'plus', 'personal can check out Plus');
 eq(FREE_FEATURES.length >= 3 && FREE_FEATURES.every((line) => !/NZ\$/.test(line)), true, 'Free has a short summary and no hardcoded price');
 eq(FREE_FEATURES.some((line) => line.includes('PAYE') && line.includes('payslips')) && FREE_FEATURES.some((line) => line.includes('One budget')), true, 'Free copy matches the new limits');
 eq(PLAN_FEATURES.plus.some((line) => line.includes('Net worth')) && PLAN_FEATURES.plus.some((line) => line.includes('Business management')), true, 'Plus copy includes net worth and business management');

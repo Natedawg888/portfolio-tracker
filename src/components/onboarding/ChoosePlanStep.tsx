@@ -1,12 +1,12 @@
 /**
  * Signup → Choose your plan. Free continues. Plus and Business open Stripe Checkout.
- * Pro is listed only when GET /api/billing says proPlanEnabled. Prices are that response,
- * not a second copy of the catalog.
+ * Pro is listed only when it is on sale (PRO_PLAN_FOR_SALE) and GET /api/billing says
+ * proPlanEnabled. Prices are that response, not a second copy of the catalog.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type BillingStatus } from '../../api/client';
 import { BillingPlanPicker, BillingTestNote } from '../billing/BillingPlanPicker';
-import type { BillingInterval, PaidPlan } from '../../lib/billingView';
+import { canCheckoutPlan, type BillingInterval, type PaidPlan } from '../../lib/billingView';
 
 export function ChoosePlanStep({
   busy,
@@ -76,7 +76,10 @@ export function ChoosePlanStep({
           showFree
           runsBusiness={runsBusiness}
           onChooseFree={() => onFree(runsBusiness)}
-          onChoosePaid={(plan) => onPaid(plan, interval, runsBusiness)}
+          onChoosePaid={(plan) => {
+            if (!canCheckoutPlan(plan)) return;
+            onPaid(plan, interval, runsBusiness);
+          }}
         />
       ) : failed ? (
         <div className="onboarding-plan-actions">

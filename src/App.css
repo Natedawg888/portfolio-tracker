@@ -14828,7 +14828,7 @@ html .business-page .more-menu-body .business-menu-item:disabled { color: var(--
   .stock-history-date { grid-column: 1 / -1; }
 }
 
-/* What will you use KoruLedger for? (KAN-124): signup step and Settings → Account. */
+/* What will you use KoruLedger for? (KAN-124): asked once, on the signup step. */
 .usage-mode-choices { display: grid; gap: var(--space-2); margin: 0; padding: 0; border: 0; min-width: 0; }
 .usage-mode-choice {
   display: flex;
