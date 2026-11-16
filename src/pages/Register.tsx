@@ -22,7 +22,7 @@ import {
   type AkahuConnectionStatus,
 } from '../api/akahuClient';
 import { akahuOnboardingRequiredForEmail } from '../lib/onboardingPrefs';
-import { checkoutResume, continueAfterPlan, stepFromOnboarding, stepLabel, type OnboardingStep, type PlanContinue } from '../lib/onboardingSteps';
+import { checkoutResume, continueAfterPlan, resolvePaidBusinessReturn, stepFromOnboarding, stepLabel, type OnboardingStep, type PlanContinue } from '../lib/onboardingSteps';
 import { USAGE_MODES, type UsageMode } from '../lib/usageMode';
 import type { BillingInterval, PaidPlan } from '../lib/billingView';
 import { CheckoutPendingNote } from '../components/billing/CheckoutPendingNote';
@@ -61,16 +61,15 @@ export function Register() {
   const [akahu, setAkahu] = useState<AkahuConnectionStatus | null>(null);
   const [walletsAdded, setWalletsAdded] = useState<string[]>([]);
 
-  /** Business only opens the add form when this account can manage a business. Free goes home. */
-  const destinationFor = useCallback(async (dest: PlanContinue): Promise<PlanContinue> => {
+  /**
+   * Business only opens setup when this account can manage a business. Free goes home at once.
+   * A paid return waits in the confirming state for the webhook, then opens setup.
+   */
+  const destinationFor = useCallback(async (dest: PlanContinue, pending: boolean): Promise<PlanContinue> => {
     if (dest.kind !== 'business-setup') return dest;
-    try {
-      const plan = await api.settings.plan();
-      if (plan.features.business_manage) return dest;
-    } catch {
-      /* Treat a failed plan check like Free: don't open a form that would be refused. */
-    }
-    return { kind: 'home' };
+    if (pending) setPaymentPending(true);
+    const kind = await resolvePaidBusinessReturn(pending, async () => (await api.settings.plan()).features.business_manage === true);
+    return kind === 'business-setup' ? dest : { kind: 'home' };
   }, []);
 
   const leaveAfterPlan = useCallback((dest: PlanContinue, pending: boolean) => {
@@ -101,7 +100,7 @@ export function Register() {
         await api.settings.setRunsBusiness(runsBusiness);
         if (runsBusiness && !pending) setRunsNote(true);
       }
-      const dest = await destinationFor(chosen);
+      const dest = await destinationFor(chosen, pending);
       setPlanExit(dest.kind === 'step' ? null : { dest, pending });
       let nextUser = current;
       if (current.onboarding.planStepDone === false) {
@@ -309,7 +308,7 @@ export function Register() {
     try {
       const r = await api.settings.setUsageMode(usageMode);
       const planAlreadyDone = r.onboarding.planStepDone !== false;
-      const exit = usageMode === 'business' && planAlreadyDone ? await destinationFor({ kind: 'business-setup' }) : null;
+      const exit = usageMode === 'business' && planAlreadyDone ? await destinationFor({ kind: 'business-setup' }, false) : null;
       if (exit) setPlanExit({ dest: exit, pending: false });
       if (user) setUser({ ...user, usageMode: r.usageMode, usageModeChosen: true, onboardingComplete: r.onboardingComplete, onboarding: r.onboarding });
       await refresh();

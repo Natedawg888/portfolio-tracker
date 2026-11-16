@@ -27,7 +27,7 @@ export type Feature = 'household' | 'payslips' | 'crypto_pro' | 'bonds_plus' | '
 
 const FEATURES: Record<Feature, readonly Plan[]> = {
   household: ['plus', 'pro'],
-  /** Payslips (KAN-78): unlimited payslips, the PAYE check, and net pay into Income linked to the bank. */
+  /** Payslips (KAN-78): the PAYE check, and net pay into Income linked to the bank. Every plan can add payslips; no tier has a count cap. */
   payslips: ['plus', 'pro'],
   /** Advanced crypto (KAN-47): ledger, cost basis and gains, staking income, DeFi positions, wallet import. */
   crypto_pro: ['pro'],

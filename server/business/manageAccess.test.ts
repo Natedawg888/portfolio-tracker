@@ -20,14 +20,14 @@ function assert(cond: unknown, msg: string): void {
   if (!cond) throw new Error(`FAIL: ${msg}`);
 }
 
-const { getDb, run } = await import('../db/index.ts');
+const { getDb, queryOne, run } = await import('../db/index.ts');
 const { setPlan } = await import('../lib/entitlements.ts');
 const { createSession, SESSION_COOKIE } = await import('../auth/sessions.ts');
 const { attachUser, requireAuth, isPublicApiPath } = await import('../middleware/requireAuth.ts');
 const { default: businessRouter } = await import('../routes/business.ts');
 const { default: settingsRouter } = await import('../routes/settings.ts');
 const { ensureStarterBusiness } = await import('./starter.ts');
-const { mergeRunsBusinessIntoPreferencesJson } = await import('../../src/lib/runsBusiness.ts');
+const { mergeRunsBusinessIntoPreferencesJson, starterBusinessCreated } = await import('../../src/lib/runsBusiness.ts');
 
 const now = '2026-11-16T00:00:00.000Z';
 const db = await getDb();
@@ -99,14 +99,22 @@ try {
   run(db, `UPDATE users SET preferences_json = ? WHERE id = ?`, [mergeRunsBusinessIntoPreferencesJson(null, true), 'plus']);
   setPlan(db, 'plus', 'plus', 'test');
   assert(ensureStarterBusiness(db, 'plus') === false, 'a tick does not add a second business');
+  const marked = queryOne<{ preferences_json: string | null }>(db, `SELECT preferences_json FROM users WHERE id = ?`, ['plus']);
+  assert(starterBusinessCreated(marked?.preferences_json), 'finding an existing business marks the starter done');
   run(db, `DELETE FROM businesses WHERE user_id = ?`, ['plus']);
-  assert(ensureStarterBusiness(db, 'plus') === true, 'a ticked Plus account with none gets My business');
-  const starter = await call('GET', '/api/business', plus);
-  assert(starter.json.businesses?.some((b: { name: string }) => b.name === 'My business'), 'the starter business is listed');
-  run(db, `DELETE FROM businesses WHERE user_id = ?`, ['plus']);
-  assert(ensureStarterBusiness(db, 'plus') === false, 'deleting every business does not create another starter');
+  assert(ensureStarterBusiness(db, 'plus') === false, 'deleting every business does not create My business at renewal');
   const gone = await call('GET', '/api/business', plus);
-  assert((gone.json.businesses ?? []).length === 0, 'My business stays deleted');
+  assert((gone.json.businesses ?? []).length === 0, 'no starter is invented after the flag is set');
+
+  run(db, `INSERT INTO users (id, email, password_hash, first_name, created_at, updated_at) VALUES (?,?,?,?,?,?)`, ['fresh', 'fresh@example.com', 'hash', 'X', now, now]);
+  setPlan(db, 'fresh', 'plus', 'test');
+  run(db, `UPDATE users SET preferences_json = ? WHERE id = ?`, [mergeRunsBusinessIntoPreferencesJson(null, true), 'fresh']);
+  assert(ensureStarterBusiness(db, 'fresh') === true, 'a ticked Plus account with none gets My business');
+  const freshCookie = await cookie('fresh');
+  const starter = await call('GET', '/api/business', freshCookie);
+  assert(starter.json.businesses?.some((b: { name: string }) => b.name === 'My business'), 'the starter business is listed');
+  run(db, `DELETE FROM businesses WHERE user_id = ?`, ['fresh']);
+  assert(ensureStarterBusiness(db, 'fresh') === false, 'the created starter is not made again');
   setPlan(db, 'plus', 'free', 'test');
   assert(ensureStarterBusiness(db, 'plus') === false, 'Free does not get a starter business');
 

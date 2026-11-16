@@ -3,7 +3,7 @@
  * Run: npm run test:billing
  */
 import { AKAHU_SETUP_EMAIL } from './onboardingPrefs.ts';
-import { businessSetupTarget, checkoutResume, continueAfterPlan, onboardingSteps, stepFromOnboarding, stepLabel, type OnboardingProgress } from './onboardingSteps.ts';
+import { businessSetupTarget, checkoutResume, continueAfterPlan, onboardingSteps, resolvePaidBusinessReturn, stepFromOnboarding, stepLabel, type OnboardingProgress } from './onboardingSteps.ts';
 
 function eq(actual: unknown, expected: unknown, msg: string): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -77,6 +77,42 @@ eq(businessSetupTarget(false, [{ id: 'biz' }]), { kind: 'home' }, 'Free with a b
 eq(businessSetupTarget(true, []), { kind: 'create' }, 'a plan that can manage and has none opens the form');
 eq(businessSetupTarget(true, [{ id: 'starter', isDefault: true }, { id: 'other' }]), { kind: 'edit', id: 'starter' }, 'an existing starter is edited, not created again');
 eq(businessSetupTarget(true, [{ id: 'only' }]), { kind: 'edit', id: 'only' }, 'the only business is the one opened');
+
+{
+  const waits: number[] = [];
+  let probes = 0;
+  const home = await resolvePaidBusinessReturn(false, async () => {
+    probes += 1;
+    return false;
+  }, async (ms) => {
+    waits.push(ms);
+  });
+  eq(home, 'home', 'Free business signup does not wait for a webhook');
+  eq(probes, 1, 'Free checks the plan once');
+  eq(waits.length, 0, 'Free does not delay');
+}
+{
+  const waits: number[] = [];
+  let probes = 0;
+  const setup = await resolvePaidBusinessReturn(true, async () => {
+    probes += 1;
+    return probes >= 2;
+  }, async (ms) => {
+    waits.push(ms);
+  });
+  eq(setup, 'business-setup', 'a paid return opens setup once the webhook confirms');
+  eq(probes, 2, 'it checks again after the first miss');
+  eq(waits, [800], 'the confirming wait is the first delay only');
+}
+{
+  let probes = 0;
+  const home = await resolvePaidBusinessReturn(true, async () => {
+    probes += 1;
+    return false;
+  }, async () => {});
+  eq(home, 'home', 'a paid return that never confirms goes home after the brief wait');
+  eq(probes, 3, 'it polls three times');
+}
 
 eq(checkoutResume(null, false), { action: 'none' }, 'no billing flag changes nothing');
 eq(checkoutResume('success', false), { action: 'finish', pending: true }, 'success finishes the step and shows payment confirming');
