@@ -251,17 +251,21 @@ export type AuthUser = {
   displayName: string | null;
   avatarUrl: string | null;
   createdAt: string | null;
-  /** False until all required signup steps, including the Akahu checkpoint, are done. */
+  /** False until all required signup steps, including the plan choice and the Akahu checkpoint, are done. */
   onboardingComplete: boolean;
   onboarding: {
     assetClassesDone: boolean;
     budgetCategoriesDone: boolean;
     akahuStepDone: boolean;
+    /** False until Free, skip, or a return from Checkout. Missing on older sessions counts as done. */
+    planStepDone?: boolean;
   };
   /** What the account uses KoruLedger for (KAN-124); personal when never chosen. */
   usageMode: UsageMode;
   /** False until signup (or Settings) has asked; the signup flow shows the question. */
   usageModeChosen: boolean;
+  /** Signup tick: they run a business. The plan still decides whether they can change those books. */
+  runsBusiness?: boolean;
   /** New email waiting for its confirmation link to be opened. */
   pendingEmail?: string | null;
   /** True when changing email sends a confirmation link (email is set up on the server). */
@@ -1588,9 +1592,15 @@ export const api = {
   },
   billing: {
     status: () => req<BillingStatus>('/billing'),
-    /** A Stripe Checkout page for Plus, Pro or Business; the browser goes there next. */
-    checkout: (plan: 'plus' | 'pro' | 'business', interval: 'month' | 'year') =>
-      req<{ url: string }>('/billing/checkout', { method: 'POST', body: JSON.stringify({ plan, interval }) }),
+    /**
+     * A Stripe Checkout page for Plus, Pro or Business; the browser goes there next.
+     * `returnTo` is an in-app path (signup uses /register). The server allowlists it.
+     */
+    checkout: (plan: 'plus' | 'pro' | 'business', interval: 'month' | 'year', returnTo?: string) =>
+      req<{ url: string }>('/billing/checkout', {
+        method: 'POST',
+        body: JSON.stringify(returnTo ? { plan, interval, returnTo } : { plan, interval }),
+      }),
     /** Stripe's Customer Portal: change plan, card, receipts, cancel. */
     portal: () => req<{ url: string }>('/billing/portal', { method: 'POST', body: '{}' }),
   },
@@ -1739,18 +1749,20 @@ export const api = {
           assetClassesDone: boolean;
           budgetCategoriesDone: boolean;
           akahuStepDone: boolean;
+          planStepDone: boolean;
         };
       }>('/settings/onboarding'),
     /** The account's plan and its features (KAN-125). */
     plan: () =>
       req<{
         plan: 'free' | 'plus' | 'pro' | 'business';
-        features: Record<'household' | 'payslips' | 'crypto_pro' | 'bonds_plus' | 'commodities_plus' | 'business_reports', boolean>;
+        features: Record<'household' | 'payslips' | 'crypto_pro' | 'bonds_plus' | 'commodities_plus' | 'business_reports' | 'business_manage', boolean>;
       }>('/settings/plan'),
     setOnboarding: (body: {
       assetClassesDone?: boolean;
       budgetCategoriesDone?: boolean;
       akahuStepDone?: boolean;
+      planStepDone?: boolean;
     }) =>
       req<{
         onboardingComplete: boolean;
@@ -1758,16 +1770,22 @@ export const api = {
           assetClassesDone: boolean;
           budgetCategoriesDone: boolean;
           akahuStepDone: boolean;
+          planStepDone: boolean;
         };
       }>('/settings/onboarding', {
         method: 'PUT',
         body: JSON.stringify(body),
       }),
+    setRunsBusiness: (runsBusiness: boolean) =>
+      req<{ runsBusiness: boolean; businessCreated: boolean }>('/settings/runs-business', {
+        method: 'PUT',
+        body: JSON.stringify({ runsBusiness }),
+      }),
     setUsageMode: (mode: UsageMode) =>
       req<{
         usageMode: UsageMode;
         onboardingComplete: boolean;
-        onboarding: { assetClassesDone: boolean; budgetCategoriesDone: boolean; akahuStepDone: boolean };
+        onboarding: { assetClassesDone: boolean; budgetCategoriesDone: boolean; akahuStepDone: boolean; planStepDone: boolean };
       }>('/settings/usage-mode', { method: 'PUT', body: JSON.stringify({ mode }) }),
   },
   quotes: {

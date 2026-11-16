@@ -41,6 +41,7 @@ const { homeMonthSnapshot } = await import('../budget/homeSnapshot.ts');
 const { aucklandToday } = await import('../debts/model.ts');
 const { linkMirroredIncomeToBankCredits } = await import('../lib/incomeBankLink.ts');
 const { setEmailFetchForTest } = await import('./email.ts');
+const { setPlan } = await import('../lib/entitlements.ts');
 const { default: invoicesRouter } = await import('../routes/invoices.ts');
 const { default: publicInvoicesRouter } = await import('../routes/publicInvoices.ts');
 
@@ -56,6 +57,7 @@ for (const t of ['invoices', 'invoice_lines', 'invoice_clients', 'invoice_paymen
 }
 for (const [id, email] of [[userA, 'a@example.com'], [userB, 'b@example.com']]) {
   run(db, `INSERT INTO users (id, email, password_hash, created_at, updated_at) VALUES (?,?,?,?,?)`, [id, email, 'hash', now, now]);
+  setPlan(db, id, 'plus', 'test');
 }
 
 const app = express();

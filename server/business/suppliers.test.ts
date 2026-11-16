@@ -32,6 +32,7 @@ function eq(actual: unknown, expected: unknown, msg: string): void {
 }
 
 const { getDb, queryAll, run } = await import('../db/index.ts');
+const { setPlan } = await import('../lib/entitlements.ts');
 const { deleteScopedDataForUser } = await import('../lib/userScope.ts');
 const { createSession, SESSION_COOKIE } = await import('../auth/sessions.ts');
 const { attachUser, requireAuth, isPublicApiPath } = await import('../middleware/requireAuth.ts');
@@ -48,6 +49,7 @@ const today = aucklandToday();
 const db = await getDb();
 for (const [id, email] of [[userA, 'pa@example.com'], [userB, 'pb@example.com']]) {
   run(db, `INSERT INTO users (id, email, password_hash, first_name, created_at, updated_at) VALUES (?,?,?,?,?,?)`, [id, email, 'hash', 'x', now, now]);
+  setPlan(db, id, 'plus', 'test');
 }
 
 const app = express();

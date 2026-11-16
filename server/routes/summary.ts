@@ -10,6 +10,7 @@ import { recordDailySnapshot, snapshotBreakdown } from '../lib/dailySnapshot.ts'
 import { logger } from '../lib/logger.ts';
 import { readAssetClassPrefs } from '../lib/userAssetClassPrefs.ts';
 import { hiddenTotals, visibleSnapshot } from '../../src/lib/visibleNetWorth.ts';
+import { isFreePlan } from '../lib/freePlan.ts';
 
 const roundCents = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
@@ -19,6 +20,10 @@ router.get('/net-worth', async (req: AuthedRequest, res) => {
   const userId = requireUserId(req, res);
   if (!userId) return;
   const db = await getDb();
+  if (isFreePlan(db, userId)) {
+    res.status(402).json({ code: 'NET_WORTH_REQUIRED', error: 'Net worth is part of KoruLedger Plus.' });
+    return;
+  }
   const result = await computeNetWorth(db, userId);
   try {
     recordDailySnapshot(db, userId, result);

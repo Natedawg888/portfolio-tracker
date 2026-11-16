@@ -63,11 +63,13 @@ function normalizeUser(raw: AuthUser | null | undefined): AuthUser | null {
     assetClassesDone: true,
     budgetCategoriesDone: true,
     akahuStepDone: true,
+    planStepDone: true,
   };
+  const planStepDone = onboarding.planStepDone !== false;
   const onboardingComplete =
     typeof raw.onboardingComplete === 'boolean'
       ? raw.onboardingComplete
-      : Boolean(onboarding.assetClassesDone && onboarding.budgetCategoriesDone && onboarding.akahuStepDone);
+      : Boolean(onboarding.assetClassesDone && onboarding.budgetCategoriesDone && onboarding.akahuStepDone && planStepDone);
   return {
     ...raw,
     firstName: raw.firstName?.trim() || null,
@@ -77,10 +79,12 @@ function normalizeUser(raw: AuthUser | null | undefined): AuthUser | null {
       assetClassesDone: Boolean(onboarding.assetClassesDone),
       budgetCategoriesDone: Boolean(onboarding.budgetCategoriesDone),
       akahuStepDone: Boolean(onboarding.akahuStepDone),
+      planStepDone,
     },
     onboardingComplete,
     usageMode: isUsageMode(raw.usageMode) ? raw.usageMode : 'personal',
     usageModeChosen: raw.usageModeChosen === true,
+    runsBusiness: raw.runsBusiness === true,
   };
 }
 

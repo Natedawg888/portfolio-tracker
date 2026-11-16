@@ -23,6 +23,9 @@ export const PLAN_LABELS: Record<AccountPlan, string> = {
   business: 'Business',
 };
 
+/** Shown in Settings and during signup whenever Stripe is in test mode. */
+export const BILLING_TEST_NOTE = 'Test mode: no real charges. Use Stripe’s test card 4242 4242 4242 4242.';
+
 /**
  * Paid plans offered for sale. Pro is omitted unless the API says PRO_PLAN_ENABLED is on.
  * Free stays a plan (the label above); it is not a Stripe product.
@@ -31,12 +34,59 @@ export function offeredPaidPlans(proPlanEnabled: boolean): PaidPlan[] {
   return proPlanEnabled ? ['plus', 'pro', 'business'] : ['plus', 'business'];
 }
 
+/** Free, then the paid plans currently for sale. Signup shows this list. */
+export function offeredPlans(proPlanEnabled: boolean): AccountPlan[] {
+  return ['free', ...offeredPaidPlans(proPlanEnabled)];
+}
+
+/**
+ * What Free includes. Paid plans say what they add (PLAN_FEATURES), in the same short style.
+ * Free is one budget of money in and out, one bank or cash account, and no net worth.
+ * Savings goals, receipts and payslips are not capped. Plus adds the PAYE check and net pay into Income.
+ */
+export const FREE_FEATURES: readonly string[] = [
+  'PAYE, salary tools and payslips',
+  'One budget: money in and money out',
+  'One bank or cash account',
+  'Savings goals and receipts, with no limit',
+];
+
 /** What each paid plan adds (keep in step with server/lib/entitlements.ts). */
 export const PLAN_FEATURES: Record<PaidPlan, readonly string[]> = {
-  plus: ['Share with your household', 'Payslips and the PAYE check', 'Bonds: coupons, maturities and projections', 'Commodities in your asset mix'],
-  pro: ['Everything in Plus', 'Advanced crypto: cost basis and gains, staking, DeFi and wallet import'],
-  business: ['Profit & loss for a tax year or any period', 'GST return to copy into myIR', 'An export for your accountant', 'Access for your accountant'],
+  plus: [
+    'Full budgeting, bills and subscriptions',
+    'Dividends, projections, donations and news',
+    'Net worth, household, payslip PAYE check and Income, bonds and commodities',
+    'CSV import and public crypto wallets',
+    'Business management if you run a business',
+  ],
+  pro: [
+    'Everything in Plus',
+    'Advanced crypto: cost basis, staking, DeFi and wallet import',
+    'AI assistant',
+    'Akahu bank connect (coming later)',
+  ],
+  business: [
+    'Business management: clients, invoices and stock',
+    'Profit & loss for a tax year or any period',
+    'GST return to copy into myIR',
+    'An export for your accountant',
+    'Access for your accountant',
+  ],
 };
+
+/** Extra Plus line on the signup plan step when "I run a business" is ticked. */
+export const PLUS_RUNS_BUSINESS_LINE = 'Clients, invoices and stock for your business';
+
+export function plusFeatureLines(runsBusiness: boolean): readonly string[] {
+  return runsBusiness ? [...PLAN_FEATURES.plus, PLUS_RUNS_BUSINESS_LINE] : PLAN_FEATURES.plus;
+}
+
+/** After Checkout, until the webhook has changed the plan. */
+export function checkoutPendingText(plan: AccountPlan | null): string {
+  if (plan && plan !== 'free') return `You’re on ${PLAN_LABELS[plan]}.`;
+  return 'Confirming your payment… Your plan will update in a moment.';
+}
 
 export function formatNzd(cents: number): string {
   return `NZ$${(cents / 100).toFixed(2)}`;

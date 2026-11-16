@@ -9,6 +9,7 @@ import { getDb, queryOne } from '../db/index.ts';
 import { planOf } from '../lib/entitlements.ts';
 import { logger } from '../lib/logger.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
+import { billingReturnPath } from '../../src/lib/billingReturn.ts';
 import { CATALOG, isBillingInterval, isBillingPlan } from '../billing/catalog.ts';
 import { billingConfig } from '../billing/config.ts';
 import { proPlanEnabled } from '../billing/proPlan.ts';
@@ -59,7 +60,7 @@ router.get('/', async (req: AuthedRequest, res) => {
 router.post('/checkout', async (req: AuthedRequest, res) => {
   const cfg = billingConfig();
   if (!cfg.ok) return unavailable(res);
-  const { plan, interval } = (req.body ?? {}) as { plan?: unknown; interval?: unknown };
+  const { plan, interval, returnTo } = (req.body ?? {}) as { plan?: unknown; interval?: unknown; returnTo?: unknown };
   if (plan === 'pro' && !proPlanEnabled()) {
     res.status(400).json({ error: 'Pro is not available yet', code: 'PRO_UNAVAILABLE' });
     return;
@@ -85,7 +86,7 @@ router.post('/checkout', async (req: AuthedRequest, res) => {
   }
   const name = [user.first_name, user.last_name].filter(Boolean).join(' ').trim();
   try {
-    const url = await createCheckout(db, cfg.config, { id: user.id, email: user.email, name }, plan, interval, shareBase(req));
+    const url = await createCheckout(db, cfg.config, { id: user.id, email: user.email, name }, plan, interval, shareBase(req), billingReturnPath(returnTo));
     res.json({ url });
   } catch (err) {
     sendError(res, err, 'Couldn’t open checkout. Try again in a minute.');

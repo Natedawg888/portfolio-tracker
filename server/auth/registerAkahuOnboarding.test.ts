@@ -107,11 +107,13 @@ try {
 
   const otherPrefs = parseOnboardingFromPreferencesJson(initialPreferencesJsonForNewUser('new.user@example.com'));
   assert(otherPrefs.flags?.akahuStepDone === true, 'initial prefs skip Akahu for a new non-Nathan account');
+  assert(otherPrefs.flags?.planStepDone === false, 'a new account still chooses a plan');
   assert(otherPrefs.complete === false, 'initial prefs still require assets and budgets');
   const nathanPrefs = parseOnboardingFromPreferencesJson(
     initialPreferencesJsonForNewUser('  MccormickNathan09@Gmail.com '),
   );
   assert(nathanPrefs.flags?.akahuStepDone === false, 'initial prefs still offer Akahu for Nathan');
+  assert(nathanPrefs.flags?.planStepDone === false, 'Nathan also chooses a plan');
 
   const legacy = JSON.stringify({ assetClasses: { stocks: true } });
   const legacyApplied = preferencesWithAkahuSkippedUnlessRequired(legacy, 'other@example.com');
@@ -125,6 +127,7 @@ try {
   );
   assert(stuck.changed === true, 'in-progress non-Nathan account records the skip');
   const stuckParsed = parseOnboardingFromPreferencesJson(stuck.json);
+  assert(stuckParsed.flags?.planStepDone === true, 'an older in-progress account is not sent back to choose a plan');
   assert(stuckParsed.complete === true, 'skipped Akahu plus finished required steps opens the app');
   assert(stuckParsed.flags?.assetClassesDone === true && stuckParsed.flags?.budgetCategoriesDone === true, 'other flags preserved');
 
@@ -170,18 +173,22 @@ try {
   assertSkippedAtCreation('lookalike register', lookalike.json as { user?: OnboardingBody });
   passed += 1;
 
-  const otherDone = await put(
+  const otherAlmost = await put(
     '/api/settings/onboarding',
     { assetClassesDone: true, budgetCategoriesDone: true },
     other.cookie!,
   );
-  assert(otherDone.status === 200, `other onboarding status ${otherDone.status}`);
+  assert(otherAlmost.status === 200, `other onboarding status ${otherAlmost.status}`);
+  assert(otherAlmost.json.onboarding?.planStepDone === false, 'assets and budgets do not skip the plan step');
+  assert(otherAlmost.json.onboardingComplete === false, 'signup waits until a plan is chosen or skipped');
+  const otherDone = await put('/api/settings/onboarding', { planStepDone: true }, other.cookie!);
+  assert(otherDone.status === 200, `other plan step status ${otherDone.status}`);
   assert(otherDone.json.onboarding?.akahuStepDone === true, 'finishing required steps keeps Akahu skipped');
   assert(otherDone.json.onboardingComplete === true, 'non-Nathan signup can finish without the Akahu step');
 
   const nathanAssets = await put(
     '/api/settings/onboarding',
-    { assetClassesDone: true, budgetCategoriesDone: true },
+    { assetClassesDone: true, budgetCategoriesDone: true, planStepDone: true },
     nathan.cookie!,
   );
   assert(nathanAssets.status === 200, `Nathan onboarding status ${nathanAssets.status}`);
@@ -200,8 +207,11 @@ try {
   assert(noAuth.status === 401, 'signed out is refused');
   const chosen = await put('/api/settings/usage-mode', { mode: 'business' }, biz.cookie!);
   assert(chosen.status === 200 && chosen.json.usageMode === 'business', 'business saved');
-  assert(chosen.json.onboardingComplete === true, 'business only finishes signup without the personal steps');
   assert(chosen.json.onboarding?.assetClassesDone === true && chosen.json.onboarding?.budgetCategoriesDone === true, 'asset and budget steps marked not needed');
+  assert(chosen.json.onboarding?.planStepDone === false, 'business only still chooses a plan');
+  assert(chosen.json.onboardingComplete === false, 'business only is not finished before the plan step');
+  const bizPlan = await put('/api/settings/onboarding', { planStepDone: true }, biz.cookie!);
+  assert(bizPlan.status === 200 && bizPlan.json.onboardingComplete === true, 'choosing or skipping a plan finishes business signup');
   // Signing in returns the same user object the app keeps (this harness has no attachUser for /me).
   const signIn = await post('/api/auth/login', { email: 'books@example.com', password });
   const signedIn = signIn.json.user as { usageMode?: string; usageModeChosen?: boolean } | undefined;

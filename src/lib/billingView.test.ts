@@ -1,5 +1,5 @@
 /** Settings → Plan wording (KAN-52). Run: npm run test:billing */
-import { formatNzd, offeredPaidPlans, priceFor, priceText, subscriptionLine, yearlySavingPct, type BillingPrice } from './billingView.ts';
+import { BILLING_TEST_NOTE, FREE_FEATURES, PLAN_FEATURES, checkoutPendingText, formatNzd, offeredPaidPlans, offeredPlans, plusFeatureLines, priceFor, priceText, subscriptionLine, yearlySavingPct, type BillingPrice } from './billingView.ts';
 
 function eq(a: unknown, b: unknown, msg: string): void {
   if (a !== b) throw new Error(`FAIL: ${msg}: got ${JSON.stringify(a)}, want ${JSON.stringify(b)}`);
@@ -29,6 +29,20 @@ eq(yearlySavingPct([{ plan: 'plus', interval: 'month', amountCents: 100 }, { pla
 eq(offeredPaidPlans(false).join(), 'plus,business', 'Pro is hidden unless the flag is on');
 eq(offeredPaidPlans(true).join(), 'plus,pro,business', 'PRO_PLAN_ENABLED offers Pro again');
 eq(offeredPaidPlans(false).includes('plus') && offeredPaidPlans(false).includes('business'), true, 'Plus and Business stay on sale');
+eq(offeredPlans(false).join(), 'free,plus,business', 'signup offers Free, Plus and Business');
+eq(offeredPlans(true).join(), 'free,plus,pro,business', 'signup offers Pro only when the flag is on');
+eq(FREE_FEATURES.length >= 3 && FREE_FEATURES.every((line) => !/NZ\$/.test(line)), true, 'Free has a short summary and no hardcoded price');
+eq(FREE_FEATURES.some((line) => line.includes('PAYE') && line.includes('payslips')) && FREE_FEATURES.some((line) => line.includes('One budget')), true, 'Free copy matches the new limits');
+eq(PLAN_FEATURES.plus.some((line) => line.includes('Net worth')) && PLAN_FEATURES.plus.some((line) => line.includes('Business management')), true, 'Plus copy includes net worth and business management');
+eq(PLAN_FEATURES.pro.some((line) => line.includes('AI assistant')) && PLAN_FEATURES.pro.some((line) => line.includes('Akahu')), true, 'Pro copy includes the assistant and Akahu');
+eq(PLAN_FEATURES.business.some((line) => line.includes('clients, invoices and stock')) && PLAN_FEATURES.business.some((line) => line.includes('GST return')), true, 'Business copy is management plus reports');
+eq(plusFeatureLines(true).some((line) => line.includes('Clients, invoices and stock')), true, 'ticking I run a business adds the Plus management line');
+eq(plusFeatureLines(false).some((line) => line.includes('Clients, invoices and stock')), false, 'the extra line stays off until the box is ticked');
+eq(BILLING_TEST_NOTE.includes('no real charges') && BILLING_TEST_NOTE.includes('4242'), true, 'test-mode note matches Settings');
+eq(checkoutPendingText(null), 'Confirming your payment… Your plan will update in a moment.', 'pending until the webhook');
+eq(checkoutPendingText('free'), 'Confirming your payment… Your plan will update in a moment.', 'still free means still confirming');
+eq(checkoutPendingText('plus'), 'You’re on Plus.', 'Plus has landed');
+eq(checkoutPendingText('business'), 'You’re on Business.', 'Business has landed');
 
 const base = { plan: 'plus' as const, interval: 'year' as const, status: 'active', cancelAtPeriodEnd: false, currentPeriodEnd: '2026-12-02T00:00:00.000Z' };
 eq(subscriptionLine(base), 'Billed yearly. Renews on 2 December 2026.', 'active, NZ date');

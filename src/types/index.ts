@@ -2319,7 +2319,7 @@ export interface Payslip extends PayslipWriteBody {
   income: { inIncome: boolean; bankMatch: { transactionId: string; date: string; description: string; amountNzd: number } | null; reason: string | null };
 }
 export interface PayslipsView {
-  plan: { plus: boolean; freeLimit: number; usedThisYear: number };
+  plan: { plus: boolean };
   taxYear: number;
   years: { startYear: number; label: string }[];
   payslips: Payslip[];
