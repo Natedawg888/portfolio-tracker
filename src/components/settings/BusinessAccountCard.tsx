@@ -10,6 +10,7 @@ import { useLocation } from 'react-router-dom';
 import { ApiError, api, createLinkedBusiness, getAccountLinks, linkExistingBusiness, switchAccount, unlinkAccount } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { clearPageCache } from '../../lib/pageDataCache';
+import { refreshAccountLinks } from '../../lib/useAccountLinks';
 import {
   BUSINESS_ACCOUNT_EMPTY_COPY,
   BUSINESS_ACCOUNT_SECTION_ID,
@@ -100,6 +101,7 @@ export function BusinessAccountCard() {
     try {
       await switchAccount({ accountId });
       clearPageCache();
+      refreshAccountLinks();
       window.location.assign(DASHBOARD_AFTER_SWITCH);
     } catch (err) {
       setError(switchAccountErrorCopy(err instanceof ApiError ? err.code : undefined));
@@ -216,6 +218,7 @@ export function BusinessAccountCard() {
             setError(null);
             unlinkAccount(target.id)
               .then((res) => {
+                refreshAccountLinks();
                 if (target.reload) {
                   clearPageCache();
                   window.location.reload();
@@ -394,6 +397,7 @@ function OwnerBody({
             createLinkedBusiness({ businessName })
               .then((res) => {
                 onLinks(res.links);
+                refreshAccountLinks();
                 onOpen({ kind: 'ready', accountId: res.account.id, name: linkedAccountTitle(res.account) });
               })
               .catch((err: unknown) => {
@@ -415,6 +419,7 @@ function OwnerBody({
             linkExistingBusiness({ email, password })
               .then((res) => {
                 onLinks(res.links);
+                refreshAccountLinks();
                 onOpen({ kind: 'idle' });
               })
               .catch((err: unknown) => {

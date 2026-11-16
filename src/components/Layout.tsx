@@ -15,9 +15,9 @@ import { useAuth } from '../auth/AuthContext';
 import { navKeysForMode, type NavKey, type UsageMode } from '../lib/usageMode';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
 import { ProfileMenu } from './ProfileMenu';
-import { AccountTypePill } from './AccountTypePill';
-import { headerAccountContext, HEADER_ACCOUNT_CURRENCY, HEADER_ACCOUNT_TIMEZONE } from '../lib/accountLinksView';
+import { headerAccountContext } from '../lib/accountLinksView';
 import { useAccountLinks } from '../lib/useAccountLinks';
+import { HeaderAccountLine } from './HeaderAccountLine';
 import { QuietToast } from './QuietToast';
 import { CheckoutPendingNote } from './billing/CheckoutPendingNote';
 import { useMeetingReminders } from '../lib/useMeetingReminders';
@@ -150,24 +150,11 @@ export function Layout({ children }: { children?: ReactNode }) {
     ? cloneElement(routed, { moneyHidden } as { moneyHidden: boolean })
     : routed;
   const { user } = useAuth();
-  const { links, activeBusinessName, reload: reloadLinks } = useAccountLinks(
-    user?.id,
-    user?.activeAccount.isLinkedBusiness === true,
-    location.pathname,
-  );
-  const accountDisplayName = user
-    ? user.displayName?.trim() ||
-      [user.firstName, user.lastName]
-        .map((part) => (part || '').trim())
-        .filter(Boolean)
-        .join(' ') ||
-      null
-    : null;
+  const { links, activeBusinessName } = useAccountLinks(user?.id, user?.activeAccount.isLinkedBusiness === true);
   const headerAccount = user
     ? headerAccountContext({
         links,
         active: user.activeAccount,
-        displayName: accountDisplayName,
         activeBusinessName,
       })
     : null;
@@ -342,24 +329,13 @@ export function Layout({ children }: { children?: ReactNode }) {
     <div className={'app-shell' + (navOpen ? ' nav-drawer-open' : '')}>
       <header className="app-header">
         <div className="brand">
-          <ProfileMenu
-            triggerClassName="brand-mark"
-            links={links}
-            activeBusinessName={activeBusinessName}
-            onRefresh={reloadLinks}
-          />
+          <ProfileMenu triggerClassName="brand-mark" links={links} activeBusinessName={activeBusinessName} />
           {headerAccount ? (
             <div className="brand-copy">
               <h1 className="brand-title">
                 <BrandLockup size="sm" />
               </h1>
-              <p className="sub account-context">
-                <span className="account-context-name">{headerAccount.name}</span>
-                <AccountTypePill type={headerAccount.pill} />
-                <span className="account-context-meta">
-                  · {HEADER_ACCOUNT_CURRENCY} · {HEADER_ACCOUNT_TIMEZONE}
-                </span>
-              </p>
+              <HeaderAccountLine name={headerAccount.name} pill={headerAccount.pill} />
             </div>
           ) : (
             <h1 className="brand-title">

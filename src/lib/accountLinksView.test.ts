@@ -363,14 +363,14 @@ eq(
   'an unknown switch failure uses the switch fallback',
 );
 
-eq(headerAccountContext({ links: null, active: null, displayName: 'Pat Ng' }), null, 'signed out header is unchanged');
+eq(headerAccountContext({ links: null, active: null }), null, 'signed out header is unchanged');
 eq(
-  headerAccountContext({ links: unlinked, active: { isLinkedBusiness: false, ownerId: null }, displayName: 'Pat Ng' }),
+  headerAccountContext({ links: unlinked, active: { isLinkedBusiness: false, ownerId: null } }),
   null,
   'an unlinked account does not get a header pill',
 );
 eq(
-  headerAccountContext({ links: ownerLinks, active: { isLinkedBusiness: false, ownerId: null }, displayName: 'Pat Ng' }),
+  headerAccountContext({ links: ownerLinks, active: { isLinkedBusiness: false, ownerId: null } }),
   { name: 'Pat Ng', pill: 'personal' },
   'a linked owner’s header names the personal account',
 );
@@ -378,16 +378,23 @@ eq(
   headerAccountContext({
     links: businessLinksAllowed,
     active: { isLinkedBusiness: true, ownerId: 'pat' },
-    displayName: 'Pat Ng',
     activeBusinessName: 'Koru Honey',
   }),
   { name: 'Koru Honey', pill: 'business' },
   'a linked business header names that business',
 );
 eq(
-  headerAccountContext({ links: null, active: { isLinkedBusiness: true, ownerId: 'pat' }, displayName: 'Pat Ng' }),
-  { name: 'Pat Ng', pill: 'business' },
-  'a known link can show before the list returns',
+  headerAccountContext({ links: null, active: { isLinkedBusiness: true, ownerId: 'pat' } }),
+  { name: null, pill: 'business' },
+  'before the list returns, a linked business shows no person’s name',
+);
+eq(
+  headerAccountContext({
+    links: businessLinksAllowed,
+    active: { isLinkedBusiness: true, ownerId: 'pat' },
+  }),
+  { name: null, pill: 'business' },
+  'before the business name is known, the header does not use the person’s name',
 );
 
 console.log('accountLinksView tests passed');

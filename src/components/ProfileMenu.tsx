@@ -4,6 +4,7 @@ import { prefetchNavTarget } from '../lib/routePrefetch';
 import { useAuth } from '../auth/AuthContext';
 import { ApiError, api, type RememberedAccount } from '../api/client';
 import { clearPageCache } from '../lib/pageDataCache';
+import { refreshAccountLinks } from '../lib/useAccountLinks';
 import {
   BUSINESS_ACCOUNT_HREF,
   DASHBOARD_AFTER_SWITCH,
@@ -20,7 +21,7 @@ import {
   type AccountSwitchPhase,
 } from '../lib/accountLinksView';
 import type { AccountLinksResponse } from '../types/accountLinks';
-import { AccountTypePill } from './AccountTypePill';
+import { AccountSwitchRow } from './AccountSwitchRow';
 
 function initials(email: string, displayName: string | null): string {
   const name = (displayName || '').trim();
@@ -37,12 +38,10 @@ export function ProfileMenu({
   triggerClassName,
   links,
   activeBusinessName,
-  onRefresh,
 }: {
   triggerClassName?: string;
   links: AccountLinksResponse | null;
   activeBusinessName?: string | null;
-  onRefresh?: () => void;
 }) {
   const { user, logout, logoutAll, switchAccount } = useAuth();
   const navigate = useNavigate();
@@ -126,6 +125,7 @@ export function ProfileMenu({
     try {
       await api.accountLinks.switch({ accountId });
       clearPageCache();
+      refreshAccountLinks();
       setOpen(false);
       window.location.assign(DASHBOARD_AFTER_SWITCH);
     } catch (err) {
@@ -147,10 +147,11 @@ export function ProfileMenu({
         aria-expanded={open}
         aria-label={`Account menu for ${label}`}
         onClick={() => {
-          setOpen((v) => {
-            if (!v) onRefresh?.();
-            return !v;
-          });
+          if (!open) {
+            setPhase({ kind: 'idle' });
+            switchLock.current = false;
+          }
+          setOpen((isOpen) => !isOpen);
         }}
       >
         {user.avatarUrl ? (
@@ -170,29 +171,19 @@ export function ProfileMenu({
                 const state = accountSwitchRowState(row, phase);
                 const target = accountSwitchTarget(row, phase);
                 return (
-                  <button
+                  <AccountSwitchRow
                     key={row.id}
-                    type="button"
-                    className={'profile-menu-switch-row' + (state.blocked ? ' is-blocked' : '')}
-                    aria-current={state.ariaCurrent ? 'true' : undefined}
+                    id={row.id}
+                    name={row.name}
+                    pill={row.pill}
+                    current={state.ariaCurrent}
                     disabled={state.disabled || switching !== null}
+                    blocked={state.blocked}
+                    statusText={state.statusText}
                     onClick={() => {
                       if (target) void onLinkedSwitch(target);
                     }}
-                  >
-                    <span className="profile-menu-switch-row-line">
-                      <span className="profile-menu-switch-row-name">{row.name}</span>
-                      <AccountTypePill type={row.pill} />
-                      {state.statusText === 'Current' || state.statusText === 'Switching…' ? (
-                        <span className="profile-menu-switch-row-status">{state.statusText}</span>
-                      ) : null}
-                    </span>
-                    {state.statusText && state.statusText !== 'Current' && state.statusText !== 'Switching…' ? (
-                      <span className="profile-menu-switch-row-error" role="alert">
-                        {state.statusText}
-                      </span>
-                    ) : null}
-                  </button>
+                  />
                 );
               })}
             </div>

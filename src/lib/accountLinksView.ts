@@ -378,6 +378,11 @@ export function accountSwitchRowState(
   return { ariaCurrent: false, disabled: false, statusText: null, blocked: false };
 }
 
+/** Id shared by a switcher row and the error it describes. */
+export function accountSwitchErrorId(accountId: string): string {
+  return `account-switch-error-${accountId}`;
+}
+
 /** Only an inactive row, and only while nothing is already switching. */
 export function accountSwitchTarget(row: { id: string; current: boolean }, phase: AccountSwitchPhase): string | null {
   if (row.current || phase.kind === 'switching') return null;
@@ -385,24 +390,28 @@ export function accountSwitchTarget(row: { id: string; current: boolean }, phase
 }
 
 /**
- * Header line for a linked account. Unlinked accounts, and a list that has not
- * confirmed a link, get null so the header stays as it is.
+ * Header line for a linked account. Unlinked accounts get null so the header stays as it is.
+ * `name` is null until the list (and, for a business, its business name) is known.
+ * The person's display name is not used as a stand-in, so the header does not flash it.
  */
 export function headerAccountContext(input: {
   links: AccountLinksResponse | null;
   active: { isLinkedBusiness: boolean; ownerId: string | null } | null | undefined;
-  displayName: string | null;
   activeBusinessName?: string | null;
-}): { name: string; pill: 'personal' | 'business' } | null {
-  const confirmed = input.links ? showAccountsGroup(input.links) : false;
-  const knownLink = Boolean(input.active?.isLinkedBusiness && input.active.ownerId);
-  if (!confirmed && !knownLink) return null;
-  if (input.links && confirmed) {
+}): { name: string | null; pill: 'personal' | 'business' } | null {
+  if (input.links && showAccountsGroup(input.links)) {
     const current = accountSwitcherRows(input.links, input.activeBusinessName).find((row) => row.current);
-    if (current) return { name: current.name, pill: current.pill };
+    if (current) {
+      if (current.pill === 'business' && !input.activeBusinessName?.trim()) {
+        return { name: null, pill: 'business' };
+      }
+      return { name: current.name, pill: current.pill };
+    }
   }
-  const name = input.displayName?.trim() || (input.active?.isLinkedBusiness ? 'Business account' : 'Personal account');
-  return { name, pill: input.active?.isLinkedBusiness ? 'business' : 'personal' };
+  if (input.active?.isLinkedBusiness && input.active.ownerId) {
+    return { name: null, pill: 'business' };
+  }
+  return null;
 }
 
 /**
