@@ -89,11 +89,12 @@ const personal = renderToStaticMarkup(createElement(HeaderAccountLine, { name: '
 assert(personal.includes('account-type-pill--personal'), 'a personal account shows the Personal pill');
 assert(personal.includes('>Personal<'), 'the header pill reads Personal');
 
-const emptyLinks = {
+const emptyLinks: AccountLinksResponse = {
   current: { id: 'pat', displayName: 'Pat Ng', usageMode: 'personal', plan: 'free', isLinkedBusiness: false, canUnlink: false },
   owner: null,
   linked: [],
-} as AccountLinksResponse;
+  canSwitchToOwner: false,
+};
 const otherUser = {
   ...emptyLinks,
   current: { ...emptyLinks.current, id: 'someone-else' },

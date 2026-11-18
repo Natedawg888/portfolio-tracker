@@ -258,9 +258,7 @@ function linksOf(
   linkedRows: LinkedAccountSummary[],
   canSwitchToOwner?: boolean,
 ): AccountLinksResponse {
-  const links: AccountLinksResponse = { current, owner, linked: linkedRows };
-  if (canSwitchToOwner !== undefined) (links as { canSwitchToOwner?: boolean }).canSwitchToOwner = canSwitchToOwner;
-  return links;
+  return { current, owner, linked: linkedRows, canSwitchToOwner: canSwitchToOwner === true };
 }
 
 const pat = party('pat', 'Pat Ng', 'personal', false);
