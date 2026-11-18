@@ -10,6 +10,7 @@ import type { Database } from 'sql.js';
 import type { Business, BusinessProfile } from '../../src/types/index.ts';
 import { DEFAULT_INVOICE_PREFIX } from '../../src/lib/invoiceCalc.ts';
 import { isBusinessType, type BusinessType } from '../../src/lib/business.ts';
+import { publicEmail } from '../auth/syntheticEmail.ts';
 import { newId, queryOne, run } from '../db/index.ts';
 import { photoUrlFromPath } from '../lib/uploads.ts';
 
@@ -80,7 +81,7 @@ function accountName(db: Database, userId: string): { name: string; email: strin
     [userId],
   );
   const name = (u?.display_name ?? '').trim() || [u?.first_name, u?.last_name].filter((p) => p && String(p).trim()).join(' ');
-  return { name, email: u?.email ?? '' };
+  return { name, email: publicEmail(u?.email) ?? '' };
 }
 
 /** The default business, made now (from Settings → Business or the account) if there is none. */

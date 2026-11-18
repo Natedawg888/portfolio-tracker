@@ -50,6 +50,9 @@ const { beginTotpSetup, confirmTotpSetup } = await import('./twoFactor.ts');
 const { base32Decode, hotp, totpStep } = await import('./totp.ts');
 const { NO_LOGIN } = await import('./users.ts');
 const { LINKED_ACCOUNT_EMAIL_DOMAIN } = await import('./accountLinks.ts');
+const { ensureDefaultBusiness, profileFromBusiness } = await import('../business/profile.ts');
+const { renderInvoicePdf } = await import('../invoices/pdf.ts');
+const { renderReceiptPdf } = await import('../business/receiptPdf.ts');
 const { resetLoginRateLimitForTest } = await import('./loginRateLimit.ts');
 
 const app = express();
@@ -103,7 +106,7 @@ async function register(email: string, firstName: string, lastName: string) {
 
 type Party = { id: string; displayName: string | null; usageMode: string; plan: string; isLinkedBusiness: boolean };
 type Linked = { id: string; displayName: string | null; businessName: string | null; plan: string; hasOwnLogin: boolean; canUnlink: boolean };
-type LinksBody = { current: Party; owner: Party | null; linked: Linked[] };
+type LinksBody = { current: Party; owner: Party | null; linked: Linked[]; canSwitchToOwner: boolean };
 
 function linksOf(json: Json | null): LinksBody {
   return json as unknown as LinksBody;
@@ -164,6 +167,7 @@ try {
 
   const fromPat = linksOf((await call(pat.jar, 'GET', '/api/account/links')).json);
   check(fromPat.owner === null && fromPat.current.id === pat.id && fromPat.current.isLinkedBusiness === false, 'owner list has no parent');
+  check(fromPat.canSwitchToOwner === false, 'canSwitchToOwner is false when there is no owner');
   check(fromPat.linked.length === 1 && fromPat.linked[0].id === honeyId && fromPat.linked[0].hasOwnLogin === false && fromPat.linked[0].canUnlink === false, 'owner list flags');
 
   const banks = await call(pat.jar, 'GET', '/api/accounts');
@@ -201,6 +205,7 @@ try {
   const fromHoney = linksOf((await call(pat.jar, 'GET', '/api/account/links')).json);
   check(fromHoney.current.id === honeyId && fromHoney.current.isLinkedBusiness === true && fromHoney.current.canUnlink === false, 'list current is the business without a login');
   check(fromHoney.owner?.id === pat.id && fromHoney.owner.usageMode === 'personal' && fromHoney.linked.length === 0, 'business sees its owner and no children');
+  check(fromHoney.canSwitchToOwner === true, 'owner-originated session can switch to the owner');
 
   const honeyBanks = (await call(pat.jar, 'GET', '/api/accounts')).json as { name?: string }[];
   check(Array.isArray(honeyBanks) && honeyBanks.every((a) => a.name !== 'Personal cheque'), 'switched session does not see the personal bank account');
@@ -226,7 +231,7 @@ try {
   check((await call(pat.jar, 'GET', '/api/auth/me')).json!.user && ((await call(pat.jar, 'GET', '/api/auth/me')).json!.user as Json).id === pat.id, 'refused switch leaves the session');
 
   const vicLinks = linksOf((await call(vic.jar, 'GET', '/api/account/links')).json);
-  check(vicLinks.linked.length === 0 && vicLinks.owner === null, 'another user does not see the link');
+  check(vicLinks.linked.length === 0 && vicLinks.owner === null && vicLinks.canSwitchToOwner === false, 'another user does not see the link');
 
   setPlan(db, pat.id, 'plus');
   check(planOf(db, pat.id) === 'plus' && planOf(db, honeyId) === 'free', 'planOf does not read the other account');
@@ -347,8 +352,10 @@ try {
   check(Boolean(beaItem && beaItem.hasOwnLogin && beaItem.canUnlink && beaItem.plan === 'free'), 'linked existing account can be unlinked');
   const beaView = linksOf((await call(bea.jar, 'GET', '/api/account/links')).json);
   check(beaView.owner?.id === pat.id && beaView.owner.canUnlink === false && beaView.current.isLinkedBusiness === true && beaView.current.canUnlink === true && beaView.linked.length === 0, 'existing business lists its owner and can unlink itself');
+  check(beaView.canSwitchToOwner === false, 'business signed in with its own password cannot switch to the owner');
   const toBea = await call(pat.jar, 'POST', '/api/account/switch', { accountId: bea.id });
   check(toBea.status === 200 && (toBea.json!.user as Json).id === bea.id, 'switch to a linked existing account');
+  check(linksOf((await call(pat.jar, 'GET', '/api/account/links')).json).canSwitchToOwner === true, 'session opened by the owner can switch back');
   check((await call(pat.jar, 'POST', '/api/account/switch', { accountId: pat.id })).status === 200, 'switch back from the linked account');
 
   const nia = await register('nia@example.test', 'Nia', 'Ng');
@@ -393,6 +400,7 @@ try {
   const honeyEmail = queryOne<{ email: string }>(db, `SELECT email FROM users WHERE id = ?`, [honeyId])!.email;
   const direct = new Map<string, string>();
   check((await call(direct, 'POST', '/api/auth/login', { email: honeyEmail, password: 'Honey-login-123' })).status === 200, 'business signs in with its own password');
+  check(linksOf((await call(direct, 'GET', '/api/account/links')).json).canSwitchToOwner === false, 'direct password session cannot switch to the owner');
   const directSwitch = await call(direct, 'POST', '/api/account/switch', { accountId: pat.id });
   check(directSwitch.status === 403 && directSwitch.json!.code === 'SWITCH_NOT_ALLOWED', 'own-login session cannot switch to the owner');
   check(((await call(direct, 'GET', '/api/auth/me')).json!.user as Json).id === honeyId, 'refused switch leaves the business signed in');
@@ -599,6 +607,75 @@ try {
   await settleMarkedLinkedAccounts(db, [unpaidBiz.id, goneBiz.id]);
   check(stripeCancels.includes('sub_unpaid') && !queryOne(db, `SELECT id FROM users WHERE id = ?`, [unpaidBiz.id]), 'unpaid subscription is cancelled and the user is purged');
   check(stripeCancels.includes('sub_missing') && !queryOne(db, `SELECT id FROM users WHERE id = ?`, [goneBiz.id]), 'resource_missing counts as canceled and the user is purged');
+
+  const synPdf = 'pdf_syn';
+  const realPdf = 'pdf_real';
+  const stamped = new Date().toISOString();
+  run(db, `INSERT INTO users (id, email, password_hash, display_name, created_at, updated_at) VALUES (?,?,?,?,?,?)`, [
+    synPdf, `linked.pdf@${LINKED_ACCOUNT_EMAIL_DOMAIN}`, 'x', 'Pdf Shop', stamped, stamped,
+  ]);
+  run(db, `INSERT INTO users (id, email, password_hash, first_name, created_at, updated_at) VALUES (?,?,?,?,?,?)`, [
+    realPdf, 'real.pdf@example.test', 'x', 'Real', stamped, stamped,
+  ]);
+  const synBiz = ensureDefaultBusiness(db, synPdf);
+  const synProfile = profileFromBusiness(synBiz);
+  check(synBiz.email === '' && synProfile.email === '', 'default business does not copy a synthetic address onto invoice or receipt details');
+  const realRow = ensureDefaultBusiness(db, realPdf);
+  check(realRow.email === 'real.pdf@example.test' && profileFromBusiness(realRow).email === 'real.pdf@example.test', 'a real account email still defaults the business');
+  const invoicePdf = Buffer.from(await renderInvoicePdf({
+    number: 'INV-0001', title: 'Invoice', status: 'draft', business: synProfile,
+    clientName: 'Walk-in', clientEmail: '', clientAddress: '', clientReference: '',
+    issueDate: '2026-10-01', dueDate: '2026-10-08', reference: '', gstMode: 'none',
+    lines: [{ id: '1', description: 'Jar', quantity: 1, unit: 'each', rate: 12, lineTotalNzd: 12 }],
+    subtotalNzd: 12, gstNzd: 0, totalNzd: 12, withholdingRatePct: null, withholdingNzd: 0,
+    amountDueNzd: 12, paidNzd: 0, balanceNzd: 12, notes: '', paymentInstructions: '',
+  }));
+  const receiptPdf = Buffer.from(await renderReceiptPdf({
+    id: 'sale_pdf', businessId: synBiz.id, date: '2026-10-01', clientId: null, clientName: null,
+    invoiceId: null, invoiceNumber: null, transactionId: null, notes: '', lines: [],
+    totalNzd: 12, gstNzd: null, costNzd: null, grossProfitNzd: null, countsAsIncome: true,
+    receipt: { kind: 'issued', number: 'RCT-0001', issuedAt: stamped, pdfUrl: '/receipt.pdf' },
+    createdAt: stamped, updatedAt: stamped,
+  }, { business: synProfile, client: null }));
+  check(invoicePdf.subarray(0, 5).toString() === '%PDF-' && receiptPdf.subarray(0, 5).toString() === '%PDF-', 'invoice and receipt pdfs render');
+  check(!invoicePdf.includes(LINKED_ACCOUNT_EMAIL_DOMAIN) && !receiptPdf.includes(LINKED_ACCOUNT_EMAIL_DOMAIN), 'invoice and receipt pdfs omit the synthetic address');
+
+  const word = await register('word@example.test', 'Word', 'Owner');
+  const wording = (await call(word.jar, 'POST', '/api/account/business', { businessName: 'Wording Shop' })).json!.account as Linked;
+  const canceledRemote = (await call(word.jar, 'POST', '/api/account/business', { businessName: 'Canceled Shop' })).json!.account as Linked;
+  const expiredRemote = (await call(word.jar, 'POST', '/api/account/business', { businessName: 'Expired Shop' })).json!.account as Linked;
+  const missingRemote = (await call(word.jar, 'POST', '/api/account/business', { businessName: 'Missing Shop' })).json!.account as Linked;
+  const subFor = (id: string, userId: string, customerId: string) => saveSubscription(db, {
+    id, userId, customerId, plan: 'business', interval: 'month', status: 'active',
+    cancelAtPeriodEnd: false, currentPeriodEnd: null, live: false,
+  });
+  subFor('sub_wording', wording.id, 'cus_wording');
+  subFor('sub_canceled_remote', canceledRemote.id, 'cus_canceled_remote');
+  subFor('sub_expired', expiredRemote.id, 'cus_expired');
+  subFor('sub_retrieve_missing', missingRemote.id, 'cus_retrieve_missing');
+  const remoteStatus: Record<string, string> = {
+    sub_wording: 'active',
+    sub_canceled_remote: 'canceled',
+    sub_expired: 'incomplete_expired',
+    sub_retrieve_missing: 'missing',
+  };
+  fake.subscriptions.cancel = async (id: string) => {
+    stripeCancels.push(id);
+    throw new Error(`Subscription ${id} is already canceled`);
+  };
+  fake.subscriptions.retrieve = async (id: string) => {
+    const status = remoteStatus[id];
+    if (!status || status === 'missing') throw Object.assign(new Error('No such subscription'), { code: status === 'missing' ? 'resource_missing' : 'unknown' });
+    return { id, status };
+  };
+  check((await call(word.jar, 'POST', '/api/auth/delete-account', { password: PASS, confirm: 'DELETE' })).status === 200, 'owner deletes while every cancel errors');
+  await settleMarkedLinkedAccounts(db, [wording.id, canceledRemote.id, expiredRemote.id, missingRemote.id]);
+  check(Boolean(queryOne(db, `SELECT id FROM users WHERE id = ?`, [wording.id])), 'cancel error wording is ignored while retrieve says the subscription is active');
+  check(queryOne<{ status: string }>(db, `SELECT status FROM billing_subscriptions WHERE stripe_subscription_id = ?`, ['sub_wording'])?.status === 'active', 'local row stays active');
+  check(!queryOne(db, `SELECT id FROM users WHERE id = ?`, [canceledRemote.id]), 'retrieve status canceled counts as done');
+  check(!queryOne(db, `SELECT id FROM users WHERE id = ?`, [expiredRemote.id]), 'retrieve status incomplete_expired counts as done');
+  check(!queryOne(db, `SELECT id FROM users WHERE id = ?`, [missingRemote.id]), 'retrieve resource_missing counts as done');
+  check(process.env.STRIPE_LIVE_ENABLED == null, 'STRIPE_LIVE_ENABLED stays unset');
 } finally {
   setStripeClientForTests(null);
   server.close();

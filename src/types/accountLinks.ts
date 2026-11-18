@@ -61,10 +61,15 @@ export type LinkedAccountSummary = {
 
 export type AccountLinksResponse = {
   current: AccountLinkParty;
-  /** Set when the signed-in user is a linked business, so the client can switch back. */
+  /** The personal owner when the signed-in user is a linked business, otherwise null. */
   owner: AccountLinkParty | null;
   /** Business accounts this signed-in user owns. Empty from a linked business. */
   linked: LinkedAccountSummary[];
+  /**
+   * True only when this session's origin_owner_user_id equals owner.id.
+   * False when owner is null, and when a business signed in with its own password.
+   */
+  canSwitchToOwner: boolean;
 };
 
 export type CreateLinkedBusinessRequest = { businessName: string };

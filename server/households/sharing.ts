@@ -19,7 +19,7 @@ import { listSavingsGoals, updateSavingsGoal } from '../savings/store.ts';
 import { parsePatchSavingsGoal } from '../savings/model.ts';
 import { listRecurring, parseRecurring, updateRecurring } from '../recurring/store.ts';
 import { aucklandToday, roundMoney } from '../debts/model.ts';
-import { householdActive, logActivity, membershipOf, type Membership } from './store.ts';
+import { householdActive, logActivity, memberLabel, membershipOf, type Membership } from './store.ts';
 import { budgetMoneyIn } from './paye.ts';
 
 export const SHARE_KINDS = ['budget', 'bill', 'goal', 'holding', 'account'] as const;
@@ -48,11 +48,11 @@ function sharesOf(db: Database, householdId: string): ShareRow[] {
 
 function memberNames(db: Database, householdId: string): Map<string, string> {
   return new Map(
-    queryAll<{ user_id: string; first_name: string | null; last_name: string | null; email: string }>(
+    queryAll<{ user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; email: string }>(
       db,
-      `SELECT m.user_id, u.first_name, u.last_name, u.email FROM household_members m JOIN users u ON u.id = m.user_id WHERE m.household_id = ?`,
+      `SELECT m.user_id, u.first_name, u.last_name, u.display_name, u.email FROM household_members m JOIN users u ON u.id = m.user_id WHERE m.household_id = ?`,
       [householdId],
-    ).map((r) => [r.user_id, [r.first_name, r.last_name].filter(Boolean).join(' ').trim() || r.email.split('@')[0]]),
+    ).map((r) => [r.user_id, memberLabel(r)]),
   );
 }
 

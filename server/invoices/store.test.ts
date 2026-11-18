@@ -47,6 +47,8 @@ const { default: publicInvoicesRouter } = await import('../routes/publicInvoices
 
 const userA = 'inv_user_a';
 const userB = 'inv_user_b';
+const userC = 'inv_user_c';
+const syntheticEmail = 'linked.invoice@accounts.koruledger.invalid';
 const now = '2026-10-05T00:00:00.000Z';
 const today = aucklandToday();
 
@@ -55,7 +57,7 @@ for (const t of ['invoices', 'invoice_lines', 'invoice_clients', 'invoice_paymen
   assert(queryOne(db, `SELECT name FROM sqlite_master WHERE type='table' AND name=?`, [t]), `schema creates ${t}`);
   assert((SCOPED_TABLES as readonly string[]).includes(t), `${t} is user-scoped`);
 }
-for (const [id, email] of [[userA, 'a@example.com'], [userB, 'b@example.com']]) {
+for (const [id, email] of [[userA, 'a@example.com'], [userB, 'b@example.com'], [userC, syntheticEmail]]) {
   run(db, `INSERT INTO users (id, email, password_hash, created_at, updated_at) VALUES (?,?,?,?,?)`, [id, email, 'hash', now, now]);
   setPlan(db, id, 'plus', 'test');
 }
@@ -92,12 +94,21 @@ async function call(method: string, p: string, cookie?: string, body?: unknown):
 try {
   const A = `${SESSION_COOKIE}=${(await createSession(userA)).rawToken}`;
   const B = `${SESSION_COOKIE}=${(await createSession(userB)).rawToken}`;
+  const C = `${SESSION_COOKIE}=${(await createSession(userC)).rawToken}`;
 
   assert((await call('GET', '/api/invoices')).status === 401, 'signed out is 401');
 
   // Business details: starts from the account email; GST number required when registered.
   const bizDefault = await call('GET', '/api/invoices/business', A);
   assert(bizDefault.json.email === 'a@example.com', 'business email defaults to account email');
+  const synInv = await call('POST', '/api/invoices', C, {
+    clientName: 'Walk-in', issueDate: '2026-10-01', duePreset: 'days_7', gstMode: 'none',
+    lines: [{ description: 'Jar', quantity: 1, unit: 'each', rate: 12 }],
+  });
+  assert(synInv.status === 201, `invoice for a synthetic address (${synInv.status} ${synInv.text})`);
+  assert(synInv.json.business.email === '' && !synInv.text.includes(syntheticEmail), 'invoice details omit the synthetic address');
+  const synPdf = await call('GET', `/api/invoices/${synInv.json.id}/pdf`, C);
+  assert(synPdf.status === 200 && !synPdf.text.includes(syntheticEmail) && !synPdf.text.includes('.invalid'), 'invoice pdf omits the synthetic address');
   const badGst = await call('PUT', '/api/invoices/business', A, { businessName: 'Hana Contracting', gstRegistered: true, gstNumber: 'abc' });
   assert(badGst.status === 400, 'GST number validated');
   const biz = await call('PUT', '/api/invoices/business', A, {

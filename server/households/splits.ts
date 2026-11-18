@@ -13,7 +13,7 @@ import type { Database } from 'sql.js';
 import { newId, queryAll, queryOne, run } from '../db/index.ts';
 import { aucklandToday, roundMoney } from '../debts/model.ts';
 import { isYmd } from '../../src/lib/invoiceCalc.ts';
-import { householdActive, logActivity, membershipOf, type Membership } from './store.ts';
+import { householdActive, logActivity, memberLabel, membershipOf, type Membership } from './store.ts';
 import { balances, settleUp, splitShares, type SplitMethod } from './splitMath.ts';
 
 type Result<T> = { ok: true; value: T } | { ok: false; status: number; error: string; code?: string };
@@ -43,8 +43,12 @@ function names(db: Database, householdId: string, ids: string[]): { name: (id: s
   const current = new Set(queryAll<{ user_id: string }>(db, `SELECT user_id FROM household_members WHERE household_id = ?`, [householdId]).map((r) => r.user_id));
   const map = new Map<string, string>();
   for (const id of new Set([...ids, ...current])) {
-    const u = queryOne<{ first_name: string | null; last_name: string | null; email: string }>(db, `SELECT first_name, last_name, email FROM users WHERE id = ?`, [id]);
-    const base = u ? [u.first_name, u.last_name].filter(Boolean).join(' ').trim() || u.email.split('@')[0] : 'Former member';
+    const u = queryOne<{ first_name: string | null; last_name: string | null; display_name: string | null; email: string }>(
+      db,
+      `SELECT first_name, last_name, display_name, email FROM users WHERE id = ?`,
+      [id],
+    );
+    const base = u ? memberLabel(u) : 'Former member';
     map.set(id, current.has(id) ? base : `${base} (left)`);
   }
   return { name: (id) => map.get(id) ?? 'Former member', current };
