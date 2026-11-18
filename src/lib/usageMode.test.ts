@@ -26,13 +26,13 @@ eq(JSON.parse(mergeUsageModeIntoPreferencesJson('broken', 'both')), { usageMode:
 eq(parseUsageMode(mergeUsageModeIntoPreferencesJson(null, 'personal')).chosen, true, 'saving personal marks it chosen');
 
 // Nav per mode.
-eq(navKeysForMode('personal'), ['dashboard', 'budget', 'debts', 'portfolio', 'projections', 'news', 'kiwisaver', 'paye', 'business', 'calendar', 'history', 'valueSearch'], 'personal is today’s nav');
+eq(navKeysForMode('personal'), ['dashboard', 'budget', 'debts', 'portfolio', 'projections', 'news', 'kiwisaver', 'paye', 'calendar', 'history', 'valueSearch'], 'personal nav omits Business');
 eq(navKeysForMode('business'), ['business', 'invoices', 'clients', 'calendar'], 'business only shows business items');
 for (const hidden of ['dashboard', 'budget', 'debts', 'portfolio', 'projections', 'kiwisaver', 'paye', 'history', 'valueSearch', 'news'] as const) {
   if (navKeysForMode('business').includes(hidden)) throw new Error(`FAIL: business mode hides ${hidden}`);
 }
 eq(navKeysForMode('both').slice(0, 2), ['dashboard', 'business'], 'both puts Business next to Dashboard');
-eq([...navKeysForMode('both')].sort(), [...navKeysForMode('personal')].sort(), 'both keeps every personal item');
+eq(navKeysForMode('both').filter((k) => k !== 'business'), navKeysForMode('personal'), 'both keeps every personal item');
 
 // Landing.
 eq([homePathForMode('business'), homePathForMode('both'), homePathForMode('personal')], ['/business', '/', '/'], 'business lands on the business dashboard');
