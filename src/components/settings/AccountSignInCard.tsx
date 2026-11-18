@@ -5,6 +5,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { ApiError, api, type AccountSecurity } from '../../api/client';
 import { showQuietToast } from '../../lib/quietToast';
 import { providerList } from '../../lib/accountView';
+import { offerAccountSignIn, visibleAccountEmail } from '../../lib/accountLinksView';
 
 const SECURITY_TAB = '/settings?tab=security';
 
@@ -23,6 +24,8 @@ export function AccountSignInCard({ security }: { security: AccountSecurity | nu
   const [cancelBusy, setCancelBusy] = useState(false);
 
   const hasPassword = security?.hasPassword ?? null;
+  const shownEmail = visibleAccountEmail(user?.email);
+  const allowSignIn = offerAccountSignIn(user?.activeAccount);
   const pendingEmail = user?.pendingEmail ?? null;
   const confirms = user?.emailChangeConfirms ?? false;
   const providers = providerList((security?.identities ?? []).map((i) => i.label));
@@ -87,7 +90,7 @@ export function AccountSignInCard({ security }: { security: AccountSecurity | nu
         <li className="account-row">
           <div className="account-row-main">
             <p className="account-row-label">Email</p>
-            <p className="account-row-value">{user?.email}</p>
+            <p className="account-row-value">{shownEmail ?? 'No email'}</p>
             {pendingEmail ? (
               <p className="account-row-sub">
                 Check {pendingEmail} to confirm. Your current email works until then.{' '}
@@ -97,7 +100,7 @@ export function AccountSignInCard({ security }: { security: AccountSecurity | nu
               </p>
             ) : null}
           </div>
-          {!open ? (
+          {allowSignIn && !open ? (
             <button
               ref={changeRef}
               type="button"
@@ -110,7 +113,7 @@ export function AccountSignInCard({ security }: { security: AccountSecurity | nu
             </button>
           ) : null}
 
-          {open ? (
+          {allowSignIn && open ? (
             <div className="account-row-extra" id="account-email-form">
               {hasPassword === false ? (
                 <div className="account-inline-form">
@@ -189,11 +192,11 @@ export function AccountSignInCard({ security }: { security: AccountSecurity | nu
                 </> : 'Not set'}
             </p>
           </div>
-          {hasPassword === null ? null : (
+          {allowSignIn && hasPassword !== null ? (
             <Link className="account-row-link" to={`${SECURITY_TAB}&change=password`}>
               {hasPassword ? 'Change in Security ›' : 'Set a password in Security ›'}
             </Link>
-          )}
+          ) : null}
         </li>
       </ul>
     </section>

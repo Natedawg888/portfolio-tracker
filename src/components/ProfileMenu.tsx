@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { prefetchNavTarget } from '../lib/routePrefetch';
 import { useAuth } from '../auth/AuthContext';
 import { api, type RememberedAccount } from '../api/client';
+import { BUSINESS_ACCOUNT_HREF, canOwnAccountLinks, showAddBusinessAccountRow, signOutMenuLabel, visibleAccountEmail } from '../lib/accountLinksView';
 
 function initials(email: string, displayName: string | null): string {
   const name = (displayName || '').trim();
@@ -22,9 +23,28 @@ export function ProfileMenu({ triggerClassName }: { triggerClassName?: string })
   const [loggingOut, setLoggingOut] = useState(false);
   const [others, setOthers] = useState<RememberedAccount[]>([]);
   const [switching, setSwitching] = useState<string | null>(null);
+  const [linkedCount, setLinkedCount] = useState<number | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const canOwnLinks = canOwnAccountLinks(user?.activeAccount);
 
   // Other accounts signed in on this browser (account switcher), refreshed when the menu opens.
+  // The "Add business account" row waits for the link list so it can hide once one is linked.
+  useEffect(() => {
+    if (!open || !canOwnLinks) return;
+    let cancelled = false;
+    api.accountLinks
+      .list()
+      .then((r) => {
+        if (!cancelled) setLinkedCount(r.linked.length);
+      })
+      .catch(() => {
+        if (!cancelled) setLinkedCount(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, canOwnLinks]);
+
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -62,8 +82,9 @@ export function ProfileMenu({ triggerClassName }: { triggerClassName?: string })
     .filter(Boolean)
     .join(' ');
   const display = user.displayName?.trim() || composed;
-  const label = display || user.email || 'Account';
-  const initial = initials(user.email ?? '', display || null);
+  const shownEmail = visibleAccountEmail(user.email);
+  const label = display || shownEmail || 'Account';
+  const initial = initials(shownEmail ?? '', display || null);
 
   const onLogout = async (all = false) => {
     setLoggingOut(true);
@@ -94,7 +115,10 @@ export function ProfileMenu({ triggerClassName }: { triggerClassName?: string })
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Account menu for ${label}`}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setLinkedCount(null);
+          setOpen((v) => !v);
+        }}
       >
         {user.avatarUrl ? (
           <img src={user.avatarUrl} alt="" className="profile-avatar-img" />
@@ -108,9 +132,11 @@ export function ProfileMenu({ triggerClassName }: { triggerClassName?: string })
         <div className="profile-menu-dropdown" role="menu">
           <div className="profile-menu-owner">
             <div className="profile-menu-owner-name">{display || 'Account'}</div>
-            <div className="profile-menu-owner-email" title={user.email ?? undefined}>
-              {user.email}
-            </div>
+            {shownEmail ? (
+              <div className="profile-menu-owner-email" title={shownEmail}>
+                {shownEmail}
+              </div>
+            ) : null}
           </div>
           <div className="profile-menu-sep" role="separator" />
           {others.map((a) => (
@@ -144,6 +170,19 @@ export function ProfileMenu({ triggerClassName }: { triggerClassName?: string })
           >
             Add another account
           </button>
+          {showAddBusinessAccountRow({ active: user.activeAccount, linkedCount }) ? (
+            <Link
+              to={BUSINESS_ACCOUNT_HREF}
+              role="menuitem"
+              className="profile-menu-item"
+              onClick={() => setOpen(false)}
+              onMouseEnter={() => prefetchNavTarget('/settings')}
+              onFocus={() => prefetchNavTarget('/settings')}
+              onTouchStart={() => prefetchNavTarget('/settings')}
+            >
+              Add business account
+            </Link>
+          ) : null}
           <div className="profile-menu-sep" role="separator" />
           <Link
             to="/household"
@@ -174,7 +213,7 @@ export function ProfileMenu({ triggerClassName }: { triggerClassName?: string })
             disabled={loggingOut}
             onClick={() => void onLogout()}
           >
-            {loggingOut ? 'Signing out…' : others.length ? `Sign out of ${user.email}` : 'Sign out'}
+            {loggingOut ? 'Signing out…' : signOutMenuLabel(user.email, others.length > 0)}
           </button>
           {others.length ? (
             <button

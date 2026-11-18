@@ -25,6 +25,12 @@ import { akahuOnboardingRequiredForEmail } from '../lib/onboardingPrefs';
 import { checkoutResume, continueAfterPlan, resolvePaidBusinessReturn, stepFromOnboarding, stepLabel, type OnboardingStep, type PlanContinue } from '../lib/onboardingSteps';
 import { USAGE_MODES, type UsageMode } from '../lib/usageMode';
 import { canCheckoutPlan, type BillingInterval, type PaidPlan } from '../lib/billingView';
+import {
+  ADD_BUSINESS_AFTER_SETUP,
+  BUSINESS_ACCOUNT_HREF,
+  personalBusinessCheckoutRoute,
+  routesPersonalToBusinessAccount,
+} from '../lib/accountLinksView';
 import { CheckoutPendingNote } from '../components/billing/CheckoutPendingNote';
 import { BudgetCategoriesStep } from '../components/onboarding/BudgetCategoriesStep';
 import { ChoosePlanStep } from '../components/onboarding/ChoosePlanStep';
@@ -461,6 +467,21 @@ export function Register() {
       setError('Pro is not available yet.');
       return;
     }
+    const personalBusiness = personalBusinessCheckoutRoute({
+      usage: user?.usageModeChosen ? user.usageMode : usageMode,
+      plan,
+      onboardingComplete: user?.onboardingComplete === true,
+    });
+    if (personalBusiness === 'settings') {
+      window.location.assign(BUSINESS_ACCOUNT_HREF);
+      return;
+    }
+    if (personalBusiness === 'later') {
+      setError(null);
+      setInfo(ADD_BUSINESS_AFTER_SETUP);
+      setPlanAction(null);
+      return;
+    }
     setError(null);
     setInfo(null);
     setPlanAction(plan);
@@ -469,6 +490,15 @@ export function Register() {
       const { url } = await api.billing.checkout(plan, interval, '/register');
       window.location.assign(url);
     } catch (err) {
+      if (err instanceof ApiError && routesPersonalToBusinessAccount(err.code)) {
+        if (user?.onboardingComplete) window.location.assign(BUSINESS_ACCOUNT_HREF);
+        else {
+          setError(null);
+          setInfo(ADD_BUSINESS_AFTER_SETUP);
+          setPlanAction(null);
+        }
+        return;
+      }
       setError(err instanceof ApiError ? err.message : 'Couldn’t open checkout. Try again in a minute.');
       setPlanAction(null);
     }

@@ -3,6 +3,7 @@ import type { ChangeEvent, FormEvent } from 'react';
 import { useAuth } from '../../auth/AuthContext';
 import { ApiError, api } from '../../api/client';
 import { showQuietToast } from '../../lib/quietToast';
+import { visibleAccountEmail } from '../../lib/accountLinksView';
 
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 const PHOTO_TYPES = 'image/jpeg,image/png,image/webp,image/gif';
@@ -28,7 +29,7 @@ function initialsFor(user: { firstName: string | null; lastName: string | null; 
     if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
     return name.slice(0, 2).toUpperCase();
   }
-  return (user?.email || '?').slice(0, 2).toUpperCase();
+  return (visibleAccountEmail(user?.email) || '?').slice(0, 2).toUpperCase();
 }
 
 /** Settings → Account → Profile: photo (preview before saving) and first/last name. */
