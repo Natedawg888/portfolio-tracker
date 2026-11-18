@@ -7,9 +7,10 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useLocation } from 'react-router-dom';
-import { ApiError, createLinkedBusiness, getAccountLinks, linkExistingBusiness, switchAccount, unlinkAccount } from '../../api/client';
+import { ApiError, api, createLinkedBusiness, getAccountLinks, linkExistingBusiness, switchAccount, unlinkAccount } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { clearPageCache } from '../../lib/pageDataCache';
+import { refreshAccountLinks } from '../../lib/useAccountLinks';
 import {
   BUSINESS_ACCOUNT_EMPTY_COPY,
   BUSINESS_ACCOUNT_SECTION_ID,
@@ -21,6 +22,8 @@ import {
   readyCopy,
   showBackToPersonal,
   showCreateAndLink,
+  readBusinessName,
+  selfUnlinkName,
   showSelfUnlink,
   showUnlink,
   switchAccountErrorCopy,
@@ -46,6 +49,7 @@ export function BusinessAccountCard() {
   const [switching, setSwitching] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [unlink, setUnlink] = useState<UnlinkTarget | null>(null);
+  const [selfBusinessName, setSelfBusinessName] = useState<string | null>(null);
 
   useEffect(() => {
     if (!section) return;
@@ -66,6 +70,24 @@ export function BusinessAccountCard() {
   }, [section, reload]);
 
   useEffect(() => {
+    if (section !== 'linked') return;
+    let live = true;
+    api.business
+      .list()
+      .then((res) => {
+        if (!live) return;
+        const row = res.businesses.find((business) => business.isDefault) ?? res.businesses[0];
+        setSelfBusinessName(row?.name?.trim() || null);
+      })
+      .catch(() => {
+        if (live) setSelfBusinessName(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [section]);
+
+  useEffect(() => {
     if (location.hash !== `#${BUSINESS_ACCOUNT_SECTION_ID}`) return;
     const el = sectionRef.current;
     if (!el) return;
@@ -79,6 +101,7 @@ export function BusinessAccountCard() {
     try {
       await switchAccount({ accountId });
       clearPageCache();
+      refreshAccountLinks();
       window.location.assign(DASHBOARD_AFTER_SWITCH);
     } catch (err) {
       setError(switchAccountErrorCopy(err instanceof ApiError ? err.code : undefined));
@@ -118,7 +141,7 @@ export function BusinessAccountCard() {
               setError(null);
               setUnlink({
                 id: current.id,
-                name: current.displayName?.trim() || 'this business account',
+                name: selfUnlinkName(readBusinessName(current) || selfBusinessName),
                 returnFocus,
                 reload: true,
               });
@@ -195,6 +218,7 @@ export function BusinessAccountCard() {
             setError(null);
             unlinkAccount(target.id)
               .then((res) => {
+                refreshAccountLinks();
                 if (target.reload) {
                   clearPageCache();
                   window.location.reload();
@@ -373,6 +397,7 @@ function OwnerBody({
             createLinkedBusiness({ businessName })
               .then((res) => {
                 onLinks(res.links);
+                refreshAccountLinks();
                 onOpen({ kind: 'ready', accountId: res.account.id, name: linkedAccountTitle(res.account) });
               })
               .catch((err: unknown) => {
@@ -394,6 +419,7 @@ function OwnerBody({
             linkExistingBusiness({ email, password })
               .then((res) => {
                 onLinks(res.links);
+                refreshAccountLinks();
                 onOpen({ kind: 'idle' });
               })
               .catch((err: unknown) => {

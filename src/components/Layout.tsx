@@ -15,6 +15,9 @@ import { useAuth } from '../auth/AuthContext';
 import { navKeysForMode, type NavKey, type UsageMode } from '../lib/usageMode';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
 import { ProfileMenu } from './ProfileMenu';
+import { headerAccountContext } from '../lib/accountLinksView';
+import { useAccountLinks } from '../lib/useAccountLinks';
+import { HeaderAccountLine } from './HeaderAccountLine';
 import { QuietToast } from './QuietToast';
 import { CheckoutPendingNote } from './billing/CheckoutPendingNote';
 import { useMeetingReminders } from '../lib/useMeetingReminders';
@@ -147,6 +150,14 @@ export function Layout({ children }: { children?: ReactNode }) {
     ? cloneElement(routed, { moneyHidden } as { moneyHidden: boolean })
     : routed;
   const { user } = useAuth();
+  const { links, activeBusinessName } = useAccountLinks(user?.id, user?.activeAccount.isLinkedBusiness === true);
+  const headerAccount = user
+    ? headerAccountContext({
+        links,
+        active: user.activeAccount,
+        activeBusinessName,
+      })
+    : null;
   const mode: UsageMode = user?.usageMode ?? 'personal';
   const visibleLinks = navKeysForMode(mode)
     .map((key) => linkFor(key, mode))
@@ -318,10 +329,19 @@ export function Layout({ children }: { children?: ReactNode }) {
     <div className={'app-shell' + (navOpen ? ' nav-drawer-open' : '')}>
       <header className="app-header">
         <div className="brand">
-          <ProfileMenu triggerClassName="brand-mark" />
-          <h1 className="brand-title">
-            <BrandLockup size="sm" />
-          </h1>
+          <ProfileMenu triggerClassName="brand-mark" links={links} activeBusinessName={activeBusinessName} />
+          {headerAccount ? (
+            <div className="brand-copy">
+              <h1 className="brand-title">
+                <BrandLockup size="sm" />
+              </h1>
+              <HeaderAccountLine name={headerAccount.name} pill={headerAccount.pill} />
+            </div>
+          ) : (
+            <h1 className="brand-title">
+              <BrandLockup size="sm" />
+            </h1>
+          )}
         </div>
         {/* Desktop nav pill. Phones use MobileNavDrawer (this nav is hidden at 768px and below). */}
         <nav id="app-primary-nav" className="nav">

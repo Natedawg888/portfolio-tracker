@@ -15,25 +15,38 @@ import {
   businessAccountSection,
   businessPlanNeededCopy,
   canOwnAccountLinks,
+  businessNameForAccount,
   linkedAccountTitle,
   linkedOwnerLine,
+  otherAccountLine,
+  readBusinessName,
+  selfUnlinkName,
   personalBusinessCheckoutRoute,
   personalChoosingBusiness,
+  resetSwitchOnMenuOpen,
   readyCopy,
   routesPersonalToBusinessAccount,
+  showAddBusinessAccountMenuRow,
   showAddBusinessAccountRow,
+  showAccountsGroup,
   showCreateAndLink,
   offerAccountSignIn,
   planRequiredHref,
   showBackToPersonal,
   showSelfUnlink,
   showUnlink,
+  accountSwitchRowState,
+  accountSwitchTarget,
+  accountSwitcherRows,
+  headerAccountContext,
   signOutMenuLabel,
+  staySignedInAs,
   switchAccountErrorCopy,
   unlinkConfirmCopy,
   unlinkControlDisabled,
   visibleAccountEmail,
 } from './accountLinksView.ts';
+import type { AccountLinkParty, AccountLinksResponse, LinkedAccountSummary } from '../types/accountLinks.ts';
 
 function eq(a: unknown, b: unknown, msg: string): void {
   const left = JSON.stringify(a);
@@ -186,11 +199,214 @@ eq(signOutMenuLabel(null, true), 'Sign out', 'sign out does not say null');
 eq(signOutMenuLabel('linked.x@accounts.koruledger.invalid', true), 'Sign out', 'sign out does not name the synthetic address');
 eq(signOutMenuLabel('pat@example.com', true), 'Sign out of pat@example.com', 'other accounts name the real email');
 eq(signOutMenuLabel('pat@example.com', false), 'Sign out', 'one account just says sign out');
+eq(signOutMenuLabel(null, true, 'Pat Ng'), 'Sign out of Pat Ng', 'a hidden email uses the display name');
+eq(signOutMenuLabel(null, true, '  '), 'Sign out', 'a blank name stays Sign out');
+eq(signOutMenuLabel(null, false, 'Pat Ng'), 'Sign out', 'one account stays Sign out even with a name');
+eq(signOutMenuLabel('pat@example.com', true, 'Pat Ng'), 'Sign out of pat@example.com', 'a real email still wins over the name');
+
+eq(staySignedInAs(null), null, 'signed out has no stay-signed-in clause');
+eq(staySignedInAs({ email: null, displayName: 'Pat Ng' }), 'Pat Ng', 'null email uses the display name');
+eq(staySignedInAs({ email: null, displayName: null, firstName: 'Pat', lastName: 'Ng' }), 'Pat Ng', 'null email can use the person’s name');
+eq(staySignedInAs({ email: null, displayName: null, firstName: null, lastName: null }), null, 'no name drops the as-clause');
+eq(staySignedInAs({ email: 'linked.a@accounts.koruledger.invalid', displayName: 'Pat Ng' }), 'Pat Ng', 'synthetic email uses the name');
+eq(staySignedInAs({ email: 'pat@example.com', displayName: 'Pat Ng' }), 'pat@example.com', 'a real email is what you stay signed in as');
+
+eq(otherAccountLine({ displayName: 'Pat Ng', businessName: 'Koru Honey', email: null }), { name: 'Pat Ng', email: null }, 'another account uses the display name and hides a null email');
+eq(otherAccountLine({ displayName: '  ', businessName: 'Koru Honey', email: null }), { name: 'Koru Honey', email: null }, 'a blank name falls through to the business name');
+eq(otherAccountLine({ displayName: null, businessName: null, email: null }), { name: 'Account', email: null }, 'no name and no email is not the word null');
+eq(otherAccountLine({ displayName: null, businessName: null, email: 'null' }), { name: 'Account', email: null }, 'the word null is not an email');
+eq(otherAccountLine({ displayName: null, businessName: null, email: '' }), { name: 'Account', email: null }, 'an empty email is not shown');
+eq(
+  otherAccountLine({ displayName: 'Pat Ng', email: 'pat@example.com' }),
+  { name: 'Pat Ng', email: 'pat@example.com' },
+  'a real email can sit under the name',
+);
+eq(
+  otherAccountLine({ displayName: null, businessName: null, email: 'pat@example.com' }),
+  { name: 'pat@example.com', email: null },
+  'a real email is the name only when there is no other name',
+);
+eq(
+  otherAccountLine({ displayName: null, businessName: 'Koru Honey', email: 'linked.a@accounts.koruledger.invalid' }),
+  { name: 'Koru Honey', email: null },
+  'a synthetic email is not shown beside the business',
+);
+eq(selfUnlinkName('Koru Honey'), 'Koru Honey', 'unlink names the business');
+eq(selfUnlinkName('  '), 'this business account', 'a blank business name is not the person’s name');
+eq(selfUnlinkName(null), 'this business account', 'unlink without a business name does not invent one');
+eq(readBusinessName({ businessName: 'Koru Honey' }), 'Koru Honey', 'businessName is read when the payload has it');
+eq(readBusinessName({ displayName: 'Pat Ng' }), null, 'displayName is not a business name');
+eq(readBusinessName(null), null, 'a missing account has no business name');
 
 eq(planRequiredHref(personal), BUSINESS_ACCOUNT_HREF, 'personal locked reports open the business-account card');
 eq(planRequiredHref(null), BUSINESS_ACCOUNT_HREF, 'an unknown account is treated as personal');
 eq(planRequiredHref(both), SETTINGS_BILLING_HREF, 'both can open the Business plan');
 eq(planRequiredHref(business), SETTINGS_BILLING_HREF, 'a business account opens billing');
 eq(planRequiredHref(linked), SETTINGS_BILLING_HREF, 'a linked business opens billing');
+
+function party(id: string, displayName: string | null, usageMode: AccountLinkParty['usageMode'], isLinkedBusiness: boolean): AccountLinkParty {
+  return { id, displayName, usageMode, plan: 'free', isLinkedBusiness, canUnlink: false };
+}
+
+function linkedItem(id: string, businessName: string | null, displayName: string | null): LinkedAccountSummary {
+  return { id, displayName, businessName, plan: 'free', hasOwnLogin: false, canUnlink: false };
+}
+
+function linksOf(
+  current: AccountLinkParty,
+  owner: AccountLinkParty | null,
+  linkedRows: LinkedAccountSummary[],
+  canSwitchToOwner?: boolean,
+): AccountLinksResponse {
+  return { current, owner, linked: linkedRows, canSwitchToOwner: canSwitchToOwner === true };
+}
+
+const pat = party('pat', 'Pat Ng', 'personal', false);
+const honey = party('honey', 'Pat Ng', 'business', true);
+const honeyLinked = linkedItem('honey', 'Koru Honey', 'Pat Ng');
+const hiveLinked = linkedItem('hive', 'Koru Hive', 'Pat Ng');
+const ownerLinks = linksOf(pat, null, [honeyLinked, hiveLinked]);
+const businessLinksHidden = linksOf(honey, pat, []);
+const businessLinksAllowed = linksOf(honey, pat, [], true);
+const unlinked = linksOf(pat, null, []);
+
+eq(businessNameForAccount('honey', ownerLinks, null), 'Koru Honey', 'a linked row supplies the business name');
+eq(businessNameForAccount('honey', businessLinksHidden, 'Koru Honey'), 'Koru Honey', 'the open business supplies its name');
+eq(businessNameForAccount('pat', ownerLinks, 'Koru Honey'), null, 'the personal account is not given a business name');
+
+eq(showAccountsGroup(null), false, 'no list yet: no Accounts group');
+eq(showAccountsGroup(unlinked), false, 'an unlinked personal account has no Accounts group');
+eq(showAccountsGroup(ownerLinks), true, 'an owner with a linked business sees the Accounts group');
+eq(showAccountsGroup(businessLinksHidden), true, 'a linked business sees the Accounts group');
+eq(
+  showAddBusinessAccountMenuRow({ active: personal, linkedCount: 0, accountsGroup: true }),
+  false,
+  'the add row hides while the Accounts group is shown',
+);
+eq(
+  showAddBusinessAccountMenuRow({ active: personal, linkedCount: 0, accountsGroup: false }),
+  true,
+  'the add row stays when nothing is linked',
+);
+
+eq(
+  accountSwitcherRows(ownerLinks).map((row) => [row.id, row.pill, row.current, row.name]),
+  [
+    ['pat', 'personal', true, 'Pat Ng'],
+    ['honey', 'business', false, 'Koru Honey'],
+    ['hive', 'business', false, 'Koru Hive'],
+  ],
+  'owner sees personal first, then each business',
+);
+eq(
+  accountSwitcherRows(businessLinksHidden).map((row) => [row.id, row.pill, row.current]),
+  [['honey', 'business', true]],
+  'missing canSwitchToOwner hides the Personal switch-back row',
+);
+eq(
+  accountSwitcherRows(businessLinksAllowed).map((row) => [row.id, row.pill, row.current, row.name]),
+  [
+    ['pat', 'personal', false, 'Pat Ng'],
+    ['honey', 'business', true, 'Pat Ng'],
+  ],
+  'canSwitchToOwner true shows the Personal row',
+);
+eq(
+  accountSwitcherRows(linksOf(honey, pat, [], false)).some((row) => row.pill === 'personal'),
+  false,
+  'canSwitchToOwner false hides the Personal row',
+);
+eq(
+  accountSwitcherRows(businessLinksAllowed, 'Koru Honey').find((row) => row.current)?.name,
+  'Koru Honey',
+  'the open business uses its business name when we have one',
+);
+
+const currentRow = { id: 'pat', current: true };
+const otherRow = { id: 'honey', current: false };
+eq(accountSwitchRowState(currentRow, { kind: 'idle' }), { ariaCurrent: true, disabled: false, statusText: 'Current', blocked: false }, 'the active row is current');
+eq(accountSwitchRowState(otherRow, { kind: 'idle' }).ariaCurrent, false, 'an inactive row is not current');
+eq(
+  accountSwitchRowState(otherRow, { kind: 'switching', accountId: 'honey' }),
+  { ariaCurrent: false, disabled: true, statusText: 'Switching…', blocked: false },
+  'the row being opened says Switching and is disabled',
+);
+eq(
+  accountSwitchRowState(currentRow, { kind: 'switching', accountId: 'honey' }).disabled,
+  true,
+  'every row is disabled while a switch is running',
+);
+eq(accountSwitchRowState({ id: 'hive', current: false }, { kind: 'switching', accountId: 'honey' }).blocked, true, 'the other rows are blocked');
+eq(accountSwitchTarget(otherRow, { kind: 'idle' }), 'honey', 'an inactive row can be switched to');
+eq(accountSwitchTarget(currentRow, { kind: 'idle' }), null, 'the current row does not switch');
+eq(accountSwitchTarget(otherRow, { kind: 'switching', accountId: 'honey' }), null, 'a second switch waits');
+eq(resetSwitchOnMenuOpen({ kind: 'failed', accountId: 'honey', message: 'x' }), true, 'reopening clears a failed switch');
+eq(resetSwitchOnMenuOpen({ kind: 'switching', accountId: 'honey' }), false, 'reopening leaves an in-flight switch locked');
+eq(resetSwitchOnMenuOpen({ kind: 'idle' }), false, 'an idle menu does not reset the lock');
+const failed = accountSwitchRowState(otherRow, {
+  kind: 'failed',
+  accountId: 'honey',
+  message: switchAccountErrorCopy('SWITCH_NOT_ALLOWED'),
+});
+eq(failed.disabled, false, 'a failed switch can be tried again');
+eq(failed.statusText, 'That account can’t be opened from here.', 'SWITCH_NOT_ALLOWED stays inline on the row');
+eq(
+  accountSwitchRowState(otherRow, {
+    kind: 'failed',
+    accountId: 'honey',
+    message: switchAccountErrorCopy('TWO_FACTOR_REQUIRED'),
+  }).statusText,
+  'That business account uses two-step sign-in. Sign in to it directly.',
+  'two-step sign-in is explained on the row',
+);
+eq(
+  accountSwitchRowState(otherRow, { kind: 'failed', accountId: 'honey', message: switchAccountErrorCopy(undefined) }).statusText,
+  'That didn’t work. Try again.',
+  'an unknown switch failure uses the switch fallback',
+);
+
+eq(headerAccountContext({ links: null, active: null }), null, 'signed out header is unchanged');
+eq(
+  headerAccountContext({ links: unlinked, active: { isLinkedBusiness: false, ownerId: null } }),
+  null,
+  'an unlinked account does not get a header pill',
+);
+eq(
+  headerAccountContext({ links: ownerLinks, active: { isLinkedBusiness: false, ownerId: null } }),
+  { name: 'Pat Ng', pill: 'personal' },
+  'a linked owner’s header names the personal account',
+);
+eq(
+  headerAccountContext({
+    links: businessLinksAllowed,
+    active: { isLinkedBusiness: true, ownerId: 'pat' },
+    activeBusinessName: 'Koru Honey',
+  }),
+  { name: 'Koru Honey', pill: 'business' },
+  'a linked business header names that business',
+);
+eq(
+  headerAccountContext({ links: null, active: { isLinkedBusiness: true, ownerId: 'pat' } }),
+  { name: 'Business account', pill: 'business' },
+  'before the list returns, a linked business is not the person’s name',
+);
+eq(
+  headerAccountContext({
+    links: businessLinksAllowed,
+    active: { isLinkedBusiness: true, ownerId: 'pat' },
+    activeBusinessName: '  ',
+  }),
+  { name: 'Business account', pill: 'business' },
+  'an empty business-name lookup falls back to Business account',
+);
+eq(
+  headerAccountContext({
+    links: businessLinksAllowed,
+    active: { isLinkedBusiness: true, ownerId: 'pat' },
+    activeBusinessName: null,
+  }),
+  { name: 'Business account', pill: 'business' },
+  'a failed business-name lookup falls back to Business account',
+);
 
 console.log('accountLinksView tests passed');

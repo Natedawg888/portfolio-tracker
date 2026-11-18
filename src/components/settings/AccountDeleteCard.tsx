@@ -4,10 +4,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import { ApiError, api } from '../../api/client';
 import { DELETED_ITEMS, DELETE_WORD, KEPT_ITEMS, deleteConfirmed } from '../../lib/accountView';
+import { offerAccountSignIn } from '../../lib/accountLinksView';
 
 /** Settings → Account → Delete account: collapsed until asked, then says exactly what goes and what stays. */
 export function AccountDeleteCard({ hasPassword }: { hasPassword: boolean | null }) {
-  const { setUser } = useAuth();
+  const { user, setUser } = useAuth();
+  const canSignIn = offerAccountSignIn(user?.activeAccount);
   const navigate = useNavigate();
   const openRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLInputElement>(null);
@@ -118,10 +120,12 @@ export function AccountDeleteCard({ hasPassword }: { hasPassword: boolean | null
 
           {hasPassword === false ? (
             <div className="account-inline-form">
+              {canSignIn ? (
               <p>
                 To delete your account, first set a password. It confirms it&apos;s you.{' '}
                 <Link to="/settings?tab=security">Set a password in Security ›</Link>
               </p>
+              ) : null}
               <div className="account-actions">
                 <button ref={cancelRef} type="button" className="btn ghost small" onClick={close}>
                   Cancel

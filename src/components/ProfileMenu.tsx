@@ -2,8 +2,27 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { prefetchNavTarget } from '../lib/routePrefetch';
 import { useAuth } from '../auth/AuthContext';
-import { api, type RememberedAccount } from '../api/client';
-import { BUSINESS_ACCOUNT_HREF, canOwnAccountLinks, showAddBusinessAccountRow, signOutMenuLabel, visibleAccountEmail } from '../lib/accountLinksView';
+import { ApiError, api, type RememberedAccount } from '../api/client';
+import { clearPageCache } from '../lib/pageDataCache';
+import { refreshAccountLinks } from '../lib/useAccountLinks';
+import {
+  BUSINESS_ACCOUNT_HREF,
+  DASHBOARD_AFTER_SWITCH,
+  accountSwitchRowState,
+  accountSwitchTarget,
+  accountSwitcherRows,
+  businessNameForAccount,
+  otherAccountLine,
+  resetSwitchOnMenuOpen,
+  showAccountsGroup,
+  showAddBusinessAccountMenuRow,
+  signOutMenuLabel,
+  switchAccountErrorCopy,
+  visibleAccountEmail,
+  type AccountSwitchPhase,
+} from '../lib/accountLinksView';
+import type { AccountLinksResponse } from '../types/accountLinks';
+import { AccountSwitchRow } from './AccountSwitchRow';
 
 function initials(email: string, displayName: string | null): string {
   const name = (displayName || '').trim();
@@ -16,34 +35,24 @@ function initials(email: string, displayName: string | null): string {
   return local.slice(0, 2).toUpperCase();
 }
 
-export function ProfileMenu({ triggerClassName }: { triggerClassName?: string }) {
+export function ProfileMenu({
+  triggerClassName,
+  links,
+  activeBusinessName,
+}: {
+  triggerClassName?: string;
+  links: AccountLinksResponse | null;
+  activeBusinessName?: string | null;
+}) {
   const { user, logout, logoutAll, switchAccount } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [others, setOthers] = useState<RememberedAccount[]>([]);
   const [switching, setSwitching] = useState<string | null>(null);
-  const [linkedCount, setLinkedCount] = useState<number | null>(null);
+  const [phase, setPhase] = useState<AccountSwitchPhase>({ kind: 'idle' });
   const rootRef = useRef<HTMLDivElement>(null);
-  const canOwnLinks = canOwnAccountLinks(user?.activeAccount);
-
-  // Other accounts signed in on this browser (account switcher), refreshed when the menu opens.
-  // The "Add business account" row waits for the link list so it can hide once one is linked.
-  useEffect(() => {
-    if (!open || !canOwnLinks) return;
-    let cancelled = false;
-    api.accountLinks
-      .list()
-      .then((r) => {
-        if (!cancelled) setLinkedCount(r.linked.length);
-      })
-      .catch(() => {
-        if (!cancelled) setLinkedCount(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, canOwnLinks]);
+  const switchLock = useRef(false);
 
   useEffect(() => {
     if (!open) return;
@@ -85,6 +94,9 @@ export function ProfileMenu({ triggerClassName }: { triggerClassName?: string })
   const shownEmail = visibleAccountEmail(user.email);
   const label = display || shownEmail || 'Account';
   const initial = initials(shownEmail ?? '', display || null);
+  const accountsGroup = showAccountsGroup(links);
+  const rows = links && accountsGroup ? accountSwitcherRows(links, activeBusinessName) : [];
+  const linkedBusy = phase.kind === 'switching';
 
   const onLogout = async (all = false) => {
     setLoggingOut(true);
@@ -107,6 +119,26 @@ export function ProfileMenu({ triggerClassName }: { triggerClassName?: string })
     }
   };
 
+  const onLinkedSwitch = async (accountId: string) => {
+    if (switchLock.current) return;
+    switchLock.current = true;
+    setPhase({ kind: 'switching', accountId });
+    try {
+      await api.accountLinks.switch({ accountId });
+      clearPageCache();
+      refreshAccountLinks();
+      setOpen(false);
+      window.location.assign(DASHBOARD_AFTER_SWITCH);
+    } catch (err) {
+      switchLock.current = false;
+      setPhase({
+        kind: 'failed',
+        accountId,
+        message: switchAccountErrorCopy(err instanceof ApiError ? err.code : undefined),
+      });
+    }
+  };
+
   return (
     <div className="profile-menu" ref={rootRef}>
       <button
@@ -116,8 +148,11 @@ export function ProfileMenu({ triggerClassName }: { triggerClassName?: string })
         aria-expanded={open}
         aria-label={`Account menu for ${label}`}
         onClick={() => {
-          setLinkedCount(null);
-          setOpen((v) => !v);
+          if (!open && resetSwitchOnMenuOpen(phase)) {
+            setPhase({ kind: 'idle' });
+            switchLock.current = false;
+          }
+          setOpen((isOpen) => !isOpen);
         }}
       >
         {user.avatarUrl ? (
@@ -130,6 +165,31 @@ export function ProfileMenu({ triggerClassName }: { triggerClassName?: string })
       </button>
       {open ? (
         <div className="profile-menu-dropdown" role="menu">
+          {rows.length > 0 ? (
+            <div className="profile-menu-accounts" role="group" aria-label="Accounts">
+              <div className="profile-menu-accounts-label">Accounts</div>
+              {rows.map((row) => {
+                const state = accountSwitchRowState(row, phase);
+                const target = accountSwitchTarget(row, phase);
+                return (
+                  <AccountSwitchRow
+                    key={row.id}
+                    id={row.id}
+                    name={row.name}
+                    pill={row.pill}
+                    current={state.ariaCurrent}
+                    disabled={state.disabled || switching !== null}
+                    blocked={state.blocked}
+                    statusText={state.statusText}
+                    onClick={() => {
+                      if (target) void onLinkedSwitch(target);
+                    }}
+                  />
+                );
+              })}
+            </div>
+          ) : null}
+          {rows.length > 0 ? <div className="profile-menu-sep" role="separator" /> : null}
           <div className="profile-menu-owner">
             <div className="profile-menu-owner-name">{display || 'Account'}</div>
             {shownEmail ? (
@@ -139,26 +199,33 @@ export function ProfileMenu({ triggerClassName }: { triggerClassName?: string })
             ) : null}
           </div>
           <div className="profile-menu-sep" role="separator" />
-          {others.map((a) => (
-            <button
-              key={a.userId}
-              type="button"
-              role="menuitem"
-              className="profile-menu-item profile-menu-account"
-              disabled={switching !== null}
-              onClick={() => void onSwitch(a.userId)}
-              title={`Switch to ${a.email}`}
-            >
-              <span className="profile-avatar-fallback profile-menu-account-avatar" aria-hidden>
-                {initials(a.email, a.displayName)}
-              </span>
-              <span className="profile-menu-account-text">
-                <span>{a.displayName || a.email}</span>
-                {a.displayName ? <span className="muted small">{a.email}</span> : null}
-              </span>
-              {switching === a.userId ? <span className="muted small">Switching…</span> : null}
-            </button>
-          ))}
+          {others.map((a) => {
+            const line = otherAccountLine({
+              displayName: a.displayName,
+              businessName: businessNameForAccount(a.userId, links, activeBusinessName),
+              email: a.email,
+            });
+            return (
+              <button
+                key={a.userId}
+                type="button"
+                role="menuitem"
+                className="profile-menu-item profile-menu-account"
+                disabled={switching !== null || linkedBusy}
+                onClick={() => void onSwitch(a.userId)}
+                title={`Switch to ${line.name}`}
+              >
+                <span className="profile-avatar-fallback profile-menu-account-avatar" aria-hidden>
+                  {initials(line.email ?? '', line.name)}
+                </span>
+                <span className="profile-menu-account-text">
+                  <span>{line.name}</span>
+                  {line.email ? <span className="muted small">{line.email}</span> : null}
+                </span>
+                {switching === a.userId ? <span className="muted small">Switching…</span> : null}
+              </button>
+            );
+          })}
           <button
             type="button"
             role="menuitem"
@@ -170,7 +237,11 @@ export function ProfileMenu({ triggerClassName }: { triggerClassName?: string })
           >
             Add another account
           </button>
-          {showAddBusinessAccountRow({ active: user.activeAccount, linkedCount }) ? (
+          {showAddBusinessAccountMenuRow({
+            active: user.activeAccount,
+            linkedCount: links ? links.linked.length : null,
+            accountsGroup,
+          }) ? (
             <Link
               to={BUSINESS_ACCOUNT_HREF}
               role="menuitem"
@@ -213,7 +284,7 @@ export function ProfileMenu({ triggerClassName }: { triggerClassName?: string })
             disabled={loggingOut}
             onClick={() => void onLogout()}
           >
-            {loggingOut ? 'Signing out…' : signOutMenuLabel(user.email, others.length > 0)}
+            {loggingOut ? 'Signing out…' : signOutMenuLabel(user.email, others.length > 0, display || null)}
           </button>
           {others.length ? (
             <button

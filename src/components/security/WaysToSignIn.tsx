@@ -9,6 +9,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { addPasskey, hintName, passkeysSupported, readHint, wasCancelled, writeHint } from '../../lib/passkeys';
 import { showQuietToast } from '../../lib/quietToast';
 import { canDisconnectIdentity, canRemovePasskey, needsReauth, providerIconKind, shortWhen } from '../../lib/securityView';
+import { offerAccountSignIn } from '../../lib/accountLinksView';
 import { ssoStartUrl } from '../../lib/sso';
 import { ConfirmInline } from './ConfirmInline';
 import { MethodIcon } from './MethodIcon';
@@ -123,6 +124,8 @@ export function WaysToSignIn({
       setBusy(null);
     }
   }
+
+  if (!offerAccountSignIn(user?.activeAccount)) return null;
 
   const linked = new Set(data.identities.map((i) => i.provider));
   const connectable = data.ssoProviders.filter((p) => !linked.has(p.id));

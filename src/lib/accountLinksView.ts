@@ -5,6 +5,7 @@
  * The signed-in account comes from GET /api/auth/me `activeAccount`. The list comes
  * from GET /api/account/links. Nothing here invents a link, a name, or a plan.
  */
+import type { AccountLinksResponse } from '../types/accountLinks.ts';
 import type { UsageMode } from './usageMode.ts';
 
 export const MAX_LINKED_BUSINESS_ACCOUNTS = 5;
@@ -195,10 +196,231 @@ export function offerAccountSignIn(active: { hasOwnLogin?: boolean } | null | un
   return active?.hasOwnLogin === true;
 }
 
-export function signOutMenuLabel(email: string | null | undefined, hasOtherAccounts: boolean): string {
+/**
+ * Another account signed in on this browser.
+ * Name is the person's name, then the business name. A blank or null email is never shown.
+ */
+export function otherAccountLine(account: {
+  displayName?: string | null;
+  businessName?: string | null;
+  email?: string | null;
+}): { name: string; email: string | null } {
+  const email = visibleAccountEmail(account.email);
+  const display = account.displayName?.trim() || '';
+  const business = account.businessName?.trim() || '';
+  const name = display || business || email || 'Account';
+  return { name, email: email && email !== name ? email : null };
+}
+
+/** Business name for a user id, from the links list or the open business. Never invented. */
+export function businessNameForAccount(
+  accountId: string,
+  links: { current: { id: string; isLinkedBusiness: boolean }; linked: readonly { id: string; businessName: string | null }[] } | null | undefined,
+  activeBusinessName?: string | null,
+): string | null {
+  const listed = links?.linked.find((item) => item.id === accountId)?.businessName?.trim();
+  if (listed) return listed;
+  if (links?.current.isLinkedBusiness && links.current.id === accountId) {
+    const active = activeBusinessName?.trim();
+    if (active) return active;
+  }
+  return null;
+}
+
+/**
+ * Unlink confirm title. Uses the business name when we have one.
+ * The person's display name is not the business, so it is not used here.
+ */
+export function selfUnlinkName(businessName: string | null | undefined): string {
+  const name = businessName?.trim();
+  return name || 'this business account';
+}
+
+/** businessName on a payload that may not have the field yet. */
+export function readBusinessName(source: object | null | undefined): string | null {
+  if (!source || !('businessName' in source)) return null;
+  const value = (source as { businessName?: unknown }).businessName;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+export function signOutMenuLabel(
+  email: string | null | undefined,
+  hasOtherAccounts: boolean,
+  displayName?: string | null,
+): string {
   const shown = visibleAccountEmail(email);
   if (hasOtherAccounts && shown) return `Sign out of ${shown}`;
+  const name = displayName?.trim();
+  if (hasOtherAccounts && name) return `Sign out of ${name}`;
   return 'Sign out';
+}
+
+/**
+ * Add-another-account line. A real email is named. A hidden email uses the
+ * person's name. With neither, the "as …" clause is left off.
+ */
+export function staySignedInAs(user: {
+  email?: string | null;
+  displayName?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+} | null | undefined): string | null {
+  if (!user) return null;
+  const email = visibleAccountEmail(user.email);
+  if (email) return email;
+  const display = user.displayName?.trim();
+  if (display) return display;
+  const composed = [user.firstName, user.lastName].map((part) => (part || '').trim()).filter(Boolean).join(' ');
+  return composed || null;
+}
+
+/** Header subtitle currency and zone. Unlinked accounts do not show this line. */
+export const HEADER_ACCOUNT_CURRENCY = 'NZD';
+export const HEADER_ACCOUNT_TIMEZONE = 'Pacific/Auckland';
+
+export function showAccountsGroup(links: { owner: unknown; linked: readonly unknown[] } | null | undefined): boolean {
+  if (!links) return false;
+  return links.linked.length > 0 || links.owner != null;
+}
+
+/**
+ * "Add business account" stays hidden once the Accounts group is on screen.
+ * The group itself only appears when a link exists, which already hides the row.
+ */
+export function showAddBusinessAccountMenuRow(input: {
+  active: AccountLinkPartyView | null | undefined;
+  linkedCount: number | null;
+  accountsGroup: boolean;
+}): boolean {
+  if (input.accountsGroup) return false;
+  return showAddBusinessAccountRow(input);
+}
+
+export type AccountSwitcherRow = {
+  id: string;
+  name: string;
+  pill: 'personal' | 'business';
+  current: boolean;
+};
+
+function personalAccountName(displayName: string | null | undefined): string {
+  const name = displayName?.trim();
+  return name || 'Personal account';
+}
+
+/**
+ * Personal account first, then each linked business.
+ * The Personal row that switches back to the owner follows showBackToPersonal
+ * (canSwitchToOwner). Missing or false hides that row. The account you are
+ * already on stays visible.
+ */
+export function accountSwitcherRows(
+  links: AccountLinksResponse,
+  activeBusinessName?: string | null,
+): AccountSwitcherRow[] {
+  const rows: AccountSwitcherRow[] = [];
+  const current = links.current;
+  const owner = links.owner;
+  const personal = owner ?? (current.isLinkedBusiness ? null : current);
+  const switchingToOwner = Boolean(owner && owner.id !== current.id);
+  if (personal && (!switchingToOwner || showBackToPersonal(links))) {
+    rows.push({
+      id: personal.id,
+      name: personalAccountName(personal.displayName),
+      pill: 'personal',
+      current: personal.id === current.id,
+    });
+  }
+  if (current.isLinkedBusiness) {
+    rows.push({
+      id: current.id,
+      name: linkedAccountTitle({
+        businessName: activeBusinessName ?? null,
+        displayName: current.displayName,
+      }),
+      pill: 'business',
+      current: true,
+    });
+  }
+  for (const item of links.linked) {
+    if (rows.some((row) => row.id === item.id)) continue;
+    rows.push({
+      id: item.id,
+      name: linkedAccountTitle(item),
+      pill: 'business',
+      current: item.id === current.id,
+    });
+  }
+  return rows;
+}
+
+export type AccountSwitchPhase =
+  | { kind: 'idle' }
+  | { kind: 'switching'; accountId: string }
+  | { kind: 'failed'; accountId: string; message: string };
+
+export function accountSwitchRowState(
+  row: { id: string; current: boolean },
+  phase: AccountSwitchPhase,
+): { ariaCurrent: boolean; disabled: boolean; statusText: string | null; blocked: boolean } {
+  if (phase.kind === 'switching' && phase.accountId === row.id) {
+    return { ariaCurrent: false, disabled: true, statusText: 'Switching…', blocked: false };
+  }
+  if (row.current) {
+    return { ariaCurrent: true, disabled: phase.kind === 'switching', statusText: 'Current', blocked: false };
+  }
+  if (phase.kind === 'switching') {
+    return { ariaCurrent: false, disabled: true, statusText: null, blocked: true };
+  }
+  if (phase.kind === 'failed' && phase.accountId === row.id) {
+    return { ariaCurrent: false, disabled: false, statusText: phase.message, blocked: false };
+  }
+  return { ariaCurrent: false, disabled: false, statusText: null, blocked: false };
+}
+
+/** Id shared by a switcher row and the error it describes. */
+export function accountSwitchErrorId(accountId: string): string {
+  return `account-switch-error-${accountId}`;
+}
+
+/**
+ * Reopening the menu clears a failed switch so it can be tried again.
+ * An in-flight switch stays locked, so a second tap cannot start another one.
+ */
+export function resetSwitchOnMenuOpen(phase: AccountSwitchPhase): boolean {
+  return phase.kind === 'failed';
+}
+
+/** Only an inactive row, and only while nothing is already switching. */
+export function accountSwitchTarget(row: { id: string; current: boolean }, phase: AccountSwitchPhase): string | null {
+  if (row.current || phase.kind === 'switching') return null;
+  return row.id;
+}
+
+/**
+ * Header line for a linked account. Unlinked accounts get null so the header stays as it is.
+ * A linked business with no business name yet (the lookup is empty or it failed)
+ * uses linkedAccountTitle, which is "Business account", not the person's name.
+ */
+export function headerAccountContext(input: {
+  links: AccountLinksResponse | null;
+  active: { isLinkedBusiness: boolean; ownerId: string | null } | null | undefined;
+  activeBusinessName?: string | null;
+}): { name: string; pill: 'personal' | 'business' } | null {
+  const unnamedBusiness = linkedAccountTitle({ businessName: null, displayName: null });
+  if (input.links && showAccountsGroup(input.links)) {
+    const current = accountSwitcherRows(input.links, input.activeBusinessName).find((row) => row.current);
+    if (current) {
+      if (current.pill === 'business' && !input.activeBusinessName?.trim()) {
+        return { name: unnamedBusiness, pill: 'business' };
+      }
+      return { name: current.name, pill: current.pill };
+    }
+  }
+  if (input.active?.isLinkedBusiness && input.active.ownerId) {
+    return { name: unnamedBusiness, pill: 'business' };
+  }
+  return null;
 }
 
 /**

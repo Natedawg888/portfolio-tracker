@@ -6,6 +6,8 @@
  */
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiError, api, type AccountSecurity } from '../../api/client';
+import { useAuth } from '../../auth/AuthContext';
+import { offerAccountSignIn } from '../../lib/accountLinksView';
 import { showQuietToast } from '../../lib/quietToast';
 import { lowOnBackupCodes, plural, shortWhen } from '../../lib/securityView';
 import { ConfirmInline } from './ConfirmInline';
@@ -86,6 +88,7 @@ type Setup = { secret: string; otpauthUri: string; qrSvg: string };
 type Mode = 'idle' | 'setup-password' | 'setup-scan' | 'regen' | 'disable';
 
 export function TwoFactorCard({ data, reload }: { data: AccountSecurity; reload: () => Promise<void> }) {
+  const { user } = useAuth();
   const tf = data.twoFactor;
   const [mode, setMode] = useState<Mode>('idle');
   const [codes, setCodes] = useState<{ list: string[]; replaced: boolean } | null>(null);
@@ -254,7 +257,9 @@ export function TwoFactorCard({ data, reload }: { data: AccountSecurity; reload:
           </div>
         </>
       ) : !data.hasPassword ? (
-        <p className="muted small">Set a password above first. Turning on two-factor sign-in asks for it.</p>
+        offerAccountSignIn(user?.activeAccount) ? (
+          <p className="muted small">Set a password above first. Turning on two-factor sign-in asks for it.</p>
+        ) : null
       ) : mode === 'idle' ? (
         <button type="button" className="btn primary" aria-label="Turn on two-factor sign-in" onClick={() => setMode('setup-password')}>
           Turn on
