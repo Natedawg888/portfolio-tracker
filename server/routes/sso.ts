@@ -19,6 +19,7 @@ import type { AuthedRequest } from '../middleware/requireAuth.ts';
 import { getDb, newId, queryAll, queryOne, run } from '../db/index.ts';
 import { parseCookieHeader } from '../auth/sessions.ts';
 import { startSession } from '../auth/signIn.ts';
+import { isPendingDeletion } from '../auth/accountLinks.ts';
 import { REAUTH_REQUIRED, recentlyConfirmed } from '../auth/reauth.ts';
 import { NO_PASSWORD, createUserAccount, hasPassword } from '../auth/users.ts';
 import { parseOnboardingFromPreferencesJson } from '../../src/lib/onboardingPrefs.ts';
@@ -165,6 +166,7 @@ router.get('/sso/:provider/callback', async (req: AuthedRequest, res) => {
     const { userId } = await resolveUser(identity);
     const db = await getDb();
     const back = mode === 'add' ? '/login?add=1' : '/login';
+    if (isPendingDeletion(db, userId)) return fail(res, mode, 'ACCOUNT_PENDING_DELETION');
     if (isTwoFactorEnabled(db, userId)) {
       const trusted = parseTrustedCookie(parseCookieHeader(req.headers.cookie, TRUSTED_DEVICE_COOKIE));
       if (!isTrustedDevice(db, userId, trusted)) {
@@ -173,7 +175,7 @@ router.get('/sso/:provider/callback', async (req: AuthedRequest, res) => {
         return;
       }
     }
-    await startSession(req as Request, res, userId, state.remember, { method: 'sso', provider: identity.provider });
+    if (!(await startSession(req as Request, res, userId, state.remember, { method: 'sso', provider: identity.provider }))) return;
     const prefs = queryOne<{ preferences_json: string | null }>(db, `SELECT preferences_json FROM users WHERE id = ?`, [userId]);
     const onboarded = parseOnboardingFromPreferencesJson(prefs?.preferences_json ?? null).complete;
     res.redirect(303, onboarded ? '/' : '/register');

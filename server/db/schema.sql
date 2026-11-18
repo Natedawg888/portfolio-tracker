@@ -376,8 +376,22 @@ CREATE TABLE IF NOT EXISTS sessions (
   device_label TEXT,                  -- "Chrome on Windows" (coarse, from User-Agent)
   last_seen_at TEXT,                  -- updated at most every 10 min
   persistent   INTEGER NOT NULL DEFAULT 1, -- 0 = "keep me signed in" unticked (browser-session cookie)
-  passkey_id   TEXT                       -- passkey that opened it (KAN-75); removing the passkey ends it
+  passkey_id   TEXT,                      -- passkey that opened it (KAN-75); removing the passkey ends it
+  -- Personal owner who opened this session by switching into a linked business.
+  -- Null on a normal sign-in and after switching back to that owner.
+  origin_owner_user_id TEXT
 );
+
+-- Personal owner (owner_user_id) → separate business user (linked_user_id).
+-- A business user belongs to at most one owner. Queries filter by the signed-in
+-- user. Created business users use a synthetic email; see server/auth/accountLinks.ts.
+CREATE TABLE IF NOT EXISTS account_links (
+  id              TEXT PRIMARY KEY,
+  owner_user_id   TEXT NOT NULL,
+  linked_user_id  TEXT NOT NULL UNIQUE,
+  created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_account_links_owner ON account_links(owner_user_id);
 
 -- 2FA backup codes: SHA-256 of a high-entropy code, each usable once.
 CREATE TABLE IF NOT EXISTS user_backup_codes (

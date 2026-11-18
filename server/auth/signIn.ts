@@ -10,6 +10,7 @@ import { TRUSTED_DEVICE_COOKIE, parseTrustedCookie, trustedDeviceIdFor } from '.
 import { deviceLabel } from './deviceLabel.ts';
 import { rememberPreviousAccount } from './accounts.ts';
 import { recordAuthEvent, type SignInMethod } from './authEvents.ts';
+import { ACCOUNT_PENDING_DELETION, isPendingDeletion } from './accountLinks.ts';
 
 /** Body flag `remember` (default true): false → browser-session cookie, 24 h server expiry. */
 export function parseRemember(body: unknown): boolean {
@@ -22,6 +23,7 @@ export function clientKey(req: Request): string {
   return req.ip || req.socket.remoteAddress || 'unknown';
 }
 
+/** Null when the response was already sent (the account is marked for deletion). */
 export async function startSession(
   req: Request,
   res: Response,
@@ -32,8 +34,12 @@ export async function startSession(
    * trusted device on this browser (looked up from its cookie when not given).
    */
   opts: { method: SignInMethod; passkeyId?: string | null; provider?: string | null; trustedDeviceId?: string | null },
-) {
+): Promise<Awaited<ReturnType<typeof createSession>> | null> {
   const db = await getDb();
+  if (isPendingDeletion(db, userId)) {
+    res.status(ACCOUNT_PENDING_DELETION.status).json({ error: ACCOUNT_PENDING_DELETION.error, code: ACCOUNT_PENDING_DELETION.code });
+    return null;
+  }
   // Account switcher: a different account already signed in here stays available.
   await rememberPreviousAccount(db, req, res, userId);
   const label = deviceLabel(req.headers['user-agent']);

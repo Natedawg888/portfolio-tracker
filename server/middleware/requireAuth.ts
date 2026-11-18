@@ -2,6 +2,8 @@
  * Attach req.user from session cookie; optionally reject unauthenticated requests.
  */
 import type { Request, Response, NextFunction } from 'express';
+import { destroyOrphanSwitchSession } from '../auth/accountLinks.ts';
+import { getDb } from '../db/index.ts';
 import {
   SESSION_COOKIE,
   findUserBySessionToken,
@@ -14,7 +16,13 @@ export type AuthedRequest = Request & { user?: AuthUser | null };
 export async function attachUser(req: AuthedRequest, _res: Response, next: NextFunction) {
   try {
     const raw = parseCookieHeader(req.headers.cookie, SESSION_COOKIE);
-    req.user = await findUserBySessionToken(raw);
+    const user = await findUserBySessionToken(raw);
+    if (user?.sessionId && (await destroyOrphanSwitchSession(await getDb(), user.sessionId, user.id))) {
+      req.user = null;
+      next();
+      return;
+    }
+    req.user = user;
     next();
   } catch (err) {
     next(err);

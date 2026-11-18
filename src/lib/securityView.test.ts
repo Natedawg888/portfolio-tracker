@@ -137,6 +137,7 @@ eq(off.items.find((i) => i.key === 'others')?.text, 'No other browsers signed in
   eq(eventText(ev({ method: 'passkey', passkeyName: 'Chrome on Windows' }), providers).text, 'Signed in with the passkey “Chrome on Windows”', 'passkey named');
   eq(eventText(ev({ method: 'passkey' }), providers).text, 'Signed in with a passkey', 'removed passkey');
   eq(eventText(ev({ kind: 'passkey_added' }), providers).icon, 'passkey_added', 'passkey added icon');
+  eq(eventText(ev({ kind: 'account_switch', method: 'account_switch' }), providers).text, 'Switched account', 'account switch');
   eq(eventMethodShort(ev({ method: 'two_factor' }), providers), 'your password and a 2FA code', 'short method');
 }
 

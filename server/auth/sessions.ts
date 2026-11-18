@@ -35,7 +35,17 @@ export type NewSession = { id: string; rawToken: string; expiresAt: string; pers
 
 export async function createSession(
   userId: string,
-  opts: { persistent?: boolean; deviceLabel?: string | null; passkeyId?: string | null; trustedDeviceId?: string | null } = {},
+  opts: {
+    persistent?: boolean;
+    deviceLabel?: string | null;
+    passkeyId?: string | null;
+    trustedDeviceId?: string | null;
+    /**
+     * Personal owner who switched into a linked business. Null on a normal sign-in
+     * and when switching back to the owner. Switching does not ask for a password.
+     */
+    originOwnerUserId?: string | null;
+  } = {},
 ): Promise<NewSession> {
   const db = await getDb();
   const persistent = opts.persistent ?? true;
@@ -47,8 +57,8 @@ export async function createSession(
   const expiresAt = new Date(now.getTime() + ttl).toISOString();
   run(
     db,
-    `INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at, device_label, last_seen_at, persistent, passkey_id, trusted_device_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at, device_label, last_seen_at, persistent, passkey_id, trusted_device_id, origin_owner_user_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       userId,
@@ -60,6 +70,7 @@ export async function createSession(
       persistent ? 1 : 0,
       opts.passkeyId ?? null,
       opts.trustedDeviceId ?? null,
+      opts.originOwnerUserId ?? null,
     ],
   );
   return { id, rawToken, expiresAt, persistent };

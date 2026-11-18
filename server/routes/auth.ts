@@ -49,6 +49,10 @@ import { emailEnabled, messageHtml, sendEmail } from '../invoices/email.ts';
 import { shareBase } from './invoices.ts';
 import { exportAccountData } from '../lib/accountExport.ts';
 import { composeDisplayName, createUserAccount, hasPassword } from '../auth/users.ts';
+import { ACCOUNT_PENDING_DELETION, activeAccountFor, detachLinksOnAccountDeletion, isPendingDeletion } from '../auth/accountLinks.ts';
+import { publicEmail } from '../auth/syntheticEmail.ts';
+import { settleMarkedLinkedAccounts } from '../auth/linkedDeletion.ts';
+import { logger } from '../lib/logger.ts';
 import { deleteScopedDataForUser, getDataOwnerUserId } from '../lib/userScope.ts';
 import { mayClaimExistingFinance } from '../lib/dataClaim.ts';
 import { billingConfig } from '../billing/config.ts';
@@ -119,7 +123,7 @@ function publicUser(u: {
   const onboarding: OnboardingFlags = parsed.flags ?? completedOnboardingFlags();
   return {
     id: u.id,
-    email: u.email,
+    email: publicEmail(u.email),
     firstName,
     lastName,
     displayName,
@@ -183,6 +187,8 @@ function toPublicUser(
     pendingEmail: pendingEmailFor(db, u.id)?.newEmail ?? null,
     /** True when changing email sends a confirmation link; false when it applies at once. */
     emailChangeConfirms: emailEnabled(),
+    /** Which account this session is. ownerId is set only for a linked business. */
+    activeAccount: activeAccountFor(db, u.id),
   };
 }
 
@@ -241,27 +247,26 @@ router.get('/status', async (_req, res) => {
 
 router.get('/me', async (req: AuthedRequest, res) => {
   if (!req.user) {
-    res.json({ user: null });
+    res.json({ user: null, activeAccount: null });
     return;
   }
   const db = await getDb();
   const row = loadUserRow(db, req.user.id);
   if (!row) {
-    res.json({ user: null });
+    res.json({ user: null, activeAccount: null });
     return;
   }
-  res.json({
-    user: toPublicUser(db, {
-      id: row.id,
-      email: row.email,
-      firstName: row.first_name,
-      lastName: row.last_name,
-      displayName: row.display_name,
-      avatarUrl: row.avatar_url,
-      createdAt: row.created_at,
-      preferences_json: row.preferences_json,
-    }),
+  const user = toPublicUser(db, {
+    id: row.id,
+    email: row.email,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    displayName: row.display_name,
+    avatarUrl: row.avatar_url,
+    createdAt: row.created_at,
+    preferences_json: row.preferences_json,
   });
+  res.json({ user, activeAccount: user.activeAccount });
 });
 
 router.post('/register', async (req, res) => {
@@ -309,7 +314,7 @@ router.post('/register', async (req, res) => {
   const now = created.createdAt;
   const prefsJson = created.preferencesJson;
 
-  await startSession(req, res, id, parseRemember(req.body), { method: 'register' });
+  if (!(await startSession(req, res, id, parseRemember(req.body), { method: 'register' }))) return;
   res.status(201).json({
     user: toPublicUser(db, {
       id,
@@ -354,6 +359,10 @@ router.post('/login', async (req, res) => {
   }
 
   const db = await getDb();
+  if (isPendingDeletion(db, user.id)) {
+    res.status(ACCOUNT_PENDING_DELETION.status).json({ error: ACCOUNT_PENDING_DELETION.error, code: ACCOUNT_PENDING_DELETION.code });
+    return;
+  }
   const remember = parseRemember(req.body);
   // 2FA (KAN-16): password alone isn't enough unless this browser is a trusted device.
   if (isTwoFactorEnabled(db, user.id)) {
@@ -372,7 +381,7 @@ router.post('/login', async (req, res) => {
   clearLoginFailures(email);
 
   const row = loadUserRow(db, user.id);
-  await startSession(req, res, user.id, remember, { method: 'password' });
+  if (!(await startSession(req, res, user.id, remember, { method: 'password' }))) return;
   res.json({
     user: toPublicUser(db, {
       id: user.id,
@@ -432,7 +441,7 @@ router.post('/login/2fa', async (req, res) => {
     trustedDeviceId = trusted.id;
     res.append('Set-Cookie', trustedCookieHeader([...existing, trusted.token]));
   }
-  await startSession(req, res, row.id, c.persistent, { method: 'two_factor', provider: c.provider, trustedDeviceId });
+  if (!(await startSession(req, res, row.id, c.persistent, { method: 'two_factor', provider: c.provider, trustedDeviceId }))) return;
   res.json({
     user: toPublicUser(db, {
       id: row.id,
@@ -962,6 +971,11 @@ router.post('/delete-account', async (req: AuthedRequest, res) => {
   deleteBillingRowsForUser(db, userId);
   run(db, `DELETE FROM email_changes WHERE user_id = ?`, [userId]);
 
+  // Links come off after this account's own subscription cancel succeeded.
+  // Login-capable businesses are only detached. No-login ones are marked; their
+  // Stripe cancel is best-effort after this user is gone and never blocks this response.
+  const linkDetach = detachLinksOnAccountDeletion(db, userId);
+
   // 5) data owner: cleared, never handed to another account. The owner role unlocks the
   //    server's shared Akahu token (the owner's bank feed) and the owner's legacy GoMining /
   //    collectable values in app_settings, so passing it on would expose them to someone else.
@@ -973,6 +987,12 @@ router.post('/delete-account', async (req: AuthedRequest, res) => {
 
   // 6) User row (preferences_json lives here)
   run(db, `DELETE FROM users WHERE id = ?`, [userId]);
+
+  // Only the accounts this deletion marked. Do not wait: Stripe must not hold the response.
+  const markedIds = linkDetach.markedForDeletion;
+  void settleMarkedLinkedAccounts(db, markedIds).catch((err) => {
+    logger.error('linked_deletion_settle_failed', { error: err instanceof Error ? err.message : String(err) });
+  });
 
   // Clear cookie for this browser
   res.setHeader('Set-Cookie', clearSessionCookieHeader());
@@ -987,6 +1007,9 @@ router.post('/delete-account', async (req: AuthedRequest, res) => {
       holdingPhotos: scoped.photosRemoved,
       wasDataOwner: wasOwner,
       subscriptionsCancelled,
+      linkedAccountsDetached: linkDetach.detached,
+      linkedAccountsMarkedForDeletion: linkDetach.markedForDeletion,
+      linkedAccountsPurged: [] as string[],
     },
     sharedDataRemaining: [
       'app_settings (locale, currency, timezone defaults)',

@@ -62,8 +62,8 @@ export function ProfileMenu({ triggerClassName }: { triggerClassName?: string })
     .filter(Boolean)
     .join(' ');
   const display = user.displayName?.trim() || composed;
-  const label = display || user.email;
-  const initial = initials(user.email, display || null);
+  const label = display || user.email || 'Account';
+  const initial = initials(user.email ?? '', display || null);
 
   const onLogout = async (all = false) => {
     setLoggingOut(true);
@@ -108,7 +108,7 @@ export function ProfileMenu({ triggerClassName }: { triggerClassName?: string })
         <div className="profile-menu-dropdown" role="menu">
           <div className="profile-menu-owner">
             <div className="profile-menu-owner-name">{display || 'Account'}</div>
-            <div className="profile-menu-owner-email" title={user.email}>
+            <div className="profile-menu-owner-email" title={user.email ?? undefined}>
               {user.email}
             </div>
           </div>

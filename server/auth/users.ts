@@ -18,8 +18,14 @@ import { initialPreferencesJsonForNewUser } from '../../src/lib/onboardingPrefs.
  */
 export const NO_PASSWORD = '!sso-only';
 
+/**
+ * password_hash for a business account created from a personal one. Same idea as
+ * NO_PASSWORD: not a scrypt string, so there is no login until they set one.
+ */
+export const NO_LOGIN = '!linked-no-login';
+
 export function hasPassword(passwordHash: string | null | undefined): boolean {
-  return Boolean(passwordHash && passwordHash !== NO_PASSWORD);
+  return Boolean(passwordHash && passwordHash !== NO_PASSWORD && passwordHash !== NO_LOGIN);
 }
 
 /** Ways this account can sign in: its password, each connected provider, each passkey. */
