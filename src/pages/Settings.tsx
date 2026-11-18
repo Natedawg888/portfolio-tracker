@@ -36,12 +36,28 @@ import {
 
 type SettingsTab = 'account' | 'security' | 'business' | 'categories' | 'connections';
 
+/**
+ * Settings → Connections (Akahu bank connect) is hidden for every user.
+ * Pro is the plan that will include it; flip this constant to put the tab back.
+ * An Akahu OAuth return (`/settings?akahu=…`) still mounts ConnectionsPanel.
+ */
+const SHOW_CONNECTIONS_TAB = false;
+
 export function Settings() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
-  // Akahu OAuth returns to /settings?akahu=… — open Connections so the handler mounts
+  const akahuFlag = searchParams.get('akahu');
+  // The callback strips ?akahu= after it runs. Keep the panel mounted so the result stays on screen.
+  const [akahuReturnOpen, setAkahuReturnOpen] = useState(Boolean(akahuFlag));
+  const [seenAkahu, setSeenAkahu] = useState(akahuFlag);
+  if (akahuFlag !== seenAkahu) {
+    setSeenAkahu(akahuFlag);
+    if (akahuFlag) setAkahuReturnOpen(true);
+  }
+
+  // ?tab=connections falls back to Account while the tab is hidden. ?akahu= still opens the panel.
   const tab: SettingsTab =
-    searchParams.get('akahu') || tabParam === 'connections'
+    akahuFlag || akahuReturnOpen || (SHOW_CONNECTIONS_TAB && tabParam === 'connections')
       ? 'connections'
       : tabParam === 'categories'
         ? 'categories'
@@ -52,6 +68,7 @@ export function Settings() {
           : 'account';
 
   const setTab = (next: SettingsTab) => {
+    setAkahuReturnOpen(next === 'connections' || Boolean(searchParams.get('akahu')));
     const params = new URLSearchParams(searchParams);
     params.set('tab', next);
     setSearchParams(params, { replace: true });
@@ -94,14 +111,16 @@ export function Settings() {
           >
             Categories &amp; assets
           </button>
-          <button
-            type="button"
-            className={tab === 'connections' ? 'settings-side-link active' : 'settings-side-link'}
-            onClick={() => setTab('connections')}
-            aria-current={tab === 'connections' ? 'page' : undefined}
-          >
-            Connections
-          </button>
+          {SHOW_CONNECTIONS_TAB ? (
+            <button
+              type="button"
+              className={tab === 'connections' ? 'settings-side-link active' : 'settings-side-link'}
+              onClick={() => setTab('connections')}
+              aria-current={tab === 'connections' ? 'page' : undefined}
+            >
+              Connections
+            </button>
+          ) : null}
         </nav>
       </aside>
       <div className="settings-main stack">
@@ -337,6 +356,9 @@ function ConnectionsPanel({
           are never shared with this app.
         </p>
 
+        {akahuError ? <p className="auth-error" role="alert">{akahuError}</p> : null}
+        {akahuMsg ? <p className="auth-info" role="status">{akahuMsg}</p> : null}
+
         {akahu == null ? (
           <p className="muted">Loading account connections…</p>
         ) : !akahu.canSync && !akahu.oauthReady ? (
@@ -374,9 +396,6 @@ function ConnectionsPanel({
                 </ul>
               </div>
             ) : null}
-
-            {akahuError ? <p className="auth-error" role="alert">{akahuError}</p> : null}
-            {akahuMsg ? <p className="auth-info" role="status">{akahuMsg}</p> : null}
 
             <div className="row gap">
               {akahu.mode === 'personal' ? (

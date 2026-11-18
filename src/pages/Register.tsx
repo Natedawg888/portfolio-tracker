@@ -419,7 +419,7 @@ export function Register() {
             ? 'Open Akahu to link or manage your accounts, then return here and use “Sync & finish”.'
             : st.sharedTokenConfigured
               ? 'This Personal App token is available only to the first account. You can still skip this optional step, or configure Full App OAuth later.'
-              : 'Akahu OAuth is not configured yet. You can skip this optional step and connect later in the account menu → Settings.',
+              : 'Akahu OAuth is not configured yet. You can skip this optional step.',
         );
         return;
       }
@@ -445,7 +445,7 @@ export function Register() {
       const st = await akahuStatus();
       setAkahu(st);
       if (!st.canSync) {
-        setInfo('Akahu is not connected for this account. Use “Skip / do later”, or connect later in the account menu → Settings.');
+        setInfo('Akahu is not connected for this account. Use “Skip / do later”.');
         return;
       }
       await akahuSync();
@@ -736,8 +736,7 @@ export function Register() {
             <p className="page-lead">
               Connect <em>your</em> NZ banks, Sharesies, Hatch, and KiwiSaver through{' '}
               <strong>Akahu</strong>. This checkpoint keeps setup explicit: you can connect and sync
-              now, or choose <strong>Skip / do later</strong> to open an empty portfolio. You can
-              connect anytime in the account menu → <strong>Settings → Connections</strong>.
+              now, or choose <strong>Skip / do later</strong> to open an empty portfolio.
             </p>
             {info ? <p className="auth-info" role="status">{info}</p> : null}
             {error ? <p className="auth-error" role="alert">{error}</p> : null}
