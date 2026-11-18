@@ -71,5 +71,7 @@ jobs:
       - run: npm run test:onboarding-categories
       - run: npm run test:plans
       - run: npm run test:billing
+      - run: npm run test:links
+      - run: npm run test:akahu
       - run: npm run test:household
       - run: npm run build

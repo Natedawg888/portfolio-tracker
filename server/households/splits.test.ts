@@ -122,6 +122,19 @@ try {
   assert(r.status === 201 && bal(r.json).olive === 0 && bal(r.json).adam === 18.64, 'Olive settled');
   assert(r.json.suggestions.length === 1 && r.json.suggestions[0].fromId === 'vic', 'only Vic left to pay');
 
+  // Synthetic linked addresses are not used as split names.
+  run(db, `INSERT INTO users (id, email, password_hash, display_name, created_at, updated_at) VALUES (?,?,?,?,?,?)`, ['synsplit', 'linked.split@accounts.koruledger.invalid', 'h', 'Split Shop', now, now]);
+  run(db, `INSERT INTO users (id, email, password_hash, created_at, updated_at) VALUES (?,?,?,?,?)`, ['blanksplit', 'linked.blanksplit@accounts.koruledger.invalid', 'h', now, now]);
+  run(db, `INSERT INTO users (id, email, password_hash, created_at, updated_at) VALUES (?,?,?,?,?)`, ['localsplit', 'counter.local@example.com', 'h', now, now]);
+  const homeId = (await call('GET', '/', C.olive)).json.household.id as string;
+  for (const id of ['synsplit', 'blanksplit', 'localsplit']) {
+    run(db, `INSERT INTO household_members (household_id, user_id, role, joined_at) VALUES (?,?, 'adult', ?)`, [homeId, id, now]);
+  }
+  r = await call('GET', '/splits', C.olive);
+  const nameOf = (id: string) => r.json.members.find((m: Json) => m.id === id).name;
+  assert(nameOf('synsplit') === 'Split Shop' && nameOf('blanksplit') === 'Member' && nameOf('localsplit') === 'counter.local', 'split names hide a synthetic address and keep a real local part');
+  assert(!JSON.stringify(r.json).includes('.invalid') && !JSON.stringify(r.json).includes('linked.'), 'splits payload has no synthetic address');
+
   // A member who leaves keeps their balance, flagged.
   await call('POST', '/leave', C.vic);
   r = await call('GET', '/splits', C.olive);

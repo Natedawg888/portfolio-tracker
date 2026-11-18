@@ -31,6 +31,7 @@ import {
   upsertConnection,
   type AkahuInstitution,
 } from '../akahu/connections.ts';
+import { publicEmail } from '../auth/syntheticEmail.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
 
 const router = Router();
@@ -142,7 +143,7 @@ router.post('/connect', async (req: AuthedRequest, res) => {
     const state = createOAuthState(req.user.id);
     const authorizeUrl = buildAuthorizeUrl({
       state,
-      email: req.user.email,
+      email: publicEmail(req.user.email),
       scope: 'ENDURING_CONSENT',
     });
     res.json({ ok: true, authorizeUrl });
