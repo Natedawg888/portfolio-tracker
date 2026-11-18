@@ -65,8 +65,12 @@ const { resetLoginRateLimitForTest, MAX_FAILURES_PER_ACCOUNT } = await import('.
   check(!sealed.includes('JBSWY3DPEHPK3PXP') && sealed.startsWith('v1:'), 'sealed secret is not plaintext');
   check(openSecret(sealed) === 'JBSWY3DPEHPK3PXP', 'open round trip');
   const parts = sealed.split(':');
-  parts[3] = `${parts[3].slice(0, -2)}AA`;
-  check(openSecret(parts.join(':')) === null, 'tampered ciphertext rejected');
+  const ct = Buffer.from(parts[3], 'base64url');
+  ct[ct.length - 1] ^= 0x01;
+  parts[3] = ct.toString('base64url');
+  const tampered = parts.join(':');
+  check(tampered !== sealed, 'tampered ciphertext differs from the original');
+  check(openSecret(tampered) === null, 'tampered ciphertext rejected');
   check(fs.statSync(path.join(tmp, 'secrets', 'auth.key')).isFile(), 'local key file generated');
 }
 
