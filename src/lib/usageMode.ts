@@ -60,8 +60,8 @@ export type NavKey =
   | 'history'
   | 'valueSearch';
 
-/** Today's nav. */
-const PERSONAL_NAV: NavKey[] = ['dashboard', 'budget', 'debts', 'portfolio', 'projections', 'news', 'kiwisaver', 'paye', 'business', 'calendar', 'history', 'valueSearch'];
+/** Personal accounts: the main nav, without Business. /business stays reachable by URL. */
+const PERSONAL_NAV: NavKey[] = ['dashboard', 'budget', 'debts', 'portfolio', 'projections', 'news', 'kiwisaver', 'paye', 'calendar', 'history', 'valueSearch'];
 /** Business only: the business pages and the Calendar (client meetings). Personal pages leave the nav. */
 const BUSINESS_NAV: NavKey[] = ['business', 'invoices', 'clients', 'calendar'];
 /** Both: today's nav with Business straight after Dashboard. */
