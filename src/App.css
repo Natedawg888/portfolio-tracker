@@ -15233,3 +15233,101 @@ html:not([data-theme]) .profile-menu-switch-row[aria-current="true"] {
     min-height: 44px;
   }
 }
+
+/* Phone tap targets. Below 640px only — tablet and desktop keep the sizes above.
+   2.75rem is 44px at the 16px root. Text controls grow to that height. Small glyphs
+   (ⓘ, ⋯, pill ×) keep today's box and font; the extra square is an invisible hit area,
+   and the layout reserves that square so two of them cannot overlap. */
+@media (max-width: 639px) {
+  .btn,
+  .btn.small,
+  .period-pager .btn,
+  .home-page .btn,
+  .home-menu-toggle,
+  .business-detail-actions .btn,
+  .gst-boxes .btn,
+  .pnl-export-links .btn,
+  .home-preview-tabs .segmented-btn,
+  .login-page .auth-reveal,
+  .portfolio-tab,
+  .category-select,
+  .app-header .privacy-toggle,
+  .app-header .theme-switch-btn {
+    min-height: 2.75rem;
+  }
+
+  .app-header .privacy-toggle,
+  .app-header .theme-switch-btn {
+    width: 2.75rem;
+    height: 2.75rem;
+    min-width: 2.75rem;
+  }
+
+  .app-header .brand-mark,
+  .app-header .profile-menu-trigger.brand-mark {
+    width: 2.75rem;
+    height: 2.75rem;
+    flex: none;
+  }
+
+  .info-tip-btn,
+  .txn-menu-toggle,
+  .txn-pill-clear {
+    position: relative;
+  }
+
+  .info-tip-btn::after,
+  .txn-menu-toggle::after,
+  .txn-pill-clear::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 2.75rem;
+    height: 2.75rem;
+    transform: translate(-50%, -50%);
+  }
+
+  /* The ⓘ stays 1.35rem. Padding holds the 44px square inside the tip. */
+  .info-tip {
+    padding: calc((2.75rem - 1.35rem) / 2);
+  }
+
+  .dashboard-tile > .info-tip {
+    padding: 0;
+  }
+
+  /* Keep the tile title and value clear of the corner ⓘ hit area. */
+  .dashboard-tile-hit {
+    padding-right: 2.85rem;
+  }
+
+  /* The ⋯ stays 1.9rem (or the 44px shop button). The menu box is the hit area. */
+  .txn-menu {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+
+  .cat-menu-spacer {
+    width: 2.75rem;
+  }
+
+  /* The × stays 1.2rem. Margin holds its 44px square inside the pill. */
+  .txn-pill-clear {
+    margin: calc((2.75rem - 1.2rem) / 2);
+  }
+
+  /* Dismiss × stays 1.15rem. The transparent box is the 44px hit area. */
+  .quiet-toast-dismiss {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    padding: 0;
+    line-height: 1;
+  }
+}
