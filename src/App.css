@@ -1,4 +1,20 @@
 
+/*
+  Shared widths:
+  - 360, 390, 430: phone widths.
+  - 640: phone cutoff. Phone means below 640px (@media (max-width: 639px)).
+    Desktop stays as it is from 640px upward.
+  - 768: existing nav and shell rules, unchanged. At 768px and below the
+    header nav is the drawer.
+
+  Older 640px and 560px rules in this file are left as they are.
+
+  Safe area: index.html sets viewport-fit=cover. Outer padding is
+  max(the existing padding, env(safe-area-inset-*)). With no inset, env()
+  is 0 and the padding does not change. With a notch or home indicator,
+  the padding grows so content is not covered.
+*/
+
 /* Structural tokens (theme-agnostic) */
 :root {
   --radius: 14px;
@@ -137,9 +153,19 @@ body {
 a { color: var(--accent-2); }
 
 .app-shell {
+  --shell-pad-top: 1.35rem;
+  --shell-pad-x: 1.25rem;
+  --shell-pad-bottom: 3.25rem;
   max-width: 1120px;
   margin: 0 auto;
-  padding: 1.35rem 1.25rem 3.25rem;
+  padding: var(--shell-pad-top) var(--shell-pad-x) var(--shell-pad-bottom);
+  /* Sides are the screen edge for the header, the page, and the footer. */
+  padding-right: max(var(--shell-pad-x), env(safe-area-inset-right, 0px));
+  padding-left: max(var(--shell-pad-x), env(safe-area-inset-left, 0px));
+}
+/* No footer on some pages, so the shell itself clears the home indicator. */
+.app-shell:not(:has(.app-footer)) {
+  padding-bottom: max(var(--shell-pad-bottom), env(safe-area-inset-bottom, 0px));
 }
 
 .app-header {
@@ -153,6 +179,9 @@ a { color: var(--accent-2); }
   align-items: center;
   margin-bottom: 1.65rem;
   padding-bottom: 1rem;
+  /* Shell keeps its top gap. This adds only a notch taller than that gap,
+     so the two together are max(gap, inset) and a screen with no inset is unchanged. */
+  padding-top: max(0px, calc(env(safe-area-inset-top, 0px) - var(--shell-pad-top, 1.35rem)));
   border-bottom: 1px solid var(--border-soft);
 }
 .app-header > .brand { grid-area: brand; }
@@ -344,6 +373,8 @@ a { color: var(--accent-2); }
   font-size: 0.8rem;
   border-top: 1px solid var(--border);
   padding-top: 1rem;
+  /* Shell keeps its bottom gap. This adds only a home indicator taller than that gap. */
+  padding-bottom: max(0px, calc(env(safe-area-inset-bottom, 0px) - var(--shell-pad-bottom, 3.25rem)));
 }
 
 .stack { display: flex; flex-direction: column; gap: 1.1rem; }
@@ -2168,6 +2199,10 @@ html[data-theme="light"] .modal-overlay {
   display: grid;
   place-items: center;
   padding: 1.5rem 1rem;
+  padding-top: max(1.5rem, env(safe-area-inset-top, 0px));
+  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
+  padding-left: max(1rem, env(safe-area-inset-left, 0px));
 }
 .auth-card {
   width: min(420px, 100%);
@@ -2250,8 +2285,8 @@ html[data-theme="light"] .modal-overlay {
 .auth-page.plan-page {
   place-items: start center;
   align-content: start;
-  padding-top: 1.5rem;
-  padding-bottom: 2.5rem;
+  padding-top: max(1.5rem, env(safe-area-inset-top, 0px));
+  padding-bottom: max(2.5rem, env(safe-area-inset-bottom, 0px));
 }
 .runs-business-tick {
   display: flex;
@@ -3172,7 +3207,12 @@ body.nav-drawer-open {
 
 @media (max-width: 768px) {
   .app-shell {
-    padding: 0.85rem 0.7rem 2.25rem;
+    --shell-pad-top: 0.85rem;
+    --shell-pad-x: 0.7rem;
+    --shell-pad-bottom: 2.25rem;
+    padding: var(--shell-pad-top) var(--shell-pad-x) var(--shell-pad-bottom);
+    padding-right: max(var(--shell-pad-x), env(safe-area-inset-right, 0px));
+    padding-left: max(var(--shell-pad-x), env(safe-area-inset-left, 0px));
   }
 
   /* Mobile-only width constraints; desktop keeps the original card sizing. */
@@ -3478,7 +3518,12 @@ body.nav-drawer-open {
 
 @media (max-width: 480px) {
   .app-shell {
-    padding: 0.7rem 0.55rem 2rem;
+    --shell-pad-top: 0.7rem;
+    --shell-pad-x: 0.55rem;
+    --shell-pad-bottom: 2rem;
+    padding: var(--shell-pad-top) var(--shell-pad-x) var(--shell-pad-bottom);
+    padding-right: max(var(--shell-pad-x), env(safe-area-inset-right, 0px));
+    padding-left: max(var(--shell-pad-x), env(safe-area-inset-left, 0px));
   }
 
   .brand .sub:not(.account-context) {
@@ -3930,10 +3975,15 @@ html:not([data-theme]) .login-page {
   min-height: 100dvh;
   place-items: center;
   padding: 1.5rem 1rem;
+  padding-top: max(1.5rem, env(safe-area-inset-top, 0px));
+  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
+  padding-left: max(1rem, env(safe-area-inset-left, 0px));
 }
 @media (max-width: 480px) {
-  /* Clear the 12px theme stripe on the left edge. */
+  /* Clear the 12px theme stripe on the left edge, and any side inset. */
   .auth-page.login-page { padding-left: calc(12px + 1rem); }
+  .auth-page.login-page { padding-left: max(calc(12px + 1rem), env(safe-area-inset-left, 0px)); }
 }
 .login-page .auth-card {
   width: min(400px, 100%);
@@ -10290,6 +10340,10 @@ html:not([data-theme]) .settings-page :focus-visible {
   max-width: 52rem;
   margin: 0 auto;
   padding: 1.25rem 1rem 3rem;
+  padding-top: max(1.25rem, env(safe-area-inset-top, 0px));
+  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  padding-bottom: max(3rem, env(safe-area-inset-bottom, 0px));
+  padding-left: max(1rem, env(safe-area-inset-left, 0px));
 }
 
 /* Invoices pages (KAN-71): same theme as the other pages. The invoice paper itself stays white. */
@@ -12980,7 +13034,7 @@ button.asset-row-hit:hover { background: color-mix(in srgb, var(--text) 3%, tran
 .home-page a:not(.btn) { color: var(--accent-2); font-weight: 600; }
 .home-skip {
   position: absolute;
-  left: 1rem;
+  left: max(1rem, env(safe-area-inset-left, 0px));
   top: -4rem;
   z-index: 20;
   padding: 0.55rem 0.9rem;
@@ -12989,7 +13043,7 @@ button.asset-row-hit:hover { background: color-mix(in srgb, var(--text) 3%, tran
   color: var(--text);
   border: 1px solid var(--border);
 }
-.home-skip:focus { top: 0.75rem; }
+.home-skip:focus { top: max(0.75rem, env(safe-area-inset-top, 0px)); }
 .home-page .btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; min-height: 2.5rem; white-space: nowrap; }
 .home-page .btn.primary { color: var(--btn-primary-text); }
 .home-btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); font-weight: 600; }
@@ -13005,6 +13059,9 @@ button.asset-row-hit:hover { background: color-mix(in srgb, var(--text) 3%, tran
   max-width: var(--home-max);
   margin: 0 auto;
   padding: 0.85rem 1rem;
+  padding-top: max(0.85rem, env(safe-area-inset-top, 0px));
+  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  padding-left: max(1rem, env(safe-area-inset-left, 0px));
   background: var(--bg);
 }
 .home-page a.home-brand { display: inline-flex; align-items: center; gap: 0.55rem; color: var(--text); font-weight: 700; text-decoration: none; margin-right: auto; }
@@ -13029,7 +13086,13 @@ button.asset-row-hit:hover { background: color-mix(in srgb, var(--text) 3%, tran
 .home-page .home-menu-list a { display: block; padding: 0.55rem 0.7rem; color: var(--text); text-decoration: none; border-radius: 8px; }
 .home-page .home-menu-list a:hover { background: var(--hover-row); }
 
-.home-page main { max-width: var(--home-max); margin: 0 auto; padding: 0 1rem; }
+.home-page main {
+  max-width: var(--home-max);
+  margin: 0 auto;
+  padding: 0 1rem;
+  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  padding-left: max(1rem, env(safe-area-inset-left, 0px));
+}
 .home-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
@@ -13110,6 +13173,9 @@ button.asset-row-hit:hover { background: color-mix(in srgb, var(--text) 3%, tran
   max-width: var(--home-max);
   margin: 0 auto;
   padding: 1.5rem 1rem 2rem;
+  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  padding-bottom: max(2rem, env(safe-area-inset-bottom, 0px));
+  padding-left: max(1rem, env(safe-area-inset-left, 0px));
   border-top: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
   font-size: 0.88rem;
   color: var(--muted);
@@ -13129,8 +13195,15 @@ button.asset-row-hit:hover { background: color-mix(in srgb, var(--text) 3%, tran
   .home-cta-buttons .btn { flex: 1 1 100%; }
 }
 @media (max-width: 440px) {
-  .home-topbar { gap: 0.4rem; padding-inline: 0.75rem; }
-  .home-page main { padding-inline: 0.75rem; }
+  .home-topbar {
+    gap: 0.4rem;
+    padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
+    padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
+  }
+  .home-page main {
+    padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
+    padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
+  }
   .home-auth { gap: 0.4rem; }
   .home-auth .btn, .home-menu-toggle { padding-inline: 0.6rem; font-size: 0.85rem; }
   /* Logo only; the name stays available to screen readers. */
@@ -13147,9 +13220,22 @@ button.asset-row-hit:hover { background: color-mix(in srgb, var(--text) 3%, tran
 .legal-page :focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
 .legal-page main:focus { outline: none; }
 .legal-page a { color: var(--accent-2); font-weight: 600; }
-.legal-topbar { max-width: 760px; margin: 0 auto; padding: 1rem; }
+.legal-topbar {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 1rem;
+  padding-top: max(1rem, env(safe-area-inset-top, 0px));
+  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  padding-left: max(1rem, env(safe-area-inset-left, 0px));
+}
 .legal-page a.legal-brand { display: inline-flex; align-items: center; gap: 0.55rem; color: var(--text); font-weight: 700; text-decoration: none; }
-.legal-main { max-width: 760px; margin: 0 auto; padding: 0 1rem 2rem; }
+.legal-main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 1rem 2rem;
+  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  padding-left: max(1rem, env(safe-area-inset-left, 0px));
+}
 .legal-doc { line-height: 1.6; overflow-wrap: anywhere; }
 .legal-doc h1,
 .legal-doc h2 { font-family: "Source Serif 4", Georgia, "Times New Roman", serif; font-weight: 500; letter-spacing: -0.015em; color: var(--text); }
@@ -13174,6 +13260,9 @@ button.asset-row-hit:hover { background: color-mix(in srgb, var(--text) 3%, tran
   max-width: 760px;
   margin: 0 auto;
   padding: 1.5rem 1rem 2rem;
+  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  padding-bottom: max(2rem, env(safe-area-inset-bottom, 0px));
+  padding-left: max(1rem, env(safe-area-inset-left, 0px));
   border-top: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
   font-size: 0.88rem;
   color: var(--muted);
@@ -13228,6 +13317,9 @@ html:not([data-theme]) .brand-wordmark--light { display: none; }
   flex-direction: column;
   width: min(80vw, 320px);
   height: 100dvh;
+  /* Drawer still opens the same way. This only keeps the close control off a notch. */
+  padding-top: max(0px, env(safe-area-inset-top, 0px));
+  padding-right: max(0px, env(safe-area-inset-right, 0px));
   background: var(--surface);
   color: var(--text);
   border-left: 1px solid var(--border);
