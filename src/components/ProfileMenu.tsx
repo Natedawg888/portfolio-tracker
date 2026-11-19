@@ -321,6 +321,7 @@ export function ProfileMenu({
         aria-haspopup={phone ? 'dialog' : 'menu'}
         aria-expanded={open}
         aria-label={`Account menu for ${label}`}
+        data-tour="account"
         onClick={() => {
           if (!open && resetSwitchOnMenuOpen(phase)) {
             setPhase({ kind: 'idle' });

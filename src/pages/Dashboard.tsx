@@ -809,7 +809,7 @@ function MonthSnapshot({
   const breakdown = snapshot?.spendingBreakdown ?? null;
   const canExpand = Boolean(breakdown && breakdown.rows.length > 0);
   return (
-    <section className="card month-snapshot" aria-labelledby="this-month-heading">
+    <section className="card month-snapshot" aria-labelledby="this-month-heading" data-tour="money-snapshot">
       <h2 id="this-month-heading" className="month-snapshot-period">This month</h2>
       {error ? (
         <p className="month-snapshot-error" role="alert">{error}</p>

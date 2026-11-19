@@ -17,11 +17,14 @@ export function DrawerPreferenceToggles({
   dark,
   onToggleMoney,
   onToggleTheme,
+  markHideAmounts = false,
 }: {
   moneyHidden: boolean;
   dark: boolean;
   onToggleMoney: () => void;
   onToggleTheme: () => void;
+  /** Phones: this switch is the Hide amounts control, so it carries the tour target. */
+  markHideAmounts?: boolean;
 }) {
   return (
     <div className="mobile-nav-toggles">
@@ -30,6 +33,7 @@ export function DrawerPreferenceToggles({
         className="mobile-nav-switch"
         role="switch"
         aria-checked={moneyHidden}
+        data-tour={markHideAmounts ? 'hide-amounts' : undefined}
         onClick={onToggleMoney}
       >
         <span className="mobile-nav-switch-label">Hide amounts</span>

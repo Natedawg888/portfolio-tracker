@@ -821,7 +821,7 @@ export function KiwiSaver() {
   if (error) {
     return (
       <div className="panel warn kiwisaver-page">
-        <h2 className="page-title">KiwiSaver</h2>
+        <h2 className="page-title" data-tour="kiwisaver">KiwiSaver</h2>
         <p>{error}</p>
       </div>
     );
@@ -829,7 +829,7 @@ export function KiwiSaver() {
 
   return (
     <div className="stack kiwisaver-page">
-      <header className="ks-header" aria-labelledby="kiwisaver-title" aria-busy={loading || syncing}>
+      <header className="ks-header" data-tour="kiwisaver" aria-labelledby="kiwisaver-title" aria-busy={loading || syncing}>
         <div className="ks-header-main">
           <h2 id="kiwisaver-title" className="page-title">KiwiSaver</h2>
           <p className="muted small ks-header-line" aria-live="polite">

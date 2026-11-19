@@ -61,7 +61,7 @@ export function NetWorthHero({
   const delta = historyDelta(points, range, today);
 
   return (
-    <section className="hero-card net-worth-hero" aria-labelledby="net-worth-heading">
+    <section className="hero-card net-worth-hero" aria-labelledby="net-worth-heading" data-tour="net-worth">
       <div className="net-worth-hero-top">
         <h2 id="net-worth-heading" className="eyebrow page-title">
           Net worth

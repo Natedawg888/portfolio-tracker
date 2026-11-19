@@ -315,8 +315,10 @@ export function Layout({ children }: { children?: ReactNode }) {
   const closeNav = () => setNavOpen(false);
 
   // Icon controls stay in the header from tablet upward, and at the bottom of the tablet drawer.
-  // Phones move the same actions into labelled switches at the top of the drawer.
-  const tools = (
+  // Phones move Hide amounts and theme into labelled switches at the top of the drawer.
+  // data-tour="hide-amounts" is on the one that is on screen, so a step matches a single element.
+  const phoneHeader = useMaxWidth(639);
+  const preferenceTools = (markHideAmounts: boolean) => (
     <div className="header-tools">
       <button
         type="button"
@@ -325,6 +327,7 @@ export function Layout({ children }: { children?: ReactNode }) {
         aria-label={moneyHidden ? 'Show monetary values' : 'Hide monetary values'}
         aria-pressed={moneyHidden}
         title={moneyHidden ? 'Show amounts' : 'Hide amounts'}
+        data-tour={markHideAmounts ? 'hide-amounts' : undefined}
       >
         {moneyHidden ? <EyeOffIcon /> : <EyeOpenIcon />}
       </button>
@@ -394,11 +397,12 @@ export function Layout({ children }: { children?: ReactNode }) {
           ))}
         </nav>
         <div className="header-actions">
-          {tools}
+          {preferenceTools(!phoneHeader)}
           <button
             ref={menuButtonRef}
             type="button"
             className="nav-toggle"
+            data-tour="nav-toggle"
             aria-expanded={navOpen}
             aria-controls={MOBILE_NAV_ID}
             onClick={() => setNavOpen((o) => !o)}
@@ -412,13 +416,14 @@ export function Layout({ children }: { children?: ReactNode }) {
         open={navOpen}
         onClose={closeNav}
         links={visibleLinks}
-        tools={tools}
+        tools={preferenceTools(false)}
         phoneTools={
           <DrawerPreferenceToggles
             moneyHidden={moneyHidden}
             dark={theme === 'dark'}
             onToggleMoney={handleMoneyToggle}
             onToggleTheme={() => choose(theme === 'dark' ? 'light' : 'dark')}
+            markHideAmounts={phoneHeader}
           />
         }
         account={<DrawerAccountSection account={headerAccount} onNavigate={closeNav} />}
