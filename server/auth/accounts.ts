@@ -9,6 +9,7 @@
 import type { Request, Response } from 'express';
 import type { Database } from 'sql.js';
 import { queryOne } from '../db/index.ts';
+import { publicEmail } from './syntheticEmail.ts';
 import {
   SESSION_COOKIE,
   cookieSecure,
@@ -97,7 +98,7 @@ function toAccount(db: Database, userId: string, current: boolean): RememberedAc
   const composed = [r.first_name, r.last_name].map((p) => (p ?? '').trim()).filter(Boolean).join(' ');
   return {
     userId: r.id,
-    email: r.email,
+    email: publicEmail(r.email) ?? '',
     displayName: composed || r.display_name?.trim() || null,
     // Uploaded avatars are relative paths; the menu falls back to initials for those.
     avatarUrl: r.avatar_url && /^(data:|https?:|\/api\/)/.test(r.avatar_url) ? r.avatar_url : null,

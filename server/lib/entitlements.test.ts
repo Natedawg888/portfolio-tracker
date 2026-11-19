@@ -71,8 +71,11 @@ try {
     assert(!hasFeature(db, 'bea', f), `Business does not include ${f}`);
   }
   assert(hasFeature(db, 'pat', 'household') && hasFeature(db, 'pia', 'crypto_pro'), 'personal features unchanged');
+  assert(hasFeature(db, 'bea', 'business_manage') && hasFeature(db, 'pat', 'business_manage') && hasFeature(db, 'pia', 'business_manage'), 'Plus, Pro and Business can manage a business');
+  assert(!hasFeature(db, 'fay', 'business_manage'), 'Free cannot manage a business');
+  assert(!hasFeature(db, 'bea', 'household'), 'Business still has no household');
   const feats = featuresOf(db, 'bea');
-  assert(feats.business_reports === true && feats.household === false && Object.keys(feats).length === 6, 'featuresOf lists every feature');
+  assert(feats.business_reports === true && feats.business_manage === true && feats.household === false && Object.keys(feats).length === 7, 'featuresOf lists every feature');
 
   // The route guard and GET /plan.
   const app = express();

@@ -208,6 +208,7 @@ export function providerLabel(provider: string): string {
 export function eventText(e: AuthEvent, ssoProviders: Array<{ id: string; label: string }>): { text: string; icon: MethodIconKind } {
   if (e.kind === 'passkey_added') return { text: 'Passkey added', icon: 'passkey_added' };
   if (e.kind === 'passkey_removed') return { text: 'Passkey removed', icon: 'passkey' };
+  if (e.kind === 'account_switch' || e.method === 'account_switch') return { text: 'Switched account', icon: 'device' };
   const provider = e.provider ?? (e.method === 'sso' && ssoProviders.length === 1 ? ssoProviders[0].id : null);
   switch (e.method) {
     case 'passkey':

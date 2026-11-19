@@ -4,9 +4,8 @@
  *
  * - Scoped to the user. Uploaded files live in uploads/payslips and go with the payslip or account.
  * - One payslip per pay period per pay source (saved pay source, or employer name).
- * - Plans: Free keeps up to FREE_PAYSLIPS_PER_YEAR per tax year, without the PAYE check or
- *   Income. Plus: unlimited, the check, and net pay into Income (so it can be linked to the
- *   bank deposit and not counted twice).
+ * - Plans: every plan can keep as many payslips as they add. Plus (and Pro) also run the PAYE
+ *   check and put net pay into Income, linked to the bank deposit so it isn’t counted twice.
  * - Income mirror: an income_records row (payslip_id) in Salary, from the Budget start date,
  *   linked to a matching bank credit. Deleting a payslip removes that row only; the bank
  *   transaction is never touched.
@@ -23,7 +22,6 @@ import { linkMirroredIncomeToBankCredits } from '../lib/incomeBankLink.ts';
 import { TXN_SYNC_FROM_DATE } from '../lib/syncFloor.ts';
 import { deletePayslipFile, savePayslipFile } from '../lib/uploads.ts';
 
-export const FREE_PAYSLIPS_PER_YEAR = 12;
 const SALARY_CATEGORY = { slug: 'cat-income-salary', name: 'Salary', type: 'income', sortOrder: 1 } as const;
 const FREQUENCIES: PayslipFrequency[] = ['weekly', 'fortnightly', 'four_weekly', 'monthly', 'other'];
 const MAX = 10_000_000;
@@ -100,7 +98,7 @@ export type Payslip = PayslipDraft & {
 };
 
 export type PayslipsView = {
-  plan: { plus: boolean; freeLimit: number; usedThisYear: number };
+  plan: { plus: boolean };
   taxYear: number;
   years: { startYear: number; label: string }[];
   payslips: Payslip[];
@@ -335,9 +333,8 @@ export function listPayslips(db: Database, userId: string, yearRaw?: unknown, em
   const yearsWithSlips = queryAll<{ d: string }>(db, `SELECT DISTINCT pay_date AS d FROM payslips WHERE user_id = ?`, [userId]).map((r) => taxYearForDate(r.d));
   const yearSet = new Set([current, taxYear, ...PAY_TAX_YEAR_OPTIONS.map((y) => y.startYear), ...yearsWithSlips]);
   const years = [...yearSet].sort((a, b) => b - a).map((y) => ({ startYear: y, label: `1 April ${y} – 31 March ${y + 1}` }));
-  const usedThisYear = Number(queryOne<{ c: number }>(db, `SELECT COUNT(*) AS c FROM payslips WHERE user_id = ? AND pay_date >= ? AND pay_date <= ?`, [userId, yearBounds(current).from, yearBounds(current).to])?.c ?? 0);
   return {
-    plan: { plus, freeLimit: FREE_PAYSLIPS_PER_YEAR, usedThisYear },
+    plan: { plus },
     taxYear,
     years,
     payslips,
@@ -425,11 +422,6 @@ export function createPayslip(db: Database, userId: string, body: unknown): Resu
   if (!p.ok) return fail(400, p.error);
   const d = p.value;
   if (duplicate(db, userId, d)) return fail(409, `There’s already a payslip from ${d.employer} for that period`);
-  if (!hasFeature(db, userId, 'payslips')) {
-    const { from, to } = yearBounds(taxYearForDate(d.payDate));
-    const used = Number(queryOne<{ c: number }>(db, `SELECT COUNT(*) AS c FROM payslips WHERE user_id = ? AND pay_date >= ? AND pay_date <= ?`, [userId, from, to])?.c ?? 0);
-    if (used >= FREE_PAYSLIPS_PER_YEAR) return fail(402, `The free plan keeps ${FREE_PAYSLIPS_PER_YEAR} payslips a tax year. KoruLedger Plus keeps them all.`, 'PLAN_LIMIT');
-  }
   const id = newId('psl');
   const now = new Date().toISOString();
   run(

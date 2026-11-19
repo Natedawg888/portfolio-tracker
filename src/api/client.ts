@@ -7,6 +7,17 @@ import type {
 import type { StockItemView } from '../lib/stock.ts';
 import type { BillKind, DeliveryTreatment, Supplier, SupplierBill } from '../lib/suppliers.ts';
 import type { UsageMode } from '../lib/usageMode.ts';
+import type {
+  AccountLinksResponse,
+  ActiveAccount,
+  CreateLinkedBusinessRequest,
+  CreateLinkedBusinessResponse,
+  LinkExistingBusinessRequest,
+  LinkExistingBusinessResponse,
+  SwitchAccountRequest,
+  SwitchAccountResponse,
+  UnlinkAccountResponse,
+} from '../types/accountLinks.ts';
 import { isMoneyHidden, MONEY_MASK } from '../lib/privacy';
 import type { AdsConfig } from '../lib/ads';
 import type { EconomicCycleResponse, EconomicScenarioResult, PhaseNewsResponse } from '../types/economy.ts';
@@ -235,7 +246,15 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     const text = await res.text();
     if (res.status === 401 && !path.startsWith('/auth/')) {
-      onUnauthorized?.();
+      // POST /account/links uses 401 INVALID_CREDENTIALS for a wrong password, same as login.
+      // That personal session is still valid, so it must not sign the browser out.
+      let code: string | undefined;
+      try {
+        code = (JSON.parse(text) as { code?: string }).code;
+      } catch {
+        code = undefined;
+      }
+      if (code !== 'INVALID_CREDENTIALS') onUnauthorized?.();
     }
     throw new ApiError(res.status, text || res.statusText);
   }
@@ -245,27 +264,37 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 
 export type AuthUser = {
   id: string;
-  email: string;
+  /** Null for a created linked business. Its synthetic address stays on the server. */
+  email: string | null;
   firstName: string | null;
   lastName: string | null;
   displayName: string | null;
   avatarUrl: string | null;
   createdAt: string | null;
-  /** False until all required signup steps, including the Akahu checkpoint, are done. */
+  /** False until all required signup steps, including the plan choice and the Akahu checkpoint, are done. */
   onboardingComplete: boolean;
   onboarding: {
     assetClassesDone: boolean;
     budgetCategoriesDone: boolean;
     akahuStepDone: boolean;
+    /** False until Free, skip, or a return from Checkout. Missing on older sessions counts as done. */
+    planStepDone?: boolean;
   };
   /** What the account uses KoruLedger for (KAN-124); personal when never chosen. */
   usageMode: UsageMode;
   /** False until signup (or Settings) has asked; the signup flow shows the question. */
   usageModeChosen: boolean;
+  /** Signup tick: they run a business. The plan still decides whether they can change those books. */
+  runsBusiness?: boolean;
   /** New email waiting for its confirmation link to be opened. */
   pendingEmail?: string | null;
   /** True when changing email sends a confirmation link (email is set up on the server). */
   emailChangeConfirms?: boolean;
+  /**
+   * The account this session is acting as. After switchAccount(), reload user-scoped
+   * data: this id is the only one the API will read or write.
+   */
+  activeAccount: ActiveAccount;
 };
 
 /** An account signed in on this browser (account switcher). */
@@ -317,7 +346,7 @@ export type AccountSecurity = {
 /** A sign-in or passkey change from the account's sign-in log. */
 export type AuthEvent = {
   id: string;
-  kind: 'sign_in' | 'passkey_added' | 'passkey_removed';
+  kind: 'sign_in' | 'passkey_added' | 'passkey_removed' | 'account_switch';
   method: string | null;
   /** google / apple / microsoft (null for other methods and for older events). */
   provider: string | null;
@@ -352,6 +381,44 @@ export type BillingStatus = {
   prices: { plan: 'plus' | 'pro' | 'business'; interval: 'month' | 'year'; amountCents: number }[];
 };
 
+/**
+ * Business accounts attached to the signed-in personal account, and the owner
+ * when the signed-in user is a linked business. See README "Linked business accounts".
+ */
+export function getAccountLinks() {
+  return req<AccountLinksResponse>('/account/links');
+}
+
+/** Create a separate business user (no password, synthetic email) and attach it. */
+export function createLinkedBusiness(body: CreateLinkedBusinessRequest) {
+  return req<CreateLinkedBusinessResponse>('/account/business', { method: 'POST', body: JSON.stringify(body) });
+}
+
+/**
+ * Attach an existing business account. A wrong password is 401 INVALID_CREDENTIALS
+ * and does not sign the personal session out.
+ */
+export function linkExistingBusiness(body: LinkExistingBusinessRequest) {
+  return req<LinkExistingBusinessResponse>('/account/links', { method: 'POST', body: JSON.stringify(body) });
+}
+
+/**
+ * Owner, or the linked business deleting its own id.
+ * Refused with 409 LINKED_ACCOUNT_HAS_NO_LOGIN when that user cannot sign in alone.
+ */
+export function unlinkAccount(linkedUserId: string) {
+  return req<UnlinkAccountResponse>(`/account/links/${encodeURIComponent(linkedUserId)}`, { method: 'DELETE' });
+}
+
+/**
+ * Rotate the session to an owner or one of its linked accounts. Reload user-scoped
+ * data after this returns: bank accounts, holdings, budgets, invoices, businesses,
+ * and anything else loaded for the previous user. A full page load is the safe choice.
+ */
+export function switchAccount(body: SwitchAccountRequest) {
+  return req<SwitchAccountResponse<AuthUser>>('/account/switch', { method: 'POST', body: JSON.stringify(body) });
+}
+
 export const api = {
   auth: {
     status: () =>
@@ -362,7 +429,7 @@ export const api = {
         dataClaimed: boolean;
         firstSignupClaimsData: boolean;
       }>('/auth/status'),
-    me: () => req<{ user: AuthUser | null }>('/auth/me'),
+    me: () => req<{ user: AuthUser | null; activeAccount: ActiveAccount | null }>('/auth/me'),
     register: (body: { email: string; password: string; firstName: string; lastName: string; displayName?: string }) =>
       req<{
         user: AuthUser;
@@ -456,12 +523,25 @@ export const api = {
           scopedTables: Record<string, number>;
           holdingPhotos: number;
           wasDataOwner: boolean;
+          /** Every linked business whose connection was removed. */
+          linkedAccountsDetached: string[];
+          /** Created accounts with no login, marked for deletion. */
+          linkedAccountsMarkedForDeletion: string[];
+          /** Always empty on this response. Purge runs after the response, in the sweep. */
+          linkedAccountsPurged: string[];
         };
         sharedDataRemaining: string[];
       }>('/auth/delete-account', {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+  },
+  accountLinks: {
+    list: getAccountLinks,
+    createBusiness: createLinkedBusiness,
+    link: linkExistingBusiness,
+    unlink: unlinkAccount,
+    switch: switchAccount,
   },
   health: () => req<{ ok: boolean }>('/health'),
   netWorth: () => req<Record<string, unknown>>('/net-worth'),
@@ -1588,9 +1668,15 @@ export const api = {
   },
   billing: {
     status: () => req<BillingStatus>('/billing'),
-    /** A Stripe Checkout page for Plus, Pro or Business; the browser goes there next. */
-    checkout: (plan: 'plus' | 'pro' | 'business', interval: 'month' | 'year') =>
-      req<{ url: string }>('/billing/checkout', { method: 'POST', body: JSON.stringify({ plan, interval }) }),
+    /**
+     * A Stripe Checkout page for Plus, Pro or Business; the browser goes there next.
+     * `returnTo` is an in-app path (signup uses /register). The server allowlists it.
+     */
+    checkout: (plan: 'plus' | 'pro' | 'business', interval: 'month' | 'year', returnTo?: string) =>
+      req<{ url: string }>('/billing/checkout', {
+        method: 'POST',
+        body: JSON.stringify(returnTo ? { plan, interval, returnTo } : { plan, interval }),
+      }),
     /** Stripe's Customer Portal: change plan, card, receipts, cancel. */
     portal: () => req<{ url: string }>('/billing/portal', { method: 'POST', body: '{}' }),
   },
@@ -1739,18 +1825,20 @@ export const api = {
           assetClassesDone: boolean;
           budgetCategoriesDone: boolean;
           akahuStepDone: boolean;
+          planStepDone: boolean;
         };
       }>('/settings/onboarding'),
     /** The account's plan and its features (KAN-125). */
     plan: () =>
       req<{
         plan: 'free' | 'plus' | 'pro' | 'business';
-        features: Record<'household' | 'payslips' | 'crypto_pro' | 'bonds_plus' | 'commodities_plus' | 'business_reports', boolean>;
+        features: Record<'household' | 'payslips' | 'crypto_pro' | 'bonds_plus' | 'commodities_plus' | 'business_reports' | 'business_manage', boolean>;
       }>('/settings/plan'),
     setOnboarding: (body: {
       assetClassesDone?: boolean;
       budgetCategoriesDone?: boolean;
       akahuStepDone?: boolean;
+      planStepDone?: boolean;
     }) =>
       req<{
         onboardingComplete: boolean;
@@ -1758,16 +1846,22 @@ export const api = {
           assetClassesDone: boolean;
           budgetCategoriesDone: boolean;
           akahuStepDone: boolean;
+          planStepDone: boolean;
         };
       }>('/settings/onboarding', {
         method: 'PUT',
         body: JSON.stringify(body),
       }),
+    setRunsBusiness: (runsBusiness: boolean) =>
+      req<{ runsBusiness: boolean; businessCreated: boolean }>('/settings/runs-business', {
+        method: 'PUT',
+        body: JSON.stringify({ runsBusiness }),
+      }),
     setUsageMode: (mode: UsageMode) =>
       req<{
         usageMode: UsageMode;
         onboardingComplete: boolean;
-        onboarding: { assetClassesDone: boolean; budgetCategoriesDone: boolean; akahuStepDone: boolean };
+        onboarding: { assetClassesDone: boolean; budgetCategoriesDone: boolean; akahuStepDone: boolean; planStepDone: boolean };
       }>('/settings/usage-mode', { method: 'PUT', body: JSON.stringify({ mode }) }),
   },
   quotes: {

@@ -9,6 +9,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { addPasskey, hintName, passkeysSupported, readHint, wasCancelled, writeHint } from '../../lib/passkeys';
 import { showQuietToast } from '../../lib/quietToast';
 import { canDisconnectIdentity, canRemovePasskey, needsReauth, providerIconKind, shortWhen } from '../../lib/securityView';
+import { offerAccountSignIn } from '../../lib/accountLinksView';
 import { ssoStartUrl } from '../../lib/sso';
 import { ConfirmInline } from './ConfirmInline';
 import { MethodIcon } from './MethodIcon';
@@ -87,7 +88,7 @@ export function WaysToSignIn({
     setError(null);
     try {
       await addPasskey({ password: addPassword ?? undefined });
-      if (user) writeHint({ email: user.email, name: hintName(user) });
+      if (user?.email) writeHint({ email: user.email, name: hintName(user) });
       setAddPassword(null);
       toast('Passkey added. You can sign in on this device with one tap.');
       await reload();
@@ -123,6 +124,8 @@ export function WaysToSignIn({
       setBusy(null);
     }
   }
+
+  if (!offerAccountSignIn(user?.activeAccount)) return null;
 
   const linked = new Set(data.identities.map((i) => i.provider));
   const connectable = data.ssoProviders.filter((p) => !linked.has(p.id));

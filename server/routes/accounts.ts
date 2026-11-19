@@ -28,6 +28,7 @@ import {
   photoUrlFromPath,
   saveCharityReceipt,
 } from '../lib/uploads.ts';
+import { FREE_BANK_ACCOUNTS, freeBankAccountCount, isFreePlan, sendPlanLimit } from '../lib/freePlan.ts';
 
 export const CHARITY_CATEGORY_ID = CHARITY_SLUG;
 
@@ -110,6 +111,10 @@ router.post('/', async (req: AuthedRequest, res) => {
   const userId = requireUserId(req, res);
   if (!userId) return;
   const db = await getDb();
+  if (isFreePlan(db, userId) && freeBankAccountCount(db, userId) >= FREE_BANK_ACCOUNTS) {
+    sendPlanLimit(res, 'The free plan includes one bank or cash account. KoruLedger Plus adds more.');
+    return;
+  }
   const b = req.body ?? {};
   const id = newId('acct');
   const now = new Date().toISOString();
@@ -651,6 +656,10 @@ router.post('/transactions/import-wallet-csv', async (req: AuthedRequest, res) =
   const userId = requireUserId(req, res);
   if (!userId) return;
   const db = await getDb();
+  if (isFreePlan(db, userId)) {
+    sendPlanLimit(res, 'CSV import is part of KoruLedger Plus.');
+    return;
+  }
 
   let csvText = '';
   let accountId = '';

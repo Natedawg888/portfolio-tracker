@@ -153,6 +153,24 @@ try {
   assert((await call('GET', '/dashboard', C.adam)).json.goals.length === 0, 'unshared goal disappears');
   assert((await call('PATCH', '/shared/goal/g_hol', C.adam, { targetNzd: 1 })).status === 404, 'and can’t be edited');
 
+  // Synthetic linked addresses are not used as member names.
+  run(db, `INSERT INTO users (id, email, password_hash, display_name, created_at, updated_at) VALUES (?,?,?,?,?,?)`, ['synshare', 'linked.share@accounts.koruledger.invalid', 'h', 'Share Shop', now, now]);
+  run(db, `INSERT INTO users (id, email, password_hash, created_at, updated_at) VALUES (?,?,?,?,?)`, ['noname', 'linked.noname@accounts.koruledger.invalid', 'h', now, now]);
+  const homeId = (await call('GET', '/', C.olive)).json.household.id as string;
+  for (const id of ['synshare', 'noname']) {
+    run(db, `INSERT INTO household_members (household_id, user_id, role, joined_at) VALUES (?,?, 'adult', ?)`, [homeId, id, now]);
+  }
+  run(db, `INSERT INTO bank_accounts (id, user_id, name, institution, account_type, currency, balance, created_at, updated_at) VALUES (?,?,?,?,?, 'NZD', ?,?,?)`, ['acct_syn', 'synshare', 'Shop till', 'Bank', 'cheque', 40, now, now]);
+  run(db, `INSERT INTO bank_accounts (id, user_id, name, institution, account_type, currency, balance, created_at, updated_at) VALUES (?,?,?,?,?, 'NZD', ?,?,?)`, ['acct_noname', 'noname', 'Spare till', 'Bank', 'cheque', 5, now, now]);
+  const synCookie = `${SESSION_COOKIE}=${(await createSession('synshare')).rawToken}`;
+  const nonameCookie = `${SESSION_COOKIE}=${(await createSession('noname')).rawToken}`;
+  assert((await call('PUT', '/shares', synCookie, { kind: 'account', itemId: 'acct_syn', shared: true })).status === 200, 'synthetic member shares an account');
+  assert((await call('PUT', '/shares', nonameCookie, { kind: 'account', itemId: 'acct_noname', shared: true })).status === 200, 'nameless synthetic member shares an account');
+  d = (await call('GET', '/dashboard', C.olive)).json;
+  const ownerOf = (id: string) => d.netWorth.accounts.find((a: Json) => a.id === id).owner;
+  assert(ownerOf('acct_syn') === 'Share Shop' && ownerOf('acct_noname') === 'Member', 'shared items use the display name, never the synthetic address');
+  assert(!JSON.stringify(d).includes('.invalid') && !JSON.stringify(d).includes('linked.'), 'dashboard has no synthetic address');
+
   // Leaving removes that member's shares; their items are untouched.
   await call('POST', '/leave', C.adam);
   assert(!queryOne(db, `SELECT 1 FROM household_shares WHERE owner_id = 'adam'`), 'Adam’s shares are gone');

@@ -38,6 +38,7 @@ const { createSession, SESSION_COOKIE } = await import('../auth/sessions.ts');
 const { attachUser, requireAuth, isPublicApiPath } = await import('../middleware/requireAuth.ts');
 const { aucklandToday } = await import('../debts/model.ts');
 const { computeNetWorth } = await import('../lib/netWorth.ts');
+const { setPlan } = await import('../lib/entitlements.ts');
 const { linkMirroredIncomeToBankCredits } = await import('../lib/incomeBankLink.ts');
 const { uploadsGate } = await import('../lib/uploads.ts');
 const { taxYearOf } = await import('../../src/lib/business.ts');
@@ -57,6 +58,7 @@ for (const t of ['businesses', 'business_assets', 'business_asset_movements']) {
 }
 for (const [id, email, first] of [[userA, 'a@example.com', 'Aroha'], [userB, 'b@example.com', 'Ben'], [userC, 'c@example.com', 'Cara']]) {
   run(db, `INSERT INTO users (id, email, password_hash, first_name, created_at, updated_at) VALUES (?,?,?,?,?,?)`, [id, email, 'hash', first, now, now]);
+  setPlan(db, id, 'plus', 'test');
 }
 
 const app = express();

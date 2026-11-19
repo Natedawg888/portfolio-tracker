@@ -12,6 +12,7 @@
  * payments) but never deleted, so the record stays.
  */
 import crypto from 'node:crypto';
+import { publicEmail } from '../auth/syntheticEmail.ts';
 import type { Database } from 'sql.js';
 import type {
   BusinessProfile,
@@ -94,7 +95,7 @@ export function getBusinessProfile(db: Database, userId: string, businessId?: st
   return {
     businessName: name,
     address: '',
-    email: user?.email ?? '',
+    email: publicEmail(user?.email) ?? '',
     phone: '',
     bankAccount: '',
     gstRegistered: false,

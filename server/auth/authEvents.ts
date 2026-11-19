@@ -10,7 +10,7 @@
 import type { Database } from 'sql.js';
 import { newId, queryAll, run } from '../db/index.ts';
 
-export type AuthEventKind = 'sign_in' | 'passkey_added' | 'passkey_removed';
+export type AuthEventKind = 'sign_in' | 'passkey_added' | 'passkey_removed' | 'account_switch';
 export type SignInMethod = 'password' | 'two_factor' | 'passkey' | 'sso' | 'register';
 
 export type AuthEventInfo = {

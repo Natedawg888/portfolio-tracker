@@ -9,8 +9,10 @@ import { getDb, queryOne } from '../db/index.ts';
 import { planOf } from '../lib/entitlements.ts';
 import { logger } from '../lib/logger.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
+import { billingReturnPath } from '../../src/lib/billingReturn.ts';
 import { CATALOG, isBillingInterval, isBillingPlan } from '../billing/catalog.ts';
 import { billingConfig } from '../billing/config.ts';
+import { businessCheckoutBlock, proCheckoutBlock, usageModeFor } from '../billing/planGuards.ts';
 import { proPlanEnabled } from '../billing/proPlan.ts';
 import { BillingError, createCheckout, createPortal, handleBillingEvent } from '../billing/service.ts';
 import { customerIdFor, grantingSubscriptions } from '../billing/store.ts';
@@ -59,9 +61,10 @@ router.get('/', async (req: AuthedRequest, res) => {
 router.post('/checkout', async (req: AuthedRequest, res) => {
   const cfg = billingConfig();
   if (!cfg.ok) return unavailable(res);
-  const { plan, interval } = (req.body ?? {}) as { plan?: unknown; interval?: unknown };
-  if (plan === 'pro' && !proPlanEnabled()) {
-    res.status(400).json({ error: 'Pro is not available yet', code: 'PRO_UNAVAILABLE' });
+  const { plan, interval, returnTo } = (req.body ?? {}) as { plan?: unknown; interval?: unknown; returnTo?: unknown };
+  const proBlocked = proCheckoutBlock(plan);
+  if (proBlocked) {
+    res.status(proBlocked.status).json({ error: proBlocked.error, code: proBlocked.code });
     return;
   }
   if (!isBillingPlan(plan) || !isBillingInterval(interval)) {
@@ -83,9 +86,14 @@ router.post('/checkout', async (req: AuthedRequest, res) => {
     res.status(401).json({ error: 'Authentication required', code: 'UNAUTHORIZED' });
     return;
   }
+  const businessBlocked = businessCheckoutBlock(plan, usageModeFor(db, user.id));
+  if (businessBlocked) {
+    res.status(businessBlocked.status).json({ error: businessBlocked.error, code: businessBlocked.code });
+    return;
+  }
   const name = [user.first_name, user.last_name].filter(Boolean).join(' ').trim();
   try {
-    const url = await createCheckout(db, cfg.config, { id: user.id, email: user.email, name }, plan, interval, shareBase(req));
+    const url = await createCheckout(db, cfg.config, { id: user.id, email: user.email, name }, plan, interval, shareBase(req), billingReturnPath(returnTo));
     res.json({ url });
   } catch (err) {
     sendError(res, err, 'Couldn’t open checkout. Try again in a minute.');

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { api, coerceBalance, formatAuckland, formatNzd } from '../api/client';
+import { ApiError, api, coerceBalance, formatAuckland, formatNzd } from '../api/client';
 import { hiddenClassesSentence } from '../lib/visibleNetWorth';
 import { maybeAutoSyncBankTransactions, maybeAutoSyncPortfolio } from '../lib/akahuTxnAutoSync';
 import {
@@ -158,6 +158,7 @@ export function Dashboard() {
   const [accountsState, setAccounts] = useState<BankAccountRow[]>(initialMain?.accounts ?? []);
   const [debtPeopleState, setDebtPeople] = useState<DebtBreakdownPerson[]>(initialMain?.debtPeople ?? []);
   const [error, setError] = useState<string | null>(null);
+  const [netWorthLocked, setNetWorthLocked] = useState(false);
   const [monthState, setMonthSnapshot] = useState<HomeMonthSnapshot | null>(initialMonth ?? null);
   const [monthError, setMonthError] = useState<string | null>(null);
   const cachedHistory = usePageCacheValue<SnapshotLike[]>(DASHBOARD_HISTORY);
@@ -202,8 +203,24 @@ export function Dashboard() {
 
   const load = useCallback(() => {
     const stamp = beginPageRead(DASHBOARD_MAIN);
-    return Promise.all([api.netWorth(), api.accounts.list(), api.debts.people()])
-      .then(([net, accts, people]) => {
+    return Promise.all([
+      api.netWorth().then((net) => ({ locked: false as const, net })).catch((e: unknown) => {
+        if (e instanceof ApiError && e.code === 'NET_WORTH_REQUIRED') return { locked: true as const, net: null };
+        throw e;
+      }),
+      api.accounts.list(),
+      api.debts.people(),
+    ])
+      .then(([netResult, accts, people]) => {
+        if (netResult.locked || !netResult.net) {
+          setNetWorthLocked(true);
+          setAccounts(accts as BankAccountRow[]);
+          setDebtPeople(people);
+          setError(null);
+          return;
+        }
+        setNetWorthLocked(false);
+        const net = netResult.net;
         const bundle: DashboardMain = {
           summary: net as Summary,
           accounts: accts as BankAccountRow[],
@@ -290,6 +307,23 @@ export function Dashboard() {
           <h2 className="page-title">Dashboard</h2>
           <p>The figures could not be loaded. Try again.</p>
         </div>
+        {monthRow}
+        {goalsCard}
+        {healthCard}
+      </div>
+    );
+  }
+
+  if (netWorthLocked && !summary) {
+    return (
+      <div className="stack dashboard-page">
+        <section className="panel" aria-labelledby="net-worth-locked-title">
+          <h2 id="net-worth-locked-title" className="page-title">Net worth</h2>
+          <p>Net worth is part of KoruLedger Plus. Your accounts and savings goals stay here.</p>
+          <p>
+            <Link className="btn small primary" to="/settings?tab=account">See Plus</Link>
+          </p>
+        </section>
         {monthRow}
         {goalsCard}
         {healthCard}

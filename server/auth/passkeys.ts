@@ -23,6 +23,7 @@ import {
   type RegistrationResponseJSON,
 } from '@simplewebauthn/server';
 import { decodeClientDataJSON, isoBase64URL, isoUint8Array } from '@simplewebauthn/server/helpers';
+import { publicEmail } from './syntheticEmail.ts';
 import { newId, queryAll, queryOne, run } from '../db/index.ts';
 import { recordAuthEvent } from './authEvents.ts';
 
@@ -184,9 +185,9 @@ export async function registrationOptions(
   const options = await generateRegistrationOptions({
     rpName: RP_NAME,
     rpID: rp.rpID,
-    userName: user.email,
+    userName: publicEmail(user.email) ?? user.id,
     userID: isoUint8Array.fromUTF8String(user.id),
-    userDisplayName: user.displayName || user.email,
+    userDisplayName: user.displayName || publicEmail(user.email) || user.id,
     attestationType: 'none',
     excludeCredentials: existing.map((p) => ({ id: p.credential_id, transports: parseTransports(p.transports) })),
     authenticatorSelection: { residentKey: 'required', userVerification: 'required' },

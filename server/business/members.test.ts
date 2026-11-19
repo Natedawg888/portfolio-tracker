@@ -72,6 +72,7 @@ try {
   const viewer = await register('viewer@example.test', 'Vera');
   const stranger = await register('stranger@example.test', 'Sam');
   const db = await getDb();
+  setPlan(db, owner.id, 'plus');
 
   // The owner's two businesses, each with records of every kind a route can name.
   const make = async (name: string) => {

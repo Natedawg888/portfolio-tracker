@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { BrandLockup } from '../components/BrandLockup';
 import { useAssetClassPrefs } from '../auth/AssetClassPrefsContext';
-import { ApiError, api, type SsoProvider } from '../api/client';
+import { ApiError, api, type AuthUser, type SsoProvider } from '../api/client';
 import { ssoStartUrl } from '../lib/sso';
 import { AssetClassToggles } from '../components/AssetClassToggles';
 import { GoogleButton } from '../components/auth/AuthControls';
@@ -22,36 +22,26 @@ import {
   type AkahuConnectionStatus,
 } from '../api/akahuClient';
 import { akahuOnboardingRequiredForEmail } from '../lib/onboardingPrefs';
-import { stepLabel, type OnboardingStep } from '../lib/onboardingSteps';
+import { checkoutResume, continueAfterPlan, resolvePaidBusinessReturn, stepFromOnboarding, stepLabel, type OnboardingStep, type PlanContinue } from '../lib/onboardingSteps';
 import { USAGE_MODES, type UsageMode } from '../lib/usageMode';
+import { canCheckoutPlan, type BillingInterval, type PaidPlan } from '../lib/billingView';
+import {
+  ADD_BUSINESS_AFTER_SETUP,
+  BUSINESS_ACCOUNT_HREF,
+  personalBusinessCheckoutRoute,
+  routesPersonalToBusinessAccount,
+} from '../lib/accountLinksView';
+import { CheckoutPendingNote } from '../components/billing/CheckoutPendingNote';
 import { BudgetCategoriesStep } from '../components/onboarding/BudgetCategoriesStep';
+import { ChoosePlanStep } from '../components/onboarding/ChoosePlanStep';
 
 type Step = OnboardingStep;
-
-function stepFromOnboarding(user: {
-  email?: string | null;
-  onboardingComplete: boolean;
-  usageModeChosen: boolean;
-  onboarding: {
-    assetClassesDone: boolean;
-    budgetCategoriesDone: boolean;
-    akahuStepDone: boolean;
-  };
-}): Step | 'done' {
-  if (user.onboardingComplete) return 'done';
-  // What the account is for comes first (KAN-124); accounts mid-signup before it existed are asked too.
-  if (!user.usageModeChosen) return 'usage';
-  if (!user.onboarding.assetClassesDone) return 'assets';
-  if (!user.onboarding.budgetCategoriesDone) return 'budgets';
-  // Only Nathan is offered the Akahu checkpoint. Everyone else is already skipped.
-  if (!akahuOnboardingRequiredForEmail(user.email) || user.onboarding.akahuStepDone) return 'done';
-  return 'connect';
-}
 
 export function Register() {
   const { user, loading, register, status, setUser, refresh } = useAuth();
   const { save: savePrefs, enabled: assetEnabled } = useAssetClassPrefs();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [step, setStep] = useState<Step>('credentials');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -63,14 +53,80 @@ export function Register() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [planAction, setPlanAction] = useState<string | null>(null);
+  const [paymentPending, setPaymentPending] = useState(false);
+  const [runsNote, setRunsNote] = useState(false);
   const [providers, setProviders] = useState<SsoProvider[]>([]);
   const midSignupRef = useRef(false);
+  /** Set before onboarding flips to complete, so business signup is not sent home instead of setup. */
+  const resumeOnce = useRef(false);
+  /** Where to go once signup is complete, set before that flag flips so the redirect can read it. */
+  const [planExit, setPlanExit] = useState<{ dest: PlanContinue; pending: boolean } | null>(null);
   const [resumed, setResumed] = useState(false);
 
   const [akahu, setAkahu] = useState<AkahuConnectionStatus | null>(null);
   const [walletsAdded, setWalletsAdded] = useState<string[]>([]);
 
-  // Resume incomplete onboarding after refresh / login redirect.
+  /**
+   * Business only opens setup when this account can manage a business. Free goes home at once.
+   * A paid return waits in the confirming state for the webhook, then opens setup.
+   */
+  const destinationFor = useCallback(async (dest: PlanContinue, pending: boolean): Promise<PlanContinue> => {
+    if (dest.kind !== 'business-setup') return dest;
+    if (pending) setPaymentPending(true);
+    const kind = await resolvePaidBusinessReturn(pending, async () => (await api.settings.plan()).features.business_manage === true);
+    return kind === 'business-setup' ? dest : { kind: 'home' };
+  }, []);
+
+  const leaveAfterPlan = useCallback((dest: PlanContinue, pending: boolean) => {
+    const state = pending ? { billingPending: true } : undefined;
+    if (dest.kind === 'business-setup') {
+      midSignupRef.current = false;
+      navigate('/business?setup=1', { replace: true, state });
+      return;
+    }
+    if (dest.kind === 'home') {
+      midSignupRef.current = false;
+      navigate('/', { replace: true, state });
+      return;
+    }
+    setStep(dest.step);
+  }, [navigate]);
+
+  /** Free, Skip, or a successful Checkout: record the step and continue signup. */
+  const finishPlan = useCallback(async (current: AuthUser, pending: boolean, action: string | null, runsBusiness?: boolean) => {
+    const chosen = continueAfterPlan({
+      ...current,
+      onboarding: { ...current.onboarding, planStepDone: true },
+    });
+    if (action) setPlanAction(action);
+    setError(null);
+    try {
+      if (typeof runsBusiness === 'boolean') {
+        await api.settings.setRunsBusiness(runsBusiness);
+        if (runsBusiness && !pending) setRunsNote(true);
+      }
+      const dest = await destinationFor(chosen, pending);
+      setPlanExit(dest.kind === 'step' ? null : { dest, pending });
+      let nextUser = current;
+      if (current.onboarding.planStepDone === false) {
+        const r = await api.settings.setOnboarding({ planStepDone: true });
+        nextUser = { ...current, onboardingComplete: r.onboardingComplete, onboarding: r.onboarding };
+        setUser(nextUser);
+      }
+      await refresh();
+      leaveAfterPlan(dest, pending);
+    } catch (err) {
+      setPlanExit(null);
+      setPaymentPending(false);
+      setStep('plan');
+      setError(err instanceof ApiError ? err.message : 'Could not save your plan choice');
+    } finally {
+      setPlanAction(null);
+    }
+  }, [destinationFor, leaveAfterPlan, refresh, setUser]);
+
+  // Resume incomplete onboarding after refresh / login redirect, including a return from Stripe.
   useEffect(() => {
     if (loading || resumed) return;
     if (!user) {
@@ -81,6 +137,30 @@ export function Register() {
       setResumed(true);
       return;
     }
+    if (resumeOnce.current) return;
+    resumeOnce.current = true;
+    const flag = searchParams.get('billing');
+    const resume = checkoutResume(flag, user.onboarding.planStepDone);
+    if (flag === 'success' || flag === 'cancelled') {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('billing');
+      setSearchParams(nextParams, { replace: true });
+    }
+    if (resume.action === 'stay') {
+      setInfo('Checkout cancelled. No charge was made.');
+      setStep('plan');
+      midSignupRef.current = true;
+      setResumed(true);
+      return;
+    }
+    if (resume.action === 'finish') {
+      setStep('plan');
+      setPaymentPending(true);
+      midSignupRef.current = true;
+      setResumed(true);
+      void finishPlan(user, true, null);
+      return;
+    }
     const next = stepFromOnboarding(user);
     if (next === 'done') {
       setResumed(true);
@@ -89,7 +169,7 @@ export function Register() {
     setStep(next);
     midSignupRef.current = true;
     setResumed(true);
-  }, [loading, user, resumed]);
+  }, [loading, user, resumed, searchParams, setSearchParams, finishPlan]);
 
   useEffect(() => {
     let cancelled = false;
@@ -173,7 +253,10 @@ export function Register() {
     user?.onboardingComplete &&
     (step !== 'connect' || !offerAkahu)
   ) {
-    return <Navigate to="/" replace />;
+    if (planExit?.dest.kind === 'business-setup') {
+      return <Navigate to="/business?setup=1" replace state={planExit.pending ? { billingPending: true } : undefined} />;
+    }
+    return <Navigate to="/" replace state={planExit?.pending ? { billingPending: true } : undefined} />;
   }
 
   if (!loading && resumed && blockingAkahuSkip) {
@@ -222,7 +305,7 @@ export function Register() {
     }
   };
 
-  /** Save what the account is for. Business only skips the personal steps and sets up a business. */
+  /** Save what the account is for. Business only skips the personal steps. A new account still chooses a plan first. */
   const onUsage = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -230,14 +313,17 @@ export function Register() {
     midSignupRef.current = true;
     try {
       const r = await api.settings.setUsageMode(usageMode);
+      const planAlreadyDone = r.onboarding.planStepDone !== false;
+      const exit = usageMode === 'business' && planAlreadyDone ? await destinationFor({ kind: 'business-setup' }, false) : null;
+      if (exit) setPlanExit({ dest: exit, pending: false });
       if (user) setUser({ ...user, usageMode: r.usageMode, usageModeChosen: true, onboardingComplete: r.onboardingComplete, onboarding: r.onboarding });
       await refresh();
-      if (usageMode === 'business') {
+      if (exit) {
         midSignupRef.current = false;
-        navigate('/business?setup=1', { replace: true });
+        leaveAfterPlan(exit, false);
         return;
       }
-      setStep('assets');
+      setStep('plan');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not save your choice');
     } finally {
@@ -333,7 +419,7 @@ export function Register() {
             ? 'Open Akahu to link or manage your accounts, then return here and use “Sync & finish”.'
             : st.sharedTokenConfigured
               ? 'This Personal App token is available only to the first account. You can still skip this optional step, or configure Full App OAuth later.'
-              : 'Akahu OAuth is not configured yet. You can skip this optional step and connect later in the account menu → Settings.',
+              : 'Akahu OAuth is not configured yet. You can skip this optional step.',
         );
         return;
       }
@@ -359,7 +445,7 @@ export function Register() {
       const st = await akahuStatus();
       setAkahu(st);
       if (!st.canSync) {
-        setInfo('Akahu is not connected for this account. Use “Skip / do later”, or connect later in the account menu → Settings.');
+        setInfo('Akahu is not connected for this account. Use “Skip / do later”.');
         return;
       }
       await akahuSync();
@@ -376,10 +462,54 @@ export function Register() {
     void completeAkahuStep('Could not finish onboarding');
   };
 
+  const onPlanPaid = async (plan: PaidPlan, interval: BillingInterval, runsBusiness: boolean) => {
+    if (!canCheckoutPlan(plan)) {
+      setError('Pro is not available yet.');
+      return;
+    }
+    const personalBusiness = personalBusinessCheckoutRoute({
+      usage: user?.usageModeChosen ? user.usageMode : usageMode,
+      plan,
+      onboardingComplete: user?.onboardingComplete === true,
+    });
+    if (personalBusiness === 'settings') {
+      window.location.assign(BUSINESS_ACCOUNT_HREF);
+      return;
+    }
+    if (personalBusiness === 'later') {
+      setError(null);
+      setInfo(ADD_BUSINESS_AFTER_SETUP);
+      setPlanAction(null);
+      return;
+    }
+    setError(null);
+    setInfo(null);
+    setPlanAction(plan);
+    try {
+      await api.settings.setRunsBusiness(runsBusiness);
+      const { url } = await api.billing.checkout(plan, interval, '/register');
+      window.location.assign(url);
+    } catch (err) {
+      if (err instanceof ApiError && routesPersonalToBusinessAccount(err.code)) {
+        if (user?.onboardingComplete) window.location.assign(BUSINESS_ACCOUNT_HREF);
+        else {
+          setError(null);
+          setInfo(ADD_BUSINESS_AFTER_SETUP);
+          setPlanAction(null);
+        }
+        return;
+      }
+      setError(err instanceof ApiError ? err.message : 'Couldn’t open checkout. Try again in a minute.');
+      setPlanAction(null);
+    }
+  };
+
   // Crypto adds the wallets step: the choice on the asset step, the saved preference after it.
+  // The plan step is counted for every mode, including Business only.
+  const stepMode = step === 'usage' ? usageMode : (user?.usageMode ?? usageMode);
   const stepText =
-    step === 'credentials' ? null : stepLabel(step, { crypto: step === 'assets' ? prefs.crypto : assetEnabled('crypto'), offerAkahu, mode: step === 'usage' ? usageMode : (user?.usageMode ?? 'personal') });
-  const wide = step === 'usage' || step === 'assets' || step === 'wallets' || step === 'budgets' || step === 'connect';
+    step === 'credentials' ? null : stepLabel(step, { crypto: step === 'assets' ? prefs.crypto : assetEnabled('crypto'), offerAkahu, mode: stepMode });
+  const wide = step === 'usage' || step === 'plan' || step === 'assets' || step === 'wallets' || step === 'budgets' || step === 'connect';
 
   if (loading || !resumed) {
     return (
@@ -392,14 +522,20 @@ export function Register() {
   }
 
   return (
-    <div className={`auth-page${step === 'credentials' ? ' register-page' : ' assets-page'}`}>
-      <div className={`auth-card panel${wide ? ' auth-card-wide' : ''}`}>
+    <div className={`auth-page${step === 'credentials' ? ' register-page' : ' assets-page'}${step === 'plan' ? ' plan-page' : ''}`}>
+      <div className={`auth-card panel${wide ? ' auth-card-wide' : ''}${step === 'plan' ? ' auth-card-plans' : ''}`}>
         <div className="auth-brand">
           <Link to="/" className="auth-brand-link" aria-label="KoruLedger home">
             <BrandLockup size="md" />
           </Link>
         </div>
         {stepText ? <p className="onboarding-step">{stepText}</p> : null}
+        {paymentPending ? <CheckoutPendingNote active /> : null}
+        {runsNote ? (
+          <p className="billing-test-note small" role="note">
+            Business management needs Plus or Business. You can choose a plan later in Settings.
+          </p>
+        ) : null}
         {step === 'credentials' ? (
           <>
             <h2>{firstUser ? 'Create your account' : 'Create account'}</h2>
@@ -485,7 +621,7 @@ export function Register() {
                 {busy ? 'Creating…' : 'Continue'}
               </button>
             </form>
-            {/* New Google / Apple / Microsoft users come back to /register at the asset-classes step. */}
+            {/* New Google / Apple / Microsoft users come back to /register and resume the next open step. */}
             {!firstUser && providers.length > 0 ? (
               <div className="sso-buttons">
                 <p className="sso-divider muted small">or</p>
@@ -513,7 +649,9 @@ export function Register() {
         ) : step === 'usage' ? (
           <>
             <h2>What will you use KoruLedger for?</h2>
-            <p className="page-lead">This sets what you see first. You can change it any time in Settings, and nothing is deleted when you do.</p>
+            <p className="page-lead">
+              Sets the menu and your home page. Business only hides the personal pages from the menu; their data is kept and they still open by address.
+            </p>
             {info ? <p className="auth-info" role="status">{info}</p> : null}
             <form className="auth-form" onSubmit={onUsage}>
               <fieldset className="usage-mode-choices">
@@ -533,6 +671,17 @@ export function Register() {
                 {busy ? 'Saving…' : usageMode === 'business' ? 'Continue to business setup' : 'Continue'}
               </button>
             </form>
+          </>
+        ) : step === 'plan' && user ? (
+          <>
+            {info ? <p className="auth-info" role="status">{info}</p> : null}
+            {error ? <p className="auth-error" role="alert">{error}</p> : null}
+            <ChoosePlanStep
+              busy={planAction}
+              onFree={(runsBusiness) => void finishPlan(user, false, 'free', runsBusiness)}
+              onSkip={(runsBusiness) => void finishPlan(user, false, 'skip', runsBusiness)}
+              onPaid={(plan, interval, runsBusiness) => void onPlanPaid(plan, interval, runsBusiness)}
+            />
           </>
         ) : step === 'assets' ? (
           <>
@@ -587,8 +736,7 @@ export function Register() {
             <p className="page-lead">
               Connect <em>your</em> NZ banks, Sharesies, Hatch, and KiwiSaver through{' '}
               <strong>Akahu</strong>. This checkpoint keeps setup explicit: you can connect and sync
-              now, or choose <strong>Skip / do later</strong> to open an empty portfolio. You can
-              connect anytime in the account menu → <strong>Settings → Connections</strong>.
+              now, or choose <strong>Skip / do later</strong> to open an empty portfolio.
             </p>
             {info ? <p className="auth-info" role="status">{info}</p> : null}
             {error ? <p className="auth-error" role="alert">{error}</p> : null}

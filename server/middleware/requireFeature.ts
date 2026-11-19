@@ -9,6 +9,10 @@ import type { AuthedRequest } from './requireAuth.ts';
 
 const MESSAGES: Partial<Record<Feature, { code: string; error: string }>> = {
   business_reports: { code: 'BUSINESS_PLAN_REQUIRED', error: 'Reports, the GST return and the accountant export are part of KoruLedger Business.' },
+  business_manage: {
+    code: 'BUSINESS_MANAGE_REQUIRED',
+    error: 'Clients, invoices, stock and the business budget are part of KoruLedger Plus. Profit and loss, GST and the accountant export stay on KoruLedger Business.',
+  },
 };
 
 export function requireFeature(feature: Feature) {

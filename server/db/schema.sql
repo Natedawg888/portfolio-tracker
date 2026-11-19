@@ -376,8 +376,22 @@ CREATE TABLE IF NOT EXISTS sessions (
   device_label TEXT,                  -- "Chrome on Windows" (coarse, from User-Agent)
   last_seen_at TEXT,                  -- updated at most every 10 min
   persistent   INTEGER NOT NULL DEFAULT 1, -- 0 = "keep me signed in" unticked (browser-session cookie)
-  passkey_id   TEXT                       -- passkey that opened it (KAN-75); removing the passkey ends it
+  passkey_id   TEXT,                      -- passkey that opened it (KAN-75); removing the passkey ends it
+  -- Personal owner who opened this session by switching into a linked business.
+  -- Null on a normal sign-in and after switching back to that owner.
+  origin_owner_user_id TEXT
 );
+
+-- Personal owner (owner_user_id) → separate business user (linked_user_id).
+-- A business user belongs to at most one owner. Queries filter by the signed-in
+-- user. Created business users use a synthetic email; see server/auth/accountLinks.ts.
+CREATE TABLE IF NOT EXISTS account_links (
+  id              TEXT PRIMARY KEY,
+  owner_user_id   TEXT NOT NULL,
+  linked_user_id  TEXT NOT NULL UNIQUE,
+  created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_account_links_owner ON account_links(owner_user_id);
 
 -- 2FA backup codes: SHA-256 of a high-entropy code, each usable once.
 CREATE TABLE IF NOT EXISTS user_backup_codes (
@@ -1406,6 +1420,25 @@ CREATE TABLE IF NOT EXISTS billing_subscriptions (
   updated_at              TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_billing_subscriptions_user ON billing_subscriptions(user_id);
+
+-- Ignored Stripe price changes (portal or subscription update). The granted plan is unchanged.
+-- stripe_event_id makes a webhook retry a no-op so reverting the price cannot loop.
+CREATE TABLE IF NOT EXISTS billing_alerts (
+  id                       TEXT PRIMARY KEY,
+  stripe_event_id          TEXT NOT NULL,
+  stripe_subscription_id   TEXT NOT NULL,
+  user_id                  TEXT NOT NULL,
+  reason                   TEXT NOT NULL,
+  from_plan                TEXT NOT NULL,
+  from_interval            TEXT NOT NULL,
+  to_plan                  TEXT NOT NULL,
+  to_interval              TEXT NOT NULL,
+  error                    TEXT NOT NULL DEFAULT '',  -- revert failed; empty when the price was put back or the sub was already closed
+  detail                   TEXT NOT NULL DEFAULT '',  -- pending prorations removed, or why the Stripe price was left as-is
+  created_at               TEXT NOT NULL,
+  UNIQUE (stripe_event_id, stripe_subscription_id)
+);
+CREATE INDEX IF NOT EXISTS idx_billing_alerts_user ON billing_alerts(user_id, created_at);
 
 -- Households (KAN-77). A user belongs to at most one household. Roles: owner (one per
 -- household), adult (edits shared items), viewer (read-only). Invites are single-use links

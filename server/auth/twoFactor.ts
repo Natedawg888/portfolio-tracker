@@ -14,6 +14,7 @@ import { newId, queryAll, queryOne, run } from '../db/index.ts';
 import { openSecret, sealSecret } from './secretBox.ts';
 import { cookieSecure, createSessionToken, hashToken } from './sessions.ts';
 import { generateTotpSecret, normaliseTotpCode, otpauthUri, verifyTotp } from './totp.ts';
+import { detachLinkForTwoFactor } from './accountLinks.ts';
 
 export const BACKUP_CODE_COUNT = 10;
 /** Unconfirmed setup expires so a half-finished enrolment doesn't linger. */
@@ -105,6 +106,8 @@ export function confirmTotpSetup(db: Database, userId: string, code: string): Co
        totp_enabled_at = ?, totp_last_step = ?, updated_at = ? WHERE id = ?`,
     [row.totp_pending_enc, now, step, now, userId],
   );
+  // A linked business with 2FA must be opened with its own login, not by switching.
+  detachLinkForTwoFactor(db, userId);
   return { ok: true, backupCodes: replaceBackupCodes(db, userId) };
 }
 

@@ -1,30 +1,53 @@
 /**
- * Settings → Account → Plan (KAN-52): the account's plan, and Plus or Business through Stripe.
- * Pro is listed only when the server has PRO_PLAN_ENABLED set. Checkout and plan changes happen
- * on Stripe's own pages; the plan here follows Stripe's webhook, so after checkout it can take
- * a few seconds to show. An existing Pro grant or subscription still shows as Pro.
+ * Settings → Account → Plan (KAN-52): the account's plan, and a change of plan through Stripe.
+ * What is offered follows the usage saved at signup. Personal does not see Business.
+ * Pro stays hidden until PRO_PLAN_FOR_SALE, and is never sent to checkout before that.
+ * A Business plan cannot change plan: cancel only, through the billing portal.
+ * Checkout and plan changes happen on Stripe's own pages; the plan here follows Stripe's
+ * webhook, so after checkout it can take a few seconds to show. An existing Pro grant or
+ * subscription still shows as Pro.
  */
-import { useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiError, api, type BillingStatus } from '../../api/client';
+import { useAuth } from '../../auth/AuthContext';
 import { showQuietToast } from '../../lib/quietToast';
 import {
-  PLAN_FEATURES,
   PLAN_LABELS,
-  offeredPaidPlans,
-  priceFor,
-  priceText,
+  PRO_PLAN_FOR_SALE,
+  settingsCheckoutPlan,
+  settingsPlanOffer,
   subscriptionLine,
-  yearlySavingPct,
   type BillingInterval,
 } from '../../lib/billingView';
+import type { UsageMode } from '../../lib/usageMode';
+import {
+  ACCOUNT_PLAN_SECTION_ID,
+  BUSINESS_ACCOUNT_HREF,
+  businessPlanNeededCopy,
+  personalChoosingBusiness,
+  routesPersonalToBusinessAccount,
+} from '../../lib/accountLinksView';
+import { BillingPlanPicker, BillingTestNote } from '../billing/BillingPlanPicker';
+import { BusinessPlanNeededLine } from '../business/BusinessPlanNote';
 
 export function AccountPlanCard() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const planRef = useRef<HTMLElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [interval, setBillingInterval] = useState<BillingInterval>('month');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [planNeeded, setPlanNeeded] = useState(false);
+
+  const openBusinessAccount = useCallback(() => {
+    setError(null);
+    setPlanNeeded(false);
+    navigate(BUSINESS_ACCOUNT_HREF);
+  }, [navigate]);
 
   const load = useCallback(async () => {
     try {
@@ -37,6 +60,12 @@ export function AccountPlanCard() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // The section is absent until billing status loads, so the browser's hash scroll misses it.
+  useEffect(() => {
+    if (!status || location.hash !== `#${ACCOUNT_PLAN_SECTION_ID}`) return;
+    planRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [status, location.hash]);
 
   // Back from Stripe Checkout: say so, and check again while the webhook lands.
   useEffect(() => {
@@ -58,6 +87,18 @@ export function AccountPlanCard() {
       const { url } = await open();
       window.location.assign(url);
     } catch (e) {
+      if (e instanceof ApiError && routesPersonalToBusinessAccount(e.code)) {
+        openBusinessAccount();
+        setBusy(null);
+        return;
+      }
+      if (e instanceof ApiError && businessPlanNeededCopy(e.code)) {
+        setError(null);
+        setPlanNeeded(true);
+        setBusy(null);
+        return;
+      }
+      setPlanNeeded(false);
       setError(e instanceof ApiError ? e.message : 'Couldn’t reach billing. Try again in a minute.');
       setBusy(null);
     }
@@ -65,9 +106,18 @@ export function AccountPlanCard() {
 
   if (!status) return null;
   const sub = status.subscription;
+  const usage: UsageMode = user?.usageMode ?? 'personal';
+  const proForSale = PRO_PLAN_FOR_SALE && status.proPlanEnabled === true;
+  const offer = settingsPlanOffer({
+    usage,
+    plan: status.plan,
+    canChoosePlan: status.available && !sub,
+    canOpenPortal: status.available && Boolean(sub || status.canManage),
+    proForSale,
+  });
 
   return (
-    <section className="panel account-card" aria-labelledby="account-plan-title">
+    <section ref={planRef} id={ACCOUNT_PLAN_SECTION_ID} className="panel account-card" aria-labelledby="account-plan-title">
       <div className="account-card-head">
         <h2 id="account-plan-title">Plan</h2>
         <p className="muted small">
@@ -76,15 +126,13 @@ export function AccountPlanCard() {
         </p>
       </div>
 
-      {status.mode === 'test' ? (
-        <p className="billing-test-note small" role="note">
-          Test mode: no real charges. Use Stripe’s test card 4242 4242 4242 4242.
-        </p>
+      {status.mode === 'test' ? <BillingTestNote /> : null}
+
+      {status.plan !== 'business' && !status.available ? (
+        <p className="muted small">Paid plans aren’t open yet.</p>
       ) : null}
 
-      {!status.available ? (
-        <p className="muted small">Paid plans aren’t open yet.</p>
-      ) : sub || status.canManage ? (
+      {offer.portalAction === 'manage' ? (
         <div className="account-actions billing-manage">
           <button type="button" className="btn small" disabled={busy != null} onClick={() => void go('portal', api.billing.portal)}>
             {busy === 'portal' ? 'Opening…' : 'Manage billing'}
@@ -93,59 +141,38 @@ export function AccountPlanCard() {
         </div>
       ) : null}
 
-      {status.available && !sub ? (
-        <>
-          <div className="billing-interval" role="group" aria-label="Billing period">
-            {(['month', 'year'] as const).map((i) => (
-              <button
-                key={i}
-                type="button"
-                className={`billing-interval-btn${interval === i ? ' active' : ''}`}
-                aria-pressed={interval === i}
-                onClick={() => setBillingInterval(i)}
-              >
-                {i === 'month' ? 'Monthly' : 'Yearly'}
-              </button>
-            ))}
-          </div>
-          <ul className="billing-plans">
-            {offeredPaidPlans(status.proPlanEnabled === true).map((plan) => {
-              const price = priceFor(status.prices, plan, interval);
-              const saving = interval === 'year' ? yearlySavingPct(status.prices, plan) : null;
-              const current = status.plan === plan || (status.plan === 'pro' && plan === 'plus');
-              return (
-                <li key={plan} className={`billing-plan${status.plan === plan ? ' current' : ''}`}>
-                  <div className="billing-plan-head">
-                    <h3>{PLAN_LABELS[plan]}</h3>
-                    {price ? (
-                      <p className="billing-plan-price">
-                        {priceText(price)}
-                        {saving ? <span className="billing-saving"> · save {saving}%</span> : null}
-                      </p>
-                    ) : null}
-                    <p className="muted small">Includes GST.</p>
-                  </div>
-                  <ul className="billing-plan-features">
-                    {PLAN_FEATURES[plan].map((f) => (
-                      <li key={f}>{f}</li>
-                    ))}
-                  </ul>
-                  <button
-                    type="button"
-                    className="btn small primary"
-                    disabled={busy != null || current || !price}
-                    onClick={() => void go(plan, () => api.billing.checkout(plan, interval))}
-                  >
-                    {busy === plan ? 'Opening checkout…' : current ? 'Included in your plan' : `Choose ${PLAN_LABELS[plan]}`}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-          <p className="muted small">Payments are handled by Stripe. Cancel any time; your plan stays until the end of the period you paid for.</p>
-        </>
+      {offer.portalAction === 'cancel' ? (
+        <div className="account-actions billing-manage">
+          <button type="button" className="btn small" disabled={busy != null} onClick={() => void go('cancel', api.billing.portal)}>
+            {busy === 'cancel' ? 'Opening…' : 'Cancel subscription'}
+          </button>
+          <span className="muted small">Cancel any time; your plan stays until the end of the period you paid for.</span>
+        </div>
       ) : null}
 
+      {offer.showIntervalToggle ? (
+        <BillingPlanPicker
+          prices={status.prices}
+          proPlanEnabled={proForSale}
+          paidPlans={offer.cards}
+          plusLines={offer.plusLines}
+          interval={interval}
+          onInterval={setBillingInterval}
+          busy={busy}
+          currentPlan={status.plan}
+          onChoosePaid={(plan) => {
+            if (personalChoosingBusiness(usage, plan)) {
+              openBusinessAccount();
+              return;
+            }
+            const allowed = settingsCheckoutPlan(plan, usage, proForSale);
+            if (!allowed) return;
+            void go(allowed, () => api.billing.checkout(allowed, interval));
+          }}
+        />
+      ) : null}
+
+      {planNeeded ? <BusinessPlanNeededLine /> : null}
       {error ? (
         <p className="auth-error" role="alert">
           {error}

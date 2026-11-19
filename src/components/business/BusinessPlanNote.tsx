@@ -4,12 +4,32 @@
  * Today's Business pages (businesses, invoices, clients, employees, meetings) stay on every plan.
  */
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../../api/client';
+import { useAuth } from '../../auth/AuthContext';
+import { BUSINESS_PLAN_NEEDED_COPY, planRequiredHref } from '../../lib/accountLinksView';
+
+/**
+ * One calm line when the API says the Business plan is required.
+ * Personal accounts go to the business-account card. Business and Both open billing.
+ */
+export function BusinessPlanNeededLine() {
+  const { user } = useAuth();
+  return (
+    <p className="business-plan-needed">
+      {BUSINESS_PLAN_NEEDED_COPY}{' '}
+      <Link className="business-plan-needed-link" to={planRequiredHref(user?.activeAccount)}>
+        See Business
+      </Link>
+    </p>
+  );
+}
 
 export function BusinessPlanNote({ compact = false }: { compact?: boolean }) {
   return (
     <section className="panel business-plan-note" aria-labelledby="business-plan-note-title">
       <h3 id="business-plan-note-title">Part of KoruLedger Business</h3>
+      <BusinessPlanNeededLine />
       {compact ? (
         <p className="muted small">Profit & loss, the GST return and the accountant export come with the Business plan.</p>
       ) : (

@@ -9,8 +9,13 @@
  * The later one in PLANS wins across all three. Anyone else is on the free plan.
  *
  * Business (KAN-125) is its own product, not a tier above Pro: it unlocks the business reports
- * (P&L, GST return, accountant export, accountant access) and none of the Plus or Pro personal
- * features. It sits last so an operator's Business grant isn't undone by a Plus or Pro list.
+ * (P&L, GST return, accountant export, accountant access) and business management (clients,
+ * invoices, stock, suppliers, the business budget). It does not include Plus or Pro personal
+ * features such as household, payslips or net worth. It sits last so an operator's Business
+ * grant isn't undone by a Plus or Pro list.
+ *
+ * business_manage is also on Plus and Pro. A member of someone else's business follows that
+ * business's owner, not their own plan.
  */
 import type { Database } from 'sql.js';
 import { queryOne, run } from '../db/index.ts';
@@ -18,11 +23,11 @@ import { subscribedPlanOf } from '../billing/store.ts';
 
 export const PLANS = ['free', 'plus', 'pro', 'business'] as const;
 export type Plan = (typeof PLANS)[number];
-export type Feature = 'household' | 'payslips' | 'crypto_pro' | 'bonds_plus' | 'commodities_plus' | 'business_reports';
+export type Feature = 'household' | 'payslips' | 'crypto_pro' | 'bonds_plus' | 'commodities_plus' | 'business_reports' | 'business_manage';
 
 const FEATURES: Record<Feature, readonly Plan[]> = {
   household: ['plus', 'pro'],
-  /** Payslips (KAN-78): unlimited payslips, the PAYE check, and net pay into Income linked to the bank. */
+  /** Payslips (KAN-78): the PAYE check, and net pay into Income linked to the bank. Every plan can add payslips; no tier has a count cap. */
   payslips: ['plus', 'pro'],
   /** Advanced crypto (KAN-47): ledger, cost basis and gains, staking income, DeFi positions, wallet import. */
   crypto_pro: ['pro'],
@@ -32,6 +37,8 @@ const FEATURES: Record<Feature, readonly Plan[]> = {
   commodities_plus: ['plus', 'pro'],
   /** Business plan (KAN-105): profit & loss, the GST return, the accountant export and accountant access. */
   business_reports: ['business'],
+  /** Clients, invoices, stock, suppliers and the business budget. Plus, Pro and Business. */
+  business_manage: ['plus', 'pro', 'business'],
 };
 
 export const FEATURE_LIST = Object.keys(FEATURES) as Feature[];

@@ -9,9 +9,18 @@
  * themselves (exempt).
  */
 import type { Request, Response } from 'express';
+import type { Database } from 'sql.js';
 import { getDb } from '../db/index.ts';
 import { businessAccess, resourceAccess, roleAllows, type Access, type ResourceKind } from '../business/members.ts';
+import { hasFeature } from '../lib/entitlements.ts';
 import type { AuthedRequest } from './requireAuth.ts';
+
+export const BUSINESS_MANAGE_REQUIRED = {
+  code: 'BUSINESS_MANAGE_REQUIRED',
+  error: 'Clients, invoices, stock and the business budget are part of KoruLedger Plus. Profit and loss, GST and the accountant export stay on KoruLedger Business.',
+};
+
+const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 export type ScopedRequest = AuthedRequest & { scopeUserId?: string; businessAccess?: Access };
 
@@ -20,6 +29,11 @@ export type ScopeOptions = {
   ownerOnly?: (req: Request) => boolean;
   /** Paths that check roles themselves (e.g. a viewer leaving a business). */
   exempt?: (req: Request) => boolean;
+  /**
+   * Writes need business_manage on the business owner (not the member). Reads stay open so a
+   * Free account can still see businesses it already has.
+   */
+  manage?: boolean;
 };
 
 /** Whose rows the route reads and writes: the caller, or the owner of the business they're in. */
@@ -33,7 +47,7 @@ export function callerId(req: Request): string {
 }
 
 /** Applies access to the request, or sends 403/404 and returns false. */
-function apply(req: Request, res: Response, access: Access | null, opts: ScopeOptions): boolean {
+function apply(req: Request, res: Response, access: Access | null, opts: ScopeOptions, db: Database): boolean {
   const r = req as ScopedRequest;
   // Two records on one route must share a business.
   if (r.businessAccess && access?.businessId !== r.businessAccess.businessId) {
@@ -51,9 +65,22 @@ function apply(req: Request, res: Response, access: Access | null, opts: ScopeOp
       return false;
     }
   }
+  if (opts.manage && WRITE_METHODS.has(req.method) && !opts.exempt?.(req) && !hasFeature(db, access.ownerId, 'business_manage')) {
+    res.status(402).json(BUSINESS_MANAGE_REQUIRED);
+    return false;
+  }
   r.businessAccess = access;
   r.scopeUserId = access.ownerId;
   return true;
+}
+
+/** The caller's own books, when the route does not name someone else's business. */
+export async function assertCallerCanManage(req: Request, res: Response): Promise<boolean> {
+  const db = await getDb();
+  const ownerId = (req as ScopedRequest).businessAccess?.ownerId || callerId(req);
+  if (hasFeature(db, ownerId, 'business_manage')) return true;
+  res.status(402).json(BUSINESS_MANAGE_REQUIRED);
+  return false;
 }
 
 /** A router.param handler: scopes to the business that `kind`'s record belongs to. */
@@ -62,7 +89,7 @@ export function scopeTo(kind: ResourceKind | ((req: Request) => ResourceKind), o
     try {
       const db = await getDb();
       const access = resourceAccess(db, callerId(req), typeof kind === 'function' ? kind(req) : kind, String(id));
-      if (apply(req, res, access, opts)) next();
+      if (apply(req, res, access, opts, db)) next();
     } catch (err) {
       next(err);
     }
@@ -85,5 +112,5 @@ export function staysInBusiness(req: Request, businessId: string | null | undefi
 export async function scopeToBusiness(req: Request, res: Response, businessId: unknown, opts: ScopeOptions = {}): Promise<boolean> {
   if (typeof businessId !== 'string' || !businessId.trim()) return true;
   const db = await getDb();
-  return apply(req, res, businessAccess(db, callerId(req), businessId.trim()), opts);
+  return apply(req, res, businessAccess(db, callerId(req), businessId.trim()), opts, db);
 }

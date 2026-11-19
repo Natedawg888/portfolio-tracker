@@ -9,6 +9,7 @@ import { requireUserId } from '../lib/userScope.ts';
 import { getDb, queryAll, queryOne, run, newId } from '../db/index.ts';
 import { parseBankKiwisaverCsv } from '../../src/imports/bankKiwisaverCsv.ts';
 import { normalizeLogoUrl } from '../../src/lib/holdingIcons.ts';
+import { isFreePlan, sendPlanLimit } from '../lib/freePlan.ts';
 
 const router = Router();
 
@@ -605,6 +606,10 @@ router.post('/import-sharesies-csv', async (req, res) => {
  */
 router.post('/import-bank-csv', async (req, res) => {
   const db = await getDb();
+  if (isFreePlan(db, uid(req))) {
+    sendPlanLimit(res, 'CSV import is part of KoruLedger Plus.');
+    return;
+  }
   const { csvText, filename } = req.body ?? {};
   if (!csvText || typeof csvText !== 'string' || !csvText.trim()) {
     return res.status(400).json({

@@ -45,7 +45,9 @@ import healthScoreRouter from './routes/healthScore.ts';
 import projectionsRouter from './routes/projections.ts';
 import walletsRouter from './routes/wallets.ts';
 import { startWalletSyncScheduler } from './chain/index.ts';
+import { startLinkedDeletionSweep } from './auth/linkedDeletion.ts';
 import authRouter from './routes/auth.ts';
+import accountLinksRouter from './routes/accountLinks.ts';
 import securityRouter from './routes/security.ts';
 import ssoRouter from './routes/sso.ts';
 import passkeysRouter from './routes/passkeys.ts';
@@ -145,6 +147,8 @@ async function main() {
 
   app.use('/api/holdings', holdingsRouter);
   app.use('/api/accounts', accountsRouter);
+  // Singular /account: linked business users. Not /accounts (bank accounts).
+  app.use('/api/account', accountLinksRouter);
   app.use('/api/budgets', budgetsRouter);
   app.use('/api/kiwisaver', kiwisaverRouter);
   app.use('/api', summaryRouter);
@@ -209,7 +213,11 @@ async function main() {
       process.exit(1);
     }
     const stopWalletSync = startWalletSyncScheduler();
-    server.once('close', stopWalletSync);
+    const stopLinkedDeletionSweep = startLinkedDeletionSweep();
+    server.once('close', () => {
+      stopWalletSync();
+      stopLinkedDeletionSweep();
+    });
     logger.info('api_listening', {
       host: HOST,
       port: PORT,

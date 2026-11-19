@@ -33,6 +33,8 @@ jobs:
       - run: npm run test:dashboard
       - run: npm run test:budget
       - run: npm run test:account
+      - run: npm run test:linked-accounts
+      - run: npm run test:account-switcher
       - run: npm run test:paye
       - run: npm run test:wff
       - run: npm run test:payslips
@@ -71,5 +73,7 @@ jobs:
       - run: npm run test:onboarding-categories
       - run: npm run test:plans
       - run: npm run test:billing
+      - run: npm run test:links
+      - run: npm run test:akahu
       - run: npm run test:household
       - run: npm run build

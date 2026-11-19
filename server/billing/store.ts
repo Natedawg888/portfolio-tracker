@@ -4,7 +4,7 @@
  * kept per mode (test/live) so switching keys never reuses a customer from the other mode.
  */
 import type { Database } from 'sql.js';
-import { queryAll, queryOne, run } from '../db/index.ts';
+import { newId, queryAll, queryOne, run } from '../db/index.ts';
 import type { BillingInterval, BillingPlan } from './catalog.ts';
 
 /**
@@ -91,6 +91,12 @@ export function saveSubscription(db: Database, s: SubscriptionInput): void {
   );
 }
 
+export function subscriptionById(db: Database, subscriptionId: string): SubscriptionRow | null {
+  return (
+    queryOne<SubscriptionRow>(db, `SELECT * FROM billing_subscriptions WHERE stripe_subscription_id = ?`, [subscriptionId]) ?? null
+  );
+}
+
 /** Subscriptions that currently grant a plan (any mode), best plan first (Business, then Pro, then Plus). */
 export function grantingSubscriptions(db: Database, userId: string): SubscriptionRow[] {
   return queryAll<SubscriptionRow>(
@@ -106,7 +112,76 @@ export function subscribedPlanOf(db: Database, userId: string): BillingPlan | nu
   return grantingSubscriptions(db, userId)[0]?.plan ?? null;
 }
 
+/** Every subscription row for this mode, newest first. Includes unpaid and incomplete. */
+export function subscriptionsForUser(db: Database, userId: string, live: boolean): SubscriptionRow[] {
+  return queryAll<SubscriptionRow>(
+    db,
+    `SELECT * FROM billing_subscriptions WHERE user_id = ? AND livemode = ? ORDER BY updated_at DESC`,
+    [userId, live ? 1 : 0],
+  );
+}
+
+export type BillingAlertInput = {
+  eventId: string;
+  subscriptionId: string;
+  userId: string;
+  reason: string;
+  fromPlan: BillingPlan;
+  fromInterval: BillingInterval;
+  toPlan: BillingPlan;
+  toInterval: BillingInterval;
+  /** Set when putting the Stripe price back failed. Empty when it succeeded or was skipped. */
+  error?: string;
+  /** Pending prorations removed, or why the Stripe price was left unchanged. */
+  detail?: string;
+};
+
+/** True when this webhook delivery already reverted this subscription. Retries must not do it again. */
+export function billingAlertExists(db: Database, eventId: string, subscriptionId: string): boolean {
+  return (
+    queryOne<{ id: string }>(
+      db,
+      `SELECT id FROM billing_alerts WHERE stripe_event_id = ? AND stripe_subscription_id = ?`,
+      [eventId, subscriptionId],
+    ) != null
+  );
+}
+
+/** One row per ignored price change, for the operator. The same event id is stored once. */
+export function recordBillingAlert(db: Database, alert: BillingAlertInput): string {
+  const id = newId('alrt');
+  run(
+    db,
+    `INSERT OR IGNORE INTO billing_alerts
+       (id, stripe_event_id, stripe_subscription_id, user_id, reason, from_plan, from_interval, to_plan, to_interval,
+        error, detail, created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [
+      id,
+      alert.eventId,
+      alert.subscriptionId,
+      alert.userId,
+      alert.reason,
+      alert.fromPlan,
+      alert.fromInterval,
+      alert.toPlan,
+      alert.toInterval,
+      alert.error ?? '',
+      alert.detail ?? '',
+      new Date().toISOString(),
+    ],
+  );
+  return (
+    queryOne<{ id: string }>(
+      db,
+      `SELECT id FROM billing_alerts WHERE stripe_event_id = ? AND stripe_subscription_id = ?`,
+      [alert.eventId, alert.subscriptionId],
+    )?.id ?? id
+  );
+}
+
 export function deleteBillingRowsForUser(db: Database, userId: string): void {
+  run(db, `DELETE FROM billing_alerts WHERE user_id = ?`, [userId]);
   run(db, `DELETE FROM billing_subscriptions WHERE user_id = ?`, [userId]);
   run(db, `DELETE FROM billing_customers WHERE user_id = ?`, [userId]);
 }

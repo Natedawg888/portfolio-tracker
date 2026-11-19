@@ -11,6 +11,7 @@
  */
 import crypto from 'node:crypto';
 import type { Database } from 'sql.js';
+import { publicEmail } from '../auth/syntheticEmail.ts';
 import { newId, queryAll, queryOne, run } from '../db/index.ts';
 import { hasFeature } from '../lib/entitlements.ts';
 
@@ -40,6 +41,18 @@ export function householdActive(db: Database, m: Membership): boolean {
   return hasFeature(db, m.ownerId, 'household');
 }
 
+/** A name safe to show. A synthetic linked address is never used. */
+export function memberLabel(row: {
+  first_name: string | null;
+  last_name: string | null;
+  display_name?: string | null;
+  email?: string | null;
+}): string {
+  const full = [row.first_name, row.last_name].filter(Boolean).join(' ').trim();
+  const fromEmail = publicEmail(row.email)?.split('@')[0]?.trim() ?? '';
+  return (full || (row.display_name ?? '').trim() || fromEmail || 'Member').slice(0, 80);
+}
+
 export function displayName(db: Database, userId: string): string {
   const u = queryOne<{ display_name: string | null; first_name: string | null; last_name: string | null; email: string }>(
     db,
@@ -47,8 +60,7 @@ export function displayName(db: Database, userId: string): string {
     [userId],
   );
   if (!u) return 'Someone';
-  const full = [u.first_name, u.last_name].filter(Boolean).join(' ').trim();
-  return (full || u.display_name || u.email.split('@')[0]).slice(0, 80);
+  return memberLabel(u);
 }
 
 export function logActivity(db: Database, householdId: string, actorId: string | null, action: string, detail = ''): void {
@@ -112,7 +124,10 @@ export function getHousehold(db: Database, userId: string, now = new Date()): Ho
     `SELECT m.user_id, m.role, m.joined_at, u.email FROM household_members m JOIN users u ON u.id = m.user_id
      WHERE m.household_id = ? ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'adult' THEN 1 ELSE 2 END, m.joined_at`,
     [m.householdId],
-  ).map((r) => ({ userId: r.user_id, name: displayName(db, r.user_id), email: r.email, role: r.role, joinedAt: r.joined_at, isMe: r.user_id === userId }));
+  ).map((r) => {
+    const name = displayName(db, r.user_id);
+    return { userId: r.user_id, name, email: publicEmail(r.email) ?? name, role: r.role, joinedAt: r.joined_at, isMe: r.user_id === userId };
+  });
   // Only the owner manages invites, so only the owner sees invited email addresses.
   const invites =
     m.role === 'owner'

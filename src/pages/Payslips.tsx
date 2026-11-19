@@ -200,7 +200,6 @@ export function Payslips() {
   }
 
   const ytd = view?.ytd;
-  const atLimit = view && !view.plan.plus && view.plan.usedThisYear >= view.plan.freeLimit;
   const missing = ytd?.bySource.flatMap((s) => s.missing.map((m) => ({ ...m, employer: s.employer }))) ?? [];
 
   return (
@@ -214,7 +213,7 @@ export function Payslips() {
           <p className="muted small">Keep your payslips, check the deductions against PAYE, and see the tax year so far.</p>
         </div>
         <div className="warranties-header-actions">
-          <button type="button" className="btn small primary" disabled={!view || !!atLimit} onClick={() => setDialog({ payslip: null })}>
+          <button type="button" className="btn small primary" disabled={!view} onClick={() => setDialog({ payslip: null })}>
             + Add payslip
           </button>
         </div>
@@ -307,7 +306,7 @@ export function Payslips() {
             )}
             {!view.plan.plus ? (
               <p className="small payslip-plan">
-                {view.plan.usedThisYear} of {view.plan.freeLimit} payslips this tax year on the free plan. KoruLedger Plus keeps them all, checks each one against PAYE, and adds your pay to Income matched to the bank deposit.
+                KoruLedger Plus checks each payslip against PAYE and adds your pay to Income matched to the bank deposit.
               </p>
             ) : null}
           </section>
