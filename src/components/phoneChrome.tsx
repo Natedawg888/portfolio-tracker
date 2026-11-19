@@ -4,7 +4,9 @@
  */
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { NavLink } from 'react-router-dom';
+import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import { signOutMenuLabel } from '../lib/accountLinksView';
 import { prefetchNavTarget } from '../lib/routePrefetch';
 import { AccountTypePill } from './AccountTypePill';
 
@@ -47,6 +49,45 @@ export function DrawerPreferenceToggles({
   );
 }
 
+/** Same name the profile menu passes into signOutMenuLabel. */
+function menuDisplayName(user: {
+  displayName?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+} | null): string | null {
+  if (!user) return null;
+  const composed = [user.firstName, user.lastName]
+    .map((part) => (part || '').trim())
+    .filter(Boolean)
+    .join(' ');
+  return user.displayName?.trim() || composed || null;
+}
+
+/**
+ * The drawer's sign-out row. The label matches the profile menu, and the click
+ * is the same logout: with another account remembered, that switches to it
+ * instead of ending the session.
+ */
+export function DrawerSignOutButton({
+  email,
+  hasOtherAccounts,
+  displayName,
+  signingOut,
+  onClick,
+}: {
+  email: string | null | undefined;
+  hasOtherAccounts: boolean;
+  displayName: string | null;
+  signingOut: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className="mobile-nav-link mobile-nav-account-signout" disabled={signingOut} onClick={onClick}>
+      {signingOut ? 'Signing out…' : signOutMenuLabel(email, hasOtherAccounts, displayName)}
+    </button>
+  );
+}
+
 /** Account links under the drawer nav. Shown on phones; the sheet still holds the full menu. */
 export function DrawerAccountSection({
   account,
@@ -55,8 +96,22 @@ export function DrawerAccountSection({
   account: { name: string; pill: 'personal' | 'business' } | null;
   onNavigate: () => void;
 }) {
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
+  const [hasOtherAccounts, setHasOtherAccounts] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.auth
+      .accounts()
+      .then((r) => {
+        if (!cancelled) setHasOtherAccounts(r.accounts.some((a) => !a.current));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const onSignOut = () => {
     if (signingOut) return;
@@ -97,9 +152,13 @@ export function DrawerAccountSection({
       >
         Settings
       </NavLink>
-      <button type="button" className="mobile-nav-link mobile-nav-account-signout" disabled={signingOut} onClick={onSignOut}>
-        {signingOut ? 'Signing out…' : 'Sign out'}
-      </button>
+      <DrawerSignOutButton
+        email={user?.email}
+        hasOtherAccounts={hasOtherAccounts}
+        displayName={menuDisplayName(user)}
+        signingOut={signingOut}
+        onClick={onSignOut}
+      />
     </div>
   );
 }

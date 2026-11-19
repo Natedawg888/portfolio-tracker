@@ -4,7 +4,7 @@
  */
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { DrawerPreferenceToggles, ProfileSheet } from './phoneChrome.tsx';
+import { DrawerPreferenceToggles, DrawerSignOutButton, ProfileSheet } from './phoneChrome.tsx';
 
 function assert(condition: boolean, message: string): void {
   if (!condition) throw new Error(message);
@@ -47,5 +47,40 @@ assert(sheet.includes('>Close<'), 'the profile sheet has a Close control');
 assert(sheet.includes('role="dialog"'), 'the profile sheet is a dialog');
 assert(sheet.includes('aria-modal="true"'), 'the profile sheet is modal');
 assert(sheet.includes('>Settings<'), 'the profile sheet keeps its menu items');
+
+const namedSignOut = renderToStaticMarkup(
+  createElement(DrawerSignOutButton, {
+    email: 'pat@example.com',
+    hasOtherAccounts: true,
+    displayName: 'Pat Ng',
+    signingOut: false,
+    onClick: () => {},
+  }),
+);
+assert(namedSignOut.includes('>Sign out of pat@example.com<'), 'another remembered account names who is signing out');
+assert(!namedSignOut.includes('>Sign out<'), 'the named row is not the plain Sign out label');
+
+const plainSignOut = renderToStaticMarkup(
+  createElement(DrawerSignOutButton, {
+    email: 'pat@example.com',
+    hasOtherAccounts: false,
+    displayName: 'Pat Ng',
+    signingOut: false,
+    onClick: () => {},
+  }),
+);
+assert(plainSignOut.includes('>Sign out<'), 'one remembered account stays Sign out');
+assert(!plainSignOut.includes('Sign out of'), 'one account does not name an address');
+
+const hiddenEmail = renderToStaticMarkup(
+  createElement(DrawerSignOutButton, {
+    email: 'linked.x@accounts.koruledger.invalid',
+    hasOtherAccounts: true,
+    displayName: 'Pat Ng',
+    signingOut: false,
+    onClick: () => {},
+  }),
+);
+assert(hiddenEmail.includes('>Sign out of Pat Ng<'), 'a hidden email uses the display name, as in the profile menu');
 
 console.log('phone chrome component tests passed');
