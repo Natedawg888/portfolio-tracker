@@ -17,7 +17,9 @@ import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
 import { ProfileMenu } from './ProfileMenu';
 import { headerAccountContext } from '../lib/accountLinksView';
 import { useAccountLinks } from '../lib/useAccountLinks';
+import { useMaxWidth } from '../lib/useMaxWidth';
 import { HeaderAccountLine } from './HeaderAccountLine';
+import { DrawerAccountSection, DrawerPreferenceToggles } from './phoneChrome';
 import { QuietToast } from './QuietToast';
 import { CheckoutPendingNote } from './billing/CheckoutPendingNote';
 import { useMeetingReminders } from '../lib/useMeetingReminders';
@@ -128,11 +130,26 @@ function MenuIcon() {
   );
 }
 
+/** Koru and wordmark. On phones this is the link back to the Dashboard. */
+function HeaderWordmark() {
+  const phone = useMaxWidth(639);
+  const lockup = <BrandLockup size="sm" />;
+  if (!phone) return lockup;
+  return (
+    <Link to="/" className="brand-home-link">
+      {lockup}
+    </Link>
+  );
+}
+
 export function Layout({ children }: { children?: ReactNode }) {
   const { enabled, valueSearch } = useAssetClassPrefs();
   const location = useLocation();
   const [theme, setThemeState] = useState<Theme>(() => resolveTheme());
   const [navOpen, setNavOpen] = useState(false);
+  const [headerScrolled, setHeaderScrolled] = useState(
+    () => typeof window !== 'undefined' && window.scrollY > 0,
+  );
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const navigate = useNavigate();
   useMeetingReminders();
@@ -170,6 +187,16 @@ export function Layout({ children }: { children?: ReactNode }) {
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    const onScroll = () => {
+      // The open drawer pins the body and reports scrollY 0. Keep the border that was already there.
+      if (document.body.classList.contains('nav-drawer-open')) return;
+      setHeaderScrolled(window.scrollY > 0);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   useEffect(() => schedulePrefetchAppRoutes(), []);
 
@@ -287,9 +314,11 @@ export function Layout({ children }: { children?: ReactNode }) {
 
   const closeNav = () => setNavOpen(false);
 
-  // Hide-amounts and theme controls: in the header, and again at the bottom of the phone drawer.
-  // data-tour is only on the header control, so a later tour step matches one element.
-  const headerTools = (forHeader: boolean) => (
+  // Icon controls stay in the header from tablet upward, and at the bottom of the tablet drawer.
+  // Phones move Hide amounts and theme into labelled switches at the top of the drawer.
+  // data-tour="hide-amounts" is on the one that is on screen, so a step matches a single element.
+  const phoneHeader = useMaxWidth(639);
+  const preferenceTools = (markHideAmounts: boolean) => (
     <div className="header-tools">
       <button
         type="button"
@@ -298,7 +327,7 @@ export function Layout({ children }: { children?: ReactNode }) {
         aria-label={moneyHidden ? 'Show monetary values' : 'Hide monetary values'}
         aria-pressed={moneyHidden}
         title={moneyHidden ? 'Show amounts' : 'Hide amounts'}
-        data-tour={forHeader ? 'hide-amounts' : undefined}
+        data-tour={markHideAmounts ? 'hide-amounts' : undefined}
       >
         {moneyHidden ? <EyeOffIcon /> : <EyeOpenIcon />}
       </button>
@@ -329,19 +358,24 @@ export function Layout({ children }: { children?: ReactNode }) {
 
   return (
     <div className={'app-shell' + (navOpen ? ' nav-drawer-open' : '')}>
-      <header className="app-header">
+      <header className={'app-header' + (headerScrolled ? ' is-scrolled' : '')}>
         <div className="brand">
-          <ProfileMenu triggerClassName="brand-mark" links={links} activeBusinessName={activeBusinessName} />
+          <ProfileMenu
+            triggerClassName="brand-mark"
+            links={links}
+            activeBusinessName={activeBusinessName}
+            account={headerAccount}
+          />
           {headerAccount ? (
             <div className="brand-copy">
               <h1 className="brand-title">
-                <BrandLockup size="sm" />
+                <HeaderWordmark />
               </h1>
               <HeaderAccountLine name={headerAccount.name} pill={headerAccount.pill} />
             </div>
           ) : (
             <h1 className="brand-title">
-              <BrandLockup size="sm" />
+              <HeaderWordmark />
             </h1>
           )}
         </div>
@@ -363,22 +397,38 @@ export function Layout({ children }: { children?: ReactNode }) {
           ))}
         </nav>
         <div className="header-actions">
-          {headerTools(true)}
+          {preferenceTools(!phoneHeader)}
           <button
             ref={menuButtonRef}
             type="button"
             className="nav-toggle"
             data-tour="nav-toggle"
-            aria-label={navOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={navOpen}
             aria-controls={MOBILE_NAV_ID}
             onClick={() => setNavOpen((o) => !o)}
           >
-            {navOpen ? <CloseIcon /> : <MenuIcon />}
+            <span className="nav-toggle-icon">{navOpen ? <CloseIcon /> : <MenuIcon />}</span>
+            <span className="nav-toggle-label">Menu</span>
           </button>
         </div>
       </header>
-      <MobileNavDrawer open={navOpen} onClose={closeNav} links={visibleLinks} tools={headerTools(false)} returnFocusRef={menuButtonRef} />
+      <MobileNavDrawer
+        open={navOpen}
+        onClose={closeNav}
+        links={visibleLinks}
+        tools={preferenceTools(false)}
+        phoneTools={
+          <DrawerPreferenceToggles
+            moneyHidden={moneyHidden}
+            dark={theme === 'dark'}
+            onToggleMoney={handleMoneyToggle}
+            onToggleTheme={() => choose(theme === 'dark' ? 'light' : 'dark')}
+            markHideAmounts={phoneHeader}
+          />
+        }
+        account={<DrawerAccountSection account={headerAccount} onNavigate={closeNav} />}
+        returnFocusRef={menuButtonRef}
+      />
       <main className="app-main">
         {location.pathname !== '/settings' &&
         ((location.state as { billingPending?: boolean } | null)?.billingPending === true ||

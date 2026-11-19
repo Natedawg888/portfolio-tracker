@@ -1,8 +1,10 @@
 /**
- * Phone navigation: a drawer that slides in from the right, rendered in a portal at the end
+ * Phone navigation: a drawer that slides in from the left, rendered in a portal at the end
  * of <body> so no page element can affect where it sits. Desktop keeps the nav pill in the
  * header (Layout). The drawer is a modal dialog: focus moves in, is kept inside while open,
  * and goes back to the menu button when it closes. Escape and the backdrop close it.
+ * Reduced motion skips the slide. On phones the preference switches sit above the links,
+ * and account items sit below a divider. Tablet keeps the icon tools at the bottom.
  */
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
@@ -33,13 +35,19 @@ export function MobileNavDrawer({
   onClose,
   links,
   tools,
+  phoneTools,
+  account,
   returnFocusRef,
 }: {
   open: boolean;
   onClose: () => void;
   links: Array<{ to: string; label: string; end?: boolean }>;
-  /** Hide-amounts and theme controls, shown at the bottom. */
+  /** Icon hide-amounts and theme controls. Hidden on phones, shown at the bottom on tablet. */
   tools: ReactNode;
+  /** Phone switch rows, above the links. Hidden from tablet upward. */
+  phoneTools?: ReactNode;
+  /** Phone account rows, under a divider below the links. */
+  account?: ReactNode;
   /** The menu button, focused again when the drawer closes. */
   returnFocusRef: RefObject<HTMLButtonElement | null>;
 }) {
@@ -114,6 +122,7 @@ export function MobileNavDrawer({
             <CloseIcon />
           </button>
         </div>
+        {phoneTools}
         <nav className="mobile-nav-links" aria-label="Main">
           {links.map((l) => (
             <NavLink
@@ -129,6 +138,12 @@ export function MobileNavDrawer({
             </NavLink>
           ))}
         </nav>
+        {account ? (
+          <div className="mobile-nav-account-wrap">
+            <div className="mobile-nav-divider" role="separator" />
+            {account}
+          </div>
+        ) : null}
         <div className="mobile-nav-tools">{tools}</div>
       </div>
     </div>,
