@@ -45,6 +45,7 @@
 
 import type { DonationSummary, DonationTaxYearTotals } from '../../src/types/index.ts';
 import { isIsoDate, roundMoney } from '../debts/model.ts';
+import { taxYearEndForDate, taxYearFromEndYear } from '../../src/lib/taxYear.ts';
 
 export const DONATION_TAX_CREDIT_MINIMUM_NZD = 5;
 export const DONATION_TAX_CREDIT_RATE_LABEL = '1/3' as const;
@@ -84,19 +85,14 @@ function cents(n: number): number {
 }
 
 export function nzTaxYearBounds(taxYear: number): NzTaxYear {
-  return {
-    taxYear,
-    taxYearStart: `${taxYear - 1}-04-01`,
-    taxYearEnd: `${taxYear}-03-31`,
-  };
+  const y = taxYearFromEndYear(taxYear);
+  return { taxYear, taxYearStart: y.start, taxYearEnd: y.end };
 }
 
 /** Tax year containing this calendar date, or null when the date is not YYYY-MM-DD. */
 export function nzTaxYearForDate(iso: string): NzTaxYear | null {
   if (!isIsoDate(iso)) return null;
-  const [y, m] = iso.split('-').map(Number);
-  const taxYear = m >= 4 ? y + 1 : y;
-  return nzTaxYearBounds(taxYear);
+  return nzTaxYearBounds(taxYearEndForDate(iso));
 }
 
 /** Eligible-donation ceiling (NZD) for this tax year (by end year), or null when there is none. */

@@ -4,6 +4,7 @@
  * Cost basis is FIFO or weighted average (the two methods IRD lists). An estimate for your
  * records, not tax advice. Amounts follow Hide amounts through formatNzd.
  */
+import { taxYearLabelFromStart } from '../lib/taxYear';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError, api, formatNzd } from '../api/client';
@@ -109,7 +110,7 @@ export function Crypto() {
                 <select value={view.taxYear} onChange={(e) => setYear(Number(e.target.value))}>
                   {view.years.map((yr) => (
                     <option key={yr.startYear} value={yr.startYear}>
-                      {yr.startYear}/{String((yr.startYear + 1) % 100).padStart(2, '0')}
+                      {taxYearLabelFromStart(yr.startYear)}
                     </option>
                   ))}
                 </select>
