@@ -69,6 +69,9 @@ let ethBehaviour: 'rate_limit' | 'ok' = 'rate_limit';
 let gate: Promise<void> | null = null;
 let failCount = 0;
 
+// Import the routes first: they load the chain barrel, which registers the real adapters.
+// The reset below then leaves only the fake, so no test reaches a real RPC.
+const { default: walletsRouter } = await import('../routes/wallets.ts');
 resetChainProvidersForTest();
 registerChainProvider({
   id: 'fake',
@@ -201,7 +204,6 @@ try {
   passed++;
 
   // --- "sync now" route ----------------------------------------------------------------
-  const { default: walletsRouter } = await import('../routes/wallets.ts');
   const app = express();
   app.use(express.json());
   app.use('/api', attachUser);
