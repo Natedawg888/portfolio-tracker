@@ -750,7 +750,7 @@ export function Paye() {
                 onChange={(e) => setOtherAnnual(e.target.value)}
               />
               <span className="muted small">
-                Used for ACC headroom (max liable earnings {money(rates.accMaxEarnings)}).
+                Used for the year-end ACC refund: secondary jobs deduct ACC with no maximum, and IRD refunds anything over the levy on {money(rates.accMaxEarnings)}.
               </span>
             </label>
           </div>
