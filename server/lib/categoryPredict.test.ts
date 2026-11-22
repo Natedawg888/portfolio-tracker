@@ -23,7 +23,7 @@ const check = (cond: unknown, msg: string) => {
 
 const { getDb, run, newId } = await import('../db/index.ts');
 const { seedCategoriesForUser, resolveCategoryId } = await import('./categories.ts');
-const { createCategoryPredictor, merchantTokens } = await import('./categoryPredict.ts');
+const { createCategoryPredictor, merchantTokens, transferWordingType } = await import('./categoryPredict.ts');
 
 const db = await getDb();
 const A = 'pred_a';
@@ -89,6 +89,31 @@ run(db, `INSERT INTO payee_settings (id, user_id, name, name_key, category_id, c
 ]);
 const withRule = createCategoryPredictor(db, A)({ description: 'COUNTDOWN 9876 WELLINGTON', amount: -30 });
 check(withRule?.categoryId === cat(A, 'cat-other') && withRule.reason === 'payee', 'saved payee category wins');
+
+// KAN-21: a suburb in common isn't a match ("ELLERSLIE" racecourse vs supermarket).
+past(A, 'ELLERSLIE', -30, 'cat-entertainment');
+past(A, 'ELLERSLIE RACECOURSE', -40, 'cat-entertainment');
+const p2 = createCategoryPredictor(db, A);
+check(p2({ description: 'ELLERSLIE SUPERMARKET', amount: -55 })?.categoryId !== cat(A, 'cat-entertainment'), 'Ellerslie Supermarket is not Entertainment');
+check(p2({ description: 'ELLERSLIE RACECOURSE', amount: -40 })?.categoryId === cat(A, 'cat-entertainment'), 'the same merchant still matches');
+past(A, 'FRESH CHOICE ELLERSLIE', -60, 'cat-food');
+past(A, 'FRESH CHOICE ELLERSLIE', -70, 'cat-food');
+check(createCategoryPredictor(db, A)({ description: 'FRESH CHOICE PONSONBY', amount: -20 })?.categoryId === cat(A, 'cat-food'), 'merchant words still match across suburbs');
+
+// KAN-21: bank transfer wording → the user's Transfer in / Transfer out categories.
+check(transferWordingType('Deposit from J SMITH') === 'transfer_in', 'Deposit from');
+check(transferWordingType('TRANSFER FROM 38-9000-0000000-01') === 'transfer_in', 'Transfer from');
+check(transferWordingType('Transfer to Savings') === 'transfer_out', 'Transfer to');
+check(transferWordingType('Transferwise fee') === null, 'not transfer wording');
+// Seeded Transfer in / Transfer out categories.
+const tin = cat(A, 'cat-transfer-in');
+const tout = cat(A, 'cat-transfer-out');
+const p3 = createCategoryPredictor(db, A);
+check(p3({ description: 'Deposit from J SMITH', amount: 250 })?.categoryId === tin, 'Deposit from → Transfer in');
+check(p3({ description: 'Transfer from 38-9000-0000000-01', amount: 500 })?.reason === 'transfer_wording', 'Transfer from → Transfer in');
+check(p3({ description: 'Transfer to Savings', amount: -100 })?.categoryId === tout, 'Transfer to → Transfer out');
+check(p3({ description: 'Transfer to Savings', amount: 100 })?.categoryId !== tout, 'money in never gets Transfer out');
+check(createCategoryPredictor(db, B)({ description: 'Transfer to Savings', amount: -100 })?.categoryId === cat(B, 'cat-transfer-out'), "each user gets their own Transfer out");
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`categoryPredict: ${passed} checks passed`);
