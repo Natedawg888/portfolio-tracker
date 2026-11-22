@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { prefetchNavTarget } from '../lib/routePrefetch';
+import { offersHousehold } from '../lib/usageMode';
 import { useMaxWidth } from '../lib/useMaxWidth';
 import { useAuth } from '../auth/AuthContext';
 import { AccountTypePill } from './AccountTypePill';
@@ -261,17 +262,19 @@ export function ProfileMenu({
         </Link>
       ) : null}
       <div className="profile-menu-sep" role="separator" />
-      <Link
-        to="/household"
-        role="menuitem"
-        className="profile-menu-item"
-        onClick={() => setOpen(false)}
-        onMouseEnter={() => prefetchNavTarget('/household')}
-        onFocus={() => prefetchNavTarget('/household')}
-        onTouchStart={() => prefetchNavTarget('/household')}
-      >
-        Household
-      </Link>
+      {!user || offersHousehold(user.usageMode) ? (
+        <Link
+          to="/household"
+          role="menuitem"
+          className="profile-menu-item"
+          onClick={() => setOpen(false)}
+          onMouseEnter={() => prefetchNavTarget('/household')}
+          onFocus={() => prefetchNavTarget('/household')}
+          onTouchStart={() => prefetchNavTarget('/household')}
+        >
+          Household
+        </Link>
+      ) : null}
       <Link
         to="/settings?tab=account"
         role="menuitem"

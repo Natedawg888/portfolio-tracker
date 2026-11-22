@@ -72,6 +72,19 @@ export function navKeysForMode(mode: UsageMode): NavKey[] {
   return mode === 'business' ? BUSINESS_NAV : mode === 'both' ? BOTH_NAV : PERSONAL_NAV;
 }
 
+/** Households are personal: Business-only accounts aren't offered them (KAN-133). */
+export function offersHousehold(mode: UsageMode): boolean {
+  return mode !== 'business';
+}
+
+/**
+ * The Overview / Invoices / Clients tab row on the business pages (KAN-132). Business-only
+ * accounts already have those links in the top nav, so the row would be a second nav bar.
+ */
+export function showsBusinessTabRow(mode: UsageMode): boolean {
+  return mode !== 'business';
+}
+
 /** Where "/" goes: business mode lands on the business dashboard. */
 export function homePathForMode(mode: UsageMode): string {
   return mode === 'business' ? '/business' : '/';
