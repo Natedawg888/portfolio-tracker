@@ -17,9 +17,10 @@
  */
 import type { Database } from 'sql.js';
 import { queryAll, queryOne, run } from '../db/index.ts';
+import { randomBytes } from 'node:crypto';
 import { generateDataKey, sessionKeyStore, unwrapDataKey, wrapDataKey } from './dataKey.ts';
 
-export type WrapKind = 'password' | 'sso_passphrase';
+export type WrapKind = 'password' | 'sso_passphrase' | 'recovery';
 
 const context = (userId: string, kind: string) => `${userId}:${kind}`;
 
@@ -153,4 +154,57 @@ export function takeKeyForChallenge(challengeHash: string, userId: string): Buff
 
 export function pendingKeyCountForTest(): number {
   return pending.size;
+}
+
+// --- Recovery code (KAN-111) ---------------------------------------------------------
+
+/** Crockford base32 (no I, L, O, U): easy to read back and type. */
+const RECOVERY_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+const RECOVERY_GROUPS = 6;
+const RECOVERY_GROUP_LEN = 5;
+
+/** A new recovery code: 6 groups of 5 (150 bits), e.g. 7K2QX-… Shown once, never stored. */
+export function newRecoveryCode(): string {
+  const bytes = randomBytes(RECOVERY_GROUPS * RECOVERY_GROUP_LEN);
+  const chars = [...bytes].map((b) => RECOVERY_ALPHABET[b & 31]);
+  const groups: string[] = [];
+  for (let i = 0; i < RECOVERY_GROUPS; i++) groups.push(chars.slice(i * RECOVERY_GROUP_LEN, (i + 1) * RECOVERY_GROUP_LEN).join(''));
+  return groups.join('-');
+}
+
+/** Upper case, no spaces or dashes, and the look-alike letters mapped (O→0, I/L→1). */
+export function normaliseRecoveryCode(raw: string): string {
+  return raw.toUpperCase().replace(/[\s-]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1');
+}
+
+/** Wrap the key under a fresh recovery code, replacing any earlier one. Returns the code to show once. */
+export async function issueRecoveryCode(db: Database, userId: string, key: Buffer): Promise<string> {
+  const code = newRecoveryCode();
+  putWrap(db, userId, 'recovery', await wrapDataKey(key, normaliseRecoveryCode(code), context(userId, 'recovery')));
+  return code;
+}
+
+export function hasRecoveryCode(db: Database, userId: string): boolean {
+  return getWrap(db, userId, 'recovery') != null;
+}
+
+/** The key, when the recovery code opens it; null otherwise. */
+export async function keyFromRecoveryCode(db: Database, userId: string, code: string): Promise<Buffer | null> {
+  const wrapped = getWrap(db, userId, 'recovery');
+  if (!wrapped || !code.trim()) return null;
+  return unwrapDataKey(wrapped, normaliseRecoveryCode(code), context(userId, 'recovery'));
+}
+
+/**
+ * Forgotten password: with the key from the recovery code, wrap it under the new password and
+ * issue a new recovery code (the old one is used up). Returns the new code.
+ */
+export async function resetWithRecovery(db: Database, userId: string, key: Buffer, newPassword: string): Promise<string> {
+  putWrap(db, userId, 'password', await wrapDataKey(key, newPassword, context(userId, 'password')));
+  return issueRecoveryCode(db, userId, key);
+}
+
+/** The session's key, for regenerating the recovery code while signed in. */
+export function sessionKey(userId: string, sessionId: string | null | undefined): Buffer | null {
+  return sessionId ? sessionKeyStore.get(sessionId, userId) : null;
 }
