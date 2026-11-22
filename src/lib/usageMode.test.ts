@@ -2,7 +2,7 @@
  * Usage mode (KAN-124): parsing and defaults, saving, the nav per mode, and where "/" goes.
  * Run: npm run test:onboarding
  */
-import { homePathForMode, isUsageMode, mergeUsageModeIntoPreferencesJson, navKeysForMode, parseUsageMode } from './usageMode.ts';
+import { homePathForMode, isUsageMode, mergeUsageModeIntoPreferencesJson, navKeysForMode, offersHousehold, parseUsageMode, showsBusinessTabRow } from './usageMode.ts';
 
 function eq(actual: unknown, expected: unknown, msg: string): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(`FAIL: ${msg} (got ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)})`);
@@ -36,5 +36,9 @@ eq(navKeysForMode('both').filter((k) => k !== 'business'), navKeysForMode('perso
 
 // Landing.
 eq([homePathForMode('business'), homePathForMode('both'), homePathForMode('personal')], ['/business', '/', '/'], 'business lands on the business dashboard');
+
+// KAN-132: no second business tab row for Business only. KAN-133: no Household for Business only.
+eq([showsBusinessTabRow('business'), showsBusinessTabRow('both'), showsBusinessTabRow('personal')], [false, true, true], 'business tab row');
+eq([offersHousehold('business'), offersHousehold('both'), offersHousehold('personal')], [false, true, true], 'household offered');
 
 console.log('usage mode: ok');
