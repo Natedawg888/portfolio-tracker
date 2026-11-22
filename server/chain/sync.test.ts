@@ -72,6 +72,8 @@ let failCount = 0;
 // Import the routes first: they load the chain barrel, which registers the real adapters.
 // The reset below then leaves only the fake, so no test reaches a real RPC.
 const { default: walletsRouter } = await import('../routes/wallets.ts');
+// History (KAN-43) is tested in history.test.ts; keep this suite offline.
+sync.setHistorySourceForTest({ native: async () => ({ transactions: [] }), tokens: async () => [] });
 resetChainProvidersForTest();
 registerChainProvider({
   id: 'fake',

@@ -2742,3 +2742,23 @@ export type {
   SwitchAccountResponse,
   UnlinkAccountResponse,
 } from './accountLinks';
+
+/** A stored on-chain wallet transaction (KAN-43). Amounts are smallest-unit integers + decimals. */
+export interface WalletTxn {
+  id: string;
+  walletId: string;
+  network: WalletNetwork;
+  hash: string;
+  timestamp: string | null;
+  status: 'confirmed' | 'pending' | 'failed';
+  kind: 'received' | 'sent' | 'transfer' | 'staking' | 'swap';
+  direction: 'in' | 'out' | 'self';
+  symbol: string;
+  contract: string | null;
+  amountRaw: string;
+  decimals: number;
+  amount: string;
+  feeRaw: string | null;
+  counterparty: string | null;
+  hidden: boolean;
+}
