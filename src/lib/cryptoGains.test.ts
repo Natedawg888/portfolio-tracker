@@ -126,6 +126,19 @@ g = computeGains([t('2025-05-01', 'buy', 'SOL', 10, 1000), t('2025-06-01', 'swap
 eq(g.disposals[0].taxable, false, 'swap of a coin not held to sell');
 eq(g.disposals[1].taxable && g.disposals[1].costNzd === 1500, true, 'ETH received: taxable, cost = value given');
 
+// KAN-94: mining rewards are income at receipt (their value is their cost); hard forks cost nil and aren't income.
+{
+  const g2 = computeGains([t('2025-05-01', 'mining_reward', 'BTC', 0.001, 100), t('2025-09-01', 'sell', 'BTC', 0.001, 150)], 'fifo');
+  eq(yearSummary(g2, 2025).incomeNzd, 100, 'mining reward of 0.001 BTC worth $100 → $100 income');
+  eq(yearSummary(g2, 2025).realisedNzd, 50, 'later sale for $150 → $50 gain');
+  const g3 = computeGains([t('2025-05-01', 'hard_fork', 'BCH', 2, null), t('2025-09-01', 'sell', 'BCH', 2, 200)], 'fifo');
+  eq(yearSummary(g3, 2025).incomeNzd, 0, 'hard fork receipt → $0 income');
+  eq(yearSummary(g3, 2025).realisedNzd, 200, 'later sale for $200 → $200 gain');
+  eq(g3.missingValue.length, 0, 'a hard fork needs no NZD value');
+  eq(needsValue({ kind: 'mining_reward' }), true, 'mining reward needs a value');
+  eq(needsValue({ kind: 'hard_fork' }), false, 'hard fork does not');
+}
+
 // Tax years.
 eq(cryptoTaxYear('2026-03-31'), 2025, '31 March');
 eq(cryptoTaxYear('2026-04-01'), 2026, '1 April');

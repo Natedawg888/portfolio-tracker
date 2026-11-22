@@ -261,6 +261,27 @@ try {
   const fs2 = await cryptoSummary(db, 'fred', 2025, priceOf);
   assert(fs2.ok && fs2.value.txns.length === 0 && fs2.value.defi.positions.length === 0, 'and sees nothing of Pia’s');
 
+  // KAN-94: mining payouts recorded in Income → ledger as mining rewards, once.
+  {
+    const now = new Date().toISOString();
+    run(db, `INSERT INTO income_records (id, user_id, date, amount_nzd, kind, description, crypto_asset, crypto_amount, created_at) VALUES (?,?,?,?,?,?,?,?,?)`, ['inc_m1', 'pia', '2024-06-01', 12.34, 'crypto', 'GoMining daily', 'btc', 0.0001, now]);
+    run(db, `INSERT INTO income_records (id, user_id, date, amount_nzd, kind, description, crypto_asset, crypto_amount, created_at) VALUES (?,?,?,?,?,?,?,?,?)`, ['inc_m2', 'pia', '2024-06-02', 11, 'crypto', 'GoMining daily', 'BTC', 0.00009, now]);
+    run(db, `INSERT INTO income_records (id, user_id, date, amount_nzd, kind, description, created_at) VALUES (?,?,?,?,?,?,?)`, ['inc_cash', 'pia', '2024-06-03', 500, 'cash', 'Salary', now]);
+    assert((await call('GET', '/mining-payouts', PLUS)).status === 402, 'mining import is Pro (Plus refused)');
+    const pre = await call('GET', '/mining-payouts', P);
+    const payouts = (pre.json.payouts ?? []) as { id: string; asset: string }[];
+    assert(pre.status === 200 && payouts.length === 2 && payouts.every((x) => x.asset === 'BTC'), `two crypto payouts, cash left out (${JSON.stringify(pre.json)})`);
+    const add = await call('POST', '/mining-payouts', P, { ids: ['inc_m1', 'inc_m2', 'inc_cash'] });
+    assert(add.status === 200 && add.json.added === 2, 'two added');
+    assert((await call('GET', '/mining-payouts', P)).json.payouts.length === 0, 'not offered again');
+    assert((await call('POST', '/mining-payouts', P, { ids: ['inc_m1'] })).json.added === 0, 'never added twice');
+    const rows = queryAll<{ kind: string; nzd_value: number }>(db, `SELECT kind, nzd_value FROM crypto_txns WHERE user_id = 'pia' AND external_ref LIKE 'income:%'`);
+    assert(rows.length === 2 && rows.every((r) => r.kind === 'mining_reward'), 'stored as mining rewards');
+    const sm = await cryptoSummary(db, 'pia', 2024, priceOf);
+    if (!sm.ok) throw new Error('summary');
+    assert(sm.value.income.filter((i) => i.kind === 'mining_reward').reduce((x, i) => x + i.nzdValue, 0) === 23.34, 'mining income in the 2024/25 year');
+  }
+
   // Account deletion.
   deleteScopedDataForUser(db, 'pia');
   for (const table of ['crypto_txns', 'crypto_import_refs', 'crypto_settings', 'crypto_asset_purposes', 'defi_positions']) {
