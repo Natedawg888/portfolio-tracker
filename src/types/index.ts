@@ -2438,10 +2438,14 @@ export interface CryptoSummary {
   costMethod: 'fifo' | 'wac';
   taxYear: number;
   years: { startYear: number; label: string }[];
-  year: { realisedNzd: number; proceedsNzd: number; costNzd: number; incomeNzd: number; disposals: number };
+  /** realised/proceeds/cost/disposals: taxable only; notTaxable*: coins not held for disposal (KAN-102). */
+  year: { realisedNzd: number; proceedsNzd: number; costNzd: number; incomeNzd: number; disposals: number; notTaxableNzd: number; notTaxableDisposals: number };
   positions: { asset: string; quantity: number; costNzd: number; avgCostNzd: number | null; costIncomplete: boolean; priceNzd: number | null; valueNzd: number | null; unrealisedNzd: number | null; priceStatus: string }[];
   unrealisedNzd: number;
-  disposals: { txnId: string; date: string; asset: string; amount: number; proceedsNzd: number; costNzd: number; gainNzd: number; shortfall: number }[];
+  disposals: { txnId: string; date: string; asset: string; amount: number; proceedsNzd: number; costNzd: number; gainNzd: number; shortfall: number; taxable: boolean }[];
+  /** Every coin in the ledger, and those marked as not held for disposal (KAN-102). */
+  assets: string[];
+  notForDisposal: string[];
   income: { txnId: string; date: string; asset: string; kind: CryptoTxnKind; amount: number; nzdValue: number }[];
   missingValue: number;
   shortfalls: string[];

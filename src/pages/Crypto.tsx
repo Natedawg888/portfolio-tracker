@@ -18,6 +18,7 @@ import { DefiPositions } from '../components/crypto/DefiPositions';
 const IRD_CALC = 'https://www.ird.govt.nz/cryptoassets/taxing/income-expenses/calculating-cryptoasset-income';
 const IRD_CONVERT = 'https://www.ird.govt.nz/cryptoassets/taxing/income-expenses/convert-currency';
 const IRD_AIRDROPS = 'https://www.ird.govt.nz/cryptoassets/individual/airdrops-and-hard-forks/airdrops';
+const IRD_PURPOSE = 'https://www.ird.govt.nz/cryptoassets/individual/buying-selling/acquiring-sell-exchange';
 const qty = (n: number) => n.toLocaleString('en-NZ', { maximumFractionDigits: 8 });
 const signed = (n: number) => (n < 0 ? `−${formatNzd(-n)}` : formatNzd(n));
 
@@ -44,6 +45,7 @@ export function Crypto() {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [dialog, setDialog] = useState<{ txn: CryptoTxn | null } | null>(null);
+  const [purposeBusy, setPurposeBusy] = useState(false);
 
   const load = useCallback(() => {
     api.crypto
@@ -133,6 +135,12 @@ export function Crypto() {
                 <dt>Cost of what went</dt>
                 <dd className="money">{formatNzd(y.costNzd)}</dd>
               </div>
+              {y.notTaxableDisposals ? (
+                <div>
+                  <dt>Not counted: coins not held to sell</dt>
+                  <dd className="money">{signed(y.notTaxableNzd)}</dd>
+                </div>
+              ) : null}
             </dl>
             <div className="crypto-method" role="group" aria-label="Cost basis method">
               <span className="small">Cost basis:</span>
@@ -153,7 +161,7 @@ export function Crypto() {
             {view.missingValue ? <p className="small hh-over">{view.missingValue === 1 ? '1 transaction needs' : `${view.missingValue} transactions need`} an NZD value. Until then it’s left out of the money figures.</p> : null}
             {view.shortfalls.length ? <p className="small hh-over">You sold more {view.shortfalls.join(', ')} than the ledger shows you had. Add the earlier buys or transfers.</p> : null}
             <p className="muted small">
-              IRD accepts first-in-first-out or weighted average cost; use one consistently. Unrealised gains aren’t taxed. Receiving an airdrop usually isn’t taxable, so it costs nil unless you mark it taxable on receipt. An estimate for your records, not tax advice. See IRD:{' '}
+              IRD accepts first-in-first-out or weighted average cost; use one consistently. Unrealised gains aren’t taxed. Every sale counts unless you mark the coin as not held to sell (below). Receiving an airdrop usually isn’t taxable, so it costs nil unless you mark it taxable on receipt. An estimate for your records, not tax advice. See IRD:{' '}
               <a href={IRD_CALC} target="_blank" rel="noreferrer">calculating cryptoasset income</a> ·{' '}
               <a href={IRD_CONVERT} target="_blank" rel="noreferrer">converting to NZD</a> ·{' '}
               <a href={IRD_AIRDROPS} target="_blank" rel="noreferrer">airdrops</a>.
@@ -181,7 +189,10 @@ export function Crypto() {
                           </td>
                           <td className="money" style={{ textAlign: 'right' }}>{formatNzd(d.proceedsNzd)}</td>
                           <td className="money" style={{ textAlign: 'right' }}>{formatNzd(d.costNzd)}</td>
-                          <td className="money" style={{ textAlign: 'right' }}>{signed(d.gainNzd)}</td>
+                          <td className="money" style={{ textAlign: 'right' }}>
+                            {signed(d.gainNzd)}
+                            {d.taxable ? null : <span className="muted small"> · not counted</span>}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -201,6 +212,44 @@ export function Crypto() {
                       <span className="money">{formatNzd(i.nzdValue)}</span>
                     </li>
                   ))}
+                </ul>
+              </details>
+            ) : null}
+            {view.assets.length ? (
+              <details className="proj-fold" open={view.notForDisposal.length > 0}>
+                <summary>Why you hold each coin ({view.notForDisposal.length} not held to sell)</summary>
+                <p className="muted small">
+                  Gains are taxable when you got the coin to sell or exchange, even years later. IRD says that’s most people. Mark a coin only if you
+                  didn’t, e.g. you bought it just for staking income or for personal use, and you can show it: your purpose when you got it is what counts,
+                  and IRD expects clear evidence. Its sales stay listed but their gains and losses aren’t counted (a loss only counts if a gain would have
+                  been taxable). Staking and other rewards are still income. See IRD:{' '}
+                  <a href={IRD_PURPOSE} target="_blank" rel="noreferrer">acquiring cryptoassets to sell or exchange</a>.
+                </p>
+                <ul className="hh-rows">
+                  {view.assets.map((a) => {
+                    const off = view.notForDisposal.includes(a);
+                    return (
+                      <li key={a}>
+                        <span>{a}</span>
+                        <label className="payslip-check">
+                          <input
+                            type="checkbox"
+                            checked={off}
+                            disabled={purposeBusy}
+                            onChange={(e) => {
+                              setPurposeBusy(true);
+                              void api.crypto
+                                .setPurpose(a, e.target.checked)
+                                .then(load)
+                                .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Could not save.'))
+                                .finally(() => setPurposeBusy(false));
+                            }}
+                          />
+                          <span>Not held to sell</span>
+                        </label>
+                      </li>
+                    );
+                  })}
                 </ul>
               </details>
             ) : null}

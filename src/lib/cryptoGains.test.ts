@@ -95,6 +95,37 @@ eq(isIncomeOnReceipt({ kind: 'airdrop' }), false, 'helper: airdrop');
 eq(isIncomeOnReceipt({ kind: 'airdrop', taxableOnReceipt: true }), true, 'helper: taxable airdrop');
 eq(needsValue({ kind: 'airdrop' }), false, 'helper: airdrop needs no value');
 
+// Purpose (KAN-102): a coin not held for disposal has its gains and losses left out, still listed; rewards still income.
+const purposeLedger = [
+  t('2025-05-01', 'buy', 'USDC', 1000, 1000),
+  t('2025-06-01', 'staking_reward', 'USDC', 10, 16),
+  t('2025-09-01', 'sell', 'USDC', 500, 1500),
+  t('2025-05-01', 'buy', 'ETH', 1, 3000),
+  t('2025-09-01', 'sell', 'ETH', 1, 2000),
+];
+g = computeGains(purposeLedger, 'fifo');
+eq(yearSummary(g, 2025).realisedNzd, 0, 'default: USDC +1,000 and ETH −1,000 both counted');
+eq(yearSummary(g, 2025).disposals, 2, 'default: both counted');
+eq(g.disposals.every((d) => d.taxable), true, 'default: all taxable');
+g = computeGains(purposeLedger, 'fifo', new Set(['usdc']));
+eq(g.disposals.find((d) => d.asset === 'USDC')?.gainNzd, 1000, 'USDC gain still worked out');
+eq(g.disposals.find((d) => d.asset === 'USDC')?.taxable, false, 'USDC not taxable');
+let ys = yearSummary(g, 2025);
+eq(ys.realisedNzd, -1000, 'USDC $1,000 gain left out');
+eq(ys.notTaxableNzd, 1000, 'shown apart');
+eq(ys.notTaxableDisposals, 1, 'one left out');
+eq(ys.disposals, 1, 'one counted');
+eq(ys.proceedsNzd, 2000, 'proceeds: taxable only');
+eq(ys.incomeNzd, 16, 'staking reward on USDC still income');
+g = computeGains(purposeLedger, 'fifo', new Set(['ETH']));
+ys = yearSummary(g, 2025);
+eq(ys.realisedNzd, 1000, 'ETH $1,000 loss left out too');
+eq(ys.notTaxableNzd, -1000, 'loss shown apart');
+// A swap gives away the coin: not counted when that coin isn't held to sell; the coin received follows its own setting.
+g = computeGains([t('2025-05-01', 'buy', 'SOL', 10, 1000), t('2025-06-01', 'swap', 'SOL', 10, 1500, { toAsset: 'ETH', toAmount: 0.5 }), t('2025-07-01', 'sell', 'ETH', 0.5, 1700)], 'fifo', new Set(['SOL']));
+eq(g.disposals[0].taxable, false, 'swap of a coin not held to sell');
+eq(g.disposals[1].taxable && g.disposals[1].costNzd === 1500, true, 'ETH received: taxable, cost = value given');
+
 // Tax years.
 eq(cryptoTaxYear('2026-03-31'), 2025, '31 March');
 eq(cryptoTaxYear('2026-04-01'), 2026, '1 April');

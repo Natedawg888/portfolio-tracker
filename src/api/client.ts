@@ -912,6 +912,8 @@ export const api = {
     price: (asset: string, date: string) =>
       req<{ priceNzd: number | null; source: string | null; priceDate: string | null; reason: string | null }>(`/crypto/price?${new URLSearchParams({ asset, date })}`),
     setCostMethod: (costMethod: 'fifo' | 'wac') => req<{ costMethod: string }>('/crypto/settings', { method: 'PUT', body: JSON.stringify({ costMethod }) }),
+    setPurpose: (asset: string, notForDisposal: boolean) =>
+      req<{ asset: string; notForDisposal: boolean }>('/crypto/purposes', { method: 'PUT', body: JSON.stringify({ asset, notForDisposal }) }),
     importPreview: (walletId: string) =>
       req<{ wallet: { id: string; name: string; network: string }; candidates: CryptoImportCandidate[]; skipped: number }>(`/crypto/import/${encodeURIComponent(walletId)}`),
     importCommit: (walletId: string, items: Record<string, unknown>[]) =>

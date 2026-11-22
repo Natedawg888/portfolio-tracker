@@ -1673,6 +1673,14 @@ CREATE TABLE IF NOT EXISTS crypto_import_refs (
   created_at  TEXT NOT NULL,
   PRIMARY KEY (user_id, ref)
 );
+-- Coins held not for disposal (KAN-102): their gains and losses are left out of the taxable totals.
+-- No row = acquired to sell or exchange (the default). asset is upper case.
+CREATE TABLE IF NOT EXISTS crypto_asset_purposes (
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  asset       TEXT NOT NULL,
+  updated_at  TEXT NOT NULL,
+  PRIMARY KEY (user_id, asset)
+);
 CREATE TABLE IF NOT EXISTS crypto_settings (
   user_id      TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   cost_method  TEXT NOT NULL DEFAULT 'fifo',
