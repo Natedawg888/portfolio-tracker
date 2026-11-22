@@ -1,7 +1,8 @@
 /**
  * KiwiSaver calculator on the KiwiSaver page (KAN-59). What your KiwiSaver could be at 65 from
  * your contributions, your employer's (after ESCT) and the government contribution, growing at
- * a return you choose. Illustrative only; today's rules apply to every year (kiwiSaverRules.ts).
+ * a return you choose. Illustrative only; today's rules apply to every year (kiwiSaverRules.ts),
+ * except the enacted 4% default and employer minimum from 1 April 2028 (KAN-89).
  * Inputs are remembered on this device. Amounts follow Hide amounts through formatNzd.
  * The government contribution's $180,000 test is on total taxable income (KAN-99): other income
  * or an entered total can be added; with neither, salary is used and a note says so.
@@ -10,8 +11,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, formatNzd } from '../api/client';
 import { AssetLineChart, type LineSeries } from './AssetLineChart';
 import { calculateKiwiSaver } from '../lib/kiwiSaverCalc';
-import { GOVERNMENT_CONTRIBUTION, KIWISAVER_RULES_CHECKED_ON, KIWISAVER_RULES_SOURCES, KIWISAVER_WITHDRAWAL_AGE } from '../lib/kiwiSaverRules';
-import { kiwiSaverEmployeeRateLabel, payTaxYearRates } from '../lib/payeRates';
+import { GOVERNMENT_CONTRIBUTION, KIWISAVER_CHANGES_SOURCE, KIWISAVER_RULES_CHECKED_ON, KIWISAVER_RULES_SOURCES, KIWISAVER_WITHDRAWAL_AGE, kiwiSaverDefaultRatePct } from '../lib/kiwiSaverRules';
+import { kiwiSaverEmployeeRateLabel, payTaxYearRates, taxYearForDate } from '../lib/payeRates';
 import { PAYE_PREFS_STORAGE_KEY, loadPayePrefs } from '../lib/payePrefs';
 import { annualise } from '../lib/payeCalc';
 
@@ -28,6 +29,8 @@ type Fields = {
   totalIncome: string;
   returnPct: string;
   inflationPct: string;
+  /** 'yes' keeps the employee rate as entered past 1 April 2028. */
+  keepRateFixed: string;
 };
 const rates = payTaxYearRates();
 const DEFAULTS: Fields = {
@@ -42,7 +45,10 @@ const DEFAULTS: Fields = {
   totalIncome: '',
   returnPct: '5',
   inflationPct: '2',
+  keepRateFixed: '',
 };
+const startTaxYear = taxYearForDate(new Date().toISOString().slice(0, 10));
+const startDefault = kiwiSaverDefaultRatePct(startTaxYear);
 
 function loadFields(): { fields: Fields; saved: boolean } {
   try {
@@ -132,6 +138,8 @@ export function KiwiSaverCalculator({ balanceNzd }: { balanceNzd: number | null 
         taxableIncomeOverride: f.totalIncome.trim() === '' ? null : num(f.totalIncome, 0, 1e9),
         returnPct: num(f.returnPct, -20, 30),
         inflationPct: num(f.inflationPct, -5, 20),
+        startTaxYear,
+        keepRateFixed: f.keepRateFixed === 'yes',
       }),
     [f, age, balanceText],
   );
@@ -294,8 +302,18 @@ export function KiwiSaverCalculator({ balanceNzd }: { balanceNzd: number | null 
           <span className="muted small">
             The minimum is {rates.kiwiSaverEmployerMinRate}% when you contribute
             {rates.kiwiSaverTemporaryReductionRate != null && <>, or {rates.kiwiSaverTemporaryReductionRate}% if you’re on a temporary rate reduction</>}. ESCT is taken off it.
+            {startTaxYear < 2028 && <> It rises to {kiwiSaverDefaultRatePct(2028)}% from 1 April 2028.</>}
           </span>
         </label>
+        {startTaxYear < 2028 && Number(f.employeeRatePct) === startDefault ? (
+          <label className="payslip-check span-2">
+            <input type="checkbox" checked={f.keepRateFixed === 'yes'} onChange={(e) => set('keepRateFixed', e.target.checked ? 'yes' : '')} />
+            <span>
+              Keep my {startDefault}% rate after 1 April 2028. The default goes up to {kiwiSaverDefaultRatePct(2028)}% then (
+              <a href={KIWISAVER_CHANGES_SOURCE.url} target="_blank" rel="noreferrer">IRD: KiwiSaver changes</a>); untick to follow it.
+            </span>
+          </label>
+        ) : null}
         <label>
           Extra you put in, a year (NZD)
           <input type="number" min={0} step="any" inputMode="decimal" value={f.extraPerYear} onChange={(e) => set('extraPerYear', e.target.value)} />

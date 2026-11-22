@@ -1,6 +1,10 @@
 /**
  * KiwiSaver calculator (KAN-59). Illustrative only: the return is the user's assumption, not a
- * prediction, and today's rules (kiwiSaverRules.ts, payeRates.ts) are applied to every year.
+ * prediction, and today's rules (kiwiSaverRules.ts, payeRates.ts) are applied to every year,
+ * except the enacted step of the default rate and employer minimum to 4% from 1 April 2028 (KAN-89):
+ * given the tax year the projection starts in, a member on the default rate moves to 4% from
+ * 2028/29 unless they keep their rate fixed, and the employer's rate is lifted to the minimum.
+ * A member who chose a higher rate (6/8/10%) keeps it; one on a temporary reduction keeps that.
  *
  * Year by year from the current age to 65, in the dollars of each year (nominal):
  *   - salary rises with inflation plus any growth above it;
@@ -16,7 +20,7 @@
  *     contributions go in; the government contribution goes in at the end of the year.
  * Results are also shown in today's dollars (divided by inflation over the years).
  */
-import { GOVERNMENT_CONTRIBUTION, KIWISAVER_WITHDRAWAL_AGE, esctRate } from './kiwiSaverRules';
+import { GOVERNMENT_CONTRIBUTION, KIWISAVER_WITHDRAWAL_AGE, esctRate, kiwiSaverDefaultRatePct } from './kiwiSaverRules';
 
 export type KiwiSaverCalcInput = {
   age: number;
@@ -35,6 +39,10 @@ export type KiwiSaverCalcInput = {
   /** Yearly return after fees and tax, %. */
   returnPct: number;
   inflationPct: number;
+  /** Tax year (by start year) the first projected year falls in. Omitted: no scheduled rate changes. */
+  startTaxYear?: number;
+  /** Keep the employee rate as entered even if it's the default (opt out of the 2028 step-up). */
+  keepRateFixed?: boolean;
 };
 
 export type KiwiSaverYear = {
@@ -47,6 +55,9 @@ export type KiwiSaverYear = {
   employer: number;
   esct: number;
   government: number;
+  /** Rates used that year (they can step up from 2028/29). */
+  employeeRatePct: number;
+  employerRatePct: number;
 };
 
 export type KiwiSaverCalcResult = {
@@ -72,6 +83,23 @@ export type KiwiSaverCalcResult = {
 
 const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
+/**
+ * Employee and employer rates for projection year y (KAN-89). The member is on the default when
+ * their rate is the default for the start year; then it follows the default each year unless
+ * kept fixed. A rate below the default (temporary reduction) or above it stays as entered. The
+ * employer contributes at least the minimum for the year, except while the member is below it.
+ */
+export function ratesForYear(input: Pick<KiwiSaverCalcInput, 'employeeRatePct' | 'employerRatePct' | 'startTaxYear' | 'keepRateFixed'>, y: number): { employeeRatePct: number; employerRatePct: number } {
+  if (input.startTaxYear == null) return { employeeRatePct: input.employeeRatePct, employerRatePct: input.employerRatePct };
+  const startDefault = kiwiSaverDefaultRatePct(input.startTaxYear);
+  const yearDefault = kiwiSaverDefaultRatePct(input.startTaxYear + y);
+  const onDefault = !input.keepRateFixed && input.employeeRatePct === startDefault;
+  const employeeRatePct = onDefault ? Math.max(input.employeeRatePct, yearDefault) : input.employeeRatePct;
+  const employerRatePct =
+    input.employerRatePct > 0 && employeeRatePct >= yearDefault ? Math.max(input.employerRatePct, yearDefault) : input.employerRatePct;
+  return { employeeRatePct, employerRatePct };
+}
+
 export function calculateKiwiSaver(input: KiwiSaverCalcInput): KiwiSaverCalcResult | null {
   const years = Math.max(0, Math.floor(KIWISAVER_WITHDRAWAL_AGE - input.age));
   if (years === 0) return null;
@@ -89,8 +117,9 @@ export function calculateKiwiSaver(input: KiwiSaverCalcInput): KiwiSaverCalcResu
     const salary = Math.max(0, input.salary) * payFactor;
     const override = input.taxableIncomeOverride;
     const income = override != null && Number.isFinite(override) ? Math.max(0, override) * payFactor : salary + Math.max(0, input.otherIncomePerYear ?? 0) * (1 + i) ** y;
-    const you = salary * (input.employeeRatePct / 100) + Math.max(0, input.extraPerYear) * (1 + i) ** y;
-    const employerGross = salary * (input.employerRatePct / 100);
+    const { employeeRatePct, employerRatePct } = ratesForYear(input, y);
+    const you = salary * (employeeRatePct / 100) + Math.max(0, input.extraPerYear) * (1 + i) ** y;
+    const employerGross = salary * (employerRatePct / 100);
     const rate = employerGross > 0 ? esctRate(salary + employerGross) : 0;
     const esct = employerGross * rate;
     const employer = employerGross - esct;
@@ -105,7 +134,7 @@ export function calculateKiwiSaver(input: KiwiSaverCalcInput): KiwiSaverCalcResu
     totals.employer += employer;
     totals.esct += esct;
     totals.government += government;
-    rows.push({ age: age + 1, balance: r2(balance), balanceToday: r2(balance / (1 + i) ** (y + 1)), you: r2(you), employer: r2(employer), esct: r2(esct), government: r2(government) });
+    rows.push({ age: age + 1, balance: r2(balance), balanceToday: r2(balance / (1 + i) ** (y + 1)), you: r2(you), employer: r2(employer), esct: r2(esct), government: r2(government), employeeRatePct, employerRatePct });
     if (y === 0) {
       const needed = GOVERNMENT_CONTRIBUTION.contributeForFull;
       const incomeBasis = override != null && Number.isFinite(override) ? 'entered' : (input.otherIncomePerYear ?? 0) > 0 ? 'salary_and_other' : 'salary_only';
