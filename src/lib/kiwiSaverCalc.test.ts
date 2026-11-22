@@ -1,7 +1,8 @@
 /**
  * KiwiSaver calculator (KAN-59). Figures worked by hand. Run: npm run test:kiwisaver-calc
  */
-import { calculateKiwiSaver, type KiwiSaverCalcInput } from './kiwiSaverCalc.ts';
+import { calculateKiwiSaver, ratesForYear, type KiwiSaverCalcInput } from './kiwiSaverCalc.ts';
+import { kiwiSaverDefaultRatePct } from './kiwiSaverRules.ts';
 import { esctRate } from './kiwiSaverRules.ts';
 
 function eq(actual: unknown, expected: unknown, msg: string): void {
@@ -85,5 +86,26 @@ eq(calculateKiwiSaver({ ...flat, age: 65 }), null, '65: nothing to project');
 r = calculateKiwiSaver({ ...flat, age: 15, salary: 10000 })!;
 eq(r.rows[0].government, 0, 'none at 15');
 eq(r.rows[1].government > 0, true, 'from 16');
+
+// KAN-89: the default and employer minimum step to 4% from 1 April 2028.
+eq(kiwiSaverDefaultRatePct(2025), 3, '2025/26: 3%');
+eq(kiwiSaverDefaultRatePct(2026), 3.5, '2026/27: 3.5%');
+eq(kiwiSaverDefaultRatePct(2027), 3.5, '2027/28: 3.5%');
+eq(kiwiSaverDefaultRatePct(2028), 4, '2028/29: 4%');
+r = calculateKiwiSaver({ ...flat, age: 40, startTaxYear: 2026 })!;
+eq(r.rows.slice(0, 4).map((x) => x.employeeRatePct).join(), '3.5,3.5,4,4', 'default: 3.5% for 2026/27 and 2027/28, 4% from 2028/29');
+eq(r.rows.slice(0, 4).map((x) => x.employerRatePct).join(), '3.5,3.5,4,4', 'employer minimum steps to 4% too');
+eq(r.rows[2].you, 2000, '4% of $50,000 in 2028/29');
+eq(r.atWithdrawal > calculateKiwiSaver({ ...flat, age: 40 })!.atWithdrawal, true, 'balance higher than at 3.5% throughout');
+for (const rate of [6, 8, 10]) {
+  const fixed = calculateKiwiSaver({ ...flat, age: 40, startTaxYear: 2026, employeeRatePct: rate, employerRatePct: 3.5 })!;
+  eq(fixed.rows.every((x) => x.employeeRatePct === rate), true, `${rate}% unaffected`);
+  eq(fixed.rows[2].employerRatePct, 4, `employer still steps up to 4% for a ${rate}% member`);
+}
+eq(calculateKiwiSaver({ ...flat, age: 40, startTaxYear: 2026, keepRateFixed: true })!.rows[5].employeeRatePct, 3.5, 'kept fixed: stays 3.5%');
+eq(ratesForYear({ employeeRatePct: 3, employerRatePct: 3, startTaxYear: 2026 }, 2).employerRatePct, 3, 'temporary reduction: employer may stay at 3%');
+eq(ratesForYear({ employeeRatePct: 3.5, employerRatePct: 0, startTaxYear: 2026 }, 2).employerRatePct, 0, 'no employer stays none');
+eq(ratesForYear({ employeeRatePct: 3.5, employerRatePct: 3.5, startTaxYear: 2028 }, 0).employeeRatePct, 3.5, 'starting 2028 on 3.5% by choice is not the default: kept');
+eq(calculateKiwiSaver(flat)!.rows[0].employeeRatePct, 3.5, 'no start year: rates as entered');
 
 console.log('kiwiSaverCalc.test.ts ok');

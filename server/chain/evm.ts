@@ -20,7 +20,7 @@
  * Docs: https://docs.blockscout.com/devs/apis/rest
  */
 import { WALLET_NETWORKS, toChecksumAddress, type WalletNetwork } from '../lib/walletAddress.ts';
-import { resolveIndexerEndpoint, type ChainEndpoint } from './config.ts';
+import { redactChainSecrets, resolveIndexerEndpoint, type ChainEndpoint } from './config.ts';
 import { getJson, jsonRpc } from './http.ts';
 import { KNOWN_TOKENS } from './knownTokens.ts';
 import { NETWORK_CHAIN_INFO } from './networks.ts';
@@ -222,7 +222,7 @@ async function tokenBalances(ctx: ProviderContext, address: string): Promise<Cha
     try {
       return await discoverErc20Balances(ctx.network, address);
     } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
+      const detail = redactChainSecrets(err instanceof Error ? err.message : String(err)).slice(0, 200);
       console.warn(`[chain] ${ctx.network} token indexer failed; using well-known tokens: ${detail}`);
     }
   }
@@ -236,7 +236,7 @@ export async function getEvmBalances(ctx: ProviderContext, address: string): Pro
     tokenBalances(ctx, address).catch((err: unknown) => {
       // Tokens are unpriced until KAN-39, so a missing token list never changes a total —
       // keep the native balance rather than failing the whole wallet.
-      const detail = err instanceof Error ? err.message : String(err);
+      const detail = redactChainSecrets(err instanceof Error ? err.message : String(err)).slice(0, 200);
       console.warn(`[chain] ${ctx.network} token balances failed; native balance only: ${detail}`);
       return [] as ChainBalance[];
     }),

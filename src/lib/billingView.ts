@@ -105,6 +105,24 @@ export function plusLinesForUsage(usage: UsageMode): readonly string[] {
   return PLAN_FEATURES.plus;
 }
 
+/**
+ * Signup → Choose your plan by usage mode (KAN-130). Personal sees Free and Plus (and Pro when
+ * on sale), no Business card, no business Plus lines and no "I run a business" tick.
+ * Business and Both see every plan.
+ */
+export function signupPlanOffer(
+  usage: UsageMode,
+  proPlanEnabled: boolean,
+  runsBusiness: boolean,
+  proForSale: boolean = PRO_PLAN_FOR_SALE,
+): { paidPlans: PaidPlan[]; plusLines: readonly string[]; showRunsBusiness: boolean } {
+  const all = offeredPaidPlans(proPlanEnabled, proForSale);
+  if (usage === 'personal') {
+    return { paidPlans: all.filter((p) => p !== 'business'), plusLines: plusLinesForUsage('personal'), showRunsBusiness: false };
+  }
+  return { paidPlans: all, plusLines: plusFeatureLines(runsBusiness), showRunsBusiness: true };
+}
+
 export type SettingsPortalAction = 'manage' | 'cancel';
 
 /**

@@ -6,6 +6,8 @@
 import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { formatNzd } from '../../api/client';
+import { useAuth } from '../../auth/AuthContext';
+import { showsBusinessTabRow } from '../../lib/usageMode';
 import { BUSINESS_TYPES, BUSINESS_TYPE_NOTES, businessTypeLabel, profitClass, taxYearLabel, type BusinessType } from '../../lib/business';
 import type { BusinessTotals } from '../../types';
 
@@ -15,8 +17,12 @@ const TABS = [
   { to: '/business/clients', label: 'Clients', match: (p: string) => p.startsWith('/business/clients') },
 ];
 
-/** Overview / Invoices / Clients. Each is its own page, so the tabs are links; arrow keys move between them. */
+/**
+ * Overview / Invoices / Clients. Each is its own page, so the tabs are links; arrow keys move between them.
+ * Hidden for Business-only accounts, whose top nav has the same links (KAN-132).
+ */
 export function BusinessTabs() {
+  const { user } = useAuth();
   const { pathname } = useLocation();
   const listRef = useRef<HTMLDivElement>(null);
   const active = Math.max(0, TABS.findIndex((t) => t.match(pathname)));
@@ -29,6 +35,8 @@ export function BusinessTabs() {
     e.preventDefault();
     links[next].focus();
   }
+  // Business-only accounts have these links in the top nav already (KAN-132).
+  if (user && !showsBusinessTabRow(user.usageMode)) return null;
   return (
     <div ref={listRef} className="portfolio-tabs business-tabs" role="tablist" aria-label="Business" onKeyDown={onKeyDown}>
       {TABS.map((t, i) => (

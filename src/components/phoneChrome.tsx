@@ -8,6 +8,7 @@ import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { signOutMenuLabel } from '../lib/accountLinksView';
 import { prefetchNavTarget } from '../lib/routePrefetch';
+import { offersHousehold } from '../lib/usageMode';
 import { AccountTypePill } from './AccountTypePill';
 
 const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -138,15 +139,17 @@ export function DrawerAccountSection({
           <AccountTypePill type={account.pill} />
         </div>
       ) : null}
-      <NavLink
-        to="/household"
-        className={({ isActive }) => 'mobile-nav-link' + (isActive ? ' active' : '')}
-        onClick={onNavigate}
-        onFocus={() => prefetchNavTarget('/household')}
-        onTouchStart={() => prefetchNavTarget('/household')}
-      >
-        Household
-      </NavLink>
+      {!user || offersHousehold(user.usageMode) ? (
+        <NavLink
+          to="/household"
+          className={({ isActive }) => 'mobile-nav-link' + (isActive ? ' active' : '')}
+          onClick={onNavigate}
+          onFocus={() => prefetchNavTarget('/household')}
+          onTouchStart={() => prefetchNavTarget('/household')}
+        >
+          Household
+        </NavLink>
+      ) : null}
       <NavLink
         to="/settings?tab=account"
         className={({ isActive }) => 'mobile-nav-link' + (isActive ? ' active' : '')}

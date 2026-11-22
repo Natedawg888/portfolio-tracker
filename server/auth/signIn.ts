@@ -11,6 +11,7 @@ import { deviceLabel } from './deviceLabel.ts';
 import { rememberPreviousAccount } from './accounts.ts';
 import { recordAuthEvent, type SignInMethod } from './authEvents.ts';
 import { ACCOUNT_PENDING_DELETION, isPendingDeletion } from './accountLinks.ts';
+import { sessionKeyStore } from '../security/dataKey.ts';
 
 /** Body flag `remember` (default true): false → browser-session cookie, 24 h server expiry. */
 export function parseRemember(body: unknown): boolean {
@@ -33,7 +34,14 @@ export async function startSession(
    * How they signed in (audit log), the passkey or provider used, if any (KAN-75), and the
    * trusted device on this browser (looked up from its cookie when not given).
    */
-  opts: { method: SignInMethod; passkeyId?: string | null; provider?: string | null; trustedDeviceId?: string | null },
+  opts: {
+    method: SignInMethod;
+    passkeyId?: string | null;
+    provider?: string | null;
+    trustedDeviceId?: string | null;
+    /** The user's unwrapped data key (KAN-110), held in memory for this session only. */
+    dataKey?: Buffer | null;
+  },
 ): Promise<Awaited<ReturnType<typeof createSession>> | null> {
   const db = await getDb();
   if (isPendingDeletion(db, userId)) {
@@ -48,6 +56,10 @@ export async function startSession(
       ? opts.trustedDeviceId
       : trustedDeviceIdFor(db, userId, parseTrustedCookie(parseCookieHeader(req.headers.cookie, TRUSTED_DEVICE_COOKIE)));
   const session = await createSession(userId, { persistent, deviceLabel: label, passkeyId: opts.passkeyId ?? null, trustedDeviceId });
+  if (opts.dataKey) {
+    sessionKeyStore.set(session.id, userId, opts.dataKey);
+    opts.dataKey.fill(0);
+  }
   res.append('Set-Cookie', sessionCookieHeader(session.rawToken, session.expiresAt, session.persistent));
   recordAuthEvent(db, userId, 'sign_in', {
     method: opts.method,

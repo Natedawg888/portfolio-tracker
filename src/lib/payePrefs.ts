@@ -53,6 +53,9 @@ export type PayePrefs = {
   salarySacrifice: boolean;
   studentLoan: boolean;
   ietc: boolean;
+  /** IETC (KAN-100): other taxable income a year, and months with WFF / benefit / NZ Super. */
+  ietcOtherIncome: string;
+  ietcExcludedMonths: string;
   payrollGivingOn: boolean;
   payrollGivingAnnual: string;
   /** Annual donations outside payroll (IR526 donation tax credit). */
@@ -93,6 +96,8 @@ export function defaultPayePrefs(): PayePrefs {
     salarySacrifice: false,
     studentLoan: false,
     ietc: true,
+    ietcOtherIncome: '0',
+    ietcExcludedMonths: '0',
     payrollGivingOn: false,
     payrollGivingAnnual: '0',
     charityDonationsOn: false,
@@ -153,6 +158,8 @@ export function normalizePayePrefs(raw: unknown): PayePrefs {
   if (typeof o.salarySacrifice === 'boolean') base.salarySacrifice = o.salarySacrifice;
   if (typeof o.studentLoan === 'boolean') base.studentLoan = o.studentLoan;
   if (typeof o.ietc === 'boolean') base.ietc = o.ietc;
+  if (typeof o.ietcOtherIncome === 'string') base.ietcOtherIncome = o.ietcOtherIncome;
+  if (typeof o.ietcExcludedMonths === 'string') base.ietcExcludedMonths = o.ietcExcludedMonths;
   if (typeof o.payrollGivingOn === 'boolean') base.payrollGivingOn = o.payrollGivingOn;
   if (typeof o.payrollGivingAnnual === 'string') base.payrollGivingAnnual = o.payrollGivingAnnual;
   if (typeof o.charityDonationsOn === 'boolean') base.charityDonationsOn = o.charityDonationsOn;

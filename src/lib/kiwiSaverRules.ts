@@ -1,6 +1,7 @@
 /**
  * KiwiSaver rules for the KiwiSaver calculator (KAN-59). NEVER invent: copied from IRD, with
- * sources and the date checked. The calculator applies today's rules to every future year.
+ * sources and the date checked. The calculator applies today's rules to every future year,
+ * except the enacted default rate step to 4% from 1 April 2028 (KAN-89).
  */
 
 /** ESCT (employer superannuation contribution tax) bands from 1 April 2025, on the employee's
@@ -25,6 +26,24 @@ export const GOVERNMENT_CONTRIBUTION = {
   /** Paid until the member can withdraw at 65. */
   maxAge: 65,
 } as const;
+
+/**
+ * Default employee rate and employer minimum by tax year (by the year it starts), as enacted
+ * (KAN-89): 3% to 31 March 2026, 3.5% from 1 April 2026, 4% from 1 April 2028 (Taxation
+ * (Budget Measures) Act 2025; IRD "KiwiSaver changes"). The employee rate choices after 2028
+ * aren't published yet.
+ */
+export const KIWISAVER_DEFAULT_RATE_STEPS: readonly { fromTaxYear: number; ratePct: number }[] = [
+  { fromTaxYear: 2028, ratePct: 4 },
+  { fromTaxYear: 2026, ratePct: 3.5 },
+  { fromTaxYear: 0, ratePct: 3 },
+];
+
+export function kiwiSaverDefaultRatePct(taxYearStart: number): number {
+  return (KIWISAVER_DEFAULT_RATE_STEPS.find((s) => taxYearStart >= s.fromTaxYear) ?? KIWISAVER_DEFAULT_RATE_STEPS[KIWISAVER_DEFAULT_RATE_STEPS.length - 1]).ratePct;
+}
+
+export const KIWISAVER_CHANGES_SOURCE = { label: 'IRD — KiwiSaver changes', url: 'https://www.ird.govt.nz/kiwisaver-changes' } as const;
 
 /** Age KiwiSaver savings can be withdrawn. */
 export const KIWISAVER_WITHDRAWAL_AGE = 65;
