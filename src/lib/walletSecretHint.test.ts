@@ -19,5 +19,6 @@ eq(obviousWalletSecret('KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvP98617'), 
 eq(obviousWalletSecret(`[${Array.from({ length: 64 }, (_, i) => i).join(',')}]`), KEY_MSG, 'Solana id.json byte array');
 eq(obviousWalletSecret('4'.repeat(88)), KEY_MSG, 'Solana base58 secret length');
 eq(obviousWalletSecret(''), null, 'blank');
+eq(obviousWalletSecret('zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs'), null, 'zpub is public: allowed (KAN-68)');
 
 console.log('walletSecretHint.test.ts ok');

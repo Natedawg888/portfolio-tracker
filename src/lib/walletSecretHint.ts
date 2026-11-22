@@ -23,7 +23,8 @@ export function obviousWalletSecret(input: string): string | null {
   if (/^[5KL9c]/.test(compact) && (compact.length === 51 || compact.length === 52) && BASE58.test(compact)) return KEY_MSG;
   // Solana keypair exported as a JSON byte array (id.json).
   if (/^\[[\d,]+\]$/.test(compact) && compact.slice(1, -1).split(',').filter(Boolean).length >= 32) return KEY_MSG;
-  // Solana secret key in base58 (64 bytes ≈ 87–88 characters); addresses are 32–44.
-  if (compact.length >= 80 && BASE58.test(compact)) return KEY_MSG;
+  // Solana secret key in base58 (64 bytes ≈ 87–88 characters); addresses are 32–44. Bitcoin
+  // extended public keys (xpub / ypub / zpub, 111 characters) are public and allowed (KAN-68).
+  if (compact.length >= 80 && BASE58.test(compact) && !/^[xyz]pub/.test(compact)) return KEY_MSG;
   return null;
 }
