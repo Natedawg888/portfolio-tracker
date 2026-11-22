@@ -4,6 +4,7 @@ import { InfoTip } from '../components/InfoTip';
 import { PayeChoiceRow } from '../components/PayeChoiceRow';
 import { PayeResultPanel } from '../components/PayeResultPanel';
 import { MortgageCalculator } from '../components/MortgageCalculator';
+import { SalaryCompare } from '../components/SalaryCompare';
 import { isMoneyHidden } from '../lib/privacy';
 import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import {
@@ -349,6 +350,7 @@ export function Paye() {
   const investingOpen = investingPref ?? extraCreditDrafts.length > 0;
   const [includedOpen, setIncludedOpen] = useState(false);
   const [mortgageOpen, setMortgageOpen] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
 
   // Persist last inputs (incl. investing + charity credits) and re-apply on next load.
   // Preserve charityLinks written from Budget so we do not wipe receipt links.
@@ -513,6 +515,7 @@ export function Paye() {
   }, [hasIncome, outputType, amountNum, effectiveFrequency, hours, payeOptions, rates]);
 
   const periods = result ? periodiseBreakdown(result, hours) : null;
+  const compareOptions = useMemo(() => ({ ...payeOptions, taxYear: rates.startYear }), [payeOptions, rates]);
 
   const salaryPeriod: PayFrequency = frequency === 'hour' ? 'year' : frequency;
 
@@ -619,10 +622,27 @@ export function Paye() {
         >
           Mortgage calculator <span aria-hidden="true">{mortgageOpen ? '▴' : '▾'}</span>
         </button>
+        <button
+          type="button"
+          className="btn small paye-mortgage-toggle"
+          aria-expanded={compareOpen}
+          aria-controls="paye-salary-compare"
+          onClick={() => setCompareOpen((open) => !open)}
+        >
+          Compare salaries <span aria-hidden="true">{compareOpen ? '▴' : '▾'}</span>
+        </button>
         <WhatsIncluded open={includedOpen} rates={rates} />
       </header>
 
       {mortgageOpen ? <MortgageCalculator id="paye-mortgage" takeHomeYear={result?.takeHome ?? null} /> : null}
+      {compareOpen ? (
+        <SalaryCompare
+          id="paye-salary-compare"
+          options={compareOptions}
+          currentSalary={result?.annualPackage ?? null}
+          taxYearLabel={rates.label}
+        />
+      ) : null}
 
       <div className="paye-layout">
       <div className="paye-inputs">
