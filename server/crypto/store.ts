@@ -61,6 +61,7 @@ type TxnRow = {
   counterparty: string | null;
   notes: string;
   taxable_on_receipt: number;
+  defi_pooled: number;
 };
 export type CryptoTxn = {
   id: string;
@@ -79,6 +80,8 @@ export type CryptoTxn = {
   notes: string;
   /** Airdrops only (KAN-86): taxable on receipt, so income at its NZD value; otherwise nil cost. */
   taxableOnReceipt: boolean;
+  /** DeFi deposit / withdrawal only (KAN-87): handed to a pool you don't control. */
+  pooled: boolean;
   needsValue: boolean;
 };
 
@@ -98,7 +101,8 @@ const present = (r: TxnRow): CryptoTxn => ({
   counterparty: r.counterparty,
   notes: r.notes,
   taxableOnReceipt: r.taxable_on_receipt === 1,
-  needsValue: needsValue({ kind: r.kind, taxableOnReceipt: r.taxable_on_receipt === 1 }) && r.nzd_value == null,
+  pooled: r.defi_pooled !== 0,
+  needsValue: needsValue({ kind: r.kind, taxableOnReceipt: r.taxable_on_receipt === 1, pooled: r.defi_pooled !== 0 }) && r.nzd_value == null,
 });
 
 const assetCode = (v: unknown) => (typeof v === 'string' ? v.trim().toUpperCase().replace(/[^A-Z0-9.\-_]/g, '').slice(0, 20) : '');
@@ -139,6 +143,15 @@ export function parseTxn(raw: unknown): { ok: true; value: TxnDraft } | { ok: fa
     if (!toAsset || !(ta! > 0)) return { ok: false, error: 'Enter what you received in the swap' };
     if (toAsset === asset) return { ok: false, error: 'A swap is between two different coins' };
     toAmount = ta;
+  } else if (kind === 'defi_deposit' || kind === 'defi_withdraw') {
+    // Optional receipt token (LP / liquid-staking token) for pooled DeFi (KAN-87).
+    toAsset = o.toAsset == null || o.toAsset === '' ? null : assetCode(o.toAsset);
+    if (o.toAsset != null && o.toAsset !== '' && !toAsset) return { ok: false, error: 'Enter the token you got back, e.g. aETH' };
+    if (toAsset) {
+      const ta = money(o.toAmount, 'Token amount', { nullable: true });
+      if (typeof ta === 'string') return { ok: false, error: ta };
+      toAmount = ta != null && (ta as number) > 0 ? (ta as number) : null;
+    }
   }
   return {
     ok: true,
@@ -154,6 +167,7 @@ export function parseTxn(raw: unknown): { ok: true; value: TxnDraft } | { ok: fa
       counterparty: typeof o.counterparty === 'string' ? o.counterparty.trim().slice(0, 80) || null : null,
       notes: typeof o.notes === 'string' ? o.notes.trim().slice(0, 300) : '',
       taxableOnReceipt: kind === 'airdrop' && o.taxableOnReceipt === true,
+      pooled: (kind === 'defi_deposit' || kind === 'defi_withdraw') ? o.pooled !== false : true,
       priceSource: o.priceSource === 'yahoo+frankfurter' ? 'yahoo+frankfurter' : 'manual',
     },
   };
@@ -164,9 +178,9 @@ function insertTxn(db: Database, userId: string, d: TxnDraft, extra: { walletId?
   const now = new Date().toISOString();
   run(
     db,
-    `INSERT INTO crypto_txns (id, user_id, date, kind, asset, amount, nzd_value, price_source, fee_nzd, to_asset, to_amount, wallet_id, external_ref, counterparty, notes, taxable_on_receipt, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, userId, d.date, d.kind, d.asset, d.amount, d.nzdValue, d.priceSource ?? 'manual', d.feeNzd, d.toAsset, d.toAmount, extra.walletId ?? null, extra.externalRef ?? null, d.counterparty, d.notes, d.taxableOnReceipt ? 1 : 0, now, now],
+    `INSERT INTO crypto_txns (id, user_id, date, kind, asset, amount, nzd_value, price_source, fee_nzd, to_asset, to_amount, wallet_id, external_ref, counterparty, notes, taxable_on_receipt, defi_pooled, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, userId, d.date, d.kind, d.asset, d.amount, d.nzdValue, d.priceSource ?? 'manual', d.feeNzd, d.toAsset, d.toAmount, extra.walletId ?? null, extra.externalRef ?? null, d.counterparty, d.notes, d.taxableOnReceipt ? 1 : 0, d.pooled === false ? 0 : 1, now, now],
   );
   return id;
 }
@@ -187,8 +201,8 @@ export function updateTxn(db: Database, userId: string, id: string, body: unknow
   const d = p.value;
   run(
     db,
-    `UPDATE crypto_txns SET date=?, kind=?, asset=?, amount=?, nzd_value=?, price_source=?, fee_nzd=?, to_asset=?, to_amount=?, counterparty=?, notes=?, taxable_on_receipt=?, updated_at=? WHERE id=? AND user_id=?`,
-    [d.date, d.kind, d.asset, d.amount, d.nzdValue, d.priceSource ?? 'manual', d.feeNzd, d.toAsset, d.toAmount, d.counterparty, d.notes, d.taxableOnReceipt ? 1 : 0, new Date().toISOString(), id, userId],
+    `UPDATE crypto_txns SET date=?, kind=?, asset=?, amount=?, nzd_value=?, price_source=?, fee_nzd=?, to_asset=?, to_amount=?, counterparty=?, notes=?, taxable_on_receipt=?, defi_pooled=?, updated_at=? WHERE id=? AND user_id=?`,
+    [d.date, d.kind, d.asset, d.amount, d.nzdValue, d.priceSource ?? 'manual', d.feeNzd, d.toAsset, d.toAmount, d.counterparty, d.notes, d.taxableOnReceipt ? 1 : 0, d.pooled === false ? 0 : 1, new Date().toISOString(), id, userId],
   );
   return { ok: true, value: present(queryOne<TxnRow>(db, `SELECT * FROM crypto_txns WHERE id = ?`, [id])!) };
 }
@@ -271,7 +285,7 @@ export async function cryptoSummary(db: Database, userId: string, yearRaw: unkno
   const rows = queryAll<TxnRow>(db, `SELECT * FROM crypto_txns WHERE user_id = ? ORDER BY date, created_at`, [userId]);
   const txns = rows.map(present);
   const method = costMethodOf(db, userId);
-  const ledger: LedgerTxn[] = rows.map((r) => ({ id: r.id, date: r.date, kind: r.kind, asset: r.asset, amount: Number(r.amount), nzdValue: r.nzd_value == null ? null : Number(r.nzd_value), feeNzd: Number(r.fee_nzd), toAsset: r.to_asset, toAmount: r.to_amount == null ? null : Number(r.to_amount), taxableOnReceipt: r.taxable_on_receipt === 1 }));
+  const ledger: LedgerTxn[] = rows.map((r) => ({ id: r.id, date: r.date, kind: r.kind, asset: r.asset, amount: Number(r.amount), nzdValue: r.nzd_value == null ? null : Number(r.nzd_value), feeNzd: Number(r.fee_nzd), toAsset: r.to_asset, toAmount: r.to_amount == null ? null : Number(r.to_amount), taxableOnReceipt: r.taxable_on_receipt === 1, pooled: r.defi_pooled !== 0 }));
   const notForDisposal = nonDisposalAssets(db, userId);
   const g = computeGains(ledger, method, notForDisposal);
   const current = cryptoTaxYear(aucklandToday());

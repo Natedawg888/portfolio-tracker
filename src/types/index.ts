@@ -2472,6 +2472,8 @@ export interface CryptoTxnBody {
   notes: string;
   /** Airdrops only (KAN-86): taxable on receipt (business, scheme, services, regular airdrops). */
   taxableOnReceipt?: boolean;
+  /** DeFi deposit / withdrawal (KAN-87): pooled, so a disposal. Default true. */
+  pooled?: boolean;
 }
 export interface CryptoTxn extends CryptoTxnBody {
   id: string;
