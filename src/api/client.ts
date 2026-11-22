@@ -130,6 +130,7 @@ import type {
   WalletNetwork,
   WalletNetworkInfo,
   WalletsValuationResponse,
+  WalletValuation,
   TxnCategorySuggestions,
 } from '../types/index.ts';
 import type { OutputPaySourceInputs } from '../lib/outputPayCalc.ts';
@@ -1288,6 +1289,9 @@ export const api = {
     list: () => req<Wallet[]>('/wallets'),
     networks: () => req<WalletNetworkInfo[]>('/wallets/networks'),
     valuation: () => req<WalletsValuationResponse>('/wallets/valuation'),
+    /** One wallet with its hidden (spam / unknown) tokens too (KAN-39). */
+    valuationWithHidden: (id: string) =>
+      req<{ wallet: Wallet; valuation: WalletValuation }>(`/wallets/${encodeURIComponent(id)}/valuation?showHidden=1`),
     create: (body: { network: WalletNetwork; address: string; name?: string }) =>
       req<Wallet>('/wallets', { method: 'POST', body: JSON.stringify(body) }),
     remove: (id: string) =>

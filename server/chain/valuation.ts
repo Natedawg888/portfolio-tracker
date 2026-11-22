@@ -9,8 +9,9 @@
  * - An asset with no price is listed as `unpriced`, contributes 0, and marks the
  *   total `complete: false` — it is never guessed or carried as NaN.
  * - A price older than STALE_AFTER_MS is still used but flagged `stale` with its time.
- * - Tokens (ERC-20 / SPL) stay unpriced until asset normalisation (KAN-39) maps
- *   contracts to known assets — pricing by symbol would let spam tokens inflate totals.
+ * - Tokens (ERC-20 / SPL) go through asset normalisation (KAN-39, tokenRegistry.ts): known
+ *   contracts get their canonical symbol and are priced only through an explicit ticker;
+ *   spam and unknown tokens are flagged, hidden, never priced and never mark a total incomplete.
  * - A wallet whose balance fetch fails is reported with its error and excluded.
  */
 import type { QuoteResult } from '../../src/types/index.ts';
@@ -19,6 +20,8 @@ import { formatUnits } from './networks.ts';
 import { fetchWalletBalances, type WalletRef } from './service.ts';
 import { ChainProviderError, type ChainAsset, type ChainBalance } from './types.ts';
 import { networkBlockedSec } from './rateLimit.ts';
+import { isHiddenClass, normaliseAsset, type TokenClass } from './tokenRegistry.ts';
+import type { WalletNetwork } from '../lib/walletAddress.ts';
 
 /** Quotes older than this are flagged stale (crypto quote cache TTL is 10 min). */
 export const STALE_AFTER_MS = 30 * 60 * 1000;
@@ -41,6 +44,9 @@ export type PricedItem = {
   pricedAt: string | null;
   priceSource: string | null;
   message: string | null;
+  /** KAN-39: native coin, known token, or an unknown / spam token (hidden by default). */
+  tokenClass: TokenClass;
+  hidden: boolean;
 };
 
 export type Valuation = {
@@ -53,6 +59,8 @@ export type Valuation = {
   /** Oldest pricedAt among priced items — "valued as of" for the total. */
   pricedAt: string | null;
   hasStalePrices: boolean;
+  /** Spam and unknown tokens left out of items unless asked for (KAN-39). */
+  hiddenCount: number;
 };
 
 export type QuoteFn = (ticker: string) => Promise<QuoteResult>;
@@ -68,9 +76,17 @@ export async function valueBalancesNzd(
   balances: ChainBalance[],
   quote: QuoteFn = (t) => getCryptoQuoteNzd(t),
   now = Date.now(),
+  /** The wallet's network, for token normalisation. Without it every token is unknown. */
+  network: WalletNetwork | null = null,
 ): Promise<Valuation> {
-  // One quote per native symbol even if several balances share it.
-  const symbols = [...new Set(balances.filter((b) => b.asset.kind === 'native').map((b) => b.asset.symbol))];
+  const normal = balances.map((b) => {
+    if (network) return normaliseAsset(network, b.asset);
+    return b.asset.kind === 'native'
+      ? { asset: b.asset, tokenClass: 'native' as const, priceTicker: b.asset.symbol }
+      : { asset: b.asset, tokenClass: 'unknown' as const, priceTicker: null };
+  });
+  // One quote per ticker even if several balances share it.
+  const symbols = [...new Set(normal.map((n) => n.priceTicker).filter((t): t is string => Boolean(t)))];
   const quotes = new Map<string, QuoteResult | Error>();
   await Promise.all(
     symbols.map(async (s) => {
@@ -82,9 +98,10 @@ export async function valueBalancesNzd(
     }),
   );
 
-  const items: PricedItem[] = balances.map((b) => {
+  const items: PricedItem[] = balances.map((b, idx) => {
+    const { asset, tokenClass, priceTicker } = normal[idx];
     const amount = formatUnits(b.amountRaw, b.asset.decimals);
-    const base = { asset: b.asset, amountRaw: b.amountRaw, amount };
+    const base = { asset, amountRaw: b.amountRaw, amount, tokenClass, hidden: isHiddenClass(tokenClass) };
     const unpriced = (message: string): PricedItem => ({
       ...base,
       status: 'unpriced',
@@ -95,17 +112,17 @@ export async function valueBalancesNzd(
       message,
     });
 
-    if (b.asset.kind !== 'native') {
-      return unpriced('Token prices arrive with asset normalisation; not counted in the total yet.');
-    }
-    const q = quotes.get(b.asset.symbol);
-    if (!q || q instanceof Error) return unpriced(`No ${b.asset.symbol} price: quote lookup failed.`);
+    if (tokenClass === 'spam') return unpriced('Looks like a spam token; hidden and not counted.');
+    if (tokenClass === 'unknown') return unpriced('Unknown token; hidden and not counted.');
+    if (!priceTicker) return unpriced(`No price source for ${asset.symbol} yet; not counted in the total.`);
+    const q = quotes.get(priceTicker);
+    if (!q || q instanceof Error) return unpriced(`No ${asset.symbol} price: quote lookup failed.`);
     const price = q.price;
     if (q.status !== 'ok' || price == null || !Number.isFinite(price) || price <= 0) {
-      return unpriced(q.message ?? `No ${b.asset.symbol} price available right now.`);
+      return unpriced(q.message ?? `No ${asset.symbol} price available right now.`);
     }
     const value = Number(amount) * price;
-    if (!Number.isFinite(value)) return unpriced(`${b.asset.symbol} value could not be computed.`);
+    if (!Number.isFinite(value)) return unpriced(`${asset.symbol} value could not be computed.`);
     const at = q.asOf ? Date.parse(q.asOf) : NaN;
     const stale = !Number.isFinite(at) || now - at > STALE_AFTER_MS;
     return {
@@ -125,9 +142,10 @@ export async function valueBalancesNzd(
     currency: 'NZD',
     items,
     totalNzd: roundCents(counted.reduce((s, i) => s + (i.valueNzd ?? 0), 0)),
-    complete: items.every((i) => i.status !== 'unpriced' || isZero(i.amountRaw)),
+    complete: items.every((i) => i.hidden || i.status !== 'unpriced' || isZero(i.amountRaw)),
     pricedAt: times[0] ?? null,
     hasStalePrices: items.some((i) => i.status === 'stale'),
+    hiddenCount: items.filter((i) => i.hidden && !isZero(i.amountRaw)).length,
   };
 }
 
@@ -171,11 +189,17 @@ export function clearWalletBalanceCache(): void {
   balanceCache.clear();
 }
 
+/** Hidden (spam / unknown) items left out, unless the user asked to see them (KAN-39). */
+export function withoutHidden(v: WalletValuation, showHidden: boolean): WalletValuation {
+  if (!v.ok || showHidden) return v;
+  return { ...v, items: v.items.filter((i) => !i.hidden) };
+}
+
 /** Live balances → NZD. Chain failures come back as `ok: false` (never thrown). */
 export async function valueWallet(wallet: WalletRef, quote?: QuoteFn): Promise<WalletValuation> {
   try {
     const { balances, fetchedAt } = await cachedBalances(wallet);
-    return { ok: true, fetchedAt, ...(await valueBalancesNzd(balances, quote)) };
+    return { ok: true, fetchedAt, ...(await valueBalancesNzd(balances, quote, Date.now(), wallet.network)) };
   } catch (err) {
     if (err instanceof ChainProviderError) {
       return { ok: false, error: err.message, code: err.code, retryAfterSec: err.retryAfterSec };
