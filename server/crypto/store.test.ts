@@ -147,6 +147,28 @@ try {
   if (!s.ok) throw new Error('summary');
   assert(s.value.txns.find((x) => x.id === 'ctx_old')?.taxableOnReceipt === false && s.value.year.incomeNzd === 160, 'existing airdrops not taxable');
 
+  // Purpose (KAN-102): per coin, Pro only, checked; the summary leaves it out of the taxable totals.
+  assert((await call('PUT', '/purposes', F, { asset: 'SOL', notForDisposal: true })).status === 402, 'purpose is Pro');
+  assert((await call('PUT', '/purposes', P, { asset: '', notForDisposal: true })).status === 400, 'coin required');
+  assert((await call('PUT', '/purposes', P, { asset: 'SOL', notForDisposal: 'yes' })).status === 400, 'boolean required');
+  await add({ date: '2022-05-01', kind: 'buy', asset: 'DOT', amount: 10, nzdValue: 100 });
+  await add({ date: '2022-08-01', kind: 'staking_reward', asset: 'DOT', amount: 1, nzdValue: 12 });
+  await add({ date: '2022-09-01', kind: 'sell', asset: 'DOT', amount: 11, nzdValue: 1100 });
+  s = await cryptoSummary(db, 'pia', 2022, priceOf);
+  if (!s.ok) throw new Error('summary');
+  assert(s.value.year.realisedNzd === 988 && s.value.year.notTaxableDisposals === 0, `DOT counted by default ${JSON.stringify(s.value.year)}`);
+  const marked = await call('PUT', '/purposes', P, { asset: 'dot', notForDisposal: true });
+  assert(marked.status === 200 && marked.json.asset === 'DOT', 'marked, upper case');
+  s = await cryptoSummary(db, 'pia', 2022, priceOf);
+  if (!s.ok) throw new Error('summary');
+  assert(s.value.year.realisedNzd === 0 && s.value.year.notTaxableNzd === 988 && s.value.year.incomeNzd === 12, `DOT left out, reward still income ${JSON.stringify(s.value.year)}`);
+  assert(s.value.notForDisposal.join() === 'DOT' && s.value.assets.includes('DOT') && s.value.disposals.find((d) => d.asset === 'DOT')?.taxable === false, 'summary lists it');
+  assert((await call('PUT', '/purposes', P, { asset: 'DOT', notForDisposal: false })).status === 200, 'unmark');
+  s = await cryptoSummary(db, 'pia', 2022, priceOf);
+  if (!s.ok) throw new Error('summary');
+  assert(s.value.year.realisedNzd === 988 && s.value.notForDisposal.length === 0, 'counted again');
+  assert((await call('PUT', '/purposes', P, { asset: 'DOT', notForDisposal: true })).status === 200, 'marked again for the account delete check');
+
   // Historical prices: Yahoo daily close × Frankfurter, nearest earlier day; nothing guessed.
   clearPriceCacheForTest();
   const fake = async (url: string) => {
@@ -253,7 +275,7 @@ try {
 
   // Account deletion.
   deleteScopedDataForUser(db, 'pia');
-  for (const table of ['crypto_txns', 'crypto_import_refs', 'crypto_settings', 'defi_positions']) {
+  for (const table of ['crypto_txns', 'crypto_import_refs', 'crypto_settings', 'crypto_asset_purposes', 'defi_positions']) {
     assert(queryAll(db, `SELECT * FROM ${table} WHERE user_id = 'pia'`).length === 0, `${table} cleared`);
   }
   console.log('crypto tests passed');

@@ -5,14 +5,16 @@
  *   import { bitcoinProvider } from './bitcoin.ts';
  *   registerChainProvider(bitcoinProvider);
  *
- * Adapters: KAN-35 Bitcoin, KAN-36/37 EVM (Ethereum, Polygon, Base, Arbitrum); KAN-38 Solana to follow.
+ * Adapters: KAN-35 Bitcoin, KAN-36/37 EVM (Ethereum, Polygon, Base, Arbitrum), KAN-38 Solana.
  */
 import { bitcoinProvider } from './bitcoin.ts';
 import { evmProvider } from './evm.ts';
+import { solanaProvider } from './solana.ts';
 import { registerChainProvider, getChainProvider } from './registry.ts';
 
 if (!getChainProvider('bitcoin')) registerChainProvider(bitcoinProvider);
 if (!getChainProvider('ethereum')) registerChainProvider(evmProvider);
+if (!getChainProvider('solana')) registerChainProvider(solanaProvider);
 
 export { registerChainProvider, getChainProvider, listChainProviders } from './registry.ts';
 export { fetchWalletBalances, fetchWalletTokenTransfers, fetchWalletTransactions, isNetworkSyncable } from './service.ts';

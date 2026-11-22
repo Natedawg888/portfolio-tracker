@@ -6,6 +6,7 @@
  *   DELETE /txns/:id
  *   GET    /price?asset=ETH&date=YYYY-MM-DD   NZD value on a day (Yahoo Finance × Frankfurter)
  *   PUT    /settings                  { costMethod: 'fifo' | 'wac' }
+ *   PUT    /purposes                  { asset, notForDisposal }  a coin held not to sell (KAN-102)
  *   GET    /import/:walletId          transfers not yet in the ledger, with suggested kinds and values
  *   POST   /import                    { walletId, items }  save classified transfers / ignore them
  *   POST   /defi, PUT /defi/:id, DELETE /defi/:id   DeFi positions
@@ -24,6 +25,7 @@ import {
   importPreview,
   lookupPrice,
   saveDefi,
+  setAssetPurpose,
   setCostMethod,
   updateTxn,
 } from '../crypto/store.ts';
@@ -57,6 +59,7 @@ router.put('/txns/:id', async (req, res) => send(res, updateTxn(await getDb(), u
 router.delete('/txns/:id', async (req, res) => send(res, deleteTxn(await getDb(), uid(req), req.params.id)));
 router.get('/price', async (req, res) => send(res, await lookupPrice(await getDb(), uid(req), req.query.asset, req.query.date)));
 router.put('/settings', async (req, res) => send(res, setCostMethod(await getDb(), uid(req), req.body)));
+router.put('/purposes', async (req, res) => send(res, setAssetPurpose(await getDb(), uid(req), req.body)));
 router.get('/import/:walletId', async (req, res) => send(res, await importPreview(await getDb(), uid(req), req.params.walletId)));
 router.post('/import', async (req, res) => send(res, importCommit(await getDb(), uid(req), req.body)));
 router.post('/defi', async (req, res) => send(res, saveDefi(await getDb(), uid(req), null, req.body), true));

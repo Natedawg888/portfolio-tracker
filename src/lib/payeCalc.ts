@@ -6,13 +6,13 @@
  * rounding, so results can differ by a few dollars from IRD’s calculator.
  */
 
+import { donationCreditNzd } from './donationCredit';
 import {
   INVESTING_CREDIT_KIND_OPTIONS,
   PAYE_DEFAULT_HOURS_PER_WEEK,
   PAYE_FORTNIGHTS_PER_YEAR,
   PAYE_MONTHS_PER_YEAR,
   PAYE_WEEKS_PER_YEAR,
-  DONATION_TAX_CREDIT_RATE,
   PAYROLL_GIVING_CREDIT_RATE,
   kiwiSaverEmployerMinRateFor,
   payTaxYearRates,
@@ -319,9 +319,8 @@ export function calculatePaye(input: PayeInput): PayeBreakdown {
   // Charity / IR526 donation tax credit (outside payroll giving). Cap = lesser of
   // 1/3 donations and 1/3 taxable income. Do not double-claim payroll donations.
   const charityDonations = Math.max(0, input.charityDonationsAnnual ?? 0);
-  const charityFromDonations = charityDonations * DONATION_TAX_CREDIT_RATE;
-  const charityFromIncome = annualGross * DONATION_TAX_CREDIT_RATE;
-  const charityCredit = Math.min(charityFromDonations, charityFromIncome);
+  // A third of the lesser of donations and income, truncated to cents like IRD (KAN-104).
+  const charityCredit = donationCreditNzd(Math.min(charityDonations, Math.max(0, annualGross)));
   if (charityDonations > 0) {
     notes.push(
       'Donation tax credit (IR526) is for charity donations outside payroll giving — claim after year-end with receipts. Do not include payroll-giving amounts here.',
