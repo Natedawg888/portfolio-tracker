@@ -333,6 +333,8 @@ export function Paye() {
 
   const [studentLoan, setStudentLoan] = useState(initial.studentLoan);
   const [ietc, setIetc] = useState(initial.ietc);
+  const [ietcOtherIncome, setIetcOtherIncome] = useState(initial.ietcOtherIncome);
+  const [ietcExcludedMonths, setIetcExcludedMonths] = useState(initial.ietcExcludedMonths);
   const [payrollGivingOn, setPayrollGivingOn] = useState(initial.payrollGivingOn);
   const [payrollGivingAnnual, setPayrollGivingAnnual] = useState(initial.payrollGivingAnnual);
   const [charityDonationsOn, setCharityDonationsOn] = useState(initial.charityDonationsOn);
@@ -369,6 +371,8 @@ export function Paye() {
       salarySacrifice,
       studentLoan,
       ietc,
+      ietcOtherIncome,
+      ietcExcludedMonths,
       payrollGivingOn,
       payrollGivingAnnual,
       charityDonationsOn,
@@ -391,6 +395,8 @@ export function Paye() {
     salarySacrifice,
     studentLoan,
     ietc,
+    ietcOtherIncome,
+    ietcExcludedMonths,
     payrollGivingOn,
     payrollGivingAnnual,
     charityDonationsOn,
@@ -478,6 +484,8 @@ export function Paye() {
       salarySacrifice: kiwiSaverOptIn && salarySacrifice,
       studentLoan,
       ietc,
+      ietcOtherIncome: Number(ietcOtherIncome) || 0,
+      ietcExcludedMonths: Number(ietcExcludedMonths) || 0,
       payrollGivingAnnual: payrollGivingOn ? Number(payrollGivingAnnual) || 0 : 0,
       charityDonationsAnnual: charityDonationsOn ? Number(charityDonationsAnnual) || 0 : 0,
       extraCredits: draftsToExtraCredits(extraCreditDrafts),
@@ -492,6 +500,8 @@ export function Paye() {
       salarySacrifice,
       studentLoan,
       ietc,
+      ietcOtherIncome,
+      ietcExcludedMonths,
       payrollGivingOn,
       payrollGivingAnnual,
       charityDonationsOn,
@@ -878,6 +888,7 @@ export function Paye() {
             onChange={setIetc}
             disabled={employment === 'secondary' || !rates.ietc}
             note={!rates.ietc ? 'Not loaded for this year' : employment === 'secondary' ? 'Main job only' : undefined}
+            controls="paye-ietc"
             tipLabel="About the independent earner tax credit"
             tip={
               rates.ietc
@@ -902,6 +913,23 @@ export function Paye() {
             tipLabel="About the charity donation tax credit"
             tip={charityDonationTip(DONATION_TAX_CREDIT_RATE)}
           />
+        </div>
+        <div id="paye-ietc" className="paye-reveal" hidden={!ietc || employment === 'secondary' || !rates.ietc}>
+          <div className="form-grid">
+            <label htmlFor="paye-ietc-other">
+              Other taxable income a year
+              <input id="paye-ietc-other" type="number" min={0} step="any" value={ietcOtherIncome} onChange={(e) => setIetcOtherIncome(e.target.value)} />
+              <span className="muted small">Other jobs, interest, rent or business. IETC is tested on your total income.</span>
+            </label>
+            <label htmlFor="paye-ietc-months">
+              Months with WFF, a benefit or NZ Super
+              <input id="paye-ietc-months" type="number" min={0} max={12} step={1} value={ietcExcludedMonths} onChange={(e) => setIetcExcludedMonths(e.target.value)} />
+              <span className="muted small">
+                Months you (or your partner, for Working for Families) get Working for Families, a main benefit, NZ Super or a Veteran’s Pension. No IETC for those months (
+                <a href="https://www.ird.govt.nz/income-tax/income-tax-for-individuals/individual-tax-credits/independent-earner-tax-credit-ietc" target="_blank" rel="noreferrer">IRD: IETC</a>).
+              </span>
+            </label>
+          </div>
         </div>
         <div id="paye-charity" className="paye-reveal" hidden={!charityDonationsOn}>
           <div className="form-grid">

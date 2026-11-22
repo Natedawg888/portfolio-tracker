@@ -35,6 +35,13 @@ eq(off.takeHome, 43912, 'take-home at $55,000');
 eq(off.incomeTax, 8720.5, 'income tax at $55,000');
 eq(off.acc, 962.5, 'ACC at $55,000');
 eq(off.ietcCredit, 520, 'IETC at $55,000');
+// KAN-100: IETC on total income, and not for months with WFF / a benefit / NZ Super.
+eq(calculatePaye({ ...base, amount: 40000, studentLoan: false, ietcOtherIncome: 28000 }).ietcCredit, 260, 'two jobs totalling $68,000: IETC abated to $260');
+eq(calculatePaye({ ...base, amount: 40000, studentLoan: false, ietcOtherIncome: 40000 }).ietcCredit, 0, 'total $80,000: no IETC');
+eq(calculatePaye({ ...base, amount: 20000, studentLoan: false, ietcOtherIncome: 10000 }).ietcCredit, 520, 'this job under $24,000 but total $30,000: full IETC');
+eq(calculatePaye({ ...base, studentLoan: false, ietcExcludedMonths: 12 }).ietcCredit, 0, 'receives WFF all year: IETC $0');
+eq(calculatePaye({ ...base, studentLoan: false, ietcExcludedMonths: 6 }).ietcCredit, 260, 'NZ Super for 6 months: IETC for 6 months only');
+eq(calculatePaye({ ...base, studentLoan: false, ietcExcludedMonths: 12 }).notes.some((n) => n.startsWith('No IETC')), true, 'says why');
 eq(off.kiwiSaverEmployee, 1925, 'employee KiwiSaver 3.5%');
 eq(off.taxCode, 'ME', 'tax code ME');
 eq(off.kiwiSaverEmployer, 1925, 'employer KiwiSaver 3.5%');

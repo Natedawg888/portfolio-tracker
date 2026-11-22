@@ -65,6 +65,17 @@ export type PayeInput = {
   studentLoan: boolean;
   /** Apply IETC when eligible (primary only). */
   ietc: boolean;
+  /**
+   * IETC (KAN-100): other taxable income a year besides this job (other jobs, interest,
+   * rent, business). IETC is tested on total income, not this job's pay alone.
+   */
+  ietcOtherIncome?: number;
+  /**
+   * IETC (KAN-100): whole months in the tax year you (or your partner, for Working for Families)
+   * get Working for Families, an income-tested main benefit, NZ Super, a Veteran's Pension or an
+   * overseas equivalent. No IETC for those months.
+   */
+  ietcExcludedMonths?: number;
   /** Annual payroll-giving donation amount (0 = off). */
   payrollGivingAnnual: number;
   /**
@@ -301,15 +312,30 @@ export function calculatePaye(input: PayeInput): PayeBreakdown {
     }
   }
 
+  // IETC (KAN-100, IRD "Independent earner tax credit"): tested on total annual income, and not
+  // for any whole month with Working for Families, a main benefit, NZ Super or a Veteran's Pension.
+  const ietcOther = Math.max(0, input.ietcOtherIncome ?? 0);
+  const ietcTotalIncome = annualGross + ietcOther;
+  const ietcMonthsOff = Math.min(12, Math.max(0, Math.round(input.ietcExcludedMonths ?? 0)));
   const ietcEligible =
     input.employment === 'primary' &&
     input.ietc &&
     ietcRates != null &&
-    annualGross >= ietcRates.minIncome &&
-    annualGross < ietcRates.abateEnd;
-  const ietcCredit = ietcEligible ? calcIetc(annualGross, rates) : 0;
+    ietcTotalIncome >= ietcRates.minIncome &&
+    ietcTotalIncome < ietcRates.abateEnd;
+  const ietcCredit = ietcEligible ? (calcIetc(ietcTotalIncome, rates) * (12 - ietcMonthsOff)) / 12 : 0;
   const ietcApplied = ietcCredit > 0;
-  if (input.ietc && input.employment === 'primary') {
+  if (input.ietc && input.employment === 'primary' && ietcRates) {
+    if (ietcOther > 0) {
+      notes.push(`IETC is tested on total income: $${Math.round(ietcTotalIncome).toLocaleString('en-NZ')} with your other income.`);
+    }
+    if (ietcMonthsOff >= 12) {
+      notes.push('No IETC: it isn’t available while you get Working for Families, a main benefit, NZ Super or a Veteran’s Pension.');
+    } else if (ietcMonthsOff > 0 && ietcEligible) {
+      notes.push(`IETC for ${12 - ietcMonthsOff} of 12 months: none for the ${ietcMonthsOff} month${ietcMonthsOff === 1 ? '' : 's'} with Working for Families, a benefit, NZ Super or a Veteran’s Pension.`);
+    }
+  }
+  if (input.ietc && input.employment === 'primary' && ietcMonthsOff < 12) {
     if (!ietcRates) {
       notes.push(`IETC not applied — it is not loaded for ${rates.label}.`);
     } else if (!ietcApplied) {
