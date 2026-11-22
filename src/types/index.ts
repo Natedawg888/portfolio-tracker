@@ -1240,6 +1240,9 @@ export type WalletValuationItem = {
   pricedAt: string | null;
   priceSource: string | null;
   message: string | null;
+  /** KAN-39: spam and unknown tokens are hidden unless asked for. */
+  tokenClass: 'native' | 'known' | 'unknown' | 'spam';
+  hidden: boolean;
 };
 
 export type WalletValuation =
@@ -1252,6 +1255,8 @@ export type WalletValuation =
       complete: boolean;
       pricedAt: string | null;
       hasStalePrices: boolean;
+      /** Spam / unknown tokens held but left out of items (KAN-39). */
+      hiddenCount: number;
     }
   | { ok: false; error: string; code: string; retryAfterSec: number | null };
 

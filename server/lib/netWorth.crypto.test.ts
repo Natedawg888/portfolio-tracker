@@ -131,7 +131,8 @@ eq(a.assetsKnownNzd, 30_000, 'wallets count toward total assets');
 eq(a.totalKnownNzd, 30_000, 'wallets count toward net worth');
 eq(a.breakdown.byClass.crypto, 20_000, 'allocation crypto row includes wallets');
 eq(a.cryptoPctOfNetWorth, 66.7, 'crypto is 66.7% of net worth');
-assert(a.cryptoWalletsComplete === false, 'unpriced non-zero token marks wallets incomplete');
+// KAN-39: a spam token is hidden and never counted, so it no longer makes the total incomplete.
+assert(a.cryptoWalletsComplete === true, 'hidden spam token leaves wallets complete');
 eq(a.cryptoWalletsFailed, 0, 'no failed wallets');
 eq(a.counts.wallets, 2, 'counts A wallets only');
 assert(
