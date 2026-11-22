@@ -188,6 +188,23 @@ export function deleteTxn(db: Database, userId: string, id: string): Result<{ ok
   return { ok: true, value: { ok: true } };
 }
 
+/** Coins marked as not held for disposal (KAN-102). */
+export function nonDisposalAssets(db: Database, userId: string): Set<string> {
+  return new Set(queryAll<{ asset: string }>(db, `SELECT asset FROM crypto_asset_purposes WHERE user_id = ?`, [userId]).map((r) => r.asset));
+}
+
+export function setAssetPurpose(db: Database, userId: string, body: unknown): Result<{ asset: string; notForDisposal: boolean }> {
+  if (!isPro(db, userId)) return PRO_REQUIRED();
+  const o = (body ?? {}) as { asset?: unknown; notForDisposal?: unknown };
+  const asset = assetCode(o.asset);
+  if (!asset) return fail(400, 'Choose the coin');
+  if (typeof o.notForDisposal !== 'boolean') return fail(400, 'Say whether it’s held to sell or not');
+  if (o.notForDisposal) {
+    run(db, `INSERT INTO crypto_asset_purposes (user_id, asset, updated_at) VALUES (?,?,?) ON CONFLICT(user_id, asset) DO UPDATE SET updated_at = excluded.updated_at`, [userId, asset, new Date().toISOString()]);
+  } else run(db, `DELETE FROM crypto_asset_purposes WHERE user_id = ? AND asset = ?`, [userId, asset]);
+  return { ok: true, value: { asset, notForDisposal: o.notForDisposal } };
+}
+
 export function costMethodOf(db: Database, userId: string): CostMethod {
   return queryOne<{ cost_method: string }>(db, `SELECT cost_method FROM crypto_settings WHERE user_id = ?`, [userId])?.cost_method === 'wac' ? 'wac' : 'fifo';
 }
@@ -222,7 +239,10 @@ export type CryptoSummary = {
   year: ReturnType<typeof yearSummary>;
   positions: { asset: string; quantity: number; costNzd: number; avgCostNzd: number | null; costIncomplete: boolean; priceNzd: number | null; valueNzd: number | null; unrealisedNzd: number | null; priceStatus: string }[];
   unrealisedNzd: number;
-  disposals: { txnId: string; date: string; asset: string; amount: number; proceedsNzd: number; costNzd: number; gainNzd: number; shortfall: number }[];
+  disposals: { txnId: string; date: string; asset: string; amount: number; proceedsNzd: number; costNzd: number; gainNzd: number; shortfall: number; taxable: boolean }[];
+  /** Every coin in the ledger, and those marked as not held for disposal (KAN-102). */
+  assets: string[];
+  notForDisposal: string[];
   income: { txnId: string; date: string; asset: string; kind: CryptoTxnKind; amount: number; nzdValue: number }[];
   missingValue: number;
   shortfalls: string[];
@@ -239,7 +259,8 @@ export async function cryptoSummary(db: Database, userId: string, yearRaw: unkno
   const txns = rows.map(present);
   const method = costMethodOf(db, userId);
   const ledger: LedgerTxn[] = rows.map((r) => ({ id: r.id, date: r.date, kind: r.kind, asset: r.asset, amount: Number(r.amount), nzdValue: r.nzd_value == null ? null : Number(r.nzd_value), feeNzd: Number(r.fee_nzd), toAsset: r.to_asset, toAmount: r.to_amount == null ? null : Number(r.to_amount), taxableOnReceipt: r.taxable_on_receipt === 1 }));
-  const g = computeGains(ledger, method);
+  const notForDisposal = nonDisposalAssets(db, userId);
+  const g = computeGains(ledger, method, notForDisposal);
   const current = cryptoTaxYear(aucklandToday());
   const n = Number(yearRaw);
   const taxYear = Number.isInteger(n) && n > 2008 && n <= current ? n : current;
@@ -264,6 +285,8 @@ export async function cryptoSummary(db: Database, userId: string, yearRaw: unkno
       positions,
       unrealisedNzd: roundMoney(unrealised),
       disposals: g.disposals.filter((d) => cryptoTaxYear(d.date) === taxYear),
+      assets: [...new Set(rows.flatMap((r) => (r.to_asset ? [r.asset, r.to_asset] : [r.asset])).map((a) => a.toUpperCase()))].sort(),
+      notForDisposal: [...notForDisposal].sort(),
       income: g.income.filter((i) => cryptoTaxYear(i.date) === taxYear),
       missingValue: g.missingValue.length,
       shortfalls: g.shortfalls,

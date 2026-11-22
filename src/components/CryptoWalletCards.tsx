@@ -4,7 +4,9 @@
  * and status, with Sync now / Remove. Values come from GET /api/wallets/valuation,
  * which reads balances fetched by the sync job.
  */
-import { formatNzd } from '../api/client';
+import { useState } from 'react';
+import { api, formatNzd } from '../api/client';
+import type { WalletValuationItem } from '../types';
 import {
   NATIVE_SYMBOL,
   NETWORK_LABEL,
@@ -17,6 +19,60 @@ import {
 } from '../lib/cryptoWallets';
 import { HoldingIcon } from './HoldingIcon';
 import { AddWalletPanel } from './AddWalletPanel';
+
+/**
+ * Spam and unknown tokens are hidden by default (KAN-39). This shows how many, and fetches
+ * them on request so the user can see what the wallet holds. They never count in a value.
+ */
+function HiddenTokens({ walletId, count }: { walletId: string; count: number }) {
+  const [items, setItems] = useState<WalletValuationItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (count <= 0) return null;
+  if (!items) {
+    return (
+      <p className="muted small holding-card-meta">
+        {count === 1 ? '1 unknown or spam token hidden.' : `${count} unknown or spam tokens hidden.`}{' '}
+        <button
+          type="button"
+          className="link-btn"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            api.wallets
+              .valuationWithHidden(walletId)
+              .then((r) => setItems(r.valuation.ok ? r.valuation.items.filter((i) => i.hidden && i.amountRaw !== '0') : []))
+              .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Could not load them.'))
+              .finally(() => setBusy(false));
+          }}
+        >
+          {busy ? 'Loading…' : 'Show'}
+        </button>
+        {error ? <span className="auth-error"> {error}</span> : null}
+      </p>
+    );
+  }
+  return (
+    <div className="holding-card-meta">
+      <p className="muted small">
+        Hidden tokens, not counted. Never interact with tokens you didn’t expect: spam tokens often link to sites that drain wallets.{' '}
+        <button type="button" className="link-btn" onClick={() => setItems(null)}>
+          Hide
+        </button>
+      </p>
+      <ul className="wallet-card-tokens wallet-card-tokens--hidden">
+        {items.map((t) => (
+          <li key={t.asset.contract ?? t.asset.symbol}>
+            <span>
+              {formatAmount(t.amount)} {t.asset.symbol}
+            </span>
+            <span className="muted">{t.tokenClass === 'spam' ? 'looks like spam' : 'unknown token'}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 export function WalletCard({ entry, state }: { entry: Entry; state: CryptoWalletsState }) {
   const { wallet, valuation } = entry;
@@ -80,6 +136,8 @@ export function WalletCard({ entry, state }: { entry: Entry; state: CryptoWallet
           ))}
         </ul>
       ) : null}
+
+      {val ? <HiddenTokens walletId={wallet.id} count={val.hiddenCount ?? 0} /> : null}
 
       {wallet.status === 'error' && wallet.statusMessage ? (
         <p className="muted small holding-card-meta wallet-status--error">{wallet.statusMessage}</p>
