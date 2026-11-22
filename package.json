@@ -75,7 +75,7 @@
     "test:mortgage": "node --import tsx src/lib/mortgageCalc.test.ts",
     "test:economy-page": "node --import tsx src/lib/economyView.test.ts && node --import tsx src/lib/cycleMix.test.ts",
     "test:page-cache": "node --import tsx src/lib/pageDataCache.test.ts",
-    "test:donations": "node --import tsx server/donations/model.test.ts && node --import tsx server/donations/store.test.ts",
+    "test:donations": "node --import tsx server/donations/model.test.ts && node --import tsx server/donations/store.test.ts && node --import tsx src/lib/donationsView.test.ts",
     "test:fif": "node --import tsx src/lib/fifCalc.test.ts && node --import tsx server/fif/store.test.ts",
     "test:projections": "node --import tsx server/projections/model.test.ts && node --import tsx server/projections/api.test.ts && node --import tsx server/projections/hidden.test.ts",
     "test:mining-projection": "node --import tsx src/lib/miningProjection.test.ts",

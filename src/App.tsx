@@ -34,6 +34,7 @@ import {
   PublicInvoicePage,
   BillsPage,
   WarrantiesPage,
+  DonationsPage,
   RentalsPage,
   PayslipsPage,
   VehiclesPage,
@@ -103,6 +104,8 @@ export default function App() {
                   <Route path="bills" element={<BillsPage />} />
                   {/* Warranties: opened from Budget, not in the nav bar (KAN-61). */}
                   <Route path="warranties" element={<WarrantiesPage />} />
+                  {/* Donations: opened from Budget (KAN-25). */}
+                  <Route path="donations" element={<DonationsPage />} />
                   <Route path="rentals" element={<RentalsPage />} />
                   <Route path="payslips" element={<PayslipsPage />} />
                   <Route path="vehicles" element={<VehiclesPage />} />
