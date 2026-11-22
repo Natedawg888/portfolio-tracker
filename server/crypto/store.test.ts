@@ -261,6 +261,18 @@ try {
   const fs2 = await cryptoSummary(db, 'fred', 2025, priceOf);
   assert(fs2.ok && fs2.value.txns.length === 0 && fs2.value.defi.positions.length === 0, 'and sees nothing of Pia’s');
 
+  // KAN-48: a recovery phrase or key in a note is refused, never stored.
+  {
+    const phrase = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
+    const r1 = await call('POST', '/txns', P, { date: '2025-05-01', kind: 'buy', asset: 'ETH', amount: 1, nzdValue: 100, notes: phrase });
+    assert(r1.status === 400 && /recovery phrase/.test(String(r1.json.error)), 'seed phrase in notes refused');
+    const r2 = await call('POST', '/defi', P, { protocol: 'Aave', kind: 'lend', valueNzd: 10, notes: '0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318' });
+    assert(r2.status === 400 && /private key/.test(String(r2.json.error)), 'key in DeFi notes refused');
+    assert(queryAll(db, `SELECT * FROM crypto_txns WHERE notes LIKE '%abandon%'`).length === 0, 'nothing stored');
+    const ok = await call('POST', '/txns', P, { date: '2025-05-01', kind: 'buy', asset: 'ETH', amount: 1, nzdValue: 100, notes: 'Bought on the dip after the Fed meeting' });
+    assert(ok.status === 201 || ok.status === 200, 'ordinary notes still fine');
+  }
+
   // Account deletion.
   deleteScopedDataForUser(db, 'pia');
   for (const table of ['crypto_txns', 'crypto_import_refs', 'crypto_settings', 'crypto_asset_purposes', 'defi_positions']) {
