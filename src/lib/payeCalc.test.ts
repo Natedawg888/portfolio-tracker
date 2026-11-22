@@ -50,6 +50,24 @@ if (!/abates/i.test(ietcNote)) throw new Error(`FAIL: IETC note should describe 
 if (ietcNote.includes('69,999')) throw new Error('FAIL: IETC note must not use a $69,999 ceiling');
 if (off.notes.some((n) => n.includes('69,999'))) throw new Error('FAIL: the $55,000 case must not mention a $69,999 ceiling');
 eq(calcAcc(200000), 2741.22, 'ACC at $200,000 is the published maximum levy');
+
+// KAN-98: a secondary job's ACC isn't capped on the payslip; the year-end view caps and refunds.
+{
+  const second = calculatePaye({ ...base, amount: 20000, employment: 'secondary', otherAnnualGross: 160000, secondaryTotalAnnualIncome: 180000, studentLoan: false });
+  eq(second.acc, 350, 'secondary $20,000 with a $160,000 main job: ACC $350.00');
+  eq(second.accYearEndLevy, 2741.22, 'year-end levy is the maximum');
+  eq(second.accYearEndRefund, 350, 'the whole $350 comes back');
+  eq(second.notes.some((n) => n.includes('IR335')), true, 'note names IR335');
+  const under = calculatePaye({ ...base, amount: 20000, employment: 'secondary', otherAnnualGross: 50000, secondaryTotalAnnualIncome: 70000, studentLoan: false });
+  eq(under.acc, 350, 'secondary under the maximum: still 1.75%');
+  eq(under.accYearEndRefund, 0, 'no refund under the maximum');
+  const part = calculatePaye({ ...base, amount: 20000, employment: 'secondary', otherAnnualGross: 150000, secondaryTotalAnnualIncome: 170000, studentLoan: false });
+  eq(part.accYearEndLevy, 2741.22, 'over the maximum combined');
+  eq(part.accYearEndRefund, 233.78, 'refund = 2,625 + 350 − 2,741.22');
+  const primary = calculatePaye({ ...base, amount: 200000, studentLoan: false });
+  eq(primary.acc, 2741.22, 'primary still capped');
+  eq(primary.accYearEndLevy, null, 'no year-end figure on a primary code');
+}
 eq(defaultPayePrefs().amount, '75000', 'default salary stays 75000');
 
 // Tax years (KAN-79): 2025/26 uses that year's published ACC and KiwiSaver minimum; brackets are the same.

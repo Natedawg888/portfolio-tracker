@@ -83,7 +83,12 @@ export type PayeBreakdown = {
   /** Package / entered annual equivalent before sacrifice. */
   annualPackage: number;
   incomeTax: number;
+  /** ACC deducted from this job's pay. Uncapped on a secondary code (IR335). */
   acc: number;
+  /** Secondary only: the levy for the year across all jobs, capped at the maximum. Null on a primary code. */
+  accYearEndLevy: number | null;
+  /** Secondary only: ACC deducted over the year's maximum, refunded by IRD after 31 March. */
+  accYearEndRefund: number | null;
   ietcCredit: number;
   /**
    * PAYE after IETC + payroll-giving + extra credits applied to the tax+ACC pot
@@ -276,17 +281,25 @@ export function calculatePaye(input: PayeInput): PayeBreakdown {
     incomeTax = calcIncomeTax(annualGross, rates);
   }
 
-  // ACC: primary uses this job’s gross; secondary uses remaining headroom after other jobs.
-  let accLiable = annualGross;
+  // ACC (KAN-98): on a primary code the employer stops at the maximum liable earnings. On a
+  // secondary code employers deduct the levy on every dollar, with no maximum (IR335); IRD
+  // refunds anything over the maximum levy at year end. So the secondary payslip is uncapped,
+  // and the year-end view caps the combined levy and shows the refund.
+  let acc = calcAcc(annualGross, rates);
+  let accYearEndLevy: number | null = null;
+  let accYearEndRefund: number | null = null;
   if (input.employment === 'secondary') {
+    acc = annualGross * rates.accRate;
     const other = Math.max(0, input.otherAnnualGross);
-    const remaining = Math.max(0, accMaxEarnings - other);
-    accLiable = Math.min(annualGross, remaining);
-    if (other >= accMaxEarnings) {
-      notes.push('Other income already at ACC maximum — no further ACC on this secondary job.');
+    const deducted = calcAcc(other, rates) + acc;
+    accYearEndLevy = calcAcc(other + annualGross, rates);
+    accYearEndRefund = Math.max(0, deducted - accYearEndLevy);
+    if (accYearEndRefund > 0.005) {
+      notes.push(
+        `ACC: secondary jobs deduct the levy with no maximum (IR335). With your other job(s), the year's levy is $${accYearEndLevy.toFixed(2)} (maximum liable earnings $${accMaxEarnings.toLocaleString('en-NZ')}), so expect about $${accYearEndRefund.toFixed(2)} back from IRD after 31 March.`,
+      );
     }
   }
-  const acc = calcAcc(accLiable, rates);
 
   const ietcEligible =
     input.employment === 'primary' &&
@@ -394,6 +407,8 @@ export function calculatePaye(input: PayeInput): PayeBreakdown {
     annualPackage: round2(packageAnnual),
     incomeTax: round2(incomeTax),
     acc: round2(acc),
+    accYearEndLevy: accYearEndLevy == null ? null : round2(accYearEndLevy),
+    accYearEndRefund: accYearEndRefund == null ? null : round2(accYearEndRefund),
     ietcCredit: round2(ietcCredit),
     payeNetOfCredits: round2(payeNetOfCredits),
     payrollGivingDonation: round2(donation),
