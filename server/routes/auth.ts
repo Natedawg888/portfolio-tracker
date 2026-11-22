@@ -6,6 +6,8 @@
  * has finance or bank rows is not handed to the first registrant unless
  * ALLOW_EXISTING_DATA_CLAIM is set on the server (rule in auth/users.ts).
  */
+import { hashToken } from '../auth/sessions.ts';
+import { createKeyForPassword, dataKeyState, holdKeyForChallenge, keyForPasswordSignIn, rewrapForNewPassword, setUnlockPassphrase, takeKeyForChallenge, unlockWithSecret } from '../security/userKeys.ts';
 import { Router } from 'express';
 import { getDb, queryOne, run } from '../db/index.ts';
 import {
@@ -314,7 +316,8 @@ router.post('/register', async (req, res) => {
   const now = created.createdAt;
   const prefsJson = created.preferencesJson;
 
-  if (!(await startSession(req, res, id, parseRemember(req.body), { method: 'register' }))) return;
+  const dataKey = await createKeyForPassword(db, id, password);
+  if (!(await startSession(req, res, id, parseRemember(req.body), { method: 'register', dataKey }))) return;
   res.status(201).json({
     user: toPublicUser(db, {
       id,
@@ -364,11 +367,17 @@ router.post('/login', async (req, res) => {
     return;
   }
   const remember = parseRemember(req.body);
+  // KAN-110: the password unlocks the data key (made now for accounts from before KAN-106).
+  const dataKey = await keyForPasswordSignIn(db, user.id, password).catch(() => null);
   // 2FA (KAN-16): password alone isn't enough unless this browser is a trusted device.
   if (isTwoFactorEnabled(db, user.id)) {
     const trusted = parseTrustedCookie(parseCookieHeader(req.headers.cookie, TRUSTED_DEVICE_COOKIE));
     if (!isTrustedDevice(db, user.id, trusted)) {
       const challenge = createLoginChallenge(db, user.id, remember);
+      if (dataKey) {
+        holdKeyForChallenge(hashToken(challenge.token), user.id, dataKey);
+        dataKey.fill(0);
+      }
       res.json({
         twoFactorRequired: true,
         challenge: challenge.token,
@@ -381,7 +390,7 @@ router.post('/login', async (req, res) => {
   clearLoginFailures(email);
 
   const row = loadUserRow(db, user.id);
-  if (!(await startSession(req, res, user.id, remember, { method: 'password' }))) return;
+  if (!(await startSession(req, res, user.id, remember, { method: 'password', dataKey }))) return;
   res.json({
     user: toPublicUser(db, {
       id: user.id,
@@ -432,6 +441,7 @@ router.post('/login/2fa', async (req, res) => {
   }
   deleteChallenge(db, c.id);
   clearLoginFailures(row.email);
+  const dataKey = typeof req.body?.challenge === 'string' ? takeKeyForChallenge(hashToken(req.body.challenge), row.id) : null;
 
   // Trust the browser first, so the new session is linked to it (one device in Settings → Security).
   let trustedDeviceId: string | undefined;
@@ -441,7 +451,7 @@ router.post('/login/2fa', async (req, res) => {
     trustedDeviceId = trusted.id;
     res.append('Set-Cookie', trustedCookieHeader([...existing, trusted.token]));
   }
-  if (!(await startSession(req, res, row.id, c.persistent, { method: 'two_factor', provider: c.provider, trustedDeviceId }))) return;
+  if (!(await startSession(req, res, row.id, c.persistent, { method: 'two_factor', provider: c.provider, trustedDeviceId, dataKey }))) return;
   res.json({
     user: toPublicUser(db, {
       id: row.id,
@@ -701,6 +711,8 @@ router.post('/change-password', async (req: AuthedRequest, res) => {
     now,
     req.user.id,
   ]);
+  // KAN-110: the data key follows the password.
+  await rewrapForNewPassword(db, req.user.id, newPassword, { sessionId: req.user.sessionId, currentPassword: currentPassword || null });
   // A new password should lock out anyone holding an old session elsewhere.
   const signedOut = req.user.sessionId ? revokeOtherSessions(db, req.user.id, req.user.sessionId) : 0;
   res.json({
@@ -708,6 +720,60 @@ router.post('/change-password', async (req: AuthedRequest, res) => {
     signedOutSessions: signedOut,
     message: signedOut > 0 ? `Password updated. Signed out ${signedOut} other session${signedOut === 1 ? '' : 's'}.` : 'Password updated.',
   });
+});
+
+/**
+ * Data key (KAN-110). GET: 'unlocked' | 'locked' | 'needs_passphrase' for this session.
+ * POST /data-key/passphrase { passphrase }: SSO accounts set their data-unlock passphrase.
+ * POST /data-key/unlock { secret }: unlock this session with the passphrase or password.
+ */
+router.get('/data-key', async (req: AuthedRequest, res) => {
+  if (!req.user) {
+    res.status(401).json({ error: 'Authentication required', code: 'UNAUTHORIZED' });
+    return;
+  }
+  res.json({ state: dataKeyState(await getDb(), req.user.id, req.user.sessionId) });
+});
+
+router.post('/data-key/passphrase', async (req: AuthedRequest, res) => {
+  if (!req.user?.sessionId) {
+    res.status(401).json({ error: 'Authentication required', code: 'UNAUTHORIZED' });
+    return;
+  }
+  const passphrase = typeof req.body?.passphrase === 'string' ? req.body.passphrase : '';
+  const err = validatePassword(passphrase);
+  if (err) {
+    res.status(400).json({ error: err.replace(/password/gi, 'passphrase'), code: 'INVALID_PASSPHRASE' });
+    return;
+  }
+  const r = await setUnlockPassphrase(await getDb(), req.user.id, req.user.sessionId, passphrase);
+  if (r === 'locked') {
+    res.status(409).json({ error: 'Unlock your data first, then set the passphrase.', code: 'DATA_LOCKED' });
+    return;
+  }
+  res.json({ ok: true, state: 'unlocked' });
+});
+
+router.post('/data-key/unlock', async (req: AuthedRequest, res) => {
+  if (!req.user?.sessionId) {
+    res.status(401).json({ error: 'Authentication required', code: 'UNAUTHORIZED' });
+    return;
+  }
+  const secret = typeof req.body?.secret === 'string' ? req.body.secret : '';
+  const client = clientKey(req);
+  const blocked = loginBlockedSec(req.user.email, client);
+  if (blocked > 0) {
+    res.setHeader('Retry-After', String(blocked));
+    res.status(429).json({ error: 'Too many attempts. Try again in a few minutes.', code: 'TOO_MANY_ATTEMPTS' });
+    return;
+  }
+  if (!secret || !(await unlockWithSecret(await getDb(), req.user.id, req.user.sessionId, secret))) {
+    recordLoginFailure(req.user.email, client);
+    res.status(403).json({ error: 'That passphrase isn’t right.', code: 'WRONG_PASSPHRASE' });
+    return;
+  }
+  clearLoginFailures(req.user.email);
+  res.json({ ok: true, state: 'unlocked' });
 });
 
 /** Change email — requires current password. Auth required. */
