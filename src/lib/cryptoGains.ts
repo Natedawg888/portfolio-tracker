@@ -12,6 +12,12 @@
  * receipt; then it's income at its NZD value, which is also its cost. Selling it later is still
  * counted as a disposal either way.
  *
+ * Purpose (KAN-102, IRD "Acquiring cryptoassets to sell or exchange"): gains are taxable when a
+ * coin was acquired to sell or exchange, which IRD says is most holders. A coin can be marked as
+ * not held for disposal (e.g. bought only for staking income, or personal use); its sales stay
+ * listed but their gains and losses are left out of the taxable totals (a loss only counts when a
+ * gain would have been taxable). Rewards it earns are still income. Set per coin, not per lot.
+ *
  * What each kind does to the asset's holdings:
  *   buy, swap (receive leg), staking_reward, income       → acquire at their NZD value (+ fee on buys)
  *   airdrop                                                → acquire at nil cost, or at its NZD value
@@ -96,6 +102,8 @@ export type Disposal = {
   gainNzd: number;
   /** Units disposed beyond what the ledger shows you held (cost counted as 0 for them). */
   shortfall: number;
+  /** False when the coin is marked as not held for disposal: shown, but not in the taxable totals. */
+  taxable: boolean;
 };
 
 export type AssetPosition = {
@@ -126,7 +134,9 @@ const up = (s: string) => s.trim().toUpperCase();
 
 type Lot = { qty: number; cost: number };
 
-export function computeGains(ledger: LedgerTxn[], method: CostMethod): GainsResult {
+/** nonDisposal: coins (any case) marked as not held for disposal. */
+export function computeGains(ledger: LedgerTxn[], method: CostMethod, nonDisposal: ReadonlySet<string> = new Set()): GainsResult {
+  const notForDisposal = new Set([...nonDisposal].map(up));
   const ordered = [...ledger].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   const lots = new Map<string, Lot[]>();
   const pool = (asset: string) => {
@@ -194,7 +204,7 @@ export function computeGains(ledger: LedgerTxn[], method: CostMethod): GainsResu
       if (shortfall > 0) shortfalls.add(up(t.asset));
       const proceeds = t.kind === 'fee' ? (value ?? 0) : (value ?? 0) - (t.kind === 'sell' || t.kind === 'spend' || t.kind === 'swap' ? fee : 0);
       if (value != null || t.kind === 'fee') {
-        disposals.push({ txnId: t.id, date: t.date, asset: up(t.asset), amount: t.amount, proceedsNzd: r2(proceeds), costNzd: r2(cost), gainNzd: r2(proceeds - cost), shortfall });
+        disposals.push({ txnId: t.id, date: t.date, asset: up(t.asset), amount: t.amount, proceedsNzd: r2(proceeds), costNzd: r2(cost), gainNzd: r2(proceeds - cost), shortfall, taxable: !notForDisposal.has(up(t.asset)) });
       }
       // A swap acquires what was received at the value of what was given.
       if (t.kind === 'swap' && t.toAsset && t.toAmount && t.toAmount > 0) {
@@ -223,9 +233,14 @@ export function cryptoTaxYear(ymd: string): number {
   return m >= 4 ? y : y - 1;
 }
 
-/** Realised gains and income for one tax year. */
-export function yearSummary(g: GainsResult, startYear: number): { realisedNzd: number; proceedsNzd: number; costNzd: number; incomeNzd: number; disposals: number } {
-  const ds = g.disposals.filter((d) => cryptoTaxYear(d.date) === startYear);
+/** Realised gains and income for one tax year. Disposals of coins not held for disposal are counted apart. */
+export function yearSummary(
+  g: GainsResult,
+  startYear: number,
+): { realisedNzd: number; proceedsNzd: number; costNzd: number; incomeNzd: number; disposals: number; notTaxableNzd: number; notTaxableDisposals: number } {
+  const inYear = g.disposals.filter((d) => cryptoTaxYear(d.date) === startYear);
+  const ds = inYear.filter((d) => d.taxable);
+  const apart = inYear.filter((d) => !d.taxable);
   const inc = g.income.filter((i) => cryptoTaxYear(i.date) === startYear);
   return {
     realisedNzd: r2(ds.reduce((s, d) => s + d.gainNzd, 0)),
@@ -233,6 +248,8 @@ export function yearSummary(g: GainsResult, startYear: number): { realisedNzd: n
     costNzd: r2(ds.reduce((s, d) => s + d.costNzd, 0)),
     incomeNzd: r2(inc.reduce((s, i) => s + i.nzdValue, 0)),
     disposals: ds.length,
+    notTaxableNzd: r2(apart.reduce((s, d) => s + d.gainNzd, 0)),
+    notTaxableDisposals: apart.length,
   };
 }
 

@@ -666,6 +666,15 @@ CREATE INDEX IF NOT EXISTS idx_savings_goals_user ON savings_goals(user_id);
 -- YYYY-MM-DD. Tax-year totals are counted on read (server/donations/model.ts).
 -- No foreign key: sql.js does not keep PRAGMA foreign_keys from this script.
 -- The trigger below clears the pointer when that transaction is deleted.
+-- FIF classification the user chose for a share holding (KAN-92). No row = automatic (by exchange).
+-- fif_class: 'fif' counts it as an attributing interest; 'exempt' leaves it out.
+CREATE TABLE IF NOT EXISTS fif_class_overrides (
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  holding_id  TEXT NOT NULL REFERENCES holdings(id) ON DELETE CASCADE,
+  fif_class   TEXT NOT NULL CHECK (fif_class IN ('fif', 'exempt')),
+  updated_at  TEXT NOT NULL,
+  PRIMARY KEY (user_id, holding_id)
+);
 CREATE TABLE IF NOT EXISTS donations (
   id                      TEXT PRIMARY KEY,
   user_id                 TEXT,
@@ -1672,6 +1681,14 @@ CREATE TABLE IF NOT EXISTS crypto_import_refs (
   ignored     INTEGER NOT NULL DEFAULT 0,
   created_at  TEXT NOT NULL,
   PRIMARY KEY (user_id, ref)
+);
+-- Coins held not for disposal (KAN-102): their gains and losses are left out of the taxable totals.
+-- No row = acquired to sell or exchange (the default). asset is upper case.
+CREATE TABLE IF NOT EXISTS crypto_asset_purposes (
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  asset       TEXT NOT NULL,
+  updated_at  TEXT NOT NULL,
+  PRIMARY KEY (user_id, asset)
 );
 CREATE TABLE IF NOT EXISTS crypto_settings (
   user_id      TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,

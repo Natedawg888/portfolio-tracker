@@ -19,7 +19,7 @@ import {
 import { custodialMessage, findCustodialAddress } from '../lib/custodialDenylist.ts';
 import { getDb, queryAll, queryOne, run, newId } from '../db/index.ts';
 import { describeChainConfig, isNetworkSyncable, NETWORK_CHAIN_INFO } from '../chain/index.ts';
-import { combineValuations, valueWallet } from '../chain/valuation.ts';
+import { combineValuations, valueWallet, withoutHidden } from '../chain/valuation.ts';
 import { requestManualSync, syncWallet } from '../chain/sync.ts';
 
 const router = Router();
@@ -164,7 +164,8 @@ router.get('/valuation', async (req, res) => {
   );
   res.json({
     ...combineValuations(results),
-    wallets: rows.map((r, i) => ({ wallet: mapWallet(r), valuation: results[i] })),
+    // Spam and unknown tokens are left out unless ?showHidden=1 (KAN-39).
+    wallets: rows.map((r, i) => ({ wallet: mapWallet(r), valuation: withoutHidden(results[i], req.query.showHidden === '1') })),
   });
 });
 
@@ -176,7 +177,7 @@ router.get('/:id/valuation', async (req, res) => {
     return;
   }
   const valuation = await valueWallet({ network: row.network as WalletNetwork, address: row.address as string });
-  res.json({ wallet: mapWallet(row), valuation });
+  res.json({ wallet: mapWallet(row), valuation: withoutHidden(valuation, req.query.showHidden === '1') });
 });
 
 /**

@@ -400,6 +400,63 @@ export interface DonationSummary {
   years: DonationTaxYearTotals[];
 }
 
+/** One share holding in the FIF summary (KAN-92). Amounts are NZD. */
+export interface FifHoldingRow {
+  id: string;
+  label: string;
+  symbol: string | null;
+  exchange: string | null;
+  fifClass: 'nz' | 'nz_fund' | 'asx_exempt' | 'fif' | 'user_exempt';
+  classLabel: string;
+  /** What the exchange / symbol says, before the user's choice. */
+  autoClass: 'nz' | 'nz_fund' | 'asx_exempt' | 'fif';
+  /** The user's choice for this holding; null = automatic. */
+  override: 'fif' | 'exempt' | null;
+  /** Stored cost basis; null when it isn't known. */
+  costNzd: number | null;
+  acquiredAt: string | null;
+  /** From the snapshot nearest the start of the year; null when there isn't one. */
+  openingValueNzd: number | null;
+  /** From the snapshot nearest the end of the year; null before the year ends or without one. */
+  closingValueNzd: number | null;
+  /** Gross dividends paid in the year, converted to NZD. */
+  dividendsNzd: number;
+  /** FIF holdings only. */
+  fdrIncomeNzd: number | null;
+  cvIncomeNzd: number | null;
+}
+
+/** FIF income estimate for one tax year (1 April – 31 March), keyed by the year it starts. */
+export interface FifSummary {
+  estimateLabel: 'estimate';
+  taxYearStart: number;
+  currentTaxYearStart: number;
+  start: string;
+  end: string;
+  yearEnded: boolean;
+  thresholdNzd: number;
+  /** Largest total cost of FIF holdings on any day in the year. */
+  peakCostNzd: number;
+  peakCostDate: string | null;
+  /** True when the peak is over the threshold: FIF rules apply for the whole year. */
+  applies: boolean;
+  method: 'fdr' | 'cv' | null;
+  fifIncomeNzd: number;
+  fdrTotalNzd: number;
+  /** Portfolio CV with a loss reduced to zero; null when a closing value is missing. */
+  cvTotalNzd: number | null;
+  cvRawTotalNzd: number | null;
+  /** Foreign dividends taxed as received when the rules don't apply. */
+  dividendsTaxableNzd: number;
+  openingSnapshotDate: string | null;
+  closingSnapshotDate: string | null;
+  holdings: FifHoldingRow[];
+  /** Plain-language caveats about what this estimate couldn't see. */
+  notes: string[];
+  sourceLabel: string;
+  sourceUrl: string;
+}
+
 export interface DebtSummary {
   outstandingTotalNzd: number;
   /** Total creditors (people + corporations). */
@@ -1240,6 +1297,9 @@ export type WalletValuationItem = {
   pricedAt: string | null;
   priceSource: string | null;
   message: string | null;
+  /** KAN-39: spam and unknown tokens are hidden unless asked for. */
+  tokenClass: 'native' | 'known' | 'unknown' | 'spam';
+  hidden: boolean;
 };
 
 export type WalletValuation =
@@ -1252,6 +1312,8 @@ export type WalletValuation =
       complete: boolean;
       pricedAt: string | null;
       hasStalePrices: boolean;
+      /** Spam / unknown tokens held but left out of items (KAN-39). */
+      hiddenCount: number;
     }
   | { ok: false; error: string; code: string; retryAfterSec: number | null };
 
@@ -2438,10 +2500,14 @@ export interface CryptoSummary {
   costMethod: 'fifo' | 'wac';
   taxYear: number;
   years: { startYear: number; label: string }[];
-  year: { realisedNzd: number; proceedsNzd: number; costNzd: number; incomeNzd: number; disposals: number };
+  /** realised/proceeds/cost/disposals: taxable only; notTaxable*: coins not held for disposal (KAN-102). */
+  year: { realisedNzd: number; proceedsNzd: number; costNzd: number; incomeNzd: number; disposals: number; notTaxableNzd: number; notTaxableDisposals: number };
   positions: { asset: string; quantity: number; costNzd: number; avgCostNzd: number | null; costIncomplete: boolean; priceNzd: number | null; valueNzd: number | null; unrealisedNzd: number | null; priceStatus: string }[];
   unrealisedNzd: number;
-  disposals: { txnId: string; date: string; asset: string; amount: number; proceedsNzd: number; costNzd: number; gainNzd: number; shortfall: number }[];
+  disposals: { txnId: string; date: string; asset: string; amount: number; proceedsNzd: number; costNzd: number; gainNzd: number; shortfall: number; taxable: boolean }[];
+  /** Every coin in the ledger, and those marked as not held for disposal (KAN-102). */
+  assets: string[];
+  notForDisposal: string[];
   income: { txnId: string; date: string; asset: string; kind: CryptoTxnKind; amount: number; nzdValue: number }[];
   missingValue: number;
   shortfalls: string[];

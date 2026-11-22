@@ -5,6 +5,8 @@
  */
 import { calcAcc, calcIetc, calcIncomeTax, calculatePaye, pickSecondaryCode } from './payeCalc.ts';
 import { defaultPayePrefs } from './payePrefs.ts';
+import { donationCreditNzd } from './donationCredit.ts';
+import { summarizeTaxYear } from '../../server/donations/model.ts';
 import { PAY_TAX_YEAR_OPTIONS, payTaxYearRates, taxYearForDate } from './payeRates.ts';
 
 function eq(actual: unknown, expected: unknown, msg: string): void {
@@ -79,6 +81,22 @@ eq(calcAcc(200000, payTaxYearRates(2025)), 2551.59, '2025/26 maximum ACC levy');
 }
 eq(calculatePaye({ ...base, taxYear: 2026, studentLoan: false }).takeHome, off.takeHome, 'taxYear 2026 matches the default');
 eq(calculatePaye({ ...base, taxYear: 2031, studentLoan: false }).takeHome, off.takeHome, 'a year with no rates falls back to the current year');
+
+// KAN-104: IR526 charity credit truncated to cents like IRD, matching the Donations page.
+for (const [donated, credit] of [[100, 33.33], [200, 66.66], [50, 16.66], [6.6, 2.2], [0.3, 0.1]] as const) {
+  eq(calculatePaye({ ...base, studentLoan: false, charityDonationsAnnual: donated }).charityCredit, credit, `charity ${donated} -> ${credit}`);
+  eq(donationCreditNzd(donated), credit, `helper ${donated} -> ${credit}`);
+}
+{
+  // Income cap: a third of the income, truncated too.
+  const capped = calculatePaye({ ...base, amount: 200.01, studentLoan: false, charityDonationsAnnual: 10_000 });
+  eq(capped.charityCredit, 66.67, 'capped at a third of income: 200.01 / 3 = 66.67');
+  const capped2 = calculatePaye({ ...base, amount: 200, studentLoan: false, charityDonationsAnnual: 10_000 });
+  eq(capped2.charityCredit, 66.66, 'capped at a third of 200 -> 66.66');
+  // Same amount, same credit on the Donations page.
+  const page = summarizeTaxYear([{ date: '2026-06-01', amountNzd: 200 }], 2027);
+  eq(page.estimatedTaxCreditNzd, calculatePaye({ ...base, studentLoan: false, charityDonationsAnnual: 200 }).charityCredit, 'PAYE and Donations agree on 200');
+}
 eq(PAY_TAX_YEAR_OPTIONS.map((y) => y.startYear).join(), '2026,2025,2024', 'years offered, newest first');
 
 // 2024/25 (KAN-96): brackets changed on 31 July 2024, so the year uses IRD's composite rates.
