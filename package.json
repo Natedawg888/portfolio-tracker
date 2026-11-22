@@ -33,7 +33,7 @@
     "test:home-snapshot": "node --import tsx server/budget/homeSnapshot.test.ts",
     "test:savings-goals": "node --import tsx server/savings/model.test.ts && node --import tsx server/savings/store.test.ts && node --import tsx server/savings/accountLink.test.ts",
     "test:output-pay": "node --import tsx src/lib/outputPayCalc.test.ts",
-    "test:paye": "node --import tsx src/lib/payeCalc.test.ts",
+    "test:paye": "node --import tsx src/lib/payeCalc.test.ts && node --import tsx src/lib/salaryCompare.test.ts",
     "test:wff": "node --import tsx src/lib/wffCalc.test.ts",
     "test:kiwisaver-calc": "node --import tsx src/lib/kiwiSaverCalc.test.ts",
     "test:crypto": "node --import tsx src/lib/cryptoGains.test.ts && node --import tsx server/crypto/store.test.ts",
