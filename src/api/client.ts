@@ -68,6 +68,7 @@ import type {
   Donation,
   DonationSummary,
   DonationWriteBody,
+  FifSummary,
   HomeMonthSnapshot,
   NewsFeedResponse,
   NewsUserState,
@@ -1296,6 +1297,17 @@ export const api = {
         `/wallets/${encodeURIComponent(id)}/sync`,
         { method: 'POST' },
       ),
+  },
+  fif: {
+    /** taxYear = the year the tax year starts (2026 = 2026/27). */
+    summary: (taxYear?: number) =>
+      req<FifSummary>(`/fif/summary${taxYear != null ? `?taxYear=${taxYear}` : ''}`),
+    /** Count a share holding as a FIF ('fif'), leave it out ('exempt'), or go back to automatic (null). */
+    setClass: (holdingId: string, override: 'fif' | 'exempt' | null) =>
+      req<{ holdingId: string; override: 'fif' | 'exempt' | null }>(`/fif/classes/${encodeURIComponent(holdingId)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ override }),
+      }),
   },
   donations: {
     list: (taxYear?: number) =>
