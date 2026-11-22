@@ -68,6 +68,7 @@ import type {
   Donation,
   DonationSummary,
   DonationWriteBody,
+  FifSummary,
   HomeMonthSnapshot,
   NewsFeedResponse,
   NewsUserState,
@@ -129,6 +130,7 @@ import type {
   WalletNetwork,
   WalletNetworkInfo,
   WalletsValuationResponse,
+  WalletValuation,
   TxnCategorySuggestions,
 } from '../types/index.ts';
 import type { OutputPaySourceInputs } from '../lib/outputPayCalc.ts';
@@ -912,6 +914,8 @@ export const api = {
     price: (asset: string, date: string) =>
       req<{ priceNzd: number | null; source: string | null; priceDate: string | null; reason: string | null }>(`/crypto/price?${new URLSearchParams({ asset, date })}`),
     setCostMethod: (costMethod: 'fifo' | 'wac') => req<{ costMethod: string }>('/crypto/settings', { method: 'PUT', body: JSON.stringify({ costMethod }) }),
+    setPurpose: (asset: string, notForDisposal: boolean) =>
+      req<{ asset: string; notForDisposal: boolean }>('/crypto/purposes', { method: 'PUT', body: JSON.stringify({ asset, notForDisposal }) }),
     importPreview: (walletId: string) =>
       req<{ wallet: { id: string; name: string; network: string }; candidates: CryptoImportCandidate[]; skipped: number }>(`/crypto/import/${encodeURIComponent(walletId)}`),
     importCommit: (walletId: string, items: Record<string, unknown>[]) =>
@@ -1285,6 +1289,9 @@ export const api = {
     list: () => req<Wallet[]>('/wallets'),
     networks: () => req<WalletNetworkInfo[]>('/wallets/networks'),
     valuation: () => req<WalletsValuationResponse>('/wallets/valuation'),
+    /** One wallet with its hidden (spam / unknown) tokens too (KAN-39). */
+    valuationWithHidden: (id: string) =>
+      req<{ wallet: Wallet; valuation: WalletValuation }>(`/wallets/${encodeURIComponent(id)}/valuation?showHidden=1`),
     create: (body: { network: WalletNetwork; address: string; name?: string }) =>
       req<Wallet>('/wallets', { method: 'POST', body: JSON.stringify(body) }),
     remove: (id: string) =>
@@ -1294,6 +1301,17 @@ export const api = {
         `/wallets/${encodeURIComponent(id)}/sync`,
         { method: 'POST' },
       ),
+  },
+  fif: {
+    /** taxYear = the year the tax year starts (2026 = 2026/27). */
+    summary: (taxYear?: number) =>
+      req<FifSummary>(`/fif/summary${taxYear != null ? `?taxYear=${taxYear}` : ''}`),
+    /** Count a share holding as a FIF ('fif'), leave it out ('exempt'), or go back to automatic (null). */
+    setClass: (holdingId: string, override: 'fif' | 'exempt' | null) =>
+      req<{ holdingId: string; override: 'fif' | 'exempt' | null }>(`/fif/classes/${encodeURIComponent(holdingId)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ override }),
+      }),
   },
   donations: {
     list: (taxYear?: number) =>

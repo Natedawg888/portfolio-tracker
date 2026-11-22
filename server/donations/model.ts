@@ -46,6 +46,7 @@
 import type { DonationSummary, DonationTaxYearTotals } from '../../src/types/index.ts';
 import { isIsoDate, roundMoney } from '../debts/model.ts';
 import { taxYearEndForDate, taxYearFromEndYear } from '../../src/lib/taxYear.ts';
+import { donationCreditCents } from '../../src/lib/donationCredit.ts';
 
 export const DONATION_TAX_CREDIT_MINIMUM_NZD = 5;
 export const DONATION_TAX_CREDIT_RATE_LABEL = '1/3' as const;
@@ -134,7 +135,7 @@ export function summarizeTaxYear(rows: DonationAmount[], taxYear: number): Donat
     claimableAmountNzd: claimableCents / 100,
     eligibleCapNzd: capNzd,
     eligibleCapApplied: claimableCents < eligibleCents,
-    estimatedTaxCreditNzd: Math.floor(claimableCents / 3) / 100,
+    estimatedTaxCreditNzd: donationCreditCents(claimableCents) / 100,
     estimateLabel: 'estimate',
     minimumDonationNzd: DONATION_TAX_CREDIT_MINIMUM_NZD,
     creditRate: DONATION_TAX_CREDIT_RATE_LABEL,

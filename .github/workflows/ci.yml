@@ -57,6 +57,7 @@ jobs:
       - run: npm run test:history
       - run: npm run test:donations
       - run: npm run test:tax-year
+      - run: npm run test:fif
       - run: npm run test:projections
       - run: npm run test:projections-page
       - run: npm run test:net-worth-crypto

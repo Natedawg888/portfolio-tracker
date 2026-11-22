@@ -47,6 +47,7 @@ import {
 import { CollectablesPanel } from '../components/CollectablesPanel';
 import { isApiCardGame, isManualCollectableGame } from '../lib/collectables';
 import { DividendTracker } from '../components/DividendTracker';
+import { FifPanel } from '../components/portfolio/FifPanel';
 import {
   AddWalletDetails,
   WalletCard,
@@ -2882,7 +2883,12 @@ export function Portfolio() {
       </>
       ) : null}
 
-{tab === 'dividends' && assetEnabled('stock') ? <DividendTracker placement="portfolio" /> : null}
+{tab === 'dividends' && assetEnabled('stock') ? (
+      <>
+        <DividendTracker placement="portfolio" />
+        <FifPanel />
+      </>
+    ) : null}
 
 {tab === 'crypto' && assetEnabled('crypto') ? (
       <Section
