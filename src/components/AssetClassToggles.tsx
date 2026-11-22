@@ -8,16 +8,19 @@ type Props = {
   value: AssetClassPrefs;
   onChange: (next: AssetClassPrefs) => void;
   disabled?: boolean;
+  /** Classes not offered here (e.g. Businesses for a Personal account, KAN-131). */
+  hiddenKeys?: readonly AssetClassPrefKey[];
 };
 
-export function AssetClassToggles({ value, onChange, disabled }: Props) {
+export function AssetClassToggles({ value, onChange, disabled, hiddenKeys }: Props) {
+  const options = hiddenKeys?.length ? ASSET_CLASS_PREF_OPTIONS.filter((o) => !hiddenKeys.includes(o.key)) : ASSET_CLASS_PREF_OPTIONS;
   const toggle = (key: AssetClassPrefKey) => {
     onChange({ ...value, [key]: !value[key] });
   };
 
   const setAll = (on: boolean) => {
     const next = { ...value };
-    for (const opt of ASSET_CLASS_PREF_OPTIONS) next[opt.key] = on;
+    for (const opt of options) next[opt.key] = on;
     onChange(next);
   };
 
@@ -32,7 +35,7 @@ export function AssetClassToggles({ value, onChange, disabled }: Props) {
         </button>
       </div>
       <ul className="asset-toggle-list" role="list">
-        {ASSET_CLASS_PREF_OPTIONS.map((opt) => {
+        {options.map((opt) => {
           const on = value[opt.key] !== false;
           return (
             <li key={opt.key}>

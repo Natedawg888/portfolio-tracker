@@ -65,6 +65,17 @@ export type PayeInput = {
   studentLoan: boolean;
   /** Apply IETC when eligible (primary only). */
   ietc: boolean;
+  /**
+   * IETC (KAN-100): other taxable income a year besides this job (other jobs, interest,
+   * rent, business). IETC is tested on total income, not this job's pay alone.
+   */
+  ietcOtherIncome?: number;
+  /**
+   * IETC (KAN-100): whole months in the tax year you (or your partner, for Working for Families)
+   * get Working for Families, an income-tested main benefit, NZ Super, a Veteran's Pension or an
+   * overseas equivalent. No IETC for those months.
+   */
+  ietcExcludedMonths?: number;
   /** Annual payroll-giving donation amount (0 = off). */
   payrollGivingAnnual: number;
   /**
@@ -83,7 +94,12 @@ export type PayeBreakdown = {
   /** Package / entered annual equivalent before sacrifice. */
   annualPackage: number;
   incomeTax: number;
+  /** ACC deducted from this job's pay. Uncapped on a secondary code (IR335). */
   acc: number;
+  /** Secondary only: the levy for the year across all jobs, capped at the maximum. Null on a primary code. */
+  accYearEndLevy: number | null;
+  /** Secondary only: ACC deducted over the year's maximum, refunded by IRD after 31 March. */
+  accYearEndRefund: number | null;
   ietcCredit: number;
   /**
    * PAYE after IETC + payroll-giving + extra credits applied to the tax+ACC pot
@@ -276,27 +292,50 @@ export function calculatePaye(input: PayeInput): PayeBreakdown {
     incomeTax = calcIncomeTax(annualGross, rates);
   }
 
-  // ACC: primary uses this job’s gross; secondary uses remaining headroom after other jobs.
-  let accLiable = annualGross;
+  // ACC (KAN-98): on a primary code the employer stops at the maximum liable earnings. On a
+  // secondary code employers deduct the levy on every dollar, with no maximum (IR335); IRD
+  // refunds anything over the maximum levy at year end. So the secondary payslip is uncapped,
+  // and the year-end view caps the combined levy and shows the refund.
+  let acc = calcAcc(annualGross, rates);
+  let accYearEndLevy: number | null = null;
+  let accYearEndRefund: number | null = null;
   if (input.employment === 'secondary') {
+    acc = annualGross * rates.accRate;
     const other = Math.max(0, input.otherAnnualGross);
-    const remaining = Math.max(0, accMaxEarnings - other);
-    accLiable = Math.min(annualGross, remaining);
-    if (other >= accMaxEarnings) {
-      notes.push('Other income already at ACC maximum — no further ACC on this secondary job.');
+    const deducted = calcAcc(other, rates) + acc;
+    accYearEndLevy = calcAcc(other + annualGross, rates);
+    accYearEndRefund = Math.max(0, deducted - accYearEndLevy);
+    if (accYearEndRefund > 0.005) {
+      notes.push(
+        `ACC: secondary jobs deduct the levy with no maximum (IR335). With your other job(s), the year's levy is $${accYearEndLevy.toFixed(2)} (maximum liable earnings $${accMaxEarnings.toLocaleString('en-NZ')}), so expect about $${accYearEndRefund.toFixed(2)} back from IRD after 31 March.`,
+      );
     }
   }
-  const acc = calcAcc(accLiable, rates);
 
+  // IETC (KAN-100, IRD "Independent earner tax credit"): tested on total annual income, and not
+  // for any whole month with Working for Families, a main benefit, NZ Super or a Veteran's Pension.
+  const ietcOther = Math.max(0, input.ietcOtherIncome ?? 0);
+  const ietcTotalIncome = annualGross + ietcOther;
+  const ietcMonthsOff = Math.min(12, Math.max(0, Math.round(input.ietcExcludedMonths ?? 0)));
   const ietcEligible =
     input.employment === 'primary' &&
     input.ietc &&
     ietcRates != null &&
-    annualGross >= ietcRates.minIncome &&
-    annualGross < ietcRates.abateEnd;
-  const ietcCredit = ietcEligible ? calcIetc(annualGross, rates) : 0;
+    ietcTotalIncome >= ietcRates.minIncome &&
+    ietcTotalIncome < ietcRates.abateEnd;
+  const ietcCredit = ietcEligible ? (calcIetc(ietcTotalIncome, rates) * (12 - ietcMonthsOff)) / 12 : 0;
   const ietcApplied = ietcCredit > 0;
-  if (input.ietc && input.employment === 'primary') {
+  if (input.ietc && input.employment === 'primary' && ietcRates) {
+    if (ietcOther > 0) {
+      notes.push(`IETC is tested on total income: $${Math.round(ietcTotalIncome).toLocaleString('en-NZ')} with your other income.`);
+    }
+    if (ietcMonthsOff >= 12) {
+      notes.push('No IETC: it isn’t available while you get Working for Families, a main benefit, NZ Super or a Veteran’s Pension.');
+    } else if (ietcMonthsOff > 0 && ietcEligible) {
+      notes.push(`IETC for ${12 - ietcMonthsOff} of 12 months: none for the ${ietcMonthsOff} month${ietcMonthsOff === 1 ? '' : 's'} with Working for Families, a benefit, NZ Super or a Veteran’s Pension.`);
+    }
+  }
+  if (input.ietc && input.employment === 'primary' && ietcMonthsOff < 12) {
     if (!ietcRates) {
       notes.push(`IETC not applied — it is not loaded for ${rates.label}.`);
     } else if (!ietcApplied) {
@@ -393,6 +432,8 @@ export function calculatePaye(input: PayeInput): PayeBreakdown {
     annualPackage: round2(packageAnnual),
     incomeTax: round2(incomeTax),
     acc: round2(acc),
+    accYearEndLevy: accYearEndLevy == null ? null : round2(accYearEndLevy),
+    accYearEndRefund: accYearEndRefund == null ? null : round2(accYearEndRefund),
     ietcCredit: round2(ietcCredit),
     payeNetOfCredits: round2(payeNetOfCredits),
     payrollGivingDonation: round2(donation),

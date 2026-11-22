@@ -20,6 +20,17 @@ import { historicalPriceNzd } from './prices.ts';
 import { fetchWalletTokenTransfers, fetchWalletTransactions } from '../chain/index.ts';
 import { formatUnits } from '../chain/networks.ts';
 import { NETWORK_CHAIN_INFO } from '../chain/networks.ts';
+import { detectSecret } from '../lib/walletAddress.ts';
+
+/** KAN-48: never store a key or recovery phrase pasted into a note or label. */
+function secretInText(...values: unknown[]): string | null {
+  for (const v of values) {
+    if (typeof v !== 'string' || !v.trim()) continue;
+    const s = detectSecret(v, 'name');
+    if (s) return s === 'seed_phrase' ? 'That looks like a recovery phrase. Never store it anywhere online. Remove it to save.' : 'That looks like a private key. Never store it anywhere online. Remove it to save.';
+  }
+  return null;
+}
 import type { WalletNetwork } from '../lib/walletAddress.ts';
 
 type Result<T> = { ok: true; value: T } | { ok: false; status: number; error: string; code?: string };
@@ -105,6 +116,8 @@ export type TxnDraft = Omit<CryptoTxn, 'id' | 'imported' | 'needsValue' | 'walle
 export function parseTxn(raw: unknown): { ok: true; value: TxnDraft } | { ok: false; error: string } {
   const o = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
   if (!o) return { ok: false, error: 'Enter the transaction' };
+  const secret = secretInText(o.notes, o.counterparty);
+  if (secret) return { ok: false, error: secret };
   if (!isYmd(o.date)) return { ok: false, error: 'Date must be a date' };
   if ((o.date as string) > aucklandToday()) return { ok: false, error: 'The date is in the future' };
   if (!CRYPTO_TXN_KINDS.includes(o.kind as CryptoTxnKind)) return { ok: false, error: 'Choose what kind of transaction it is' };
@@ -330,6 +343,8 @@ export function defiTotals(db: Database, userId: string): { netNzd: number; perP
 function parseDefi(raw: unknown): { ok: true; value: Omit<DefiPosition, 'id'> } | { ok: false; error: string } {
   const o = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
   if (!o) return { ok: false, error: 'Enter the position' };
+  const secret = secretInText(o.notes, o.protocol, o.assets);
+  if (secret) return { ok: false, error: secret };
   const protocol = typeof o.protocol === 'string' ? o.protocol.trim().slice(0, 60) : '';
   if (!protocol) return { ok: false, error: 'Enter the protocol, e.g. Aave' };
   if (!DEFI_KINDS.includes(o.kind as DefiKind)) return { ok: false, error: 'Choose the kind of position' };

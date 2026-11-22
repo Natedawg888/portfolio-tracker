@@ -1,5 +1,5 @@
 /** Settings → Plan wording (KAN-52). Run: npm run test:billing */
-import { BILLING_TEST_NOTE, FREE_FEATURES, PLAN_FEATURES, PLUS_BUSINESS_MANAGEMENT_LINE, canCheckoutPlan, checkoutPendingText, formatNzd, offeredPaidPlans, offeredPlans, plusFeatureLines, priceFor, priceText, settingsCheckoutPlan, settingsPlanOffer, subscriptionLine, yearlySavingPct, type BillingPrice } from './billingView.ts';
+import { BILLING_TEST_NOTE, FREE_FEATURES, PLAN_FEATURES, PLUS_BUSINESS_MANAGEMENT_LINE, canCheckoutPlan, checkoutPendingText, formatNzd, offeredPaidPlans, offeredPlans, plusFeatureLines, priceFor, priceText, settingsCheckoutPlan, settingsPlanOffer, signupPlanOffer, subscriptionLine, yearlySavingPct, type BillingPrice } from './billingView.ts';
 
 function eq(a: unknown, b: unknown, msg: string): void {
   if (a !== b) throw new Error(`FAIL: ${msg}: got ${JSON.stringify(a)}, want ${JSON.stringify(b)}`);
@@ -102,5 +102,18 @@ eq(subscriptionLine({ ...base, cancelAtPeriodEnd: true }), 'Cancelled. Plus stay
 eq(subscriptionLine({ ...base, plan: 'pro', status: 'past_due' }), 'Your last payment didn’t go through. Update your card in Manage billing to keep Pro.', 'past due');
 eq(subscriptionLine({ ...base, plan: 'business', interval: 'month' }), 'Billed monthly. Renews on 2 December 2026.', 'business subscription line');
 eq(subscriptionLine({ ...base, status: 'trialing' }), 'Free trial until 2 December 2026. Billed yearly.', 'trial');
+
+// KAN-130: signup plan step by usage mode.
+{
+  const personal = signupPlanOffer('personal', true, true, true);
+  eq(personal.paidPlans.join(), 'plus,pro', 'Personal signup: no Business card');
+  eq(personal.plusLines.includes(PLUS_BUSINESS_MANAGEMENT_LINE), false, 'Personal signup: no business management line');
+  eq(personal.plusLines.some((l) => l.includes('Clients, invoices and stock')), false, 'Personal signup: no runs-a-business line');
+  eq(personal.showRunsBusiness, false, 'Personal signup: no I run a business tick');
+  eq(signupPlanOffer('personal', false, false, false).paidPlans.join(), 'plus', 'Personal without Pro: Plus only');
+  eq(signupPlanOffer('business', false, false, false).paidPlans.join(), 'plus,business', 'Business: Plus and Business');
+  eq(signupPlanOffer('both', true, true, true).paidPlans.join(), 'plus,pro,business', 'Both: every plan');
+  eq(signupPlanOffer('both', false, true).plusLines.some((l) => l.includes('Clients, invoices and stock')), true, 'Both: tick still adds the line');
+}
 
 console.log('billingView tests passed');
