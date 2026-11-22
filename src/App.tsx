@@ -34,6 +34,7 @@ import {
   PublicInvoicePage,
   BillsPage,
   WarrantiesPage,
+  DonationsPage,
   RentalsPage,
   PayslipsPage,
   VehiclesPage,
@@ -47,13 +48,21 @@ import {
   ValueSearchPage,
   YearlyReportPage,
 } from './lib/routePrefetch';
-import { AuthProvider } from './auth/AuthContext';
+import { AuthProvider, useAuth } from './auth/AuthContext';
+import { homePathForMode, offersHousehold } from './lib/usageMode';
 import { AssetClassPrefsProvider } from './auth/AssetClassPrefsContext';
 import { RequireAuth } from './auth/RequireAuth';
 import { HomeGate } from './auth/HomeGate';
 import './App.css';
 
 /** Invoices moved under Business (KAN-84): /invoices/… → /business/invoices/…, keeping the query. */
+/** Households are personal: a Business-only account is sent home (KAN-133). */
+function HouseholdRoute() {
+  const { user } = useAuth();
+  if (user && !offersHousehold(user.usageMode)) return <Navigate to={homePathForMode(user.usageMode)} replace />;
+  return <HouseholdPage />;
+}
+
 function InvoicesMoved() {
   const { pathname, search, hash } = useLocation();
   return <Navigate replace to={`/business${pathname}${search}${hash}`} />;
@@ -95,12 +104,14 @@ export default function App() {
                   <Route path="bills" element={<BillsPage />} />
                   {/* Warranties: opened from Budget, not in the nav bar (KAN-61). */}
                   <Route path="warranties" element={<WarrantiesPage />} />
+                  {/* Donations: opened from Budget (KAN-25). */}
+                  <Route path="donations" element={<DonationsPage />} />
                   <Route path="rentals" element={<RentalsPage />} />
                   <Route path="payslips" element={<PayslipsPage />} />
                   <Route path="vehicles" element={<VehiclesPage />} />
                   <Route path="crypto" element={<CryptoPage />} />
                   <Route path="shopping" element={<ShoppingListsPage />} />
-                  <Route path="household" element={<HouseholdPage />} />
+                  <Route path="household" element={<HouseholdRoute />} />
                   <Route path="debts" element={<DebtsPage />} />
                   <Route path="yearly" element={<YearlyReportPage />} />
                   {/* Economic cycle is a tab on the PAYE page; the old address still works. */}

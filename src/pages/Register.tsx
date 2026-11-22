@@ -24,6 +24,10 @@ import {
 import { akahuOnboardingRequiredForEmail } from '../lib/onboardingPrefs';
 import { checkoutResume, continueAfterPlan, resolvePaidBusinessReturn, stepFromOnboarding, stepLabel, type OnboardingStep, type PlanContinue } from '../lib/onboardingSteps';
 import { USAGE_MODES, type UsageMode } from '../lib/usageMode';
+import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
+
+/** Asset classes a Personal signup isn't offered (KAN-131). */
+const PERSONAL_HIDDEN_CLASSES: readonly AssetClassPrefKey[] = ['business'];
 import { canCheckoutPlan, type BillingInterval, type PaidPlan } from '../lib/billingView';
 import {
   ADD_BUSINESS_AFTER_SETUP,
@@ -337,7 +341,8 @@ export function Register() {
     setBusy(true);
     midSignupRef.current = true;
     try {
-      await savePrefs(prefs);
+      // Personal accounts aren't offered Businesses (KAN-131), so it's saved off.
+      await savePrefs(stepMode === 'personal' ? { ...prefs, business: false } : prefs);
       await refresh();
       // Optional wallet step only when Crypto is turned on.
       setStep(prefs.crypto ? 'wallets' : 'budgets');
@@ -677,6 +682,7 @@ export function Register() {
             {info ? <p className="auth-info" role="status">{info}</p> : null}
             {error ? <p className="auth-error" role="alert">{error}</p> : null}
             <ChoosePlanStep
+              usage={stepMode}
               busy={planAction}
               onFree={(runsBusiness) => void finishPlan(user, false, 'free', runsBusiness)}
               onSkip={(runsBusiness) => void finishPlan(user, false, 'skip', runsBusiness)}
@@ -693,7 +699,7 @@ export function Register() {
             </p>
             {info ? <p className="auth-info" role="status">{info}</p> : null}
             <form className="auth-form" onSubmit={onAssets}>
-              <AssetClassToggles value={prefs} onChange={setPrefs} disabled={busy} />
+              <AssetClassToggles value={prefs} onChange={setPrefs} disabled={busy} hiddenKeys={stepMode === 'personal' ? PERSONAL_HIDDEN_CLASSES : undefined} />
               {error ? <p className="auth-error" role="alert">{error}</p> : null}
               <button type="submit" className="btn primary" disabled={busy}>
                 {busy ? 'Saving…' : 'Save & continue'}

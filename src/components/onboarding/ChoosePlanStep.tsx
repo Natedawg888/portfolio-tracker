@@ -2,18 +2,23 @@
  * Signup → Choose your plan. Free continues. Plus and Business open Stripe Checkout.
  * Pro is listed only when it is on sale (PRO_PLAN_FOR_SALE) and GET /api/billing says
  * proPlanEnabled. Prices are that response, not a second copy of the catalog.
+ * A Personal account isn't offered Business or the business lines (KAN-130).
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type BillingStatus } from '../../api/client';
 import { BillingPlanPicker, BillingTestNote } from '../billing/BillingPlanPicker';
-import { canCheckoutPlan, type BillingInterval, type PaidPlan } from '../../lib/billingView';
+import { canCheckoutPlan, signupPlanOffer, type BillingInterval, type PaidPlan } from '../../lib/billingView';
+import type { UsageMode } from '../../lib/usageMode';
 
 export function ChoosePlanStep({
+  usage,
   busy,
   onFree,
   onSkip,
   onPaid,
 }: {
+  /** The usage mode chosen in the step before. */
+  usage: UsageMode;
   /** 'free', 'skip', or a paid plan id while that action is in flight. */
   busy: string | null;
   onFree: (runsBusiness: boolean) => void;
@@ -23,7 +28,9 @@ export function ChoosePlanStep({
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [failed, setFailed] = useState(false);
   const [interval, setInterval] = useState<BillingInterval>('month');
-  const [runsBusiness, setRunsBusiness] = useState(false);
+  const [runsBusinessTick, setRunsBusiness] = useState(false);
+  const offer = signupPlanOffer(usage, status?.proPlanEnabled === true, runsBusinessTick);
+  const runsBusiness = offer.showRunsBusiness && runsBusinessTick;
 
   const load = useCallback(async () => {
     try {
@@ -45,6 +52,7 @@ export function ChoosePlanStep({
       <p className="page-lead">
         Prices are in NZD and include GST. You can change this any time in Settings. Free is enough to start, and skipping leaves you on Free.
       </p>
+      {offer.showRunsBusiness ? (
       <label className="runs-business-tick">
         <input type="checkbox" checked={runsBusiness} disabled={busy != null} onChange={(e) => setRunsBusiness(e.target.checked)} />
         <span>
@@ -52,6 +60,7 @@ export function ChoosePlanStep({
           <span className="muted small">Clients, invoices and stock need Plus or Business. Profit and loss, GST and the accountant export are on Business.</span>
         </span>
       </label>
+      ) : null}
       {runsBusiness ? (
         <p className="billing-test-note small" role="note">
           On Free, business management waits until you choose Plus or Business. Ticking this and choosing Plus, Pro or Business opens a business for you.
@@ -75,6 +84,8 @@ export function ChoosePlanStep({
           paidEnabled={status.available}
           showFree
           runsBusiness={runsBusiness}
+          paidPlans={offer.paidPlans}
+          plusLines={offer.plusLines}
           onChooseFree={() => onFree(runsBusiness)}
           onChoosePaid={(plan) => {
             if (!canCheckoutPlan(plan)) return;

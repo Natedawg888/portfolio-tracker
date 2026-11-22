@@ -4,6 +4,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { Database } from 'sql.js';
 import { getDb, queryAll, queryOne, run, newId } from '../db/index.ts';
+import { sessionKeyStore } from '../security/dataKey.ts';
 
 export const SESSION_COOKIE = 'pt_sid';
 /** 30 days */
@@ -135,6 +136,7 @@ export function revokeSession(database: Database, userId: string, sessionId: str
   const hit = queryOne(database, `SELECT id FROM sessions WHERE id = ? AND user_id = ?`, [sessionId, userId]);
   if (!hit) return false;
   run(database, `DELETE FROM sessions WHERE id = ? AND user_id = ?`, [sessionId, userId]);
+  sessionKeyStore.clear(sessionId);
   return true;
 }
 
@@ -145,6 +147,9 @@ export function revokeOtherSessions(database: Database, userId: string, keepSess
     `SELECT COUNT(*) AS c FROM sessions WHERE user_id = ? AND id != ?`,
     [userId, keepSessionId],
   );
+  for (const r of queryAll<{ id: string }>(database, `SELECT id FROM sessions WHERE user_id = ? AND id != ?`, [userId, keepSessionId])) {
+    sessionKeyStore.clear(r.id);
+  }
   run(database, `DELETE FROM sessions WHERE user_id = ? AND id != ?`, [userId, keepSessionId]);
   return Number(c?.c ?? 0);
 }
@@ -152,6 +157,8 @@ export function revokeOtherSessions(database: Database, userId: string, keepSess
 export async function destroySessionByToken(rawToken: string | undefined | null): Promise<void> {
   if (!rawToken) return;
   const db = await getDb();
+  const hit = queryOne<{ id: string }>(db, `SELECT id FROM sessions WHERE token_hash = ?`, [hashToken(rawToken)]);
+  if (hit) sessionKeyStore.clear(hit.id);
   run(db, `DELETE FROM sessions WHERE token_hash = ?`, [hashToken(rawToken)]);
 }
 
@@ -184,6 +191,7 @@ export async function findUserBySessionToken(
   if (!row) return null;
   if (String(row.expires_at) <= now) {
     run(db, `DELETE FROM sessions WHERE id = ?`, [row.session_id]);
+    sessionKeyStore.clear(String(row.session_id));
     return null;
   }
   const seen = row.last_seen_at ? Date.parse(row.last_seen_at) : 0;
@@ -207,6 +215,8 @@ export async function findUserBySessionToken(
 export function purgeExpiredSessions(database: Database): void {
   const now = new Date().toISOString();
   database.run(`DELETE FROM sessions WHERE expires_at <= ?`, [now]);
+  // Data keys live only as long as their session (KAN-110).
+  sessionKeyStore.retain(new Set(queryAll<{ id: string }>(database, `SELECT id FROM sessions`).map((r) => r.id)));
 }
 
 export function parseCookieHeader(header: string | undefined, name: string): string | null {
@@ -292,5 +302,6 @@ export function destroySessionsForUser(database: Database, userId: string): numb
     [userId],
   );
   run(database, `DELETE FROM sessions WHERE user_id = ?`, [userId]);
+  sessionKeyStore.clearUser(userId);
   return Number(before?.c ?? 0);
 }

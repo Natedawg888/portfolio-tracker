@@ -4,6 +4,7 @@
  * Never asks for a private key, recovery phrase or password; obvious secrets are
  * blocked here before they leave the browser, and the server rejects the rest.
  */
+import { obviousWalletSecret } from '../lib/walletSecretHint';
 import { useId, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../api/client';
 import type { Wallet, WalletNetwork } from '../types';
@@ -60,20 +61,6 @@ const PLACEHOLDER: Record<WalletNetwork, string> = {
   solana: 'Solana address',
 };
 
-const SEED_MSG =
-  'That looks like a recovery phrase. Never share it with anyone — only your public wallet address is needed.';
-const KEY_MSG =
-  'That looks like a private key. Never share it with anyone — only your public wallet address is needed.';
-
-/** Catch the obvious cases client-side so they are never sent anywhere. */
-function obviousSecret(input: string): string | null {
-  const s = input.trim();
-  if (s.split(/[\s,;]+/).filter((w) => /^\p{L}{3,8}$/u.test(w)).length >= 12) return SEED_MSG;
-  if (/^(0x)?[0-9a-f]{64}$/i.test(s)) return KEY_MSG;
-  if (/^[xyztuvYZUV]prv/.test(s)) return KEY_MSG;
-  return null;
-}
-
 type Props = {
   onAdded: (wallet: Wallet) => void;
   /** Sign-up: show a skip button. */
@@ -102,7 +89,7 @@ export function AddWalletPanel({ onAdded, onSkip, skipLabel = 'Skip for now', on
     setError(null);
     setCustodialError(false);
     setAdded(null);
-    const secret = obviousSecret(address);
+    const secret = obviousWalletSecret(address);
     if (secret) {
       setAddress(''); // don't leave a secret sitting in the field
       setError(secret);

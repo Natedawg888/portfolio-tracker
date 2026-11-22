@@ -4,6 +4,7 @@ import { InfoTip } from '../components/InfoTip';
 import { PayeChoiceRow } from '../components/PayeChoiceRow';
 import { PayeResultPanel } from '../components/PayeResultPanel';
 import { MortgageCalculator } from '../components/MortgageCalculator';
+import { SalaryCompare } from '../components/SalaryCompare';
 import { isMoneyHidden } from '../lib/privacy';
 import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import {
@@ -333,6 +334,8 @@ export function Paye() {
 
   const [studentLoan, setStudentLoan] = useState(initial.studentLoan);
   const [ietc, setIetc] = useState(initial.ietc);
+  const [ietcOtherIncome, setIetcOtherIncome] = useState(initial.ietcOtherIncome);
+  const [ietcExcludedMonths, setIetcExcludedMonths] = useState(initial.ietcExcludedMonths);
   const [payrollGivingOn, setPayrollGivingOn] = useState(initial.payrollGivingOn);
   const [payrollGivingAnnual, setPayrollGivingAnnual] = useState(initial.payrollGivingAnnual);
   const [charityDonationsOn, setCharityDonationsOn] = useState(initial.charityDonationsOn);
@@ -349,6 +352,7 @@ export function Paye() {
   const investingOpen = investingPref ?? extraCreditDrafts.length > 0;
   const [includedOpen, setIncludedOpen] = useState(false);
   const [mortgageOpen, setMortgageOpen] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
 
   // Persist last inputs (incl. investing + charity credits) and re-apply on next load.
   // Preserve charityLinks written from Budget so we do not wipe receipt links.
@@ -369,6 +373,8 @@ export function Paye() {
       salarySacrifice,
       studentLoan,
       ietc,
+      ietcOtherIncome,
+      ietcExcludedMonths,
       payrollGivingOn,
       payrollGivingAnnual,
       charityDonationsOn,
@@ -391,6 +397,8 @@ export function Paye() {
     salarySacrifice,
     studentLoan,
     ietc,
+    ietcOtherIncome,
+    ietcExcludedMonths,
     payrollGivingOn,
     payrollGivingAnnual,
     charityDonationsOn,
@@ -478,6 +486,8 @@ export function Paye() {
       salarySacrifice: kiwiSaverOptIn && salarySacrifice,
       studentLoan,
       ietc,
+      ietcOtherIncome: Number(ietcOtherIncome) || 0,
+      ietcExcludedMonths: Number(ietcExcludedMonths) || 0,
       payrollGivingAnnual: payrollGivingOn ? Number(payrollGivingAnnual) || 0 : 0,
       charityDonationsAnnual: charityDonationsOn ? Number(charityDonationsAnnual) || 0 : 0,
       extraCredits: draftsToExtraCredits(extraCreditDrafts),
@@ -492,6 +502,8 @@ export function Paye() {
       salarySacrifice,
       studentLoan,
       ietc,
+      ietcOtherIncome,
+      ietcExcludedMonths,
       payrollGivingOn,
       payrollGivingAnnual,
       charityDonationsOn,
@@ -513,6 +525,7 @@ export function Paye() {
   }, [hasIncome, outputType, amountNum, effectiveFrequency, hours, payeOptions, rates]);
 
   const periods = result ? periodiseBreakdown(result, hours) : null;
+  const compareOptions = useMemo(() => ({ ...payeOptions, taxYear: rates.startYear }), [payeOptions, rates]);
 
   const salaryPeriod: PayFrequency = frequency === 'hour' ? 'year' : frequency;
 
@@ -619,10 +632,27 @@ export function Paye() {
         >
           Mortgage calculator <span aria-hidden="true">{mortgageOpen ? '▴' : '▾'}</span>
         </button>
+        <button
+          type="button"
+          className="btn small paye-mortgage-toggle"
+          aria-expanded={compareOpen}
+          aria-controls="paye-salary-compare"
+          onClick={() => setCompareOpen((open) => !open)}
+        >
+          Compare salaries <span aria-hidden="true">{compareOpen ? '▴' : '▾'}</span>
+        </button>
         <WhatsIncluded open={includedOpen} rates={rates} />
       </header>
 
       {mortgageOpen ? <MortgageCalculator id="paye-mortgage" takeHomeYear={result?.takeHome ?? null} /> : null}
+      {compareOpen ? (
+        <SalaryCompare
+          id="paye-salary-compare"
+          options={compareOptions}
+          currentSalary={result?.annualPackage ?? null}
+          taxYearLabel={rates.label}
+        />
+      ) : null}
 
       <div className="paye-layout">
       <div className="paye-inputs">
@@ -750,7 +780,7 @@ export function Paye() {
                 onChange={(e) => setOtherAnnual(e.target.value)}
               />
               <span className="muted small">
-                Used for ACC headroom (max liable earnings {money(rates.accMaxEarnings)}).
+                Used for the year-end ACC refund: secondary jobs deduct ACC with no maximum, and IRD refunds anything over the levy on {money(rates.accMaxEarnings)}.
               </span>
             </label>
           </div>
@@ -878,6 +908,7 @@ export function Paye() {
             onChange={setIetc}
             disabled={employment === 'secondary' || !rates.ietc}
             note={!rates.ietc ? 'Not loaded for this year' : employment === 'secondary' ? 'Main job only' : undefined}
+            controls="paye-ietc"
             tipLabel="About the independent earner tax credit"
             tip={
               rates.ietc
@@ -902,6 +933,23 @@ export function Paye() {
             tipLabel="About the charity donation tax credit"
             tip={charityDonationTip(DONATION_TAX_CREDIT_RATE)}
           />
+        </div>
+        <div id="paye-ietc" className="paye-reveal" hidden={!ietc || employment === 'secondary' || !rates.ietc}>
+          <div className="form-grid">
+            <label htmlFor="paye-ietc-other">
+              Other taxable income a year
+              <input id="paye-ietc-other" type="number" min={0} step="any" value={ietcOtherIncome} onChange={(e) => setIetcOtherIncome(e.target.value)} />
+              <span className="muted small">Other jobs, interest, rent or business. IETC is tested on your total income.</span>
+            </label>
+            <label htmlFor="paye-ietc-months">
+              Months with WFF, a benefit or NZ Super
+              <input id="paye-ietc-months" type="number" min={0} max={12} step={1} value={ietcExcludedMonths} onChange={(e) => setIetcExcludedMonths(e.target.value)} />
+              <span className="muted small">
+                Months you (or your partner, for Working for Families) get Working for Families, a main benefit, NZ Super or a Veteran’s Pension. No IETC for those months (
+                <a href="https://www.ird.govt.nz/income-tax/income-tax-for-individuals/individual-tax-credits/independent-earner-tax-credit-ietc" target="_blank" rel="noreferrer">IRD: IETC</a>).
+              </span>
+            </label>
+          </div>
         </div>
         <div id="paye-charity" className="paye-reveal" hidden={!charityDonationsOn}>
           <div className="form-grid">

@@ -1796,3 +1796,15 @@ CREATE INDEX IF NOT EXISTS idx_wallets_user ON wallets(user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_wallets_user_network_address ON wallets(user_id, network, address);
 
 -- per-user indexes created in migrateSchema after user_id columns exist
+
+-- Per-user data key (KAN-106 / KAN-110): the random data key wrapped (AES-256-GCM) under a key
+-- derived (Argon2id) from a secret the user holds. kind: password | sso_passphrase (later
+-- recovery, passkey:<id>). The unwrapped key is never stored.
+CREATE TABLE IF NOT EXISTS user_key_wraps (
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind        TEXT NOT NULL,
+  wrapped     TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL,
+  PRIMARY KEY (user_id, kind)
+);
