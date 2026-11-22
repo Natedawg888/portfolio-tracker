@@ -2742,3 +2742,11 @@ export type {
   SwitchAccountResponse,
   UnlinkAccountResponse,
 } from './accountLinks';
+
+/** Scenario tool end-of-period figures (KAN-32). */
+export interface ScenarioSummary {
+  netWorthEndNzd: number;
+  savingsEndNzd: number;
+  investmentsEndNzd: number;
+  debtEndNzd: number;
+}
