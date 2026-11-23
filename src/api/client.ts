@@ -1364,6 +1364,12 @@ export const api = {
     list: (opts: { from: string; to: string; types: TimelineType[] }) =>
       req<TimelineEvent[]>(`/timeline?${new URLSearchParams({ from: opts.from, to: opts.to, types: opts.types.join(',') })}`),
   },
+  /** CSV / PDF export of budget, portfolio / assets and KiwiSaver (KAN-63). Plain download links. */
+  exports: {
+    csvUrl: (section: 'budget' | 'assets' | 'kiwisaver' | 'all', from: string, to: string) =>
+      `${BASE}/export/csv?${new URLSearchParams({ section, from, to })}`,
+    pdfUrl: (from: string, to: string) => `${BASE}/export/pdf?${new URLSearchParams({ from, to })}`,
+  },
   alerts: {
     list: () => req<{ alerts: AlertItem[]; unread: number }>('/alerts'),
     read: (id: string | null) => req<{ unread: number }>('/alerts/read', { method: 'POST', body: JSON.stringify({ id }) }),
