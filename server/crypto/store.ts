@@ -232,6 +232,53 @@ export function setAssetPurpose(db: Database, userId: string, body: unknown): Re
   return { ok: true, value: { asset, notForDisposal: o.notForDisposal } };
 }
 
+// --- Mining payouts already recorded in Income (KAN-94) ----------------------------------
+
+type MiningIncomeRow = { id: string; date: string; amount_nzd: number; crypto_asset: string | null; crypto_amount: number | null; description: string };
+export type MiningPayout = { id: string; date: string; asset: string; amount: number; nzdValue: number; description: string };
+
+const miningRef = (incomeId: string) => `income:${incomeId}`;
+
+/** Crypto income records (Income → Mining, e.g. GoMining daily rewards) not yet in the ledger. */
+export function miningPayoutsToImport(db: Database, userId: string): Result<{ payouts: MiningPayout[] }> {
+  if (!isPro(db, userId)) return PRO_REQUIRED();
+  const seen = new Set(queryAll<{ ref: string }>(db, `SELECT ref FROM crypto_import_refs WHERE user_id = ?`, [userId]).map((r) => r.ref));
+  const rows = queryAll<MiningIncomeRow>(
+    db,
+    `SELECT id, date, amount_nzd, crypto_asset, crypto_amount, description FROM income_records
+     WHERE user_id = ? AND kind = 'crypto' AND crypto_asset IS NOT NULL AND crypto_amount > 0 ORDER BY date`,
+    [userId],
+  );
+  const payouts = rows
+    .filter((r) => !seen.has(miningRef(r.id)))
+    .map((r) => ({ id: r.id, date: r.date, asset: String(r.crypto_asset).trim().toUpperCase(), amount: Number(r.crypto_amount), nzdValue: roundMoney(Number(r.amount_nzd)), description: r.description ?? '' }));
+  return { ok: true, value: { payouts } };
+}
+
+/** Add the chosen payouts to the ledger as mining rewards (income at the NZD value recorded). */
+export function importMiningPayouts(db: Database, userId: string, body: unknown): Result<{ added: number }> {
+  if (!isPro(db, userId)) return PRO_REQUIRED();
+  const ids = (body as { ids?: unknown } | null)?.ids;
+  if (!Array.isArray(ids) || !ids.every((i) => typeof i === 'string')) return fail(400, 'Choose the payouts to add');
+  const list = miningPayoutsToImport(db, userId);
+  if (!list.ok) return list;
+  const wanted = new Set(ids as string[]);
+  const now = new Date().toISOString();
+  let added = 0;
+  for (const p of list.value.payouts) {
+    if (!wanted.has(p.id)) continue;
+    insertTxn(
+      db,
+      userId,
+      { date: p.date, kind: 'mining_reward', asset: p.asset, amount: p.amount, nzdValue: p.nzdValue, feeNzd: 0, toAsset: null, toAmount: null, counterparty: null, notes: p.description ? `From Income: ${p.description}`.slice(0, 300) : 'From Income', taxableOnReceipt: false, priceSource: 'manual' },
+      { externalRef: miningRef(p.id) },
+    );
+    run(db, `INSERT OR IGNORE INTO crypto_import_refs (user_id, ref, ignored, created_at) VALUES (?,?,0,?)`, [userId, miningRef(p.id), now]);
+    added++;
+  }
+  return { ok: true, value: { added } };
+}
+
 export function costMethodOf(db: Database, userId: string): CostMethod {
   return queryOne<{ cost_method: string }>(db, `SELECT cost_method FROM crypto_settings WHERE user_id = ?`, [userId])?.cost_method === 'wac' ? 'wac' : 'fifo';
 }
