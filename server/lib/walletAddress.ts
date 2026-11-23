@@ -8,6 +8,7 @@
  * Seed phrases and private keys are detected *before* address validation so the user
  * gets a clear "never share this" message. Callers must never log or echo the input.
  */
+import { parseExtendedPublicKey } from '../chain/xpub.ts';
 import { createHash, createPrivateKey, createPublicKey } from 'node:crypto';
 
 export type WalletFamily = 'evm' | 'bitcoin' | 'solana';
@@ -140,7 +141,7 @@ export function validateWalletAddress(network: WalletNetwork, raw: string): Addr
 
   let address: string | null = null;
   if (family === 'evm') address = normaliseEvmAddress(input);
-  else if (family === 'bitcoin') address = normaliseBitcoinAddress(input);
+  else if (family === 'bitcoin') address = normaliseBitcoinAddress(input) ?? (parseExtendedPublicKey(input) ? input : null);
   else address = normaliseSolanaAddress(input);
 
   if (!address) {
@@ -148,7 +149,7 @@ export function validateWalletAddress(network: WalletNetwork, raw: string): Addr
       family === 'evm'
         ? 'Expected 0x followed by 40 hex characters (mixed-case addresses must match the EIP-55 checksum).'
         : family === 'bitcoin'
-          ? 'Expected a Bitcoin mainnet address starting with 1, 3 or bc1.'
+          ? 'Expected a Bitcoin mainnet address starting with 1, 3 or bc1, or an xpub, ypub or zpub.'
           : 'Expected a base58 Solana address (32–44 characters).';
     return { ok: false, error: `Not a valid ${label} address. ${hint}` };
   }

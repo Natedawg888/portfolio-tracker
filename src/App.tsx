@@ -35,6 +35,7 @@ import {
   BillsPage,
   WarrantiesPage,
   DonationsPage,
+  AlertsPage,
   TimelinePage,
   RentalsPage,
   PayslipsPage,
@@ -107,6 +108,7 @@ export default function App() {
                   <Route path="warranties" element={<WarrantiesPage />} />
                   {/* Donations: opened from Budget (KAN-25). */}
                   <Route path="donations" element={<DonationsPage />} />
+                  <Route path="alerts" element={<AlertsPage />} />
                   {/* Financial timeline: opened from History (KAN-62). */}
                   <Route path="timeline" element={<TimelinePage />} />
                   <Route path="rentals" element={<RentalsPage />} />
