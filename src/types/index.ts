@@ -1371,7 +1371,7 @@ export interface InvoiceClientWriteBody {
 
 // ---------------------------------------------------------------- Business (KAN-84)
 
-export type BusinessTypeValue = 'sole_trader' | 'partnership' | 'company' | 'hobby';
+export type BusinessTypeValue = 'sole_trader' | 'partnership' | 'company' | 'hobby' | 'holding_company';
 export type BusinessAssetCategory = 'livestock' | 'beehives' | 'equipment' | 'vehicle' | 'stock' | 'other';
 export type BusinessMovementKind = 'purchase' | 'birth' | 'sale' | 'death' | 'loss';
 
@@ -1532,6 +1532,26 @@ export interface BusinessProduce {
   valueOn: string | null;
   /** Price over 30 days old, or undated. */
   stale: boolean;
+}
+
+/** One asset class a holding company holds (KAN-134). Values match Portfolio. */
+export interface BusinessAssetClassRow {
+  key: string;
+  label: string;
+  valueNzd: number;
+  count: number;
+  /** Holdings in the class with no value yet (counted, not added). */
+  unvalued: number;
+}
+
+/** A Portfolio holding the owner can assign to a business (KAN-134). */
+export interface BusinessHoldingOption {
+  id: string;
+  label: string;
+  assetClass: string;
+  classLabel: string;
+  assignedHere: boolean;
+  assignedElsewhere: boolean;
 }
 
 export interface BusinessDetail {
@@ -2457,7 +2477,7 @@ export interface VehiclesView {
 }
 
 /** Advanced crypto (KAN-47, Pro). */
-export type CryptoTxnKind = 'buy' | 'sell' | 'swap' | 'transfer_in' | 'transfer_out' | 'staking_reward' | 'airdrop' | 'income' | 'spend' | 'gift_out' | 'fee' | 'defi_deposit' | 'defi_withdraw';
+export type CryptoTxnKind = 'buy' | 'sell' | 'swap' | 'transfer_in' | 'transfer_out' | 'staking_reward' | 'mining_reward' | 'airdrop' | 'hard_fork' | 'income' | 'spend' | 'gift_out' | 'fee' | 'defi_deposit' | 'defi_withdraw';
 export interface CryptoTxnBody {
   date: string;
   kind: CryptoTxnKind;
@@ -2472,6 +2492,8 @@ export interface CryptoTxnBody {
   notes: string;
   /** Airdrops only (KAN-86): taxable on receipt (business, scheme, services, regular airdrops). */
   taxableOnReceipt?: boolean;
+  /** DeFi deposit / withdrawal (KAN-87): pooled, so a disposal. Default true. */
+  pooled?: boolean;
 }
 export interface CryptoTxn extends CryptoTxnBody {
   id: string;
@@ -2743,6 +2765,13 @@ export type {
   UnlinkAccountResponse,
 } from './accountLinks';
 
+/** Scenario tool end-of-period figures (KAN-32). */
+export interface ScenarioSummary {
+  netWorthEndNzd: number;
+  savingsEndNzd: number;
+  investmentsEndNzd: number;
+  debtEndNzd: number;
+}
 /** Financial timeline (KAN-62). */
 export type TimelineType = 'bank' | 'crypto' | 'dividend' | 'milestone';
 export interface TimelineEvent {
@@ -2755,4 +2784,25 @@ export interface TimelineEvent {
   amountText: string | null;
   direction: 'in' | 'out' | null;
   link: string | null;
+}
+
+/** Alerts (KAN-64). */
+export interface AlertItem {
+  id: string;
+  kind: 'overspend' | 'bill_due' | 'goal' | 'unusual';
+  title: string;
+  body: string;
+  link: string | null;
+  createdAt: string;
+  readAt: string | null;
+}
+export interface AlertSettings {
+  overspend: boolean;
+  overspendPct: number;
+  billDue: boolean;
+  billDaysAhead: number;
+  goal: boolean;
+  unusual: boolean;
+  unusualMultiple: number;
+  email: boolean;
 }

@@ -297,6 +297,9 @@ export function Login() {
           Sign in
         </BusyLabel>
       </button>
+      <p className="small auth-alt">
+        <Link to="/recover">Forgot your password? Use your recovery code</Link>
+      </p>
     </form>
   );
 

@@ -12,6 +12,7 @@ import { showQuietToast } from '../lib/quietToast';
 import { BUSINESS_TYPES, businessTypeLabel, entriesText, isUnstarted, netWorthNote, profitClass, type BusinessType } from '../lib/business';
 import { businessSetupTarget } from '../lib/onboardingSteps';
 import { BusinessFigures, BusinessMark, BusinessTabs, TaxYearSwitch, TypeNote, errorText } from '../components/business/BusinessUi';
+import { HoldingCompanyInvestments } from '../components/business/HoldingCompanyInvestments';
 import { BusinessForm, blankBusiness, businessBody } from '../components/business/BusinessForm';
 import { BusinessSetup } from '../components/business/BusinessSetup';
 import { MoreMenu } from '../components/MoreMenu';
@@ -107,6 +108,7 @@ function Card({ b, next, onEdit, onType, onRemoved }: {
           </Link>
         </p>
       ) : null}
+      {b.type === 'holding_company' ? <HoldingCompanyInvestments businessId={b.id} name={name} compact /> : null}
       {b.totals.outstandingNzd > 0 ? <p className="muted small business-card-owed">{formatNzd(b.totals.outstandingNzd)} still owed on sent invoices</p> : null}
       <TypeNote type={b.type} name={name} onChange={onType} />
     </article>

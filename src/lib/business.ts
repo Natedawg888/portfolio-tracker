@@ -14,6 +14,7 @@ export const BUSINESS_TYPES = [
   { value: 'partnership', label: 'Partnership' },
   { value: 'company', label: 'Company' },
   { value: 'hobby', label: 'Hobby' },
+  { value: 'holding_company', label: 'Holding company' },
 ] as const;
 export type BusinessType = (typeof BUSINESS_TYPES)[number]['value'];
 
@@ -109,6 +110,7 @@ export const BUSINESS_TYPE_NOTES: Record<BusinessType, string> = {
   sole_trader: 'You pay tax on the profit as personal income and file an IR3 each year. You may also need to pay provisional tax.',
   partnership: 'The partnership files an IR7. Each partner pays tax on their share of the profit in their own IR3.',
   company: 'The company files its own return (IR4) and pays tax at 28%. Money you take out is taxed as salary or dividends.',
+  holding_company: 'A company that owns investments: shares, property, crypto and the like. It files its own IR4 and pays tax at 28% on its income. Assign the holdings it owns from Portfolio below.',
   hobby: 'Hobby income usually isn’t taxed, and hobby costs can’t be claimed. If you’re selling regularly to make money, IRD may treat it as a business.',
 };
 

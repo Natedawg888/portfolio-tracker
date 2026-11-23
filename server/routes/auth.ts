@@ -7,6 +7,7 @@
  * ALLOW_EXISTING_DATA_CLAIM is set on the server (rule in auth/users.ts).
  */
 import { hashToken } from '../auth/sessions.ts';
+import { hasRecoveryCode, issueRecoveryCode, keyFromRecoveryCode, resetWithRecovery, sessionKey } from '../security/userKeys.ts';
 import { createKeyForPassword, dataKeyState, holdKeyForChallenge, keyForPasswordSignIn, rewrapForNewPassword, setUnlockPassphrase, takeKeyForChallenge, unlockWithSecret } from '../security/userKeys.ts';
 import { Router } from 'express';
 import { getDb, queryOne, run } from '../db/index.ts';
@@ -317,6 +318,8 @@ router.post('/register', async (req, res) => {
   const prefsJson = created.preferencesJson;
 
   const dataKey = await createKeyForPassword(db, id, password);
+  // KAN-111: a recovery code that also opens the key, shown once.
+  const recoveryCode = await issueRecoveryCode(db, id, dataKey);
   if (!(await startSession(req, res, id, parseRemember(req.body), { method: 'register', dataKey }))) return;
   res.status(201).json({
     user: toPublicUser(db, {
@@ -330,6 +333,7 @@ router.post('/register', async (req, res) => {
       preferences_json: prefsJson,
     }),
     claimedExistingData,
+    recoveryCode,
     message: claimedExistingData
       ? 'Account created. Existing local portfolio data is now available under this account.'
       : 'Account created.',
@@ -732,7 +736,8 @@ router.get('/data-key', async (req: AuthedRequest, res) => {
     res.status(401).json({ error: 'Authentication required', code: 'UNAUTHORIZED' });
     return;
   }
-  res.json({ state: dataKeyState(await getDb(), req.user.id, req.user.sessionId) });
+  const db = await getDb();
+  res.json({ state: dataKeyState(db, req.user.id, req.user.sessionId), hasRecoveryCode: hasRecoveryCode(db, req.user.id) });
 });
 
 router.post('/data-key/passphrase', async (req: AuthedRequest, res) => {
@@ -752,6 +757,74 @@ router.post('/data-key/passphrase', async (req: AuthedRequest, res) => {
     return;
   }
   res.json({ ok: true, state: 'unlocked' });
+});
+
+/**
+ * New recovery code (KAN-111): needs this session unlocked and the password (or a sign-in in the
+ * last 15 minutes for accounts without one). Replaces the old code; the new one is shown once.
+ */
+router.post('/data-key/recovery-code', async (req: AuthedRequest, res) => {
+  if (!req.user?.sessionId) {
+    res.status(401).json({ error: 'Authentication required', code: 'UNAUTHORIZED' });
+    return;
+  }
+  const db = await getDb();
+  const key = sessionKey(req.user.id, req.user.sessionId);
+  if (!key) {
+    res.status(409).json({ error: 'Unlock your data first.', code: 'DATA_LOCKED' });
+    return;
+  }
+  const row = loadUserRow(db, req.user.id);
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  const ok = row && hasPassword(row.password_hash) ? await verifyPassword(password, row.password_hash) : await recentlyConfirmed(db, req.user, null);
+  if (!ok) {
+    res.status(403).json({ error: 'Enter your password to make a new recovery code.', code: 'WRONG_PASSWORD' });
+    return;
+  }
+  res.json({ recoveryCode: await issueRecoveryCode(db, req.user.id, key) });
+});
+
+/**
+ * Forgotten password (KAN-111): { email, recoveryCode, newPassword, code? }. The recovery code
+ * unlocks the data key, which is wrapped under the new password; 2FA accounts also need an
+ * authenticator or backup code. Every session is signed out, a new session starts unlocked, and a
+ * new recovery code is returned (the old one is used up). Rate limited like sign-in.
+ */
+router.post('/recover', async (req, res) => {
+  const email = normalizeEmail(typeof req.body?.email === 'string' ? req.body.email : '');
+  const recoveryCode = typeof req.body?.recoveryCode === 'string' ? req.body.recoveryCode : '';
+  const newPassword = typeof req.body?.newPassword === 'string' ? req.body.newPassword : '';
+  const client = clientKey(req);
+  const blocked = loginBlockedSec(email, client);
+  if (blocked > 0) {
+    res.setHeader('Retry-After', String(blocked));
+    res.status(429).json({ error: 'Too many attempts. Try again in a few minutes.', code: 'TOO_MANY_ATTEMPTS' });
+    return;
+  }
+  const passErr = validatePassword(newPassword);
+  if (passErr) {
+    res.status(400).json({ error: passErr, code: 'INVALID_PASSWORD' });
+    return;
+  }
+  const db = await getDb();
+  const user = email ? await getUserByEmail(email) : null;
+  const key = user ? await keyFromRecoveryCode(db, user.id, recoveryCode) : null;
+  if (!user || !key) {
+    recordLoginFailure(email, client);
+    res.status(401).json({ error: 'That email and recovery code don’t match.', code: 'INVALID_RECOVERY' });
+    return;
+  }
+  if (isTwoFactorEnabled(db, user.id) && !verifySecondFactor(db, user.id, req.body?.code).ok) {
+    recordLoginFailure(email, client);
+    res.status(401).json({ error: 'Enter a code from your authenticator app, or a backup code.', code: 'TWO_FACTOR_REQUIRED' });
+    return;
+  }
+  clearLoginFailures(email);
+  run(db, `UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?`, [await hashPassword(newPassword), new Date().toISOString(), user.id]);
+  const nextCode = await resetWithRecovery(db, user.id, key, newPassword);
+  destroySessionsForUser(db, user.id);
+  if (!(await startSession(req, res, user.id, true, { method: 'password', dataKey: key }))) return;
+  res.json({ ok: true, recoveryCode: nextCode });
 });
 
 router.post('/data-key/unlock', async (req: AuthedRequest, res) => {

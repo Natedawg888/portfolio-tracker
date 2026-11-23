@@ -61,6 +61,7 @@ type TxnRow = {
   counterparty: string | null;
   notes: string;
   taxable_on_receipt: number;
+  defi_pooled: number;
 };
 export type CryptoTxn = {
   id: string;
@@ -79,6 +80,8 @@ export type CryptoTxn = {
   notes: string;
   /** Airdrops only (KAN-86): taxable on receipt, so income at its NZD value; otherwise nil cost. */
   taxableOnReceipt: boolean;
+  /** DeFi deposit / withdrawal only (KAN-87): handed to a pool you don't control. */
+  pooled: boolean;
   needsValue: boolean;
 };
 
@@ -98,7 +101,8 @@ const present = (r: TxnRow): CryptoTxn => ({
   counterparty: r.counterparty,
   notes: r.notes,
   taxableOnReceipt: r.taxable_on_receipt === 1,
-  needsValue: needsValue({ kind: r.kind, taxableOnReceipt: r.taxable_on_receipt === 1 }) && r.nzd_value == null,
+  pooled: r.defi_pooled !== 0,
+  needsValue: needsValue({ kind: r.kind, taxableOnReceipt: r.taxable_on_receipt === 1, pooled: r.defi_pooled !== 0 }) && r.nzd_value == null,
 });
 
 const assetCode = (v: unknown) => (typeof v === 'string' ? v.trim().toUpperCase().replace(/[^A-Z0-9.\-_]/g, '').slice(0, 20) : '');
@@ -139,6 +143,15 @@ export function parseTxn(raw: unknown): { ok: true; value: TxnDraft } | { ok: fa
     if (!toAsset || !(ta! > 0)) return { ok: false, error: 'Enter what you received in the swap' };
     if (toAsset === asset) return { ok: false, error: 'A swap is between two different coins' };
     toAmount = ta;
+  } else if (kind === 'defi_deposit' || kind === 'defi_withdraw') {
+    // Optional receipt token (LP / liquid-staking token) for pooled DeFi (KAN-87).
+    toAsset = o.toAsset == null || o.toAsset === '' ? null : assetCode(o.toAsset);
+    if (o.toAsset != null && o.toAsset !== '' && !toAsset) return { ok: false, error: 'Enter the token you got back, e.g. aETH' };
+    if (toAsset) {
+      const ta = money(o.toAmount, 'Token amount', { nullable: true });
+      if (typeof ta === 'string') return { ok: false, error: ta };
+      toAmount = ta != null && (ta as number) > 0 ? (ta as number) : null;
+    }
   }
   return {
     ok: true,
@@ -154,6 +167,7 @@ export function parseTxn(raw: unknown): { ok: true; value: TxnDraft } | { ok: fa
       counterparty: typeof o.counterparty === 'string' ? o.counterparty.trim().slice(0, 80) || null : null,
       notes: typeof o.notes === 'string' ? o.notes.trim().slice(0, 300) : '',
       taxableOnReceipt: kind === 'airdrop' && o.taxableOnReceipt === true,
+      pooled: (kind === 'defi_deposit' || kind === 'defi_withdraw') ? o.pooled !== false : true,
       priceSource: o.priceSource === 'yahoo+frankfurter' ? 'yahoo+frankfurter' : 'manual',
     },
   };
@@ -164,9 +178,9 @@ function insertTxn(db: Database, userId: string, d: TxnDraft, extra: { walletId?
   const now = new Date().toISOString();
   run(
     db,
-    `INSERT INTO crypto_txns (id, user_id, date, kind, asset, amount, nzd_value, price_source, fee_nzd, to_asset, to_amount, wallet_id, external_ref, counterparty, notes, taxable_on_receipt, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, userId, d.date, d.kind, d.asset, d.amount, d.nzdValue, d.priceSource ?? 'manual', d.feeNzd, d.toAsset, d.toAmount, extra.walletId ?? null, extra.externalRef ?? null, d.counterparty, d.notes, d.taxableOnReceipt ? 1 : 0, now, now],
+    `INSERT INTO crypto_txns (id, user_id, date, kind, asset, amount, nzd_value, price_source, fee_nzd, to_asset, to_amount, wallet_id, external_ref, counterparty, notes, taxable_on_receipt, defi_pooled, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, userId, d.date, d.kind, d.asset, d.amount, d.nzdValue, d.priceSource ?? 'manual', d.feeNzd, d.toAsset, d.toAmount, extra.walletId ?? null, extra.externalRef ?? null, d.counterparty, d.notes, d.taxableOnReceipt ? 1 : 0, d.pooled === false ? 0 : 1, now, now],
   );
   return id;
 }
@@ -187,8 +201,8 @@ export function updateTxn(db: Database, userId: string, id: string, body: unknow
   const d = p.value;
   run(
     db,
-    `UPDATE crypto_txns SET date=?, kind=?, asset=?, amount=?, nzd_value=?, price_source=?, fee_nzd=?, to_asset=?, to_amount=?, counterparty=?, notes=?, taxable_on_receipt=?, updated_at=? WHERE id=? AND user_id=?`,
-    [d.date, d.kind, d.asset, d.amount, d.nzdValue, d.priceSource ?? 'manual', d.feeNzd, d.toAsset, d.toAmount, d.counterparty, d.notes, d.taxableOnReceipt ? 1 : 0, new Date().toISOString(), id, userId],
+    `UPDATE crypto_txns SET date=?, kind=?, asset=?, amount=?, nzd_value=?, price_source=?, fee_nzd=?, to_asset=?, to_amount=?, counterparty=?, notes=?, taxable_on_receipt=?, defi_pooled=?, updated_at=? WHERE id=? AND user_id=?`,
+    [d.date, d.kind, d.asset, d.amount, d.nzdValue, d.priceSource ?? 'manual', d.feeNzd, d.toAsset, d.toAmount, d.counterparty, d.notes, d.taxableOnReceipt ? 1 : 0, d.pooled === false ? 0 : 1, new Date().toISOString(), id, userId],
   );
   return { ok: true, value: present(queryOne<TxnRow>(db, `SELECT * FROM crypto_txns WHERE id = ?`, [id])!) };
 }
@@ -216,6 +230,53 @@ export function setAssetPurpose(db: Database, userId: string, body: unknown): Re
     run(db, `INSERT INTO crypto_asset_purposes (user_id, asset, updated_at) VALUES (?,?,?) ON CONFLICT(user_id, asset) DO UPDATE SET updated_at = excluded.updated_at`, [userId, asset, new Date().toISOString()]);
   } else run(db, `DELETE FROM crypto_asset_purposes WHERE user_id = ? AND asset = ?`, [userId, asset]);
   return { ok: true, value: { asset, notForDisposal: o.notForDisposal } };
+}
+
+// --- Mining payouts already recorded in Income (KAN-94) ----------------------------------
+
+type MiningIncomeRow = { id: string; date: string; amount_nzd: number; crypto_asset: string | null; crypto_amount: number | null; description: string };
+export type MiningPayout = { id: string; date: string; asset: string; amount: number; nzdValue: number; description: string };
+
+const miningRef = (incomeId: string) => `income:${incomeId}`;
+
+/** Crypto income records (Income → Mining, e.g. GoMining daily rewards) not yet in the ledger. */
+export function miningPayoutsToImport(db: Database, userId: string): Result<{ payouts: MiningPayout[] }> {
+  if (!isPro(db, userId)) return PRO_REQUIRED();
+  const seen = new Set(queryAll<{ ref: string }>(db, `SELECT ref FROM crypto_import_refs WHERE user_id = ?`, [userId]).map((r) => r.ref));
+  const rows = queryAll<MiningIncomeRow>(
+    db,
+    `SELECT id, date, amount_nzd, crypto_asset, crypto_amount, description FROM income_records
+     WHERE user_id = ? AND kind = 'crypto' AND crypto_asset IS NOT NULL AND crypto_amount > 0 ORDER BY date`,
+    [userId],
+  );
+  const payouts = rows
+    .filter((r) => !seen.has(miningRef(r.id)))
+    .map((r) => ({ id: r.id, date: r.date, asset: String(r.crypto_asset).trim().toUpperCase(), amount: Number(r.crypto_amount), nzdValue: roundMoney(Number(r.amount_nzd)), description: r.description ?? '' }));
+  return { ok: true, value: { payouts } };
+}
+
+/** Add the chosen payouts to the ledger as mining rewards (income at the NZD value recorded). */
+export function importMiningPayouts(db: Database, userId: string, body: unknown): Result<{ added: number }> {
+  if (!isPro(db, userId)) return PRO_REQUIRED();
+  const ids = (body as { ids?: unknown } | null)?.ids;
+  if (!Array.isArray(ids) || !ids.every((i) => typeof i === 'string')) return fail(400, 'Choose the payouts to add');
+  const list = miningPayoutsToImport(db, userId);
+  if (!list.ok) return list;
+  const wanted = new Set(ids as string[]);
+  const now = new Date().toISOString();
+  let added = 0;
+  for (const p of list.value.payouts) {
+    if (!wanted.has(p.id)) continue;
+    insertTxn(
+      db,
+      userId,
+      { date: p.date, kind: 'mining_reward', asset: p.asset, amount: p.amount, nzdValue: p.nzdValue, feeNzd: 0, toAsset: null, toAmount: null, counterparty: null, notes: p.description ? `From Income: ${p.description}`.slice(0, 300) : 'From Income', taxableOnReceipt: false, priceSource: 'manual' },
+      { externalRef: miningRef(p.id) },
+    );
+    run(db, `INSERT OR IGNORE INTO crypto_import_refs (user_id, ref, ignored, created_at) VALUES (?,?,0,?)`, [userId, miningRef(p.id), now]);
+    added++;
+  }
+  return { ok: true, value: { added } };
 }
 
 export function costMethodOf(db: Database, userId: string): CostMethod {
@@ -271,7 +332,7 @@ export async function cryptoSummary(db: Database, userId: string, yearRaw: unkno
   const rows = queryAll<TxnRow>(db, `SELECT * FROM crypto_txns WHERE user_id = ? ORDER BY date, created_at`, [userId]);
   const txns = rows.map(present);
   const method = costMethodOf(db, userId);
-  const ledger: LedgerTxn[] = rows.map((r) => ({ id: r.id, date: r.date, kind: r.kind, asset: r.asset, amount: Number(r.amount), nzdValue: r.nzd_value == null ? null : Number(r.nzd_value), feeNzd: Number(r.fee_nzd), toAsset: r.to_asset, toAmount: r.to_amount == null ? null : Number(r.to_amount), taxableOnReceipt: r.taxable_on_receipt === 1 }));
+  const ledger: LedgerTxn[] = rows.map((r) => ({ id: r.id, date: r.date, kind: r.kind, asset: r.asset, amount: Number(r.amount), nzdValue: r.nzd_value == null ? null : Number(r.nzd_value), feeNzd: Number(r.fee_nzd), toAsset: r.to_asset, toAmount: r.to_amount == null ? null : Number(r.to_amount), taxableOnReceipt: r.taxable_on_receipt === 1, pooled: r.defi_pooled !== 0 }));
   const notForDisposal = nonDisposalAssets(db, userId);
   const g = computeGains(ledger, method, notForDisposal);
   const current = cryptoTaxYear(aucklandToday());

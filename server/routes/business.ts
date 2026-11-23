@@ -165,6 +165,7 @@ import {
 } from '../business/members.ts';
 import { assertCallerCanManage, callerId, scopeTo as scopeRecord, scopeUid, type ScopedRequest as BusinessScopedRequest } from '../middleware/businessScope.ts';
 import { isYmd } from '../../src/lib/invoiceCalc.ts';
+import { assignHolding, businessAssetClasses, businessHoldingOptions } from '../business/holdingCompany.ts';
 
 const router = Router();
 
@@ -179,8 +180,9 @@ type ScopedRequest = BusinessScopedRequest;
 const uid = scopeUid;
 const me = callerId;
 
-/** Deleting, archiving and restoring a business stay with its owner. */
+/** Deleting, archiving and restoring a business, and assigning the owner's holdings to it, stay with its owner. */
 function ownerOnly(req: Request): boolean {
+  if (req.method === 'PUT' && /^\/[^/]+\/holdings\/[^/]+$/.test(req.path)) return true;
   return /^\/[^/]+\/(archive|restore)$/.test(req.path) || (req.method === 'DELETE' && /^\/[^/]+$/.test(req.path));
 }
 
@@ -683,6 +685,17 @@ router.put('/:id/gst/items', requireBusinessReports, async (req, res) => {
     return;
   }
   res.json({ ok: true });
+});
+
+// Holding company (KAN-134): what it holds by asset class, and assigning Portfolio holdings to it.
+router.get('/:id/asset-classes', async (req, res) => {
+  reply(res, await businessAssetClasses(await getDb(), uid(req), req.params.id));
+});
+router.get('/:id/holdings', async (req, res) => {
+  reply(res, businessHoldingOptions(await getDb(), uid(req), req.params.id));
+});
+router.put('/:id/holdings/:holdingId', async (req, res) => {
+  reply(res, assignHolding(await getDb(), uid(req), req.params.id, req.params.holdingId, req.body));
 });
 
 router.get('/:id', async (req, res) => {

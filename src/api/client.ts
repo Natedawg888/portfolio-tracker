@@ -48,7 +48,9 @@ import type {
   MeetingReminder,
   MeetingStatus,
   MeetingWriteBody,
+  BusinessAssetClassRow,
   BusinessDetail,
+  BusinessHoldingOption,
   BusinessBudgetCategory,
   BusinessBudgetView,
   BusinessSale,
@@ -130,6 +132,9 @@ import type {
   WalletNetwork,
   WalletNetworkInfo,
   WalletsValuationResponse,
+  ScenarioSummary,
+  AlertItem,
+  AlertSettings,
   TimelineEvent,
   TimelineType,
   WalletValuation,
@@ -241,6 +246,9 @@ export type InvoiceWriteBody = {
   lines: { description: string; quantity: number; unit: string; rate: number }[];
 };
 
+/** Fired when the server says this session's data is locked (KAN-117). */
+export const DATA_LOCKED_EVENT = 'koru-data-locked';
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     credentials: 'include',
@@ -260,6 +268,8 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
       }
       if (code !== 'INVALID_CREDENTIALS') onUnauthorized?.();
     }
+    // KAN-117: a locked session tried to change something; ask the user to unlock.
+    if (res.status === 423 && typeof window !== 'undefined') window.dispatchEvent(new Event(DATA_LOCKED_EVENT));
     throw new ApiError(res.status, text || res.statusText);
   }
   if (res.status === 204) return undefined as T;
@@ -439,7 +449,16 @@ export const api = {
         user: AuthUser;
         claimedExistingData: boolean;
         message: string;
+        /** Shown once (KAN-111). */
+        recoveryCode?: string;
       }>('/auth/register', { method: 'POST', body: JSON.stringify(body) }),
+    /** Per-user data key (KAN-110/111/117). */
+    dataKey: () => req<{ state: 'unlocked' | 'locked' | 'needs_passphrase'; hasRecoveryCode: boolean }>('/auth/data-key'),
+    unlockData: (secret: string) => req<{ ok: boolean }>('/auth/data-key/unlock', { method: 'POST', body: JSON.stringify({ secret }) }),
+    setDataPassphrase: (passphrase: string) => req<{ ok: boolean }>('/auth/data-key/passphrase', { method: 'POST', body: JSON.stringify({ passphrase }) }),
+    newRecoveryCode: (password: string) => req<{ recoveryCode: string }>('/auth/data-key/recovery-code', { method: 'POST', body: JSON.stringify({ password }) }),
+    recover: (body: { email: string; recoveryCode: string; newPassword: string; code?: string }) =>
+      req<{ ok: boolean; recoveryCode: string }>('/auth/recover', { method: 'POST', body: JSON.stringify(body) }),
     login: (body: { email: string; password: string; remember?: boolean }) =>
       req<
         | { user: AuthUser; twoFactorRequired?: false }
@@ -565,6 +584,16 @@ export const api = {
    * are optional; omitted values are labelled in assumptions.
    */
   projections: {
+    /** Scenario tool (KAN-32): the user's projection as it is and with the changes. */
+    scenario: (q: { months: number; extraSaving: number; extraIncome: number; invest: number; mortgageRate: number }) =>
+      req<{
+        months: number;
+        baseline: ScenarioSummary;
+        scenario: ScenarioSummary;
+        difference: ScenarioSummary;
+        points: { date: string; baselineNzd: number | null; scenarioNzd: number }[];
+        notes: string[];
+      }>(`/projections/scenario?${new URLSearchParams(Object.fromEntries(Object.entries(q).map(([k, v]) => [k, String(v)])))}`),
     get: (query?: {
       months?: number;
       savingWindowMonths?: number;
@@ -916,6 +945,10 @@ export const api = {
     price: (asset: string, date: string) =>
       req<{ priceNzd: number | null; source: string | null; priceDate: string | null; reason: string | null }>(`/crypto/price?${new URLSearchParams({ asset, date })}`),
     setCostMethod: (costMethod: 'fifo' | 'wac') => req<{ costMethod: string }>('/crypto/settings', { method: 'PUT', body: JSON.stringify({ costMethod }) }),
+    /** Mining payouts recorded in Income but not in the ledger (KAN-94). */
+    miningPayouts: () =>
+      req<{ payouts: { id: string; date: string; asset: string; amount: number; nzdValue: number; description: string }[] }>('/crypto/mining-payouts'),
+    importMiningPayouts: (ids: string[]) => req<{ added: number }>('/crypto/mining-payouts', { method: 'POST', body: JSON.stringify({ ids }) }),
     setPurpose: (asset: string, notForDisposal: boolean) =>
       req<{ asset: string; notForDisposal: boolean }>('/crypto/purposes', { method: 'PUT', body: JSON.stringify({ asset, notForDisposal }) }),
     importPreview: (walletId: string) =>
@@ -1115,6 +1148,14 @@ export const api = {
     list: (taxYear?: number | null) => req<BusinessListResponse>(`/business${taxYear ? `?taxYear=${taxYear}` : ''}`),
     get: (id: string, taxYear?: number | null) =>
       req<BusinessDetail>(`/business/${encodeURIComponent(id)}${taxYear ? `?taxYear=${taxYear}` : ''}`),
+    /** Holding company (KAN-134): asset classes it holds, and the owner's holdings to assign. */
+    assetClasses: (id: string) => req<BusinessAssetClassRow[]>(`/business/${encodeURIComponent(id)}/asset-classes`),
+    holdingOptions: (id: string) => req<BusinessHoldingOption[]>(`/business/${encodeURIComponent(id)}/holdings`),
+    assignHolding: (id: string, holdingId: string, assigned: boolean) =>
+      req<{ id: string; businessId: string | null }>(`/business/${encodeURIComponent(id)}/holdings/${encodeURIComponent(holdingId)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ assigned }),
+      }),
     create: (body: BusinessWriteBody) => req<Business>('/business', { method: 'POST', body: JSON.stringify(body) }),
     update: (id: string, body: BusinessWriteBody) =>
       req<Business>(`/business/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
@@ -1323,6 +1364,13 @@ export const api = {
     /** Read a receipt photo on the server (KAN-60): merchant, date and total when found. */
     scan: (imageBase64: string) =>
       req<{ merchant: string | null; date: string | null; amountNzd: number | null; text: string }>('/receipts/scan', { method: 'POST', body: JSON.stringify({ imageBase64 }) }),
+  },
+  alerts: {
+    list: () => req<{ alerts: AlertItem[]; unread: number }>('/alerts'),
+    read: (id: string | null) => req<{ unread: number }>('/alerts/read', { method: 'POST', body: JSON.stringify({ id }) }),
+    settings: () => req<{ settings: AlertSettings; emailAvailable: boolean }>('/alerts/settings'),
+    saveSettings: (patch: Partial<AlertSettings>) =>
+      req<{ settings: AlertSettings; emailAvailable: boolean }>('/alerts/settings', { method: 'PUT', body: JSON.stringify(patch) }),
   },
   donations: {
     list: (taxYear?: number) =>

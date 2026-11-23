@@ -8,6 +8,7 @@
  * Applied period for this build: pay dates 1 April 2026 – 31 March 2027
  * (current as of Oct 2026 / Pacific/Auckland).
  */
+import { taxYearStartForDate } from './taxYear';
 
 /** Tax year label shown in UI */
 export const PAYE_TAX_YEAR_LABEL = '1 April 2026 – 31 March 2027';
@@ -608,8 +609,7 @@ export const PAY_TAX_YEAR_OPTIONS: readonly PayTaxYearRates[] = Object.values(PA
 
 /** The tax year (by start year) a date falls in; NZ tax years run 1 April – 31 March. */
 export function taxYearForDate(ymd: string): number {
-  const [y, m] = ymd.split('-').map(Number);
-  return m >= 4 ? y : y - 1;
+  return taxYearStartForDate(ymd);
 }
 
 export const CURRENT_PAY_TAX_YEAR = 2026;
