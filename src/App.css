@@ -15868,3 +15868,16 @@ html:not([data-theme]) .profile-menu-switch-row[aria-current="true"] {
   .timeline-item { grid-template-columns: minmax(0, 1fr) auto; }
   .timeline-type { grid-column: 1 / -1; }
 }
+
+/* KAN-64: alerts. */
+.alerts-bell { position: relative; display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; color: inherit; }
+.alerts-badge { position: absolute; top: 6px; right: 4px; min-width: 1.1rem; padding: 0 0.25rem; border-radius: 999px; background: var(--danger, #c0392b); color: #fff; font-size: 0.68rem; line-height: 1.1rem; text-align: center; }
+.alerts-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
+.alerts-item { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr) auto; gap: 0.75rem; align-items: baseline; }
+.alerts-unread .alerts-main strong::before { content: '● '; color: var(--pounamu, #2e7d5b); }
+.alerts-kind { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.7; }
+.alerts-main { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .alerts-item { grid-template-columns: minmax(0, 1fr) auto; }
+  .alerts-kind { grid-column: 1 / -1; }
+}
