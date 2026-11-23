@@ -48,6 +48,8 @@ import healthScoreRouter from './routes/healthScore.ts';
 import projectionsRouter from './routes/projections.ts';
 import walletsRouter from './routes/wallets.ts';
 import { startWalletSyncScheduler } from './chain/index.ts';
+import { startAlertScheduler } from './alerts/digest.ts';
+import alertsRouter from './routes/alerts.ts';
 import { startLinkedDeletionSweep } from './auth/linkedDeletion.ts';
 import authRouter from './routes/auth.ts';
 import accountLinksRouter from './routes/accountLinks.ts';
@@ -166,6 +168,7 @@ async function main() {
   app.use('/api/savings-goals', savingsGoalsRouter);
   app.use('/api/donations', donationsRouter);
   app.use('/api/export', exportRouter);
+  app.use('/api/alerts', alertsRouter);
   app.use('/api/timeline', timelineRouter);
   app.use('/api/fif', fifRouter);
   app.use('/api/pay-sources', paySourcesRouter);
@@ -220,7 +223,9 @@ async function main() {
     }
     const stopWalletSync = startWalletSyncScheduler();
     const stopLinkedDeletionSweep = startLinkedDeletionSweep();
+    const stopAlerts = startAlertScheduler();
     server.once('close', () => {
+      stopAlerts();
       stopWalletSync();
       stopLinkedDeletionSweep();
     });

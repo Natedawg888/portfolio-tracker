@@ -1,9 +1,11 @@
 /**
  * Attach req.user from session cookie; optionally reject unauthenticated requests.
  */
+import { sessionKeyStore } from '../security/dataKey.ts';
+import { encryptPendingForUser, encryptionEnabled, runWithCryptoContext } from '../security/fieldCrypto.ts';
 import type { Request, Response, NextFunction } from 'express';
 import { destroyOrphanSwitchSession } from '../auth/accountLinks.ts';
-import { getDb } from '../db/index.ts';
+import { getDb, run } from '../db/index.ts';
 import {
   SESSION_COOKIE,
   findUserBySessionToken,
@@ -23,7 +25,26 @@ export async function attachUser(req: AuthedRequest, _res: Response, next: NextF
       return;
     }
     req.user = user;
-    next();
+    // KAN-112: this request reads and writes with its user's unlocked data key (if any).
+    const key = user?.sessionId ? sessionKeyStore.get(user.sessionId, user.id) : null;
+    if (user && key && req.method !== 'GET' && req.method !== 'HEAD' && encryptionEnabled()) {
+      const userId = user.id;
+      _res.on('finish', () => {
+        const fresh = sessionKeyStore.forUser(userId);
+        if (!fresh) return;
+        void getDb()
+          .then((db) => encryptPendingForUser(db, userId, fresh, run))
+          .catch(() => undefined);
+      });
+    }
+    // A locked session can't change anything while encryption is on: a read-modify-write would
+    // save the unreadable (null) values back over the encrypted ones. Unlock first (KAN-117).
+    const mutating = req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS';
+    if (user && !key && mutating && encryptionEnabled() && !req.path.startsWith('/auth/')) {
+      _res.status(423).json({ error: 'Unlock your data to make changes.', code: 'DATA_LOCKED' });
+      return;
+    }
+    runWithCryptoContext({ userId: user?.id ?? null, key }, next);
   } catch (err) {
     next(err);
   }
