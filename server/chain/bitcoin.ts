@@ -8,9 +8,18 @@
  * 25 per page from /address/:a/txs/chain/:last_seen_txid. Our cursor is the last
  * confirmed txid returned. Pending txs are only included on the first page.
  *
+ * Extended public keys (KAN-68): a wallet can be an xpub / ypub / zpub. Its receive and change
+ * addresses are derived (xpub.ts) and scanned up to the gap limit (20 unused in a row). Balance
+ * = sum of confirmed balances; history = each used address's recent txs merged and deduped by
+ * txid, with in/out/self worked out against the whole address set, so change back to the wallet
+ * isn't an "out". The scan is cached for 10 minutes. The key is never logged; errors name
+ * derived addresses only.
+ *
  * Docs: https://github.com/Blockstream/esplora/blob/master/API.md
  */
+import { createHash } from 'node:crypto';
 import { getJson } from './http.ts';
+import { parseExtendedPublicKey, scanUsedAddresses, type ExtendedPublicKey } from './xpub.ts';
 import { NETWORK_CHAIN_INFO } from './networks.ts';
 import type {
   ChainBalance,
@@ -42,7 +51,40 @@ function addressPath(address: string, suffix = ''): string {
   return `address/${encodeURIComponent(address)}${suffix}`;
 }
 
+/** Used addresses of an extended key with their stats, cached by a hash of the key. */
+const SCAN_TTL_MS = 10 * 60 * 1000;
+const scanCache = new Map<string, { at: number; used: { address: string; stats: EsploraStats }[] }>();
+const keyId = (xpub: string) => createHash('sha256').update(xpub).digest('hex');
+
+export function clearXpubScanCacheForTest(): void {
+  scanCache.clear();
+}
+
+async function scanXpub(ctx: ProviderContext, xpub: string, key: ExtendedPublicKey): Promise<{ address: string; stats: EsploraStats }[]> {
+  const id = keyId(xpub);
+  const hit = scanCache.get(id);
+  if (hit && Date.now() - hit.at < SCAN_TTL_MS) return hit.used;
+  const found = await scanUsedAddresses(key, async (address) => {
+    const info = await getJson<EsploraAddress>(ctx.endpoint, addressPath(address));
+    const chain = info?.chain_stats;
+    const pool = info?.mempool_stats;
+    if (!chain || !Number.isFinite(chain.funded_txo_sum) || !Number.isFinite(chain.spent_txo_sum)) {
+      throw new Error(`Esplora address response missing chain_stats for ${address}`);
+    }
+    return { used: Number(chain.tx_count ?? 0) + Number(pool?.tx_count ?? 0) > 0, data: chain };
+  });
+  const used = found.map((f) => ({ address: f.address, stats: f.data }));
+  scanCache.set(id, { at: Date.now(), used });
+  return used;
+}
+
 export async function getBitcoinBalances(ctx: ProviderContext, address: string): Promise<ChainBalance[]> {
+  const xkey = parseExtendedPublicKey(address);
+  if (xkey) {
+    const used = await scanXpub(ctx, address, xkey);
+    const total = used.reduce((s, u) => s + (BigInt(u.stats.funded_txo_sum) - BigInt(u.stats.spent_txo_sum)), 0n);
+    return [{ asset: BTC, amountRaw: (total < 0n ? 0n : total).toString() }];
+  }
   const info = await getJson<EsploraAddress>(ctx.endpoint, addressPath(address));
   const stats = info?.chain_stats;
   if (!stats || !Number.isFinite(stats.funded_txo_sum) || !Number.isFinite(stats.spent_txo_sum)) {
@@ -60,8 +102,8 @@ export async function getBitcoinBalances(ctx: ProviderContext, address: string):
  * - self: wallet funded every input and received every output → amount 0, fee only
  * Coinjoin-style partial funding: amount = net change, fee unknown (null).
  */
-export function mapEsploraTx(tx: EsploraTx, address: string): ChainTransaction {
-  const own = (a: string | undefined) => a === address;
+export function mapEsploraTx(tx: EsploraTx, owned: string | ReadonlySet<string>): ChainTransaction {
+  const own = (a: string | undefined) => (typeof owned === 'string' ? a === owned : a != null && owned.has(a));
   let sent = 0n;
   let inputsAllOurs = tx.vin.length > 0;
   let foreignInput: string | null = null;
@@ -132,6 +174,8 @@ export async function getBitcoinTransactions(
   address: string,
   opts: { cursor?: string | null; limit: number },
 ): Promise<TransactionPage> {
+  const xkey = parseExtendedPublicKey(address);
+  if (xkey) return getXpubTransactions(ctx, address, xkey, opts.limit);
   const cursor = opts.cursor?.trim() || null;
   if (cursor && !/^[0-9a-f]{64}$/i.test(cursor)) throw new Error('Invalid Bitcoin history cursor');
 
@@ -163,6 +207,27 @@ export async function getBitcoinTransactions(
     transactions: [...pending, ...kept].map((t) => mapEsploraTx(t, address)),
     nextCursor: more && kept.length > 0 ? kept[kept.length - 1].txid : null,
   };
+}
+
+/**
+ * History for an extended key: the latest page of each used address, merged and deduped by
+ * txid, newest first (pending first), mapped against the whole address set. One page only:
+ * deeper history per address isn't followed (nextCursor is null).
+ */
+async function getXpubTransactions(ctx: ProviderContext, xpub: string, key: ExtendedPublicKey, limit: number): Promise<TransactionPage> {
+  const used = await scanXpub(ctx, xpub, key);
+  const owned = new Set(used.map((u) => u.address));
+  const byId = new Map<string, EsploraTx>();
+  for (const u of used) {
+    const batch = await getJson<EsploraTx[]>(ctx.endpoint, addressPath(u.address, '/txs'));
+    if (!Array.isArray(batch)) throw new Error(`Esplora history response is not a list for ${u.address}`);
+    for (const t of batch) if (t?.txid && !byId.has(t.txid)) byId.set(t.txid, t);
+  }
+  const txs = [...byId.values()].sort((a, b) => {
+    if (a.status?.confirmed !== b.status?.confirmed) return a.status?.confirmed ? 1 : -1;
+    return (b.status?.block_time ?? 0) - (a.status?.block_time ?? 0);
+  });
+  return { transactions: txs.slice(0, Math.max(1, limit)).map((t) => mapEsploraTx(t, owned)), nextCursor: null };
 }
 
 export const bitcoinProvider: ChainProvider = {

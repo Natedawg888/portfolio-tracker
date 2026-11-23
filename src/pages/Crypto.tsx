@@ -4,6 +4,7 @@
  * Cost basis is FIFO or weighted average (the two methods IRD lists). An estimate for your
  * records, not tax advice. Amounts follow Hide amounts through formatNzd.
  */
+import { taxYearLabelFromStart } from '../lib/taxYear';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError, api, formatNzd } from '../api/client';
@@ -13,11 +14,14 @@ import { longDate } from './warrantiesView';
 import { KIND_LABEL } from '../lib/cryptoGains';
 import { CryptoTxnForm } from '../components/crypto/CryptoTxnForm';
 import { CryptoImport } from '../components/crypto/CryptoImport';
+import { MiningPayoutsImport } from '../components/crypto/MiningPayoutsImport';
 import { DefiPositions } from '../components/crypto/DefiPositions';
 
 const IRD_CALC = 'https://www.ird.govt.nz/cryptoassets/taxing/income-expenses/calculating-cryptoasset-income';
 const IRD_CONVERT = 'https://www.ird.govt.nz/cryptoassets/taxing/income-expenses/convert-currency';
 const IRD_AIRDROPS = 'https://www.ird.govt.nz/cryptoassets/individual/airdrops-and-hard-forks/airdrops';
+const IRD_MINING = 'https://www.ird.govt.nz/cryptoassets/individual/mining';
+const IRD_FORKS = 'https://www.ird.govt.nz/cryptoassets/individual/airdrops-and-hard-forks/hard-forks';
 const IRD_PURPOSE = 'https://www.ird.govt.nz/cryptoassets/individual/buying-selling/acquiring-sell-exchange';
 const qty = (n: number) => n.toLocaleString('en-NZ', { maximumFractionDigits: 8 });
 const signed = (n: number) => (n < 0 ? `−${formatNzd(-n)}` : formatNzd(n));
@@ -111,7 +115,7 @@ export function Crypto() {
                 <select value={view.taxYear} onChange={(e) => setYear(Number(e.target.value))}>
                   {view.years.map((yr) => (
                     <option key={yr.startYear} value={yr.startYear}>
-                      {yr.startYear}/{String((yr.startYear + 1) % 100).padStart(2, '0')}
+                      {taxYearLabelFromStart(yr.startYear)}
                     </option>
                   ))}
                 </select>
@@ -161,10 +165,12 @@ export function Crypto() {
             {view.missingValue ? <p className="small hh-over">{view.missingValue === 1 ? '1 transaction needs' : `${view.missingValue} transactions need`} an NZD value. Until then it’s left out of the money figures.</p> : null}
             {view.shortfalls.length ? <p className="small hh-over">You sold more {view.shortfalls.join(', ')} than the ledger shows you had. Add the earlier buys or transfers.</p> : null}
             <p className="muted small">
-              IRD accepts first-in-first-out or weighted average cost; use one consistently. Unrealised gains aren’t taxed. Every sale counts unless you mark the coin as not held to sell (below). Receiving an airdrop usually isn’t taxable, so it costs nil unless you mark it taxable on receipt. An estimate for your records, not tax advice. See IRD:{' '}
+              IRD accepts first-in-first-out or weighted average cost; use one consistently. Unrealised gains aren’t taxed. Every sale counts unless you mark the coin as not held to sell (below). Receiving an airdrop usually isn’t taxable, so it costs nil unless you mark it taxable on receipt. Mined crypto is usually income when you receive it; coins from a hard fork usually aren’t, and cost nil. An estimate for your records, not tax advice. See IRD:{' '}
               <a href={IRD_CALC} target="_blank" rel="noreferrer">calculating cryptoasset income</a> ·{' '}
               <a href={IRD_CONVERT} target="_blank" rel="noreferrer">converting to NZD</a> ·{' '}
-              <a href={IRD_AIRDROPS} target="_blank" rel="noreferrer">airdrops</a>.
+              <a href={IRD_AIRDROPS} target="_blank" rel="noreferrer">airdrops</a> ·{' '}
+              <a href={IRD_MINING} target="_blank" rel="noreferrer">mining</a> ·{' '}
+              <a href={IRD_FORKS} target="_blank" rel="noreferrer">hard forks</a>.
             </p>
             {view.disposals.length ? (
               <details className="proj-fold">
@@ -294,6 +300,12 @@ export function Crypto() {
 
           <section className="panel" aria-labelledby="crypto-import-title">
             <h3 id="crypto-import-title">Import from a wallet</h3>
+            <MiningPayoutsImport
+              onDone={(m) => {
+                setMsg(m);
+                load();
+              }}
+            />
             <p className="muted small">Reads recent transfers from a wallet you’ve added (coins and tokens), suggests what each one was, and fills in its NZD value for the day where it can.</p>
             <CryptoImport
               wallets={view.wallets}

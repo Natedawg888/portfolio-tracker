@@ -3,6 +3,7 @@
  * Every read is filtered by user_id. Prices are whatever computeNetWorth
  * already uses; this module does not look up a new quote.
  */
+import { NO_SCENARIO, applyScenarioToClasses, applyScenarioToDebts, type ScenarioInput } from './scenario.ts';
 import { bondProjectionFlows } from '../bonds/store.ts';
 import type { Database } from 'sql.js';
 import { queryAll } from '../db/index.ts';
@@ -429,6 +430,8 @@ export async function loadUserProjection(
   userId: string,
   query: ProjectionQuery,
   asOf: string,
+  /** Scenario tool (KAN-32): changes applied on top of the user's own projection. */
+  scenario: ScenarioInput = NO_SCENARIO,
 ): Promise<ProjectionResult & { mining: ProjectionMining; hiddenClasses: HiddenClass[] }> {
   const netWorth = await computeNetWorth(db, userId);
   const prefs = readAssetClassPrefs(db, userId);
@@ -481,7 +484,7 @@ export async function loadUserProjection(
         ? roundMoney(recordedMiningIncome(db, userId, startBounds.from, endBounds.to) / query.savingWindowMonths)
         : 0,
   });
-  const assetClasses = withoutHiddenClasses(buildClassInputs({
+  const assetClasses = applyScenarioToClasses(withoutHiddenClasses(buildClassInputs({
     start: classStartValues(netWorth, prefs),
     query,
     saved,
@@ -495,7 +498,7 @@ export async function loadUserProjection(
         ? 'No transfers to the Investments budget category in the window.'
         : `Average money moved to the Investments budget category over ${query.savingWindowMonths} month(s) (${invested.count} transaction${invested.count === 1 ? '' : 's'}).`,
     kiwiSaverMonthlyNzd: isAssetClassEnabled(prefs, 'kiwisaver') ? ks.monthlyNzd : null,
-  }), prefs);
+  }), prefs), scenario);
 
   const growth =
     query.additionGrowthPct != null
@@ -514,14 +517,18 @@ export async function loadUserProjection(
     // A hidden property takes its mortgage with it, as on the Dashboard.
     propertyMortgageNzd: isAssetClassEnabled(prefs, 'real_estate') ? (netWorth.realEstateMortgageNzd ?? 0) : 0,
     kiwiSaverBalanceNzd: isAssetClassEnabled(prefs, 'kiwisaver') ? netWorth.kiwiSaverNzd : null,
-    debts: debts.map((debt) => ({
-      id: debt.id,
-      name: debt.name,
-      balanceNzd: debt.outstandingNzd,
-      annualRatePercent: debt.interestRatePercent,
-      interestPeriod: debt.interestPeriod,
-      actualPaymentNzd: debt.actualPaymentNzd,
-    })),
+    debts: applyScenarioToDebts(
+      debts.map((debt) => ({
+        id: debt.id,
+        name: debt.name,
+        balanceNzd: debt.outstandingNzd,
+        annualRatePercent: debt.interestRatePercent,
+        interestPeriod: debt.interestPeriod,
+        actualPaymentNzd: debt.actualPaymentNzd,
+        productKind: debt.productKind,
+      })),
+      scenario,
+    ),
     annualReturnPercent: query.annualReturnPercent ?? 0,
     annualReturnSource: query.annualReturnPercent == null ? 'default' : 'query',
     monthlySavingNzd,

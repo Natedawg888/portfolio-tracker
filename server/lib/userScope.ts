@@ -46,6 +46,8 @@ export const SCOPED_TABLES = [
   'wallets',
   'payment_connections',
   'invoice_provider_links',
+  'alerts',
+  'alert_settings',
   'pay_sources',
   'business_profiles',
   'businesses',
@@ -263,6 +265,8 @@ export function deleteScopedDataForUser(
     'budget_categories',
     'payment_connections',
     'invoice_provider_links',
+    'alerts',
+    'alert_settings',
     'wallets',
   ];
 

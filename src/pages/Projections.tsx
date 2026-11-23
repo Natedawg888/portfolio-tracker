@@ -11,6 +11,7 @@ import { ApiError, api, formatNzd } from '../api/client';
 import { AssetLineChart, type LineSeries } from '../components/AssetLineChart';
 import { CompoundInterestCalculator } from '../components/CompoundInterestCalculator';
 import { RetirementCalculator } from '../components/RetirementCalculator';
+import { WhatIfScenarios } from '../components/WhatIfScenarios';
 import { beginPageRead, commitPageRead, readPageCache } from '../lib/pageDataCache';
 import { showQuietToast } from '../lib/quietToast';
 import { hiddenClassesSentence } from '../lib/visibleNetWorth';
@@ -56,7 +57,7 @@ import {
 
 const WITH_GROWTH = '#3d9a6a';
 const TODAY_PLUS_ADDED = '#4a8fd4';
-type ProjectionMode = 'worth' | 'compound' | 'retirement';
+type ProjectionMode = 'worth' | 'compound' | 'retirement' | 'whatif';
 
 /** Keep a range input on its step so the thumb matches a real amount. */
 function onSliderStep(value: number, min: number, max: number, step: number): number {
@@ -397,6 +398,8 @@ export function Projections() {
   const [mode, setMode] = useState<ProjectionMode>(() =>
     window.location.hash === '#retirement'
       ? 'retirement'
+      : window.location.hash === '#what-if'
+        ? 'whatif'
       : window.location.hash === '#calculators' || window.location.hash === '#compound-interest'
         ? 'compound'
         : 'worth',
@@ -558,6 +561,14 @@ export function Projections() {
           >
             Retirement
           </button>
+          <button
+            type="button"
+            className={'segmented-btn' + (mode === 'whatif' ? ' active' : '')}
+            aria-pressed={mode === 'whatif'}
+            onClick={() => setMode('whatif')}
+          >
+            What if…
+          </button>
         </div>
       </header>
 
@@ -565,6 +576,8 @@ export function Projections() {
         <CompoundInterestCalculator startingAmountNzd={data?.starting.compoundingAssetsNzd ?? null} />
       ) : mode === 'retirement' ? (
         <RetirementCalculator startingAmountNzd={data?.starting.compoundingAssetsNzd ?? null} />
+      ) : mode === 'whatif' ? (
+        <WhatIfScenarios />
       ) : (
         <>
           {error ? (

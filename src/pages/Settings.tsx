@@ -14,6 +14,7 @@ import {
 } from '../api/akahuClient';
 import { CategoryManager } from '../components/CategoryManager';
 import { SecurityPanel } from '../components/SecurityPanel';
+import { RecoveryCodeCard } from '../components/security/RecoveryCodeCard';
 import { BusinessDetailsPanel } from '../components/BusinessDetailsPanel';
 import { BusinessPlanCard } from '../components/business/BusinessPlanNote';
 import { AdPrefsPanel } from '../components/AdPrefsPanel';
@@ -128,7 +129,10 @@ export function Settings() {
         {tab === 'account' ? (
           <AccountPanel />
         ) : tab === 'security' ? (
-          <SecurityPanel />
+          <>
+            <SecurityPanel />
+            <RecoveryCodeCard />
+          </>
         ) : tab === 'business' ? (
           <>
             <BusinessDetailsPanel />

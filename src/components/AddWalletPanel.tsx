@@ -57,7 +57,7 @@ const PLACEHOLDER: Record<WalletNetwork, string> = {
   polygon: '0x…',
   base: '0x…',
   arbitrum: '0x…',
-  bitcoin: 'bc1…, 1… or 3…',
+  bitcoin: 'bc1…, 1…, 3… or an xpub / zpub',
   solana: 'Solana address',
 };
 

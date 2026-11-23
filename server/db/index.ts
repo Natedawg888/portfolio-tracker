@@ -1,6 +1,7 @@
 /**
  * Local SQLite via sql.js (WASM) — no native compile, data on disk under data/.
  */
+import { decryptRow } from '../security/fieldCrypto.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -497,6 +498,9 @@ function migrateSchema(database: Database) {
       database.run(`ALTER TABLE holdings ADD COLUMN ${col} ${typ}`);
     }
   }
+  // Holding company (KAN-134): the business that holds this holding; null = personal.
+  if (!holdCols2.has('business_id')) database.run('ALTER TABLE holdings ADD COLUMN business_id TEXT');
+  database.run('CREATE INDEX IF NOT EXISTS idx_holdings_business ON holdings(user_id, business_id)');
 
   database.run(
     `CREATE INDEX IF NOT EXISTS idx_income_records_category ON income_records(category_id)`,
@@ -686,6 +690,8 @@ function migrateSchema(database: Database) {
   // Airdrops taxable on receipt (KAN-86). Existing airdrops start as not taxable (nil cost, not income).
   const cryptoTxnCols = tableColumns(database, 'crypto_txns');
   if (cryptoTxnCols.size > 0 && !cryptoTxnCols.has('taxable_on_receipt')) database.run('ALTER TABLE crypto_txns ADD COLUMN taxable_on_receipt INTEGER NOT NULL DEFAULT 0');
+  // KAN-87: DeFi deposits are pooled (a disposal) unless marked as staying under your own keys.
+  if (cryptoTxnCols.size > 0 && !cryptoTxnCols.has('defi_pooled')) database.run('ALTER TABLE crypto_txns ADD COLUMN defi_pooled INTEGER NOT NULL DEFAULT 1');
   // Rental income entries mirrored into income (KAN-66).
   if (incomeCols.size > 0 && !incomeCols.has('rental_entry_id')) {
     database.run('ALTER TABLE income_records ADD COLUMN rental_entry_id TEXT');
@@ -1014,7 +1020,7 @@ export function queryAll<T extends Record<string, unknown>>(
   stmt.bind(params as never[]);
   const rows: T[] = [];
   while (stmt.step()) {
-    rows.push(stmt.getAsObject() as T);
+    rows.push(decryptRow(stmt.getAsObject() as T));
   }
   stmt.free();
   return rows;
