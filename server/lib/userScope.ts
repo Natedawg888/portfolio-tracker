@@ -44,6 +44,8 @@ export const SCOPED_TABLES = [
   'donations',
   'fif_class_overrides',
   'wallets',
+  'payment_connections',
+  'invoice_provider_links',
   'pay_sources',
   'business_profiles',
   'businesses',
@@ -259,6 +261,8 @@ export function deleteScopedDataForUser(
     'holdings',
     'valuation_snapshots',
     'budget_categories',
+    'payment_connections',
+    'invoice_provider_links',
     'wallets',
   ];
 

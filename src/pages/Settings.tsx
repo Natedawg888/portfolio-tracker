@@ -23,6 +23,7 @@ import { AccountSignInCard } from '../components/settings/AccountSignInCard';
 import { AccountDataCard } from '../components/settings/AccountDataCard';
 import { AccountPlanCard } from '../components/settings/AccountPlanCard';
 import { AccountDeleteCard } from '../components/settings/AccountDeleteCard';
+import { PaymentProvidersCard } from '../components/settings/PaymentProvidersCard';
 import { AssetClassSettings } from '../components/settings/AssetClassSettings';
 import {
   beginPageRead,
@@ -131,6 +132,7 @@ export function Settings() {
         ) : tab === 'business' ? (
           <>
             <BusinessDetailsPanel />
+            <PaymentProvidersCard />
             <BusinessPlanCard />
           </>
         ) : tab === 'categories' ? (

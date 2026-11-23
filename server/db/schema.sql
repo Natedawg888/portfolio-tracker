@@ -1808,3 +1808,34 @@ CREATE TABLE IF NOT EXISTS user_key_wraps (
   updated_at  TEXT NOT NULL,
   PRIMARY KEY (user_id, kind)
 );
+
+-- Payment providers for invoices (KAN-73). Stripe: the Connect account id; Paddle: the user's
+-- API key and notification secret, sealed (secretBox). One per provider per user.
+CREATE TABLE IF NOT EXISTS payment_connections (
+  id                  TEXT PRIMARY KEY,
+  user_id             TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider            TEXT NOT NULL,   -- stripe | paddle
+  account_ref         TEXT NOT NULL,
+  secret_enc          TEXT,
+  webhook_secret_enc  TEXT,
+  mode                TEXT NOT NULL,   -- test | live
+  created_at          TEXT NOT NULL,
+  updated_at          TEXT NOT NULL,
+  UNIQUE (user_id, provider)
+);
+CREATE TABLE IF NOT EXISTS invoice_provider_links (
+  invoice_id           TEXT PRIMARY KEY,
+  user_id              TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider             TEXT NOT NULL,
+  provider_invoice_id  TEXT NOT NULL,
+  payment_url          TEXT,
+  status               TEXT NOT NULL,   -- open | paid | void | failed
+  updated_at           TEXT NOT NULL,
+  UNIQUE (provider, provider_invoice_id)
+);
+CREATE TABLE IF NOT EXISTS provider_events (
+  provider     TEXT NOT NULL,
+  event_id     TEXT NOT NULL,
+  received_at  TEXT NOT NULL,
+  PRIMARY KEY (provider, event_id)
+);

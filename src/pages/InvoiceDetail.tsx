@@ -7,6 +7,7 @@
  *  - when the server has email set up, sends it from the app with the PDF attached.
  * After the first two the app asks whether it went, and only then records it.
  */
+import { InvoiceOnlinePayment } from '../components/invoices/InvoiceOnlinePayment';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, formatNzd } from '../api/client';
@@ -455,6 +456,8 @@ export function InvoiceDetail() {
       </section>
 
       <InvoicePreview invoice={inv} />
+
+      {isOwner ? <InvoiceOnlinePayment invoice={inv} onChanged={() => void api.invoices.get(inv.id).then(setInv).catch(() => {})} /> : null}
 
       {isSent || inv.payments.length > 0 ? (
         <section className="panel">
