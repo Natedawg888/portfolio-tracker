@@ -18,15 +18,23 @@
  * listed but their gains and losses are left out of the taxable totals (a loss only counts when a
  * gain would have been taxable). Rewards it earns are still income. Set per coin, not per lot.
  *
+ * Mining (KAN-94, IRD "Mining"): in most cases crypto from mining is taxable when received, at its
+ * NZD value, which is also its cost. Cloud mining (GoMining) has no specific guidance; its daily
+ * rewards are treated the same way, as an estimate.
+ * Hard forks (KAN-94, IRD "Hard forks", QB 21/07): receiving forked coins usually isn't taxable,
+ * so they cost nil and aren't income; selling them later is a disposal like any other.
+ *
  * What each kind does to the asset's holdings:
- *   buy, swap (receive leg), staking_reward, income       → acquire at their NZD value (+ fee on buys)
+ *   buy, swap (receive leg), staking_reward, mining_reward, income
+ *                                                          → acquire at their NZD value (+ fee on buys)
  *   airdrop                                                → acquire at nil cost, or at its NZD value
  *                                                            when taxable on receipt
+ *   hard_fork                                              → acquire at nil cost, not income
  *   sell, swap (give leg), spend, gift_out, fee            → dispose (sell / spend: proceeds = NZD
  *       value − fee; gift and fee: proceeds = NZD value, usually 0 for a fee)
  *   transfer_in / transfer_out (between your own wallets), defi_deposit / defi_withdraw
  *                                                          → no change (still yours)
- * Staking rewards, income and airdrops taxable on receipt are also counted as income at their NZD value.
+ * Staking and mining rewards, income and airdrops taxable on receipt are also counted as income at their NZD value.
  */
 import { taxYearStartForDate } from './taxYear';
 
@@ -37,7 +45,9 @@ export const CRYPTO_TXN_KINDS = [
   'transfer_in',
   'transfer_out',
   'staking_reward',
+  'mining_reward',
   'airdrop',
+  'hard_fork',
   'income',
   'spend',
   'gift_out',
@@ -54,7 +64,9 @@ export const KIND_LABEL: Record<CryptoTxnKind, string> = {
   transfer_in: 'Transfer in (own wallet)',
   transfer_out: 'Transfer out (own wallet)',
   staking_reward: 'Staking reward',
+  mining_reward: 'Mining reward',
   airdrop: 'Airdrop',
+  hard_fork: 'Hard fork (new coins)',
   income: 'Paid in crypto',
   spend: 'Spent',
   gift_out: 'Gift sent',
@@ -64,10 +76,10 @@ export const KIND_LABEL: Record<CryptoTxnKind, string> = {
 };
 
 /** Kinds that need an NZD value to work out cost or proceeds (an airdrop only when taxable on receipt; see needsValue). */
-export const NEEDS_VALUE: ReadonlySet<CryptoTxnKind> = new Set(['buy', 'sell', 'swap', 'staking_reward', 'airdrop', 'income', 'spend', 'gift_out']);
-const ACQUIRE: ReadonlySet<CryptoTxnKind> = new Set(['buy', 'staking_reward', 'airdrop', 'income']);
+export const NEEDS_VALUE: ReadonlySet<CryptoTxnKind> = new Set(['buy', 'sell', 'swap', 'staking_reward', 'mining_reward', 'airdrop', 'income', 'spend', 'gift_out']);
+const ACQUIRE: ReadonlySet<CryptoTxnKind> = new Set(['buy', 'staking_reward', 'mining_reward', 'airdrop', 'income']);
 const DISPOSE: ReadonlySet<CryptoTxnKind> = new Set(['sell', 'spend', 'gift_out', 'fee']);
-const INCOME: ReadonlySet<CryptoTxnKind> = new Set(['staking_reward', 'airdrop', 'income']);
+const INCOME: ReadonlySet<CryptoTxnKind> = new Set(['staking_reward', 'mining_reward', 'airdrop', 'income']);
 
 /** Counted as income at receipt: staking and pay always; an airdrop only when marked taxable on receipt. */
 export const isIncomeOnReceipt = (t: { kind: CryptoTxnKind; taxableOnReceipt?: boolean | null }) => INCOME.has(t.kind) && (t.kind !== 'airdrop' || !!t.taxableOnReceipt);
@@ -194,7 +206,7 @@ export function computeGains(ledger: LedgerTxn[], method: CostMethod, nonDisposa
       // Still move the units so later quantities stay right; money figures skip this txn.
     }
     const fee = Math.max(0, t.feeNzd || 0);
-    if (t.kind === 'airdrop' && !t.taxableOnReceipt) {
+    if ((t.kind === 'airdrop' && !t.taxableOnReceipt) || t.kind === 'hard_fork') {
       acquire(t.asset, t.amount, 0);
     } else if (ACQUIRE.has(t.kind)) {
       if (value == null) incomplete.add(up(t.asset));

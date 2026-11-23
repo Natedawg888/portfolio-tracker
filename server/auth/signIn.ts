@@ -4,7 +4,8 @@
  * then set the cookie. Later sign-in methods (SSO, account switcher) reuse this.
  */
 import type { Request, Response } from 'express';
-import { getDb } from '../db/index.ts';
+import { getDb, run } from '../db/index.ts';
+import { encryptPendingForUser } from '../security/fieldCrypto.ts';
 import { createSession, parseCookieHeader, sessionCookieHeader } from './sessions.ts';
 import { TRUSTED_DEVICE_COOKIE, parseTrustedCookie, trustedDeviceIdFor } from './twoFactor.ts';
 import { deviceLabel } from './deviceLabel.ts';
@@ -58,6 +59,12 @@ export async function startSession(
   const session = await createSession(userId, { persistent, deviceLabel: label, passkeyId: opts.passkeyId ?? null, trustedDeviceId });
   if (opts.dataKey) {
     sessionKeyStore.set(session.id, userId, opts.dataKey);
+    // KAN-112: migrate this account's plain notes now it's unlocked.
+    try {
+      encryptPendingForUser(db, userId, opts.dataKey, run);
+    } catch {
+      /* next change or sign-in tries again */
+    }
     opts.dataKey.fill(0);
   }
   res.append('Set-Cookie', sessionCookieHeader(session.rawToken, session.expiresAt, session.persistent));
