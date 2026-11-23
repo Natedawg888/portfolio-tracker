@@ -920,6 +920,10 @@ export const api = {
     price: (asset: string, date: string) =>
       req<{ priceNzd: number | null; source: string | null; priceDate: string | null; reason: string | null }>(`/crypto/price?${new URLSearchParams({ asset, date })}`),
     setCostMethod: (costMethod: 'fifo' | 'wac') => req<{ costMethod: string }>('/crypto/settings', { method: 'PUT', body: JSON.stringify({ costMethod }) }),
+    /** Mining payouts recorded in Income but not in the ledger (KAN-94). */
+    miningPayouts: () =>
+      req<{ payouts: { id: string; date: string; asset: string; amount: number; nzdValue: number; description: string }[] }>('/crypto/mining-payouts'),
+    importMiningPayouts: (ids: string[]) => req<{ added: number }>('/crypto/mining-payouts', { method: 'POST', body: JSON.stringify({ ids }) }),
     setPurpose: (asset: string, notForDisposal: boolean) =>
       req<{ asset: string; notForDisposal: boolean }>('/crypto/purposes', { method: 'PUT', body: JSON.stringify({ asset, notForDisposal }) }),
     importPreview: (walletId: string) =>

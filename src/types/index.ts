@@ -2477,7 +2477,7 @@ export interface VehiclesView {
 }
 
 /** Advanced crypto (KAN-47, Pro). */
-export type CryptoTxnKind = 'buy' | 'sell' | 'swap' | 'transfer_in' | 'transfer_out' | 'staking_reward' | 'airdrop' | 'income' | 'spend' | 'gift_out' | 'fee' | 'defi_deposit' | 'defi_withdraw';
+export type CryptoTxnKind = 'buy' | 'sell' | 'swap' | 'transfer_in' | 'transfer_out' | 'staking_reward' | 'mining_reward' | 'airdrop' | 'hard_fork' | 'income' | 'spend' | 'gift_out' | 'fee' | 'defi_deposit' | 'defi_withdraw';
 export interface CryptoTxnBody {
   date: string;
   kind: CryptoTxnKind;
