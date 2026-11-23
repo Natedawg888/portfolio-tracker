@@ -1319,6 +1319,11 @@ export const api = {
     list: (opts: { from: string; to: string; types: TimelineType[] }) =>
       req<TimelineEvent[]>(`/timeline?${new URLSearchParams({ from: opts.from, to: opts.to, types: opts.types.join(',') })}`),
   },
+  receipts: {
+    /** Read a receipt photo on the server (KAN-60): merchant, date and total when found. */
+    scan: (imageBase64: string) =>
+      req<{ merchant: string | null; date: string | null; amountNzd: number | null; text: string }>('/receipts/scan', { method: 'POST', body: JSON.stringify({ imageBase64 }) }),
+  },
   donations: {
     list: (taxYear?: number) =>
       req<Donation[]>(`/donations${taxYear != null ? `?taxYear=${taxYear}` : ''}`),
