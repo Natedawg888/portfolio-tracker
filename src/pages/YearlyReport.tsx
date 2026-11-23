@@ -2,6 +2,7 @@
  * Yearly report — net-worth / holdings growth from valuation_snapshots.
  * Line graph per asset (class + holding series). Never invents balances.
  */
+import { ExportPanel } from '../components/ExportPanel';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, formatAuckland, formatNzd } from '../api/client';
@@ -315,6 +316,7 @@ export function YearlyReport() {
       ) : null}
 
       <HistoryDailySwitch />
+      <ExportPanel />
     </div>
   );
 }
