@@ -25,7 +25,7 @@ const { attachUser, requireAuth, isPublicApiPath } = await import('../middleware
 const { sessionKeyStore } = await import('./dataKey.ts');
 const { hashPassword } = await import('../auth/passwords.ts');
 const { createSession, purgeExpiredSessions, revokeOtherSessions, SESSION_COOKIE } = await import('../auth/sessions.ts');
-const { holdKeyForChallenge, takeKeyForChallenge, pendingKeyCountForTest } = await import('./userKeys.ts');
+const { holdKeyForChallenge, takeKeyForChallenge, pendingKeyCountForTest, newRecoveryCode, normaliseRecoveryCode } = await import('./userKeys.ts');
 
 const app = express();
 app.use(express.json());
@@ -56,8 +56,9 @@ try {
   assert(reg.status === 201 && reg.cookie, 'registered');
   const uid = String((reg.json?.user as { id: string }).id);
   assert(await state(reg.cookie!) === 'unlocked', 'unlocked after signup');
-  const wraps = queryAll<{ kind: string; wrapped: string }>(db, `SELECT kind, wrapped FROM user_key_wraps WHERE user_id = ?`, [uid]);
-  assert(wraps.length === 1 && wraps[0].kind === 'password' && wraps[0].wrapped.startsWith('dk1:argon2id:'), 'one password wrap stored');
+  const wraps = queryAll<{ kind: string; wrapped: string }>(db, `SELECT kind, wrapped FROM user_key_wraps WHERE user_id = ? AND kind = 'password'`, [uid]);
+  assert(wraps.length === 1 && wraps[0].wrapped.startsWith('dk1:argon2id:'), 'password wrap stored');
+  assert(queryAll(db, `SELECT kind FROM user_key_wraps WHERE user_id = ? ORDER BY kind`, [uid]).map((r) => (r as { kind: string }).kind).join() === 'password,recovery', 'and a recovery wrap (KAN-111)');
   assert(!wraps[0].wrapped.includes(PW), 'password not in the wrap');
 
   // Sign-out clears; sign-in unlocks again with the same key.
@@ -119,6 +120,37 @@ try {
   assert(takeKeyForChallenge('h1', 'u2') === null && pendingKeyCountForTest() === 0, 'wrong user gets nothing and the hold is dropped');
   holdKeyForChallenge('h2', 'u1', k);
   assert(takeKeyForChallenge('h2', 'u1')?.equals(k) && takeKeyForChallenge('h2', 'u1') === null, 'taken once');
+
+  // KAN-111: recovery code at signup, password reset with it, regenerate.
+  {
+    const rc = await call('POST', '/register', undefined, { email: 'rc@example.com', password: PW, firstName: 'Rec', lastName: 'Code' });
+    const code = String(rc.json?.recoveryCode ?? '');
+    assert(/^[0-9A-HJKMNP-TV-Z]{5}(-[0-9A-HJKMNP-TV-Z]{5}){5}$/.test(code), `recovery code shown once at signup (${code})`);
+    const rid = String((rc.json?.user as { id: string }).id);
+    const key0 = Buffer.from(sessionKeyStore.forUser(rid)!);
+    assert(!JSON.stringify(queryAll(db, `SELECT * FROM user_key_wraps WHERE user_id = ?`, [rid])).includes(code.replace(/-/g, '')), 'code never stored');
+    assert((await call('GET', '/data-key', rc.cookie)).json?.hasRecoveryCode === true, 'state says it has one');
+    // Forgot password: wrong code refused, right code (typed loosely) resets and keeps the same key.
+    const NEWPW = 'brand new password 77';
+    assert((await call('POST', '/recover', undefined, { email: 'rc@example.com', recoveryCode: 'AAAAA-AAAAA-AAAAA-AAAAA-AAAAA-AAAAA', newPassword: NEWPW })).status === 401, 'wrong code refused');
+    const loose = code.toLowerCase().replace(/-/g, ' ');
+    const rec = await call('POST', '/recover', undefined, { email: 'rc@example.com', recoveryCode: loose, newPassword: NEWPW });
+    assert(rec.status === 200 && rec.cookie, 'reset with the code');
+    const code2 = String(rec.json?.recoveryCode ?? '');
+    assert(code2 && code2 !== code, 'a new recovery code replaces the used one');
+    assert(sessionKeyStore.get(queryOne<{ id: string }>(db, `SELECT id FROM sessions WHERE user_id = ?`, [rid])!.id, rid)!.equals(key0), 'same data key, unlocked');
+    assert(queryAll(db, `SELECT id FROM sessions WHERE user_id = ?`, [rid]).length === 1, 'other sessions signed out');
+    assert((await call('POST', '/recover', undefined, { email: 'rc@example.com', recoveryCode: code, newPassword: NEWPW })).status === 401, 'old code used up');
+    assert((await call('POST', '/login', undefined, { email: 'rc@example.com', password: NEWPW })).status === 200, 'new password signs in');
+    // Regenerate while signed in: needs the password.
+    assert((await call('POST', '/data-key/recovery-code', rec.cookie, { password: 'nope' })).status === 403, 'regenerate needs the password');
+    const regen = await call('POST', '/data-key/recovery-code', rec.cookie, { password: NEWPW });
+    assert(regen.status === 200 && regen.json?.recoveryCode !== code2, 'regenerated');
+    assert((await call('POST', '/recover', undefined, { email: 'rc@example.com', recoveryCode: code2, newPassword: NEWPW + 'x' })).status === 401, 'previous code no longer works');
+    assert((await call('POST', '/recover', undefined, { email: 'nobody@example.com', recoveryCode: code, newPassword: NEWPW })).status === 401, 'unknown email gets the same answer');
+    assert(normaliseRecoveryCode('o1l-i') === '0111', 'look-alike letters mapped');
+    assert(newRecoveryCode() !== newRecoveryCode(), 'random');
+  }
 
   assert(!JSON.stringify(queryAll(db, `SELECT * FROM user_key_wraps`)).includes(keyBefore.toString('base64')), 'raw key never stored');
   console.log('user keys tests passed');
