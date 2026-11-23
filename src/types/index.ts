@@ -2756,3 +2756,24 @@ export interface TimelineEvent {
   direction: 'in' | 'out' | null;
   link: string | null;
 }
+
+/** Alerts (KAN-64). */
+export interface AlertItem {
+  id: string;
+  kind: 'overspend' | 'bill_due' | 'goal' | 'unusual';
+  title: string;
+  body: string;
+  link: string | null;
+  createdAt: string;
+  readAt: string | null;
+}
+export interface AlertSettings {
+  overspend: boolean;
+  overspendPct: number;
+  billDue: boolean;
+  billDaysAhead: number;
+  goal: boolean;
+  unusual: boolean;
+  unusualMultiple: number;
+  email: boolean;
+}

@@ -130,6 +130,8 @@ import type {
   WalletNetwork,
   WalletNetworkInfo,
   WalletsValuationResponse,
+  AlertItem,
+  AlertSettings,
   TimelineEvent,
   TimelineType,
   WalletValuation,
@@ -1318,6 +1320,13 @@ export const api = {
   timeline: {
     list: (opts: { from: string; to: string; types: TimelineType[] }) =>
       req<TimelineEvent[]>(`/timeline?${new URLSearchParams({ from: opts.from, to: opts.to, types: opts.types.join(',') })}`),
+  },
+  alerts: {
+    list: () => req<{ alerts: AlertItem[]; unread: number }>('/alerts'),
+    read: (id: string | null) => req<{ unread: number }>('/alerts/read', { method: 'POST', body: JSON.stringify({ id }) }),
+    settings: () => req<{ settings: AlertSettings; emailAvailable: boolean }>('/alerts/settings'),
+    saveSettings: (patch: Partial<AlertSettings>) =>
+      req<{ settings: AlertSettings; emailAvailable: boolean }>('/alerts/settings', { method: 'PUT', body: JSON.stringify(patch) }),
   },
   donations: {
     list: (taxYear?: number) =>

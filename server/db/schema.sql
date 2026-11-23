@@ -1808,3 +1808,24 @@ CREATE TABLE IF NOT EXISTS user_key_wraps (
   updated_at  TEXT NOT NULL,
   PRIMARY KEY (user_id, kind)
 );
+
+-- Alerts (KAN-64): raised once per dedupe_key; read in the app, emailed in a daily digest.
+CREATE TABLE IF NOT EXISTS alerts (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind        TEXT NOT NULL,   -- overspend | bill_due | goal | unusual
+  dedupe_key  TEXT NOT NULL,
+  title       TEXT NOT NULL,
+  body        TEXT NOT NULL,
+  link        TEXT,
+  created_at  TEXT NOT NULL,
+  read_at     TEXT,
+  emailed_at  TEXT,
+  UNIQUE (user_id, dedupe_key)
+);
+CREATE INDEX IF NOT EXISTS idx_alerts_user_created ON alerts(user_id, created_at);
+CREATE TABLE IF NOT EXISTS alert_settings (
+  user_id        TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  settings_json  TEXT NOT NULL,
+  updated_at     TEXT NOT NULL
+);
