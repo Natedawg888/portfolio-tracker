@@ -18,6 +18,12 @@
  * listed but their gains and losses are left out of the taxable totals (a loss only counts when a
  * gain would have been taxable). Rewards it earns are still income. Set per coin, not per lot.
  *
+ * DeFi (KAN-87, IRD "Calculating cryptoasset income" and IRRUIP18, initial views only): losing
+ * possession of crypto to a pool, vault or contract someone else controls is a disposal. So a
+ * pooled deposit (the default) disposes of the coin at its NZD value and acquires the receipt
+ * (the LP / liquid-staking token given in `toAsset`, or a claim "<COIN> (DeFi)") at that value; a
+ * pooled withdrawal disposes of the receipt and reacquires the coin at the value received. A
+ * deposit that stays under your own keys (pooled: false) changes nothing.
  * Mining (KAN-94, IRD "Mining"): in most cases crypto from mining is taxable when received, at its
  * NZD value, which is also its cost. Cloud mining (GoMining) has no specific guidance; its daily
  * rewards are treated the same way, as an estimate.
@@ -32,8 +38,9 @@
  *   hard_fork                                              → acquire at nil cost, not income
  *   sell, swap (give leg), spend, gift_out, fee            → dispose (sell / spend: proceeds = NZD
  *       value − fee; gift and fee: proceeds = NZD value, usually 0 for a fee)
- *   transfer_in / transfer_out (between your own wallets), defi_deposit / defi_withdraw
- *                                                          → no change (still yours)
+ *   transfer_in / transfer_out (between your own wallets)  → no change (still yours)
+ *   defi_deposit / defi_withdraw                           → pooled: disposal + acquisition (above);
+ *                                                            under your own keys: no change
  * Staking and mining rewards, income and airdrops taxable on receipt are also counted as income at their NZD value.
  */
 import { taxYearStartForDate } from './taxYear';
@@ -83,8 +90,13 @@ const INCOME: ReadonlySet<CryptoTxnKind> = new Set(['staking_reward', 'mining_re
 
 /** Counted as income at receipt: staking and pay always; an airdrop only when marked taxable on receipt. */
 export const isIncomeOnReceipt = (t: { kind: CryptoTxnKind; taxableOnReceipt?: boolean | null }) => INCOME.has(t.kind) && (t.kind !== 'airdrop' || !!t.taxableOnReceipt);
-/** Needs an NZD value for the money figures. A non-taxable airdrop costs nil, so it doesn't. */
-export const needsValue = (t: { kind: CryptoTxnKind; taxableOnReceipt?: boolean | null }) => NEEDS_VALUE.has(t.kind) && (t.kind !== 'airdrop' || !!t.taxableOnReceipt);
+/** DeFi deposit or withdrawal that hands the coin to a pool (KAN-87). Pooled unless said otherwise. */
+export const isPooledDefi = (t: { kind: CryptoTxnKind; pooled?: boolean | null }) => (t.kind === 'defi_deposit' || t.kind === 'defi_withdraw') && t.pooled !== false;
+/** The receipt held while a coin is in a pool: the token given, or a claim on the coin. */
+export const defiReceiptAsset = (t: { asset: string; toAsset?: string | null }) => (t.toAsset?.trim() ? t.toAsset.trim().toUpperCase() : `${t.asset.trim().toUpperCase()} (DEFI)`);
+/** Needs an NZD value for the money figures. A non-taxable airdrop costs nil, so it doesn't; a pooled DeFi move does. */
+export const needsValue = (t: { kind: CryptoTxnKind; taxableOnReceipt?: boolean | null; pooled?: boolean | null }) =>
+  (NEEDS_VALUE.has(t.kind) && (t.kind !== 'airdrop' || !!t.taxableOnReceipt)) || isPooledDefi(t);
 
 export type CostMethod = 'fifo' | 'wac';
 
@@ -103,6 +115,8 @@ export type LedgerTxn = {
   toAmount?: number | null;
   /** Airdrop only: taxable on receipt (business, profit-making scheme, received for services, or regular airdrops). */
   taxableOnReceipt?: boolean;
+  /** DeFi deposit / withdrawal only (KAN-87): pooled, so you lose control of the keys. Default true. */
+  pooled?: boolean;
 };
 
 export type Disposal = {
@@ -224,8 +238,22 @@ export function computeGains(ledger: LedgerTxn[], method: CostMethod, nonDisposa
         if (value == null) incomplete.add(up(t.toAsset));
         acquire(t.toAsset, t.toAmount, value ?? 0);
       }
+    } else if (isPooledDefi(t)) {
+      // KAN-87: losing possession to a pool is a disposal; the receipt is acquired at that value.
+      const receipt = defiReceiptAsset(t);
+      const receiptQty = t.toAmount && t.toAmount > 0 ? t.toAmount : t.amount;
+      const [give, giveQty, get, getQty] = t.kind === 'defi_deposit' ? [t.asset, t.amount, receipt, receiptQty] : [receipt, receiptQty, t.asset, t.amount];
+      // A claim can return more than went in (yield): dispose of what's held, all of it counts as proceeds.
+      const isClaim = up(give).endsWith(' (DEFI)');
+      const held = pool(give).reduce((sum, l) => sum + l.qty, 0);
+      const { cost, shortfall } = remove(give, isClaim ? Math.min(giveQty, held) : giveQty);
+      if (shortfall > 0) shortfalls.add(up(give));
+      if (value != null) {
+        disposals.push({ txnId: t.id, date: t.date, asset: up(give), amount: giveQty, proceedsNzd: r2(value), costNzd: r2(cost), gainNzd: r2(value - cost), shortfall, taxable: !notForDisposal.has(up(t.asset)) });
+      } else incomplete.add(up(get));
+      acquire(get, getQty, value ?? 0);
     }
-    // transfers and DeFi deposits / withdrawals: no change.
+    // transfers, and DeFi moves that stay under your own keys: no change.
   }
 
   const positions: AssetPosition[] = [...lots.entries()]

@@ -55,8 +55,8 @@ eq(g.disposals[1].costNzd, 20000, 'swapped-in ETH costs what was given');
 eq(g.positions.find((p) => p.asset === 'BTC')?.quantity, 0.5, 'BTC left');
 eq(g.positions.find((p) => p.asset === 'ETH')?.costNzd, 20000, 'ETH left cost');
 
-// Transfers and DeFi deposits don't change anything.
-g = computeGains([t('2025-04-10', 'buy', 'ETH', 2, 6000), t('2025-05-01', 'transfer_out', 'ETH', 2, null), t('2025-05-02', 'defi_deposit', 'ETH', 1, null)], 'fifo');
+// Transfers, and DeFi deposits that stay under your own keys, don't change anything.
+g = computeGains([t('2025-04-10', 'buy', 'ETH', 2, 6000), t('2025-05-01', 'transfer_out', 'ETH', 2, null), t('2025-05-02', 'defi_deposit', 'ETH', 1, null, { pooled: false })], 'fifo');
 eq(g.disposals.length, 0, 'no disposal');
 eq(g.positions[0].quantity, 2, 'still 2 ETH');
 eq(g.missingValue.length, 0, 'transfers need no value');
@@ -126,6 +126,35 @@ g = computeGains([t('2025-05-01', 'buy', 'SOL', 10, 1000), t('2025-06-01', 'swap
 eq(g.disposals[0].taxable, false, 'swap of a coin not held to sell');
 eq(g.disposals[1].taxable && g.disposals[1].costNzd === 1500, true, 'ETH received: taxable, cost = value given');
 
+// KAN-87: a pooled DeFi deposit is a disposal; the receipt is acquired at that value.
+for (const method of ['fifo', 'wac'] as const) {
+  let d = computeGains([t('2025-04-10', 'buy', 'ETH', 1, 3000), t('2025-06-01', 'defi_deposit', 'ETH', 1, 4000)], method);
+  eq(yearSummary(d, 2025).realisedNzd, 1000, `${method}: 1 ETH bought at $3,000 deposited at $4,000 → $1,000 gain`);
+  eq(d.positions.find((p) => p.asset === 'ETH (DEFI)')?.costNzd, 4000, `${method}: the claim costs $4,000`);
+  eq(d.positions.some((p) => p.asset === 'ETH'), false, `${method}: no ETH left in the wallet`);
+  // Withdrawal worth $4,500 (incl. yield): the claim is sold for $4,500 (gain $500) and ETH comes back costing $4,500.
+  d = computeGains([t('2025-04-10', 'buy', 'ETH', 1, 3000), t('2025-06-01', 'defi_deposit', 'ETH', 1, 4000), t('2025-08-01', 'defi_withdraw', 'ETH', 1.02, 4500)], method);
+  eq(d.disposals[1].asset, 'ETH (DEFI)', `${method}: withdrawal disposes of the claim`);
+  eq(d.disposals[1].gainNzd, 500, `${method}: $500 gain on the withdrawal`);
+  eq(d.shortfalls.length, 0, `${method}: yield isn't a shortfall`);
+  eq(d.positions.find((p) => p.asset === 'ETH')?.costNzd, 4500, `${method}: ETH back at $4,500`);
+  eq(d.positions.find((p) => p.asset === 'ETH')?.quantity, 1.02, `${method}: 1.02 ETH back`);
+  // Not pooled: no gain, cost unchanged.
+  d = computeGains([t('2025-04-10', 'buy', 'ETH', 1, 3000), t('2025-06-01', 'defi_deposit', 'ETH', 1, 4000, { pooled: false }), t('2025-08-01', 'defi_withdraw', 'ETH', 1, 4500, { pooled: false })], method);
+  eq(d.disposals.length, 0, `${method}: own-keys deposit/withdraw → no gain`);
+  eq(d.positions.find((p) => p.asset === 'ETH')?.costNzd, 3000, `${method}: cost unchanged`);
+}
+// A named receipt token (stETH) instead of a claim.
+{
+  const d = computeGains([t('2025-04-10', 'buy', 'ETH', 1, 3000), t('2025-06-01', 'defi_deposit', 'ETH', 1, 4000, { toAsset: 'steth', toAmount: 0.999 })], 'fifo');
+  eq(d.positions.find((p) => p.asset === 'STETH')?.quantity, 0.999, 'stETH received');
+  eq(d.positions.find((p) => p.asset === 'STETH')?.costNzd, 4000, 'stETH costs $4,000');
+}
+eq(needsValue({ kind: 'defi_deposit' }), true, 'pooled deposit needs a value');
+eq(needsValue({ kind: 'defi_deposit', pooled: false }), false, 'own-keys deposit does not');
+// Wallet-to-wallet transfers are still no change.
+g = computeGains([t('2025-04-10', 'buy', 'ETH', 1, 3000), t('2025-05-01', 'transfer_out', 'ETH', 1, 4000), t('2025-05-01', 'transfer_in', 'ETH', 1, 4000)], 'fifo');
+eq(g.disposals.length, 0, 'transfers still no change');
 // KAN-94: mining rewards are income at receipt (their value is their cost); hard forks cost nil and aren't income.
 {
   const g2 = computeGains([t('2025-05-01', 'mining_reward', 'BTC', 0.001, 100), t('2025-09-01', 'sell', 'BTC', 0.001, 150)], 'fifo');
