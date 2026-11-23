@@ -131,6 +131,8 @@ import type {
   WalletNetworkInfo,
   WalletsValuationResponse,
   ScenarioSummary,
+  TimelineEvent,
+  TimelineType,
   WalletValuation,
   TxnCategorySuggestions,
 } from '../types/index.ts';
@@ -1323,6 +1325,10 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify({ override }),
       }),
+  },
+  timeline: {
+    list: (opts: { from: string; to: string; types: TimelineType[] }) =>
+      req<TimelineEvent[]>(`/timeline?${new URLSearchParams({ from: opts.from, to: opts.to, types: opts.types.join(',') })}`),
   },
   donations: {
     list: (taxYear?: number) =>
