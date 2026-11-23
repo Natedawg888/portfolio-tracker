@@ -39,10 +39,12 @@ export function CryptoTxnForm({ txn, onClose, onSave }: { txn: CryptoTxn | null;
   const [toAmount, setToAmount] = useState(s(txn?.toAmount));
   const [notes, setNotes] = useState(txn?.notes ?? '');
   const [taxable, setTaxable] = useState(!!txn?.taxableOnReceipt);
+  const [pooled, setPooled] = useState(txn?.pooled !== false);
+  const isDefi = kind === 'defi_deposit' || kind === 'defi_withdraw';
   const [busy, setBusy] = useState(false);
   const [lookup, setLookup] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const needsValue = NEEDS_VALUE.has(kind) || kind === 'fee';
+  const needsValue = NEEDS_VALUE.has(kind) || kind === 'fee' || (isDefi && pooled);
 
   async function look() {
     setLookup('Looking up…');
@@ -70,8 +72,9 @@ export function CryptoTxnForm({ txn, onClose, onSave }: { txn: CryptoTxn | null;
         nzdValue: value.trim() === '' ? null : Number(value),
         priceSource: source,
         feeNzd: fee.trim() === '' ? 0 : Number(fee),
-        toAsset: kind === 'swap' ? toAsset.trim() : null,
-        toAmount: kind === 'swap' ? Number(toAmount) : null,
+        toAsset: kind === 'swap' || (isDefi && pooled && toAsset.trim()) ? toAsset.trim() : null,
+        toAmount: kind === 'swap' ? Number(toAmount) : isDefi && pooled && toAsset.trim() && Number(toAmount) > 0 ? Number(toAmount) : null,
+        pooled: isDefi ? pooled : undefined,
         notes: notes.trim(),
         taxableOnReceipt: kind === 'airdrop' && taxable,
       });
@@ -136,8 +139,32 @@ export function CryptoTxnForm({ txn, onClose, onSave }: { txn: CryptoTxn | null;
             )}
           </label>
         ) : (
-          <p className="span-2 muted small">{kind.startsWith('transfer') ? 'Moving between your own wallets doesn’t change your cost or gains.' : 'Still yours while it’s in the protocol, so cost and gains don’t change.'}</p>
+          <p className="span-2 muted small">{kind.startsWith('transfer') ? 'Moving between your own wallets doesn’t change your cost or gains.' : isDefi ? 'Still under your own keys, so cost and gains don’t change.' : 'No NZD value needed.'}</p>
         )}
+        {isDefi ? (
+          <div className="span-2">
+            <label className="payslip-check">
+              <input type="checkbox" checked={pooled} onChange={(e) => setPooled(e.target.checked)} />
+              <span>Into a pool or contract I don’t control (I lose the keys)</span>
+            </label>
+            <p className="muted small">
+              IRD treats losing possession of crypto to a DeFi product as a disposal, so a pooled {kind === 'defi_deposit' ? 'deposit is a sale at its NZD value, and the token you get back costs that value' : 'withdrawal sells your receipt token and you get the coin back at its NZD value'}. Untick if it stays in your own wallet or a vault where you keep the keys: then nothing changes. This follows IRD’s published page and its 2026 issues paper (IRRUIP18, initial views that may change). See IRD:{' '}
+              <a href="https://www.ird.govt.nz/cryptoassets/taxing/income-expenses/calculating-cryptoasset-income" target="_blank" rel="noreferrer">calculating cryptoasset income</a>.
+            </p>
+            {pooled ? (
+              <div className="form-grid">
+                <label>
+                  Token {kind === 'defi_deposit' ? 'received' : 'given back'} (optional)
+                  <input value={toAsset} maxLength={20} placeholder="e.g. aETH, stETH" autoCapitalize="characters" onChange={(e) => setToAsset(e.target.value)} />
+                </label>
+                <label>
+                  Token amount
+                  <input type="number" min={0} step="any" inputMode="decimal" value={toAmount} onChange={(e) => setToAmount(e.target.value)} />
+                </label>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         {kind === 'airdrop' ? (
           <div className="span-2">
             <label className="payslip-check">

@@ -294,6 +294,14 @@ try {
     assert(ok.status === 201 || ok.status === 200, 'ordinary notes still fine');
   }
 
+  // KAN-87: the pooled flag is stored; own-keys deposits stay no change.
+  {
+    const own = await call('POST', '/txns', P, { date: '2025-05-01', kind: 'defi_deposit', asset: 'SOL', amount: 1, pooled: false });
+    assert(own.status === 201 && own.json.pooled === false && own.json.needsValue === false, 'own-keys deposit saved, needs no value');
+    const pooledTx = await call('POST', '/txns', P, { date: '2025-05-01', kind: 'defi_deposit', asset: 'SOL', amount: 1, toAsset: 'msol', toAmount: 0.98 });
+    assert(pooledTx.status === 201 && pooledTx.json.pooled === true && pooledTx.json.toAsset === 'MSOL' && pooledTx.json.needsValue === true, 'pooled by default, receipt token kept, value flagged');
+  }
+
   // Account deletion.
   deleteScopedDataForUser(db, 'pia');
   for (const table of ['crypto_txns', 'crypto_import_refs', 'crypto_settings', 'crypto_asset_purposes', 'defi_positions']) {

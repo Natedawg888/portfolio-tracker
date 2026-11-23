@@ -1671,6 +1671,8 @@ CREATE TABLE IF NOT EXISTS crypto_txns (
   notes         TEXT NOT NULL DEFAULT '',
   -- Airdrops only (KAN-86): 1 = taxable on receipt, income at nzd_value; 0 = nil cost, not income.
   taxable_on_receipt INTEGER NOT NULL DEFAULT 0,
+  -- DeFi deposits / withdrawals only (KAN-87): 1 = pooled (a disposal), 0 = still under your own keys.
+  defi_pooled   INTEGER NOT NULL DEFAULT 1,
   created_at    TEXT NOT NULL,
   updated_at    TEXT NOT NULL
 );

@@ -2492,6 +2492,8 @@ export interface CryptoTxnBody {
   notes: string;
   /** Airdrops only (KAN-86): taxable on receipt (business, scheme, services, regular airdrops). */
   taxableOnReceipt?: boolean;
+  /** DeFi deposit / withdrawal (KAN-87): pooled, so a disposal. Default true. */
+  pooled?: boolean;
 }
 export interface CryptoTxn extends CryptoTxnBody {
   id: string;
@@ -2763,6 +2765,13 @@ export type {
   UnlinkAccountResponse,
 } from './accountLinks';
 
+/** Scenario tool end-of-period figures (KAN-32). */
+export interface ScenarioSummary {
+  netWorthEndNzd: number;
+  savingsEndNzd: number;
+  investmentsEndNzd: number;
+  debtEndNzd: number;
+}
 /** Financial timeline (KAN-62). */
 export type TimelineType = 'bank' | 'crypto' | 'dividend' | 'milestone';
 export interface TimelineEvent {
