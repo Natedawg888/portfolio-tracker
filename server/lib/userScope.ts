@@ -45,6 +45,8 @@ export const SCOPED_TABLES = [
   'fif_class_overrides',
   'wallets',
   'wallet_txns',
+  'alerts',
+  'alert_settings',
   'pay_sources',
   'business_profiles',
   'businesses',
@@ -261,6 +263,8 @@ export function deleteScopedDataForUser(
     'valuation_snapshots',
     'budget_categories',
     'wallet_txns',
+    'alerts',
+    'alert_settings',
     'wallets',
   ];
 

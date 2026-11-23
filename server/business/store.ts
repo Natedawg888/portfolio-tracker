@@ -120,7 +120,7 @@ export function parseBusiness(raw: unknown): Parsed<BusinessDraft> {
   const name = text(o, 'name', 120);
   if (!name) return { ok: false, error: 'Business name is required' };
   const type = o.type ?? 'sole_trader';
-  if (!isBusinessType(type)) return { ok: false, error: 'Type must be sole trader, partnership, company or hobby' };
+  if (!isBusinessType(type)) return { ok: false, error: 'Type must be sole trader, partnership, company, hobby or holding company' };
   const email = text(o, 'email', 254);
   if (email && !isValidEmail(email)) return { ok: false, error: 'Business email is not valid' };
   const gstRegistered = o.gstRegistered === true;
@@ -348,6 +348,8 @@ export function deleteBusiness(db: Database, userId: string, id: string): Result
   run(db, `UPDATE transactions SET business_id = NULL, business_category_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
   run(db, `UPDATE income_records SET business_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
   run(db, `UPDATE commodities SET business_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
+  // Holdings a holding company held go back to being personal (KAN-134).
+  run(db, `UPDATE holdings SET business_id = NULL WHERE user_id = ? AND business_id = ?`, [userId, id]);
   deleteBusinessLogo(r.logo_path);
   forgetBusinessMembers(db, id);
   run(db, `DELETE FROM businesses WHERE id = ? AND user_id = ?`, [id, userId]);

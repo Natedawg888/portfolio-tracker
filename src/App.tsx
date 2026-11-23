@@ -9,6 +9,7 @@ import { Register } from './pages/Register';
 import { Privacy } from './pages/Privacy';
 import { Terms } from './pages/Terms';
 import { ConfirmEmail } from './pages/ConfirmEmail';
+import { Recover } from './pages/Recover';
 import { BusinessJoin } from './pages/BusinessJoin';
 import { HouseholdJoin } from './pages/HouseholdJoin';
 import { NotFoundRoute } from './pages/NotFound';
@@ -35,6 +36,8 @@ import {
   BillsPage,
   WarrantiesPage,
   DonationsPage,
+  AlertsPage,
+  TimelinePage,
   RentalsPage,
   PayslipsPage,
   VehiclesPage,
@@ -84,6 +87,8 @@ export default function App() {
             <Route path="/business/join" element={<BusinessJoin />} />
             {/* Email change link: works on any device, signed in or not. */}
             <Route path="/confirm-email" element={<ConfirmEmail />} />
+            {/* Forgotten password with the recovery code (KAN-111/117). */}
+            <Route path="/recover" element={<Recover />} />
             <Route
               path="/i/:token"
               element={
@@ -106,6 +111,9 @@ export default function App() {
                   <Route path="warranties" element={<WarrantiesPage />} />
                   {/* Donations: opened from Budget (KAN-25). */}
                   <Route path="donations" element={<DonationsPage />} />
+                  <Route path="alerts" element={<AlertsPage />} />
+                  {/* Financial timeline: opened from History (KAN-62). */}
+                  <Route path="timeline" element={<TimelinePage />} />
                   <Route path="rentals" element={<RentalsPage />} />
                   <Route path="payslips" element={<PayslipsPage />} />
                   <Route path="vehicles" element={<VehiclesPage />} />
