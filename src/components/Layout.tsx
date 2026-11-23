@@ -16,6 +16,7 @@ import { navKeysForMode, type NavKey, type UsageMode } from '../lib/usageMode';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
 import { ProfileMenu } from './ProfileMenu';
 import { DataUnlockBanner } from './security/DataUnlockBanner';
+import { AlertsBell } from './AlertsBell';
 import { headerAccountContext } from '../lib/accountLinksView';
 import { useAccountLinks } from '../lib/useAccountLinks';
 import { useMaxWidth } from '../lib/useMaxWidth';
@@ -398,6 +399,7 @@ export function Layout({ children }: { children?: ReactNode }) {
           ))}
         </nav>
         <div className="header-actions">
+          <AlertsBell />
           {preferenceTools(!phoneHeader)}
           <button
             ref={menuButtonRef}

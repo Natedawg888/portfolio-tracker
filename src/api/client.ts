@@ -48,7 +48,9 @@ import type {
   MeetingReminder,
   MeetingStatus,
   MeetingWriteBody,
+  BusinessAssetClassRow,
   BusinessDetail,
+  BusinessHoldingOption,
   BusinessBudgetCategory,
   BusinessBudgetView,
   BusinessSale,
@@ -130,6 +132,10 @@ import type {
   WalletNetwork,
   WalletNetworkInfo,
   WalletsValuationResponse,
+  AlertItem,
+  AlertSettings,
+  TimelineEvent,
+  TimelineType,
   WalletValuation,
   TxnCategorySuggestions,
 } from '../types/index.ts';
@@ -928,6 +934,10 @@ export const api = {
     price: (asset: string, date: string) =>
       req<{ priceNzd: number | null; source: string | null; priceDate: string | null; reason: string | null }>(`/crypto/price?${new URLSearchParams({ asset, date })}`),
     setCostMethod: (costMethod: 'fifo' | 'wac') => req<{ costMethod: string }>('/crypto/settings', { method: 'PUT', body: JSON.stringify({ costMethod }) }),
+    /** Mining payouts recorded in Income but not in the ledger (KAN-94). */
+    miningPayouts: () =>
+      req<{ payouts: { id: string; date: string; asset: string; amount: number; nzdValue: number; description: string }[] }>('/crypto/mining-payouts'),
+    importMiningPayouts: (ids: string[]) => req<{ added: number }>('/crypto/mining-payouts', { method: 'POST', body: JSON.stringify({ ids }) }),
     setPurpose: (asset: string, notForDisposal: boolean) =>
       req<{ asset: string; notForDisposal: boolean }>('/crypto/purposes', { method: 'PUT', body: JSON.stringify({ asset, notForDisposal }) }),
     importPreview: (walletId: string) =>
@@ -1127,6 +1137,14 @@ export const api = {
     list: (taxYear?: number | null) => req<BusinessListResponse>(`/business${taxYear ? `?taxYear=${taxYear}` : ''}`),
     get: (id: string, taxYear?: number | null) =>
       req<BusinessDetail>(`/business/${encodeURIComponent(id)}${taxYear ? `?taxYear=${taxYear}` : ''}`),
+    /** Holding company (KAN-134): asset classes it holds, and the owner's holdings to assign. */
+    assetClasses: (id: string) => req<BusinessAssetClassRow[]>(`/business/${encodeURIComponent(id)}/asset-classes`),
+    holdingOptions: (id: string) => req<BusinessHoldingOption[]>(`/business/${encodeURIComponent(id)}/holdings`),
+    assignHolding: (id: string, holdingId: string, assigned: boolean) =>
+      req<{ id: string; businessId: string | null }>(`/business/${encodeURIComponent(id)}/holdings/${encodeURIComponent(holdingId)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ assigned }),
+      }),
     create: (body: BusinessWriteBody) => req<Business>('/business', { method: 'POST', body: JSON.stringify(body) }),
     update: (id: string, body: BusinessWriteBody) =>
       req<Business>(`/business/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
@@ -1326,6 +1344,17 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify({ override }),
       }),
+  },
+  timeline: {
+    list: (opts: { from: string; to: string; types: TimelineType[] }) =>
+      req<TimelineEvent[]>(`/timeline?${new URLSearchParams({ from: opts.from, to: opts.to, types: opts.types.join(',') })}`),
+  },
+  alerts: {
+    list: () => req<{ alerts: AlertItem[]; unread: number }>('/alerts'),
+    read: (id: string | null) => req<{ unread: number }>('/alerts/read', { method: 'POST', body: JSON.stringify({ id }) }),
+    settings: () => req<{ settings: AlertSettings; emailAvailable: boolean }>('/alerts/settings'),
+    saveSettings: (patch: Partial<AlertSettings>) =>
+      req<{ settings: AlertSettings; emailAvailable: boolean }>('/alerts/settings', { method: 'PUT', body: JSON.stringify(patch) }),
   },
   donations: {
     list: (taxYear?: number) =>

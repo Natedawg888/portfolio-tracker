@@ -3,6 +3,7 @@
  * Line graph per asset (class + holding series). Never invents balances.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, formatAuckland, formatNzd } from '../api/client';
 import { beginPageRead, commitPageRead, invalidateFinancial, readPageCache } from '../lib/pageDataCache';
 import { seriesColour, type ChartResolution, type LineSeries } from '../components/AssetLineChart';
@@ -209,6 +210,9 @@ export function YearlyReport() {
 
   return (
     <div className="stack history-page">
+      <p className="small timeline-link">
+        <Link to="/timeline">See every money event on the timeline ›</Link>
+      </p>
       <HistoryHeader
         year={year}
         snapshotCount={snapshots.length}
