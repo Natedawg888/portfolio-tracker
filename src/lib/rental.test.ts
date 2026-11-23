@@ -12,7 +12,7 @@ assert(taxYearOf('2026-03-31') === 2026, '31 March ends the tax year');
 assert(taxYearOf('2026-04-01') === 2027, '1 April starts the next');
 assert(taxYearOf('2026-10-15') === 2027, 'October is in the year ending next March');
 assert(taxYearRange(2027).start === '2026-04-01' && taxYearRange(2027).end === '2027-03-31', 'range');
-assert(taxYearLabel(2027) === '2026–27' && taxYearLabel(2100) === '2099–00', 'label');
+assert(taxYearLabel(2027) === '2026/27' && taxYearLabel(2100) === '2099/00', 'label');
 
 assert(isRentalCategory('income', 'rent') && !isRentalCategory('income', 'rates'), 'income categories');
 assert(isRentalCategory('expense', 'interest') && !isRentalCategory('expense', 'rent'), 'expense categories');

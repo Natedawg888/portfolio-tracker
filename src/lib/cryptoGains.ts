@@ -36,6 +36,7 @@
  *                                                          → no change (still yours)
  * Staking and mining rewards, income and airdrops taxable on receipt are also counted as income at their NZD value.
  */
+import { taxYearStartForDate } from './taxYear';
 
 export const CRYPTO_TXN_KINDS = [
   'buy',
@@ -241,8 +242,7 @@ export function computeGains(ledger: LedgerTxn[], method: CostMethod, nonDisposa
 
 /** NZ tax year (by start year) of a date: 1 April – 31 March. */
 export function cryptoTaxYear(ymd: string): number {
-  const [y, m] = ymd.split('-').map(Number);
-  return m >= 4 ? y : y - 1;
+  return taxYearStartForDate(ymd);
 }
 
 /** Realised gains and income for one tax year. Disposals of coins not held for disposal are counted apart. */

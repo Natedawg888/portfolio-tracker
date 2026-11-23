@@ -56,6 +56,7 @@ jobs:
       - run: npm run test:kiwisaver
       - run: npm run test:history
       - run: npm run test:donations
+      - run: npm run test:tax-year
       - run: npm run test:alerts
       - run: npm run test:timeline
       - run: npm run test:fif

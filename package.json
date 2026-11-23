@@ -36,6 +36,7 @@
     "test:timeline": "node --import tsx server/timeline/store.test.ts",
     "test:alerts": "node --import tsx server/alerts/store.test.ts",
     "test:paye": "node --import tsx src/lib/payeCalc.test.ts && node --import tsx src/lib/salaryCompare.test.ts",
+    "test:tax-year": "node --import tsx src/lib/taxYear.test.ts",
     "test:wff": "node --import tsx src/lib/wffCalc.test.ts",
     "test:kiwisaver-calc": "node --import tsx src/lib/kiwiSaverCalc.test.ts",
     "test:crypto": "node --import tsx src/lib/cryptoGains.test.ts && node --import tsx server/crypto/store.test.ts",
