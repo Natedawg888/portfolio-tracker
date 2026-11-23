@@ -2765,6 +2765,13 @@ export type {
   UnlinkAccountResponse,
 } from './accountLinks';
 
+/** Scenario tool end-of-period figures (KAN-32). */
+export interface ScenarioSummary {
+  netWorthEndNzd: number;
+  savingsEndNzd: number;
+  investmentsEndNzd: number;
+  debtEndNzd: number;
+}
 /** Financial timeline (KAN-62). */
 export type TimelineType = 'bank' | 'crypto' | 'dividend' | 'milestone';
 export interface TimelineEvent {
