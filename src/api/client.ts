@@ -132,6 +132,7 @@ import type {
   WalletNetwork,
   WalletNetworkInfo,
   WalletsValuationResponse,
+  WalletTxn,
   ScenarioSummary,
   AlertItem,
   AlertSettings,
@@ -1332,6 +1333,9 @@ export const api = {
     list: () => req<Wallet[]>('/wallets'),
     networks: () => req<WalletNetworkInfo[]>('/wallets/networks'),
     valuation: () => req<WalletsValuationResponse>('/wallets/valuation'),
+    /** Stored on-chain transactions, newest first (KAN-43). */
+    transactions: (opts: { from?: string; to?: string; showHidden?: boolean } = {}) =>
+      req<WalletTxn[]>(`/wallets/transactions?${new URLSearchParams({ ...(opts.from ? { from: opts.from } : {}), ...(opts.to ? { to: opts.to } : {}), ...(opts.showHidden ? { showHidden: '1' } : {}) })}`),
     /** One wallet with its hidden (spam / unknown) tokens too (KAN-39). */
     valuationWithHidden: (id: string) =>
       req<{ wallet: Wallet; valuation: WalletValuation }>(`/wallets/${encodeURIComponent(id)}/valuation?showHidden=1`),
