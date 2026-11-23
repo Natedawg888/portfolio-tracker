@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { RecoveryCodeDialog } from '../components/security/RecoveryCodeDialog';
 import type { FormEvent } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
@@ -54,6 +55,7 @@ export function Register() {
   const [confirm, setConfirm] = useState('');
   const [prefs, setPrefs] = useState<AssetClassPrefs>(() => defaultAssetClassPrefs());
   const [usageMode, setUsageMode] = useState<UsageMode>('personal');
+  const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -300,6 +302,7 @@ export function Register() {
     try {
       const res = await register(email, password, { firstName: first, lastName: last });
       if (res.claimedExistingData) setInfo(res.message);
+      if (res.recoveryCode) setRecoveryCode(res.recoveryCode);
     } catch (err) {
       midSignupRef.current = false;
       setStep('credentials');
@@ -528,6 +531,7 @@ export function Register() {
 
   return (
     <div className={`auth-page${step === 'credentials' ? ' register-page' : ' assets-page'}${step === 'plan' ? ' plan-page' : ''}`}>
+      {recoveryCode ? <RecoveryCodeDialog code={recoveryCode} onDone={() => setRecoveryCode(null)} /> : null}
       <div className={`auth-card panel${wide ? ' auth-card-wide' : ''}${step === 'plan' ? ' auth-card-plans' : ''}`}>
         <div className="auth-brand">
           <Link to="/" className="auth-brand-link" aria-label="KoruLedger home">

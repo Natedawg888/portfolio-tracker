@@ -239,6 +239,9 @@ export type InvoiceWriteBody = {
   lines: { description: string; quantity: number; unit: string; rate: number }[];
 };
 
+/** Fired when the server says this session's data is locked (KAN-117). */
+export const DATA_LOCKED_EVENT = 'koru-data-locked';
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     credentials: 'include',
@@ -258,6 +261,8 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
       }
       if (code !== 'INVALID_CREDENTIALS') onUnauthorized?.();
     }
+    // KAN-117: a locked session tried to change something; ask the user to unlock.
+    if (res.status === 423 && typeof window !== 'undefined') window.dispatchEvent(new Event(DATA_LOCKED_EVENT));
     throw new ApiError(res.status, text || res.statusText);
   }
   if (res.status === 204) return undefined as T;
@@ -437,7 +442,16 @@ export const api = {
         user: AuthUser;
         claimedExistingData: boolean;
         message: string;
+        /** Shown once (KAN-111). */
+        recoveryCode?: string;
       }>('/auth/register', { method: 'POST', body: JSON.stringify(body) }),
+    /** Per-user data key (KAN-110/111/117). */
+    dataKey: () => req<{ state: 'unlocked' | 'locked' | 'needs_passphrase'; hasRecoveryCode: boolean }>('/auth/data-key'),
+    unlockData: (secret: string) => req<{ ok: boolean }>('/auth/data-key/unlock', { method: 'POST', body: JSON.stringify({ secret }) }),
+    setDataPassphrase: (passphrase: string) => req<{ ok: boolean }>('/auth/data-key/passphrase', { method: 'POST', body: JSON.stringify({ passphrase }) }),
+    newRecoveryCode: (password: string) => req<{ recoveryCode: string }>('/auth/data-key/recovery-code', { method: 'POST', body: JSON.stringify({ password }) }),
+    recover: (body: { email: string; recoveryCode: string; newPassword: string; code?: string }) =>
+      req<{ ok: boolean; recoveryCode: string }>('/auth/recover', { method: 'POST', body: JSON.stringify(body) }),
     login: (body: { email: string; password: string; remember?: boolean }) =>
       req<
         | { user: AuthUser; twoFactorRequired?: false }
