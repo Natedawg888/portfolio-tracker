@@ -1371,7 +1371,7 @@ export interface InvoiceClientWriteBody {
 
 // ---------------------------------------------------------------- Business (KAN-84)
 
-export type BusinessTypeValue = 'sole_trader' | 'partnership' | 'company' | 'hobby';
+export type BusinessTypeValue = 'sole_trader' | 'partnership' | 'company' | 'hobby' | 'holding_company';
 export type BusinessAssetCategory = 'livestock' | 'beehives' | 'equipment' | 'vehicle' | 'stock' | 'other';
 export type BusinessMovementKind = 'purchase' | 'birth' | 'sale' | 'death' | 'loss';
 
@@ -1532,6 +1532,26 @@ export interface BusinessProduce {
   valueOn: string | null;
   /** Price over 30 days old, or undated. */
   stale: boolean;
+}
+
+/** One asset class a holding company holds (KAN-134). Values match Portfolio. */
+export interface BusinessAssetClassRow {
+  key: string;
+  label: string;
+  valueNzd: number;
+  count: number;
+  /** Holdings in the class with no value yet (counted, not added). */
+  unvalued: number;
+}
+
+/** A Portfolio holding the owner can assign to a business (KAN-134). */
+export interface BusinessHoldingOption {
+  id: string;
+  label: string;
+  assetClass: string;
+  classLabel: string;
+  assignedHere: boolean;
+  assignedElsewhere: boolean;
 }
 
 export interface BusinessDetail {

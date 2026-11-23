@@ -498,6 +498,9 @@ function migrateSchema(database: Database) {
       database.run(`ALTER TABLE holdings ADD COLUMN ${col} ${typ}`);
     }
   }
+  // Holding company (KAN-134): the business that holds this holding; null = personal.
+  if (!holdCols2.has('business_id')) database.run('ALTER TABLE holdings ADD COLUMN business_id TEXT');
+  database.run('CREATE INDEX IF NOT EXISTS idx_holdings_business ON holdings(user_id, business_id)');
 
   database.run(
     `CREATE INDEX IF NOT EXISTS idx_income_records_category ON income_records(category_id)`,

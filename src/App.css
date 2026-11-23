@@ -15820,6 +15820,35 @@ html:not([data-theme]) .profile-menu-switch-row[aria-current="true"] {
   outline-offset: 2px;
 }
 
+/* KAN-134: holding company investments by asset class. */
+.holding-company-classes {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+.holding-company-classes li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.holding-company-compact {
+  margin-top: 0.5rem;
+}
+.holding-company-group {
+  border: 0;
+  padding: 0;
+  margin: 0.75rem 0;
+  display: grid;
+  gap: 0.35rem;
+}
+.holding-company-group legend {
+  font-weight: 650;
+  margin-bottom: 0.25rem;
+}
+
 /* KAN-92: FIF estimate on the Portfolio Dividends tab. */
 .fif-panel .panel-heading {
   display: flex;

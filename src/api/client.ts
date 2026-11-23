@@ -48,7 +48,9 @@ import type {
   MeetingReminder,
   MeetingStatus,
   MeetingWriteBody,
+  BusinessAssetClassRow,
   BusinessDetail,
+  BusinessHoldingOption,
   BusinessBudgetCategory,
   BusinessBudgetView,
   BusinessSale,
@@ -1117,6 +1119,14 @@ export const api = {
     list: (taxYear?: number | null) => req<BusinessListResponse>(`/business${taxYear ? `?taxYear=${taxYear}` : ''}`),
     get: (id: string, taxYear?: number | null) =>
       req<BusinessDetail>(`/business/${encodeURIComponent(id)}${taxYear ? `?taxYear=${taxYear}` : ''}`),
+    /** Holding company (KAN-134): asset classes it holds, and the owner's holdings to assign. */
+    assetClasses: (id: string) => req<BusinessAssetClassRow[]>(`/business/${encodeURIComponent(id)}/asset-classes`),
+    holdingOptions: (id: string) => req<BusinessHoldingOption[]>(`/business/${encodeURIComponent(id)}/holdings`),
+    assignHolding: (id: string, holdingId: string, assigned: boolean) =>
+      req<{ id: string; businessId: string | null }>(`/business/${encodeURIComponent(id)}/holdings/${encodeURIComponent(holdingId)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ assigned }),
+      }),
     create: (body: BusinessWriteBody) => req<Business>('/business', { method: 'POST', body: JSON.stringify(body) }),
     update: (id: string, body: BusinessWriteBody) =>
       req<Business>(`/business/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),

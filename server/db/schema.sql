@@ -837,7 +837,7 @@ CREATE TABLE IF NOT EXISTS businesses (
   id                 TEXT PRIMARY KEY,
   user_id            TEXT NOT NULL,
   name               TEXT NOT NULL,
-  type               TEXT NOT NULL DEFAULT 'sole_trader',  -- sole_trader | partnership | company | hobby
+  type               TEXT NOT NULL DEFAULT 'sole_trader',  -- sole_trader | partnership | company | hobby | holding_company
   industry           TEXT NOT NULL DEFAULT '',
   nzbn               TEXT NOT NULL DEFAULT '',
   gst_registered     INTEGER NOT NULL DEFAULT 0,

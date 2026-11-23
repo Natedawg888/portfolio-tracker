@@ -9,6 +9,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, formatNzd } from '../api/client';
 import { IRD_GST_URL, businessTypeLabel, movementKindLabel, netWorthNote, type AssetCategory } from '../lib/business';
 import { BusinessFigures, BusinessMark, BusinessTabs, Dialog, NetWorthSwitch, TaxYearSwitch, TypeNote, errorText } from '../components/business/BusinessUi';
+import { HoldingCompanyInvestments } from '../components/business/HoldingCompanyInvestments';
 import { BusinessForm, businessBody } from '../components/business/BusinessForm';
 import { ClientForm, clientBody } from '../components/business/ClientForm';
 import { EmployeeForm, employeeDraft } from '../components/business/EmployeeForm';
@@ -503,6 +504,8 @@ export function BusinessDetail() {
           load();
         }} /> : null}
       </section>
+
+      {b.type === 'holding_company' ? <HoldingCompanyInvestments businessId={id} name={name} canAssign={isOwner && b.archivedAt == null} /> : null}
 
       <WhatItOwns
         businessId={id}
