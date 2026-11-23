@@ -2742,3 +2742,17 @@ export type {
   SwitchAccountResponse,
   UnlinkAccountResponse,
 } from './accountLinks';
+
+/** Financial timeline (KAN-62). */
+export type TimelineType = 'bank' | 'crypto' | 'dividend' | 'milestone';
+export interface TimelineEvent {
+  id: string;
+  date: string;
+  type: TimelineType;
+  title: string;
+  detail: string | null;
+  amountNzd: number | null;
+  amountText: string | null;
+  direction: 'in' | 'out' | null;
+  link: string | null;
+}
