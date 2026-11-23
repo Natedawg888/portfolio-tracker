@@ -1,6 +1,7 @@
 /**
  * Local SQLite via sql.js (WASM) — no native compile, data on disk under data/.
  */
+import { decryptRow } from '../security/fieldCrypto.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1014,7 +1015,7 @@ export function queryAll<T extends Record<string, unknown>>(
   stmt.bind(params as never[]);
   const rows: T[] = [];
   while (stmt.step()) {
-    rows.push(stmt.getAsObject() as T);
+    rows.push(decryptRow(stmt.getAsObject() as T));
   }
   stmt.free();
   return rows;
