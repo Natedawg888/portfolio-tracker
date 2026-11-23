@@ -26,6 +26,7 @@ import payeesRouter from './routes/payees.ts';
 import savingsGoalsRouter from './routes/savingsGoals.ts';
 import donationsRouter from './routes/donations.ts';
 import receiptsRouter from './routes/receipts.ts';
+import exportRouter from './routes/export.ts';
 import timelineRouter from './routes/timeline.ts';
 import fifRouter from './routes/fif.ts';
 import paySourcesRouter from './routes/paySources.ts';
@@ -168,6 +169,7 @@ async function main() {
   app.use('/api/savings-goals', savingsGoalsRouter);
   app.use('/api/donations', donationsRouter);
   app.use('/api/receipts', receiptsRouter);
+  app.use('/api/export', exportRouter);
   app.use('/api/alerts', alertsRouter);
   app.use('/api/timeline', timelineRouter);
   app.use('/api/fif', fifRouter);

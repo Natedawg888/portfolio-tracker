@@ -21,6 +21,7 @@ import { getDb, queryAll, queryOne, run, newId } from '../db/index.ts';
 import { describeChainConfig, isNetworkSyncable, NETWORK_CHAIN_INFO } from '../chain/index.ts';
 import { combineValuations, valueWallet, withoutHidden } from '../chain/valuation.ts';
 import { requestManualSync, syncWallet } from '../chain/sync.ts';
+import { listWalletTxns } from '../chain/history.ts';
 
 const router = Router();
 
@@ -169,6 +170,24 @@ router.get('/valuation', async (req, res) => {
   });
 });
 
+/**
+ * Stored on-chain transactions (KAN-43), newest first: every wallet, or one.
+ * ?from=YYYY-MM-DD&to=YYYY-MM-DD&showHidden=1 (spam / unknown tokens are left out by default).
+ */
+const ymd = (v: unknown) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+router.get('/transactions', async (req, res) => {
+  const db = await getDb();
+  res.json(listWalletTxns(db, uid(req), { from: ymd(req.query.from), to: ymd(req.query.to), showHidden: req.query.showHidden === '1' }));
+});
+router.get('/:id/transactions', async (req, res) => {
+  const db = await getDb();
+  if (!queryOne(db, 'SELECT id FROM wallets WHERE id=? AND user_id=?', [req.params.id, uid(req)])) {
+    res.status(404).json({ error: 'Wallet not found' });
+    return;
+  }
+  res.json(listWalletTxns(db, uid(req), { walletId: req.params.id, showHidden: req.query.showHidden === '1' }));
+});
+
 router.get('/:id/valuation', async (req, res) => {
   const db = await getDb();
   const row = queryOne(db, 'SELECT * FROM wallets WHERE id=? AND user_id=?', [req.params.id, uid(req)]);
@@ -312,6 +331,7 @@ router.delete('/:id', async (req, res) => {
     res.status(404).json({ error: 'Wallet not found' });
     return;
   }
+  run(db, 'DELETE FROM wallet_txns WHERE wallet_id=? AND user_id=?', [id, uid(req)]);
   run(db, 'DELETE FROM wallets WHERE id=? AND user_id=?', [id, uid(req)]);
   res.json({ ok: true, id });
 });

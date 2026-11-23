@@ -17,7 +17,8 @@ import { getDb, queryAll, queryOne, run } from '../db/index.ts';
 import { logger } from '../lib/logger.ts';
 import { WALLET_NETWORKS, type WalletNetwork } from '../lib/walletAddress.ts';
 import { redactChainSecrets } from './config.ts';
-import { fetchWalletBalances } from './service.ts';
+import { fetchWalletBalances, fetchWalletTokenTransfers, fetchWalletTransactions } from './service.ts';
+import { HISTORY_LIMIT, historyDue, importWalletHistory, type HistorySource } from './history.ts';
 import { ChainProviderError } from './types.ts';
 import { primeBalanceCache } from './valuation.ts';
 import { blockNetwork, networkBlockedSec, paceNetwork, resetRateLimitsForTest } from './rateLimit.ts';
@@ -87,6 +88,15 @@ export function syncWallet(walletId: string, userId: string | null = null): Prom
   return p;
 }
 
+let historySource: HistorySource = {
+  native: (w) => fetchWalletTransactions(w, { limit: HISTORY_LIMIT }),
+  tokens: (w) => fetchWalletTokenTransfers(w, HISTORY_LIMIT),
+};
+/** Tests: stub the history fetch. */
+export function setHistorySourceForTest(source: HistorySource): void {
+  historySource = source;
+}
+
 async function doSync(walletId: string, userId: string | null): Promise<SyncOutcome> {
   const db = await getDb();
   const row = loadRow(db, walletId, userId);
@@ -127,6 +137,15 @@ async function doSync(walletId: string, userId: string | null): Promise<SyncOutc
       [snap.fetchedAt, new Date(now.getTime() + intervalMs()).toISOString(), now.toISOString(), walletId, network, address],
     );
     primeBalanceCache({ network, address }, snap.balances, snap.fetchedAt);
+    // Transaction history (KAN-43): every few hours; a failure here never fails the sync.
+    if (historyDue(db, walletId)) {
+      try {
+        const h = await importWalletHistory(db, { id: walletId, userId: row.user_id, network, address }, historySource);
+        if (h.added || h.updated) logger.info('wallet_history', { walletId, network, added: h.added, updated: h.updated });
+      } catch (err) {
+        logger.warn('wallet_history_failed', { walletId, network, err: redactChainSecrets(String(err)).slice(0, 200) });
+      }
+    }
     logger.info('wallet_sync', { walletId, network, ok: true, ms: Date.now() - startedAt });
     return { ok: true, walletId };
   } catch (err) {
