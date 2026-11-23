@@ -133,6 +133,7 @@ import type {
   WalletNetworkInfo,
   WalletsValuationResponse,
   WalletTxn,
+  ScenarioSummary,
   AlertItem,
   AlertSettings,
   TimelineEvent,
@@ -584,6 +585,16 @@ export const api = {
    * are optional; omitted values are labelled in assumptions.
    */
   projections: {
+    /** Scenario tool (KAN-32): the user's projection as it is and with the changes. */
+    scenario: (q: { months: number; extraSaving: number; extraIncome: number; invest: number; mortgageRate: number }) =>
+      req<{
+        months: number;
+        baseline: ScenarioSummary;
+        scenario: ScenarioSummary;
+        difference: ScenarioSummary;
+        points: { date: string; baselineNzd: number | null; scenarioNzd: number }[];
+        notes: string[];
+      }>(`/projections/scenario?${new URLSearchParams(Object.fromEntries(Object.entries(q).map(([k, v]) => [k, String(v)])))}`),
     get: (query?: {
       months?: number;
       savingWindowMonths?: number;

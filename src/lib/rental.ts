@@ -3,6 +3,7 @@
  * Dates are YYYY-MM-DD in Pacific/Auckland. Totals run over the New Zealand tax
  * year (1 April – 31 March), named by the year it ends in: 2027 = 1 Apr 2026 – 31 Mar 2027.
  */
+import { taxYearEndForDate, taxYearFromEndYear, taxYearLabelFromEnd } from './taxYear';
 import { roundMoney } from './debtModel.ts';
 
 export type RentalEntryKind = 'income' | 'expense';
@@ -43,18 +44,17 @@ export function rentalCategoryLabel(value: string): string {
 
 /** Tax year (named by its end year) that a date falls in. */
 export function taxYearOf(date: string): number {
-  const year = Number(date.slice(0, 4));
-  const month = Number(date.slice(5, 7));
-  return month >= 4 ? year + 1 : year;
+  return taxYearEndForDate(date);
 }
 
 export function taxYearRange(endYear: number): { start: string; end: string } {
-  return { start: `${endYear - 1}-04-01`, end: `${endYear}-03-31` };
+  const { start, end } = taxYearFromEndYear(endYear);
+  return { start, end };
 }
 
-/** "2026–27" for the year ending 31 March 2027. */
+/** "2026/27" for the year ending 31 March 2027 (the shared label, KAN-101). */
 export function taxYearLabel(endYear: number): string {
-  return `${endYear - 1}–${String(endYear).slice(-2)}`;
+  return taxYearLabelFromEnd(endYear);
 }
 
 export type RentalTotals = { income: number; expenses: number; net: number };
