@@ -43,6 +43,7 @@ type AuthContextValue = {
     user: AuthUser;
     claimedExistingData: boolean;
     message: string;
+    recoveryCode?: string;
   }>;
   /** Signs the active account out; if another account is signed in here, the app reloads as it. */
   logout: () => Promise<void>;
@@ -204,6 +205,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user: u,
       claimedExistingData: res.claimedExistingData,
       message: res.message,
+      recoveryCode: res.recoveryCode,
     };
   }, [publishUser]);
 

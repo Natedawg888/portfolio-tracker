@@ -15,6 +15,7 @@ import { useAuth } from '../auth/AuthContext';
 import { navKeysForMode, type NavKey, type UsageMode } from '../lib/usageMode';
 import type { AssetClassPrefKey } from '../lib/assetClassPrefs';
 import { ProfileMenu } from './ProfileMenu';
+import { DataUnlockBanner } from './security/DataUnlockBanner';
 import { AlertsBell } from './AlertsBell';
 import { headerAccountContext } from '../lib/accountLinksView';
 import { useAccountLinks } from '../lib/useAccountLinks';
@@ -414,6 +415,7 @@ export function Layout({ children }: { children?: ReactNode }) {
           </button>
         </div>
       </header>
+      <DataUnlockBanner />
       <MobileNavDrawer
         open={navOpen}
         onClose={closeNav}
