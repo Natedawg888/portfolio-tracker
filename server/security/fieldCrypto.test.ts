@@ -81,7 +81,7 @@ try {
 
   // Existing plain notes are migrated on sign-in.
   run(db, `INSERT INTO savings_goals (id, user_id, name, notes, target_nzd, current_amount_nzd, created_at, updated_at) VALUES ('g_old', ?, 'Old', 'plain old note', 100, 0, ?, ?)`, [uid, new Date().toISOString(), new Date().toISOString()]);
-  eq(migrationReport(db).find((r) => r.userId === uid)?.plainValues, 1, 'report: one plain note waiting');
+  eq(migrationReport(db).find((r) => r.userId === uid)?.plainValues, 3, 'report: the plain note and both goal amounts waiting');
   const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'enc@example.com', password: PW }) });
   eq(login.status, 200, 'signed in');
   eq(raw(db, `SELECT notes FROM savings_goals WHERE id = 'g_old'`, [])!.startsWith('ue1:'), true, 'migrated on sign-in');

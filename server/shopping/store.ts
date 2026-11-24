@@ -18,6 +18,7 @@ import type {
 } from '../../src/types/index.ts';
 import { newId, queryAll, queryOne, run } from '../db/index.ts';
 import { roundMoney } from '../debts/model.ts';
+import { planTotalOverlapping } from '../budget/planTotals.ts';
 import {
   DAILY_CONTRIBUTION_LIMIT,
   MAX_PRICE_NZD,
@@ -162,19 +163,14 @@ function budgetLines(db: Database, userId: string, items: ShoppingItem[], listCa
   }
   return [...toBuy.entries()].map(([categoryId, amount]) => {
     const cat = queryOne<{ name: string }>(db, `SELECT name FROM budget_categories WHERE id = ? AND user_id = ?`, [categoryId, userId]);
-    const plan = queryOne<{ total: number | null; n: number }>(
-      db,
-      `SELECT SUM(amount_nzd) AS total, COUNT(*) AS n FROM budgets
-       WHERE user_id = ? AND category_id = ? AND period_start <= ? AND period_end >= ?`,
-      [userId, categoryId, end, start],
-    );
+    const plan = planTotalOverlapping(db, userId, categoryId, start, end);
     const spent = queryOne<{ total: number | null }>(
       db,
       `SELECT SUM(-amount) AS total FROM transactions
        WHERE user_id = ? AND category_id = ? AND amount < 0 AND date >= ? AND date <= ?`,
       [userId, categoryId, start, end],
     );
-    const planned = plan && plan.n > 0 ? roundMoney(Number(plan.total ?? 0)) : null;
+    const planned = plan.n > 0 ? roundMoney(plan.total) : null;
     const spentNzd = roundMoney(Number(spent?.total ?? 0));
     return {
       categoryId,

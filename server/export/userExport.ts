@@ -16,6 +16,7 @@ import type { Database } from 'sql.js';
 import { queryAll } from '../db/index.ts';
 import { computeNetWorth, type WalletValuer } from '../lib/netWorth.ts';
 import { homeMonthSnapshot } from '../budget/homeSnapshot.ts';
+import { planTotalsForMonth } from '../budget/planTotals.ts';
 import { A4, INK, MARGIN, MUTED, RULE, fonts, formatMoney } from '../invoices/pdf.ts';
 
 export const EXPORT_SECTIONS = ['budget', 'assets', 'kiwisaver', 'all'] as const;
@@ -67,19 +68,21 @@ export function monthsBetween(from: string, to: string): string[] {
 export function budgetRows(db: Database, userId: string, months: string[]): string[][] {
   const out: string[][] = [];
   for (const month of months) {
-    const plans = queryAll<{ id: string; name: string; type: string; planned: number | null; actual: number | null }>(
+    const planned = planTotalsForMonth(db, userId, month);
+    const plans = queryAll<{ id: string; name: string; type: string; actual: number | null }>(
       db,
       `SELECT c.id, c.name, c.type,
-              (SELECT SUM(b.amount_nzd) FROM budgets b WHERE b.user_id = c.user_id AND b.category_id = c.id AND substr(b.period_start, 1, 7) = ?) AS planned,
               (SELECT SUM(CASE WHEN c.type = 'income' THEN t.amount ELSE -t.amount END) FROM transactions t
                 WHERE t.user_id = c.user_id AND t.category_id = c.id AND substr(t.date, 1, 7) = ?
                   AND ((c.type = 'income' AND t.amount > 0) OR (c.type = 'spending' AND t.amount < 0))) AS actual
        FROM budget_categories c WHERE c.user_id = ? AND c.type IN ('spending', 'income') ORDER BY c.type DESC, c.name COLLATE NOCASE`,
-      [month, month, userId],
+      [month, userId],
     );
     for (const p of plans) {
-      if (p.planned == null && p.actual == null) continue;
-      out.push([month, p.name, p.type, p.planned == null ? '' : String(Math.round(p.planned * 100) / 100), String(Math.round((p.actual ?? 0) * 100) / 100)]);
+      const plan = planned.get(p.id);
+      const plannedNzd = plan && plan.n > 0 ? plan.total : null;
+      if (plannedNzd == null && p.actual == null) continue;
+      out.push([month, p.name, p.type, plannedNzd == null ? '' : String(Math.round(plannedNzd * 100) / 100), String(Math.round((p.actual ?? 0) * 100) / 100)]);
     }
   }
   return out;

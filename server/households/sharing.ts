@@ -21,6 +21,8 @@ import { listRecurring, parseRecurring, updateRecurring } from '../recurring/sto
 import { aucklandToday, roundMoney } from '../debts/model.ts';
 import { householdActive, logActivity, memberLabel, membershipOf, type Membership } from './store.ts';
 import { budgetMoneyIn } from './paye.ts';
+import { decryptSharedItem } from '../security/fieldCrypto.ts';
+import { planTotalOverlapping } from '../budget/planTotals.ts';
 
 export const SHARE_KINDS = ['budget', 'bill', 'goal', 'holding', 'account'] as const;
 export type ShareKind = (typeof SHARE_KINDS)[number];
@@ -120,6 +122,11 @@ export function setShared(db: Database, userId: string, body: unknown): Result<S
   const on = b.shared === true;
   if (on && !householdActive(db, m)) return fail(402, 'Households are part of KoruLedger Plus.', 'PLAN_REQUIRED');
   const exists = !!queryOne(db, `SELECT 1 FROM household_shares WHERE household_id = ? AND kind = ? AND item_id = ?`, [m.householdId, b.kind, b.itemId]);
+  // KAN-112: members read shared items with their own session, so a shared goal, bill or budget is kept
+  // plain. Unsharing needs nothing here: the owner's next change or sign-in encrypts it again.
+  if (on && !exists && (b.kind === 'goal' || b.kind === 'bill' || b.kind === 'budget') && !decryptSharedItem(db, userId, b.kind, b.itemId, run)) {
+    return fail(423, 'Unlock your data to share this.', 'DATA_LOCKED');
+  }
   if (on && !exists) {
     run(db, `INSERT INTO household_shares (household_id, owner_id, kind, item_id, shared_at) VALUES (?,?,?,?,?)`, [m.householdId, userId, b.kind, b.itemId, new Date().toISOString()]);
     logActivity(db, m.householdId, userId, `shared ${KIND_WORD[b.kind]}`, itemName(db, b.kind, b.itemId));
@@ -224,11 +231,7 @@ export async function dashboard(db: Database, userId: string): Promise<Result<Ho
   for (const s of by('budget')) {
     const cat = queryOne<{ id: string; name: string; slug: string | null }>(db, `SELECT id, name, slug FROM budget_categories WHERE id = ? AND user_id = ?`, [s.item_id, s.owner_id]);
     if (!cat) continue;
-    const plan = queryOne<{ total: number | null; n: number }>(
-      db,
-      `SELECT SUM(amount_nzd) AS total, COUNT(*) AS n FROM budgets WHERE user_id = ? AND category_id = ? AND period_start <= ? AND period_end >= ?`,
-      [s.owner_id, cat.id, end, start],
-    );
+    const plan = planTotalOverlapping(db, s.owner_id, cat.id, start, end);
     let spent = 0;
     for (const [member, accts] of sharedAccountsByMember) {
       const cats = queryAll<{ id: string }>(
@@ -248,7 +251,7 @@ export async function dashboard(db: Database, userId: string): Promise<Result<Ho
         )?.t ?? 0,
       );
     }
-    const planned = plan && plan.n > 0 ? roundMoney(Number(plan.total ?? 0)) : null;
+    const planned = plan.n > 0 ? roundMoney(plan.total) : null;
     budgets.push({ id: cat.id, owner: names.get(s.owner_id) ?? 'Member', name: cat.name, plannedNzd: planned, spentNzd: roundMoney(spent), remainingNzd: planned == null ? null : roundMoney(planned - spent) });
   }
 

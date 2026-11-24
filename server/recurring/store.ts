@@ -237,23 +237,22 @@ export function createRecurring(db: Database, userId: string, d: RecurringDraft,
 export function updateRecurring(db: Database, userId: string, id: string, patch: Partial<RecurringDraft>, today: string): RecurringItem | null {
   const r = queryOne<Row>(db, `SELECT * FROM recurring_items WHERE id = ? AND user_id = ?`, [id, userId]);
   if (!r) return null;
+  // Only the fields being changed are written (null or absent keeps the stored value, as before).
+  // A household member edits the owner's shared bill in their own session, where the owner's
+  // encrypted values read as null (KAN-112); rewriting every column would save those nulls.
+  const fields: [string, unknown][] = [];
+  if (patch.name != null) fields.push(['name', patch.name]);
+  if (patch.kind != null) fields.push(['kind', patch.kind]);
+  if (patch.amountNzd != null) fields.push(['amount_nzd', patch.amountNzd]);
+  if (patch.cadence != null) fields.push(['cadence', patch.cadence]);
+  if (patch.nextDue != null) fields.push(['next_due', patch.nextDue]);
+  if (patch.categoryId !== undefined) fields.push(['category_id', ownedCategory(db, userId, patch.categoryId)]);
+  if (patch.status != null) fields.push(['status', patch.status]);
+  if (patch.notes != null) fields.push(['notes', patch.notes]);
   run(
     db,
-    `UPDATE recurring_items SET name=?, kind=?, amount_nzd=?, cadence=?, next_due=?, category_id=?, status=?, notes=?, updated_at=?
-     WHERE id=? AND user_id=?`,
-    [
-      patch.name ?? r.name,
-      patch.kind ?? r.kind,
-      patch.amountNzd ?? r.amount_nzd,
-      patch.cadence ?? r.cadence,
-      patch.nextDue ?? r.next_due,
-      patch.categoryId !== undefined ? ownedCategory(db, userId, patch.categoryId) : r.category_id,
-      patch.status ?? r.status,
-      patch.notes ?? r.notes,
-      new Date().toISOString(),
-      id,
-      userId,
-    ],
+    `UPDATE recurring_items SET ${[...fields.map(([c]) => `${c}=?`), 'updated_at=?'].join(', ')} WHERE id=? AND user_id=?`,
+    [...fields.map(([, v]) => v), new Date().toISOString(), id, userId],
   );
   return getRecurring(db, userId, id, today);
 }

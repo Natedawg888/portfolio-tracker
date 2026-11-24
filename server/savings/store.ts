@@ -161,12 +161,20 @@ export function updateSavingsGoal(
     accountId: patch.accountId !== undefined ? patch.accountId : (existing.account_id ?? null),
   };
   const now = new Date().toISOString();
+  // Only the fields being changed are written. A household member edits the owner's shared goal
+  // in their own session, where the owner's encrypted values read as null (KAN-112); rewriting
+  // every column would save those nulls over the owner's data.
+  const fields: [string, unknown][] = [];
+  if (patch.name !== undefined) fields.push(['name', next.name]);
+  if (patch.notes !== undefined) fields.push(['notes', next.notes]);
+  if (patch.targetNzd !== undefined) fields.push(['target_nzd', next.targetNzd]);
+  if (patch.currentAmountNzd !== undefined) fields.push(['current_amount_nzd', next.currentAmountNzd]);
+  if (patch.deadline !== undefined) fields.push(['deadline', next.deadline]);
+  if (patch.accountId !== undefined) fields.push(['account_id', next.accountId]);
   run(
     db,
-    `UPDATE savings_goals
-     SET name = ?, notes = ?, target_nzd = ?, current_amount_nzd = ?, deadline = ?, account_id = ?, updated_at = ?
-     WHERE id = ? AND user_id = ?`,
-    [next.name, next.notes, next.targetNzd, next.currentAmountNzd, next.deadline, next.accountId, now, id, userId],
+    `UPDATE savings_goals SET ${[...fields.map(([c]) => `${c} = ?`), 'updated_at = ?'].join(', ')} WHERE id = ? AND user_id = ?`,
+    [...fields.map(([, v]) => v), now, id, userId],
   );
   return getSavingsGoal(db, userId, id, asOf);
 }
