@@ -51,6 +51,7 @@ import { cancelEmailChange, confirmEmailChange, emailChangeTooSoon, pendingEmail
 import { emailEnabled, messageHtml, sendEmail } from '../invoices/email.ts';
 import { shareBase } from './invoices.ts';
 import { exportAccountData } from '../lib/accountExport.ts';
+import { lockedOutOfData } from '../security/fieldCrypto.ts';
 import { composeDisplayName, createUserAccount, hasPassword } from '../auth/users.ts';
 import { ACCOUNT_PENDING_DELETION, activeAccountFor, detachLinksOnAccountDeletion, isPendingDeletion } from '../auth/accountLinks.ts';
 import { publicEmail } from '../auth/syntheticEmail.ts';
@@ -982,6 +983,11 @@ router.get('/export', async (req: AuthedRequest, res) => {
     return;
   }
   const db = await getDb();
+  // KAN-112: a locked session would export encrypted values as null. Unlock first.
+  if (lockedOutOfData(db, req.user.id)) {
+    res.status(423).json({ error: 'Unlock your data to download a copy.', code: 'DATA_LOCKED' });
+    return;
+  }
   const data = exportAccountData(db, req.user.id);
   if (!data) {
     res.status(401).json({ error: 'Authentication required', code: 'UNAUTHORIZED' });
