@@ -25,6 +25,8 @@ import dividendsRouter from './routes/dividends.ts';
 import payeesRouter from './routes/payees.ts';
 import savingsGoalsRouter from './routes/savingsGoals.ts';
 import donationsRouter from './routes/donations.ts';
+import receiptsRouter from './routes/receipts.ts';
+import exportRouter from './routes/export.ts';
 import timelineRouter from './routes/timeline.ts';
 import fifRouter from './routes/fif.ts';
 import paySourcesRouter from './routes/paySources.ts';
@@ -58,6 +60,7 @@ import passkeysRouter from './routes/passkeys.ts';
 import economyRouter from './routes/economy.ts';
 import newsRouter from './routes/news.ts';
 import billingRouter, { billingWebhook } from './routes/billing.ts';
+import integrationsRouter, { paddleWebhook, startProviderCatchUp, stripeConnectWebhook } from './routes/integrations.ts';
 import { loadDotEnv } from './akahu/loadEnv.ts';
 import { ensureUploadDirs, uploadsGate } from './lib/uploads.ts';
 import { attachUser, requireAuth, isPublicApiPath } from './middleware/requireAuth.ts';
@@ -114,6 +117,9 @@ async function main() {
   // Stripe signs the raw body (KAN-52), so the webhook is mounted before the JSON parser and
   // before the session gate: the signature is its credential.
   app.post('/api/billing/webhook', express.raw({ type: 'application/json', limit: '1mb' }), billingWebhook);
+  // Invoice payment providers (KAN-73): signed webhooks, raw body, before the session gate.
+  app.post('/api/integrations/stripe/webhook', express.raw({ type: 'application/json', limit: '1mb' }), stripeConnectWebhook);
+  app.post('/api/integrations/paddle/webhook/:connectionId', express.raw({ type: 'application/json', limit: '1mb' }), paddleWebhook);
   app.use(express.json({ limit: '10mb' })); // property photos as base64
   ensureUploadDirs();
 
@@ -166,6 +172,9 @@ async function main() {
   app.use('/api/payees', payeesRouter);
   app.use('/api/savings-goals', savingsGoalsRouter);
   app.use('/api/donations', donationsRouter);
+  app.use('/api/integrations', integrationsRouter);
+  app.use('/api/receipts', receiptsRouter);
+  app.use('/api/export', exportRouter);
   app.use('/api/alerts', alertsRouter);
   app.use('/api/timeline', timelineRouter);
   app.use('/api/fif', fifRouter);
@@ -221,11 +230,13 @@ async function main() {
     }
     const stopWalletSync = startWalletSyncScheduler();
     const stopLinkedDeletionSweep = startLinkedDeletionSweep();
+    const stopProviderCatchUp = startProviderCatchUp();
     const stopAlerts = startAlertScheduler();
     server.once('close', () => {
       stopAlerts();
       stopWalletSync();
       stopLinkedDeletionSweep();
+      stopProviderCatchUp();
     });
     logger.info('api_listening', {
       host: HOST,

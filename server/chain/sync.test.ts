@@ -72,6 +72,8 @@ let failCount = 0;
 // Import the routes first: they load the chain barrel, which registers the real adapters.
 // The reset below then leaves only the fake, so no test reaches a real RPC.
 const { default: walletsRouter } = await import('../routes/wallets.ts');
+// History (KAN-43) is tested in history.test.ts; keep this suite offline.
+sync.setHistorySourceForTest({ native: async () => ({ transactions: [] }), tokens: async () => [] });
 resetChainProvidersForTest();
 registerChainProvider({
   id: 'fake',
@@ -192,6 +194,33 @@ try {
   check(tick.attempted === 3 && tick.ok === 3, `tick syncs due wallets only (${JSON.stringify(tick)})`);
   check(synced === 'bitcoin:addr1,bitcoin:fresh,bitcoin:stuck', `due + new + stuck, not busy/not-due (${synced})`);
   check(row('w_busy').status === 'syncing', 'recently-started sync left alone');
+
+  // --- KAN-115: with encryption on, only unlocked users' wallets are synced ------------
+  {
+    const { sessionKeyStore } = await import('../security/dataKey.ts');
+    process.env.DATA_ENCRYPTION = '1';
+    run(db, `UPDATE wallets SET next_sync_at=?`, [new Date(Date.now() + 60 * MIN).toISOString()]);
+    addWallet('w_a_due', 'bitcoin', 'a-due', 'sync_user_a');
+    addWallet('w_b_due', 'bitcoin', 'b-due', 'sync_user_b');
+    const none = await sync.runSyncTick();
+    check(none.attempted === 0 && row('w_a_due').last_synced === null, `nobody unlocked: nothing synced (${JSON.stringify(none)})`);
+    sessionKeyStore.set('sess_a', 'sync_user_a', Buffer.alloc(32, 7));
+    const c2 = calls.length;
+    const onlyA = await sync.runSyncTick();
+    check(onlyA.attempted === 1 && calls.slice(c2).join() === 'bitcoin:a-due', `only the unlocked user's wallet (${calls.slice(c2).join()})`);
+    check(row('w_b_due').last_synced === null && row('w_b_due').next_sync_at === null, "locked user's wallet stays due");
+    sessionKeyStore.set('sess_b', 'sync_user_b', Buffer.alloc(32, 8));
+    const c3 = calls.length;
+    await sync.runSyncTick();
+    check(calls.slice(c3).join() === 'bitcoin:b-due', 'caught up on the first pass after unlocking');
+    process.env.DATA_ENCRYPTION = '0';
+    sessionKeyStore.clearUser('sync_user_a');
+    run(db, `UPDATE wallets SET next_sync_at=NULL WHERE id='w_a_due'`);
+    const c4 = calls.length;
+    await sync.runSyncTick();
+    check(calls.slice(c4).join() === 'bitcoin:a-due', 'flag off: locked users are synced as before');
+    sessionKeyStore.clearUser('sync_user_b');
+  }
 
   // --- scheduler start/stop ------------------------------------------------------------
   process.env.WALLET_SYNC_DISABLED = '1';

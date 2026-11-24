@@ -660,6 +660,10 @@ function migrateSchema(database: Database) {
   if (walletCols.size > 0 && !walletCols.has('sync_failures')) {
     database.run('ALTER TABLE wallets ADD COLUMN sync_failures INTEGER NOT NULL DEFAULT 0');
   }
+  // Wallet history (KAN-43): when the stored transactions were last refreshed.
+  if (walletCols.size > 0 && !walletCols.has('history_synced_at')) {
+    database.run('ALTER TABLE wallets ADD COLUMN history_synced_at TEXT');
+  }
 
   // Invoice send channel (KAN-71): sends made outside the app are logged too.
   const sendCols = tableColumns(database, 'invoice_sends');

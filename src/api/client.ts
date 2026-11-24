@@ -132,6 +132,9 @@ import type {
   WalletNetwork,
   WalletNetworkInfo,
   WalletsValuationResponse,
+  PaymentIntegrations,
+  InvoiceProviderLink,
+  WalletTxn,
   ScenarioSummary,
   AlertItem,
   AlertSettings,
@@ -1332,6 +1335,9 @@ export const api = {
     list: () => req<Wallet[]>('/wallets'),
     networks: () => req<WalletNetworkInfo[]>('/wallets/networks'),
     valuation: () => req<WalletsValuationResponse>('/wallets/valuation'),
+    /** Stored on-chain transactions, newest first (KAN-43). */
+    transactions: (opts: { from?: string; to?: string; showHidden?: boolean } = {}) =>
+      req<WalletTxn[]>(`/wallets/transactions?${new URLSearchParams({ ...(opts.from ? { from: opts.from } : {}), ...(opts.to ? { to: opts.to } : {}), ...(opts.showHidden ? { showHidden: '1' } : {}) })}`),
     /** One wallet with its hidden (spam / unknown) tokens too (KAN-39). */
     valuationWithHidden: (id: string) =>
       req<{ wallet: Wallet; valuation: WalletValuation }>(`/wallets/${encodeURIComponent(id)}/valuation?showHidden=1`),
@@ -1359,6 +1365,28 @@ export const api = {
   timeline: {
     list: (opts: { from: string; to: string; types: TimelineType[] }) =>
       req<TimelineEvent[]>(`/timeline?${new URLSearchParams({ from: opts.from, to: opts.to, types: opts.types.join(',') })}`),
+  },
+  integrations: {
+    status: () => req<PaymentIntegrations>('/integrations'),
+    stripeConnectUrl: () => req<{ url: string }>('/integrations/stripe/connect'),
+    connectPaddle: (apiKey: string, webhookSecret: string) =>
+      req<{ ok: boolean; webhookUrl: string }>('/integrations/paddle', { method: 'PUT', body: JSON.stringify({ apiKey, webhookSecret }) }),
+    disconnect: (provider: 'stripe' | 'paddle') => req<{ ok: boolean }>(`/integrations/${provider}`, { method: 'DELETE' }),
+    invoiceLink: (invoiceId: string) => req<{ link: InvoiceProviderLink | null }>(`/integrations/invoices/${encodeURIComponent(invoiceId)}`),
+    pushInvoice: (invoiceId: string, provider: 'stripe' | 'paddle') =>
+      req<{ link: InvoiceProviderLink }>(`/integrations/invoices/${encodeURIComponent(invoiceId)}/push`, { method: 'POST', body: JSON.stringify({ provider }) }),
+    syncInvoice: (invoiceId: string) => req<{ changed: boolean; link: InvoiceProviderLink | null }>(`/integrations/invoices/${encodeURIComponent(invoiceId)}/sync`, { method: 'POST' }),
+  },
+  receipts: {
+    /** Read a receipt photo on the server (KAN-60): merchant, date and total when found. */
+    scan: (imageBase64: string) =>
+      req<{ merchant: string | null; date: string | null; amountNzd: number | null; text: string }>('/receipts/scan', { method: 'POST', body: JSON.stringify({ imageBase64 }) }),
+  },
+  /** CSV / PDF export of budget, portfolio / assets and KiwiSaver (KAN-63). Plain download links. */
+  exports: {
+    csvUrl: (section: 'budget' | 'assets' | 'kiwisaver' | 'all', from: string, to: string) =>
+      `${BASE}/export/csv?${new URLSearchParams({ section, from, to })}`,
+    pdfUrl: (from: string, to: string) => `${BASE}/export/pdf?${new URLSearchParams({ from, to })}`,
   },
   alerts: {
     list: () => req<{ alerts: AlertItem[]; unread: number }>('/alerts'),

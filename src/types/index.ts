@@ -2765,6 +2765,26 @@ export type {
   UnlinkAccountResponse,
 } from './accountLinks';
 
+/** A stored on-chain wallet transaction (KAN-43). Amounts are smallest-unit integers + decimals. */
+export interface WalletTxn {
+  id: string;
+  walletId: string;
+  network: WalletNetwork;
+  hash: string;
+  timestamp: string | null;
+  status: 'confirmed' | 'pending' | 'failed';
+  kind: 'received' | 'sent' | 'transfer' | 'staking' | 'swap';
+  direction: 'in' | 'out' | 'self';
+  symbol: string;
+  contract: string | null;
+  amountRaw: string;
+  decimals: number;
+  amount: string;
+  feeRaw: string | null;
+  counterparty: string | null;
+  hidden: boolean;
+}
+
 /** Scenario tool end-of-period figures (KAN-32). */
 export interface ScenarioSummary {
   netWorthEndNzd: number;
@@ -2786,6 +2806,19 @@ export interface TimelineEvent {
   link: string | null;
 }
 
+/** Payment providers for invoices (KAN-73). */
+export interface PaymentIntegrations {
+  stripe: { available: boolean; mode: 'test' | 'live' | null; connected: boolean; accountId: string | null };
+  paddle: { connected: boolean; mode: 'test' | 'live' | null; webhookUrl: string | null };
+}
+export interface InvoiceProviderLink {
+  invoiceId: string;
+  provider: 'stripe' | 'paddle';
+  providerInvoiceId: string;
+  paymentUrl: string | null;
+  status: 'open' | 'paid' | 'void' | 'failed';
+  updatedAt: string;
+}
 /** Alerts (KAN-64). */
 export interface AlertItem {
   id: string;

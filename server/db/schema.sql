@@ -1811,6 +1811,61 @@ CREATE TABLE IF NOT EXISTS user_key_wraps (
   PRIMARY KEY (user_id, kind)
 );
 
+-- Payment providers for invoices (KAN-73). Stripe: the Connect account id; Paddle: the user's
+-- API key and notification secret, sealed (secretBox). One per provider per user.
+CREATE TABLE IF NOT EXISTS payment_connections (
+  id                  TEXT PRIMARY KEY,
+  user_id             TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider            TEXT NOT NULL,   -- stripe | paddle
+  account_ref         TEXT NOT NULL,
+  secret_enc          TEXT,
+  webhook_secret_enc  TEXT,
+  mode                TEXT NOT NULL,   -- test | live
+  created_at          TEXT NOT NULL,
+  updated_at          TEXT NOT NULL,
+  UNIQUE (user_id, provider)
+);
+CREATE TABLE IF NOT EXISTS invoice_provider_links (
+  invoice_id           TEXT PRIMARY KEY,
+  user_id              TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider             TEXT NOT NULL,
+  provider_invoice_id  TEXT NOT NULL,
+  payment_url          TEXT,
+  status               TEXT NOT NULL,   -- open | paid | void | failed
+  updated_at           TEXT NOT NULL,
+  UNIQUE (provider, provider_invoice_id)
+);
+CREATE TABLE IF NOT EXISTS provider_events (
+  provider     TEXT NOT NULL,
+  event_id     TEXT NOT NULL,
+  received_at  TEXT NOT NULL,
+  PRIMARY KEY (provider, event_id)
+);
+-- Wallet transaction history (KAN-43), stored by the sync job for the timeline. One row per
+-- (wallet, tx hash, asset); amounts are integer strings in the smallest unit.
+CREATE TABLE IF NOT EXISTS wallet_txns (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  wallet_id    TEXT NOT NULL,
+  network      TEXT NOT NULL,
+  hash         TEXT NOT NULL,
+  asset_key    TEXT NOT NULL,
+  ts           TEXT,
+  status       TEXT NOT NULL,
+  kind         TEXT NOT NULL,   -- received | sent | transfer | staking | swap
+  direction    TEXT NOT NULL,   -- in | out | self
+  symbol       TEXT NOT NULL,
+  contract     TEXT,
+  amount_raw   TEXT NOT NULL,
+  decimals     INTEGER NOT NULL,
+  fee_raw      TEXT,
+  counterparty TEXT,
+  hidden       INTEGER NOT NULL DEFAULT 0,   -- spam / unknown token (KAN-39)
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL,
+  UNIQUE (wallet_id, hash, asset_key)
+);
+CREATE INDEX IF NOT EXISTS idx_wallet_txns_user_ts ON wallet_txns(user_id, ts);
 -- Alerts (KAN-64): raised once per dedupe_key; read in the app, emailed in a daily digest.
 CREATE TABLE IF NOT EXISTS alerts (
   id          TEXT PRIMARY KEY,

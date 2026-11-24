@@ -166,6 +166,10 @@ export const sessionKeyStore = {
     for (const entry of sessionKeys.values()) if (entry.userId === userId) return entry.key;
     return null;
   },
+  /** Users with at least one unlocked session (KAN-115: who background jobs may work for). */
+  unlockedUserIds(): Set<string> {
+    return new Set([...sessionKeys.values()].map((e) => e.userId));
+  },
   clear(sessionId: string): void {
     const entry = sessionKeys.get(sessionId);
     if (!entry) return;

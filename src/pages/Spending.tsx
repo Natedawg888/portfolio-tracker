@@ -173,6 +173,8 @@ export function Spending() {
   const [msg, setMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showTxnModal, setShowTxnModal] = useState(false);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanNote, setScanNote] = useState<string | null>(null);
   const [showCsvModal, setShowCsvModal] = useState(false);
   const [showCategoriesModal, setShowCategoriesModal] = useState(false);
   /** Transactions list filter; "See transactions" on a category row sets a category filter. */
@@ -255,6 +257,35 @@ export function Spending() {
 
   function closeTxnModal() {
     setShowTxnModal(false);
+    setScanNote(null);
+  }
+
+  /** Receipt scanning (KAN-60): read the photo on the server and fill in what was found. */
+  async function onScanReceipt(file: File | null) {
+    if (!file) return;
+    setScanBusy(true);
+    setScanNote(null);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result));
+        r.onerror = () => reject(new Error('Couldn’t open that photo.'));
+        r.readAsDataURL(file);
+      });
+      const found = await api.receipts.scan(dataUrl);
+      if (found.merchant) setFormDesc(found.merchant);
+      if (found.date && found.date >= SPENDING_FLOOR) setFormDate(found.date);
+      if (found.amountNzd != null) {
+        setFormAmount(String(found.amountNzd));
+        setFormKind('debit');
+      }
+      const got = [found.merchant && 'shop', found.date && 'date', found.amountNzd != null && 'total'].filter(Boolean);
+      setScanNote(got.length ? `Filled in the ${got.join(', ')}. Check them before adding.` : 'Couldn’t find the details. Fill them in below.');
+    } catch (err) {
+      setScanNote(err instanceof Error ? err.message : 'Couldn’t read that receipt.');
+    } finally {
+      setScanBusy(false);
+    }
   }
 
   function openAddIncomeForm() {
@@ -1148,6 +1179,13 @@ export function Spending() {
               Visa debit card that spends from crypto rather than a bank account.
             </p>
             <form className="form-grid" onSubmit={onAddTxn}>
+            <div className="span-2 receipt-scan">
+              <label className="btn small ghost">
+                {scanBusy ? 'Reading the receipt…' : 'Scan a receipt'}
+                <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" hidden disabled={scanBusy} onChange={(e) => void onScanReceipt(e.target.files?.[0] ?? null)} />
+              </label>
+              {scanNote ? <span className="muted small" role="status"> {scanNote}</span> : null}
+            </div>
             <label>
               Source
               <select
