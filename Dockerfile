@@ -13,6 +13,10 @@ RUN npm run build
 
 FROM node:24-bookworm-slim AS runner
 WORKDIR /app
+# Receipt scanning (KAN-60): OCR runs on this server with Tesseract (English).
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng \
+  && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV PORT=8080

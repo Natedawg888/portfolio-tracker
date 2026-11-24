@@ -34,6 +34,7 @@
     "test:savings-goals": "node --import tsx server/savings/model.test.ts && node --import tsx server/savings/store.test.ts && node --import tsx server/savings/accountLink.test.ts",
     "test:output-pay": "node --import tsx src/lib/outputPayCalc.test.ts",
     "test:timeline": "node --import tsx server/timeline/store.test.ts",
+    "test:receipts": "node --import tsx server/receipts/ocr.test.ts",
     "test:export": "node --import tsx server/export/userExport.test.ts",
     "test:alerts": "node --import tsx server/alerts/store.test.ts",
     "test:paye": "node --import tsx src/lib/payeCalc.test.ts && node --import tsx src/lib/salaryCompare.test.ts",
