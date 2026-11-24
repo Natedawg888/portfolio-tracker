@@ -3,6 +3,7 @@
  * No contribution dollar amount is stored.
  * Run: npm run test:dividends
  */
+import '../db/useTempDbForTest.ts';
 import { getDb, queryOne, run } from '../db/index.ts';
 import { readKiwiSaverEmployeeRate, saveKiwiSaverEmployeeRate } from './employeeRate.ts';
 

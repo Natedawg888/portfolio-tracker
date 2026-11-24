@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
-import { Dashboard } from '../pages/Dashboard';
+import { DashboardPage } from '../lib/routePrefetch';
 
 function BusinessHome() {
   const [to, setTo] = useState<string | null>(null);
@@ -30,5 +30,5 @@ function BusinessHome() {
 
 export function HomeRoute() {
   const { user } = useAuth();
-  return user?.usageMode === 'business' ? <BusinessHome /> : <Dashboard />;
+  return user?.usageMode === 'business' ? <BusinessHome /> : <DashboardPage />;
 }

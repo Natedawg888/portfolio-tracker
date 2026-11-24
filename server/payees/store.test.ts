@@ -2,6 +2,7 @@
  * Payee settings round-trip for one user, and stay off the other user's rows.
  * Run: npm run test:dividends
  */
+import '../db/useTempDbForTest.ts';
 import { getDb, queryOne, run } from '../db/index.ts';
 import { seedCategoriesForUser } from '../lib/categories.ts';
 import { categoryForPayee, incomeCategoryForPayee, listPayeeSettings, savePayeeSetting } from './store.ts';
