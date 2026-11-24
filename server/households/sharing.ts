@@ -245,6 +245,7 @@ export async function dashboard(db: Database, userId: string): Promise<Result<Ho
       spent += Number(
         queryOne<{ t: number | null }>(
           db,
+          // SUM() is safe here: only shared accounts' transactions, which stay plain (KAN-112).
           `SELECT SUM(-amount) AS t FROM transactions WHERE user_id = ? AND amount < 0 AND date >= ? AND date <= ?
            AND category_id IN (${inList(cats)}) AND account_id IN (${inList(accts)})`,
           [member, start, end, ...cats, ...accts],

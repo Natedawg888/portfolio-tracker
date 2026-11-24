@@ -4,7 +4,8 @@
  * edit shared items without touching the owner's encrypted note, and unsharing encrypts it again.
  * Budgets (3b): plans follow their category's share and are added up in code, not with SUM().
  * Accounts (3c): balance and institution follow the account's share. Holdings (3d): quantities
- * and money follow the holding's share; symbols and names stay plain.
+ * and money follow the holding's share; symbols and names stay plain. Transactions (3e): plain
+ * on shared accounts and business rows; readers that used SQL to filter or total them use code.
  * Run: npm run test:isolation
  */
 import fs from 'node:fs';
@@ -30,6 +31,9 @@ const { budgetRows } = await import('../export/userExport.ts');
 const { aucklandToday } = await import('../debts/model.ts');
 const { computeNetWorth } = await import('../lib/netWorth.ts');
 const { candidateAlerts, DEFAULT_ALERT_SETTINGS } = await import('../alerts/store.ts');
+const { searchPurchases } = await import('../warranties/store.ts');
+const { moneyCandidates } = await import('../business/store.ts');
+const { linkMirroredIncomeToBankCredits } = await import('../lib/incomeBankLink.ts');
 const { listSavingsGoals } = await import('../savings/store.ts');
 const { listRecurring } = await import('../recurring/store.ts');
 
@@ -149,6 +153,39 @@ try {
   const dash3 = await asMember(() => dashboard(db, 'member'));
   eq(dash3.ok ? dash3.value.netWorth.holdings.map((h) => [h.name, h.valueNzd]) : dash3, [['Home', ownerPoint('h_home')]], "member sees the shared holding at the owner's valuation, nothing else");
   eq(migrationReport(db).some((r) => r.userId === 'owner'), false, 'report: nothing pending after holdings');
+  // Transactions (phase 3e): plain on shared accounts and when tagged to a business; the rest
+  // encrypted, and every reader that filtered or totalled them in SQL now does it in code.
+  run(db, `INSERT INTO businesses (id, user_id, name, created_at, updated_at) VALUES ('biz1', 'owner', 'Side gig', ?, ?)`, [now, now]);
+  const tx = (id: string, acct: string | null, amount: number, desc: string, merchant: string | null, biz: string | null = null, cat: string | null = null) =>
+    run(db, `INSERT INTO transactions (id, user_id, account_id, date, description, merchant, amount, business_id, category_id, created_at) VALUES (?, 'owner', ?, ?, ?, ?, ?, ?, ?, ?)`, [id, acct, today, desc, merchant, amount, biz, cat, now]);
+  tx('tx_private', 'acc_mine', -129.99, 'NOEL LEEMING 123', 'Noel Leeming', null, 'cat_fun');
+  tx('tx_joint', 'acc_joint', -55.5, 'COUNTDOWN', 'Countdown');
+  tx('tx_biz', 'acc_mine', -80, 'BUNNINGS', 'Bunnings', 'biz1');
+  tx('tx_pay', 'acc_mine', 1234.56, 'PAYROLL ACME', null);
+  encryptPendingForUser(db, 'owner', ownerKey, run);
+  eq(['amount', 'description', 'merchant'].map((c) => sealed(raw(`SELECT ${c} FROM transactions WHERE id='tx_private'`))), [true, true, true], 'private transaction encrypted');
+  eq([raw(`SELECT amount FROM transactions WHERE id='tx_joint'`), raw(`SELECT amount FROM transactions WHERE id='tx_biz'`)], [-55.5, -80], 'shared-account and business transactions stay plain');
+  // Tagging to a business later opens it again on the owner's next pass.
+  run(db, `UPDATE transactions SET business_id = 'biz1' WHERE id = 'tx_private'`);
+  encryptPendingForUser(db, 'owner', ownerKey, run);
+  eq([raw(`SELECT amount FROM transactions WHERE id='tx_private'`), raw(`SELECT merchant FROM transactions WHERE id='tx_private'`)], [-129.99, 'Noel Leeming'], 'tagged to a business: decrypted');
+  run(db, `UPDATE transactions SET business_id = NULL WHERE id = 'tx_private'`);
+  encryptPendingForUser(db, 'owner', ownerKey, run);
+  eq(sealed(raw(`SELECT amount FROM transactions WHERE id='tx_private'`)), true, 'untagged again: encrypted');
+  // Readers that used to filter or total in SQL give the real answers under encryption.
+  const hits = asOwner(() => searchPurchases(db, 'owner', 'noel'));
+  eq(hits.map((h) => [h.id, h.amountNzd]), [['tx_private', 129.99]], 'warranty purchase search matches encrypted text and amount');
+  eq(asOwner(() => searchPurchases(db, 'owner', '')).map((h) => h.id).includes('tx_pay'), false, 'purchase search leaves out money in');
+  const found = asOwner(() => moneyCandidates(db, 'owner', `${ym}-01`, monthEnd, 'leeming'));
+  eq(found.filter((f) => f.kind === 'transaction').map((f) => [f.id, f.amountNzd]), [['tx_private', -129.99]], 'business money search matches encrypted text');
+  const fun = asOwner(() => budgetRows(db, 'owner', [ym])).find((r) => r[1] === 'Fun');
+  eq(fun?.[4], '129.99', 'export: actual spending added up from encrypted amounts');
+  run(db, `INSERT INTO income_records (id, user_id, date, amount_nzd, description, payslip_id, created_at) VALUES ('inc_pay', 'owner', ?, 1234.56, 'Pay', 'ps1', ?)`, [today, now]);
+  eq(asOwner(() => linkMirroredIncomeToBankCredits(db, 'owner')), 1, 'payslip income linked to the encrypted bank credit');
+  eq(raw(`SELECT transaction_id FROM income_records WHERE id='inc_pay'`), 'tx_pay', 'linked to the right credit');
+  const dash4 = await asMember(() => dashboard(db, 'member'));
+  eq(dash4.ok ? dash4.value.transactions.map((x) => [x.id, x.amountNzd]) : dash4, [['tx_joint', -55.5]], 'member sees only shared-account transactions');
+
   console.log('shared items tests passed');
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });

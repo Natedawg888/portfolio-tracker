@@ -121,9 +121,11 @@ function spendingTxns(db: Database, userId: string, today: string): DetectionTxn
      FROM transactions t
      LEFT JOIN budget_categories c ON c.id = t.category_id AND c.user_id = t.user_id
      LEFT JOIN bank_accounts a ON a.id = t.account_id AND a.user_id = t.user_id
-     WHERE t.user_id = ? AND t.date >= ? AND t.date <= ? AND t.amount < 0`,
+     WHERE t.user_id = ? AND t.date >= ? AND t.date <= ?`,
     [userId, from, today],
   )
+    // Money out only; checked here because the amount may be encrypted (KAN-112).
+    .filter((t) => t.amount != null && Number(t.amount) < 0)
     // Transfers (savings, investments, own accounts) and income categories are not bills.
     .filter((t) => (t.type ? t.type === 'spending' : !t.is_income))
     .map((t) => ({

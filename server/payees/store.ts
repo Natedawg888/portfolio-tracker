@@ -72,15 +72,14 @@ function usedPayeeNames(db: Database, userId: string): string[] {
      WHERE user_id = ? AND description IS NOT NULL AND TRIM(description) != ''
      UNION ALL
      SELECT company_name AS name FROM dividend_events
-     WHERE user_id = ? AND company_name IS NOT NULL AND TRIM(company_name) != ''
-     UNION ALL
-     SELECT description AS name FROM transactions
-     WHERE user_id = ? AND description IS NOT NULL AND TRIM(description) != ''
-     UNION ALL
-     SELECT merchant AS name FROM transactions
-     WHERE user_id = ? AND merchant IS NOT NULL AND TRIM(merchant) != ''`,
-    [userId, userId, userId, userId],
+     WHERE user_id = ? AND company_name IS NOT NULL AND TRIM(company_name) != ''`,
+    [userId, userId],
   );
+  // Transaction descriptions and merchants may be encrypted (KAN-112): blanks are dropped here.
+  for (const t of queryAll<{ description: string | null; merchant: string | null }>(db, `SELECT description, merchant FROM transactions WHERE user_id = ?`, [userId])) {
+    if (t.description != null && String(t.description).trim() !== '') rows.push({ name: t.description });
+    if (t.merchant != null && String(t.merchant).trim() !== '') rows.push({ name: t.merchant });
+  }
   return rows.map((row) => String(row.name ?? ''));
 }
 

@@ -134,19 +134,45 @@ export const PHASE3_SHARED_COLUMNS: readonly { table: string; column: string; ki
   ),
 ];
 
-/** shareKey: the column holding the shared item's id (the row's own id, or its budget category). */
-type Column = { table: string; column: string; number: boolean; shareKind?: ShareableKind; shareKey?: string };
+/**
+ * Phase 3e (KAN-112): transactions. Plain while on an account the owner shares with the household
+ * (members see shared-account spending and split it), and while tagged to a business (accountants
+ * and viewers read business money with their own session until per-business keys exist, KAN-129).
+ * Every query that filtered, matched or totalled these in SQL now does it in code.
+ */
+export const PHASE3_TRANSACTION_COLUMNS: readonly Column[] = [
+  { table: 'transactions', column: 'amount', number: true, shareKind: 'account', shareKey: 'account_id', plainWhere: 'business_id IS NOT NULL' },
+  ...['description', 'merchant', 'card_name'].map((column) => ({ table: 'transactions', column, number: false, shareKind: 'account' as const, shareKey: 'account_id', plainWhere: 'business_id IS NOT NULL' })),
+];
+
+/**
+ * shareKey: the column holding the shared item's id (the row's own id, its budget category, or a
+ * transaction's account). plainWhere: SQL on the row that also keeps it plain (business rows).
+ */
+type Column = { table: string; column: string; number: boolean; shareKind?: ShareableKind; shareKey?: string; plainWhere?: string };
 /** Every encrypted column, text (phase 1 notes + phase 2 details) and number. */
 export const ENCRYPTED_COLUMNS: readonly Column[] = [
   ...PHASE1_COLUMNS.map(([table, column]) => ({ table, column, number: false })),
   ...PHASE2_TEXT_COLUMNS.map(([table, column]) => ({ table, column, number: false })),
   ...PHASE2_NUMBER_COLUMNS.map(([table, column]) => ({ table, column, number: true })),
   ...PHASE3_SHARED_COLUMNS.map(({ table, column, kind, key, number }) => ({ table, column, number, shareKind: kind, shareKey: key })),
+  ...PHASE3_TRANSACTION_COLUMNS,
 ];
 
-/** SQL that leaves out rows the owner (`owner` = SQL for their id) has shared with a household. */
-const notShared = (kind: ShareableKind | undefined, owner: string, key = 'id') =>
-  kind ? ` AND (${key} IS NULL OR ${key} NOT IN (SELECT item_id FROM household_shares WHERE owner_id = ${owner} AND kind = '${kind}'))` : '';
+/** SQL (never NULL) that is true when this row must stay plain: shared, or matching plainWhere. */
+function keepsPlain(c: Column): string | null {
+  const parts: string[] = [];
+  if (c.shareKind) {
+    const key = `${c.table}.${c.shareKey ?? 'id'}`;
+    parts.push(`(${key} IS NOT NULL AND ${key} IN (SELECT item_id FROM household_shares WHERE owner_id = ${c.table}.user_id AND kind = '${c.shareKind}'))`);
+  }
+  if (c.plainWhere) parts.push(`COALESCE(${c.plainWhere}, 0)`);
+  return parts.length ? `(${parts.join(' OR ')})` : null;
+}
+const notPlain = (c: Column) => {
+  const k = keepsPlain(c);
+  return k ? ` AND NOT ${k}` : '';
+};
 
 export const encryptionEnabled = () => process.env.DATA_ENCRYPTION === '1';
 
@@ -188,10 +214,25 @@ function tableHas(db: Database, table: string, column: string): boolean {
 export function encryptPendingForUser(db: Database, userId: string, key: Buffer, write: (db: Database, sql: string, params: unknown[]) => void = (d, sql, params) => d.run(sql, params as never[])): number {
   if (!encryptionEnabled()) return 0;
   let n = 0;
-  for (const { table, column, number, shareKind, shareKey } of ENCRYPTED_COLUMNS) {
+  for (const c of ENCRYPTED_COLUMNS) {
+    const { table, column, number } = c;
     if (!tableHas(db, table, column)) continue;
-    const stmt = db.prepare(`SELECT id, ${column} AS v FROM ${table} WHERE user_id = ? AND ${column} IS NOT NULL AND ${column} != '' AND ${column} NOT LIKE 'ue1:%'${notShared(shareKind, '?', shareKey)}`);
-    stmt.bind(shareKind ? [userId, userId] : [userId]);
+    // Rows that must now stay plain (shared, or tagged to a business since) are opened again.
+    const plain = keepsPlain(c);
+    if (plain) {
+      const back = db.prepare(`SELECT id, ${column} AS v FROM ${table} WHERE user_id = ? AND ${column} LIKE 'ue1:%' AND ${plain}`);
+      back.bind([userId]);
+      const open: { id: string; v: string }[] = [];
+      while (back.step()) open.push(back.getAsObject() as { id: string; v: string });
+      back.free();
+      for (const r of open) {
+        const v = openValue(key, r.v, userId);
+        if (v === null) continue;
+        write(db, `UPDATE ${table} SET ${column} = ? WHERE id = ? AND user_id = ?`, [v, r.id, userId]);
+      }
+    }
+    const stmt = db.prepare(`SELECT id, ${column} AS v FROM ${table} WHERE user_id = ? AND ${column} IS NOT NULL AND ${column} != '' AND ${column} NOT LIKE 'ue1:%'${notPlain(c)}`);
+    stmt.bind([userId]);
     const rows: { id: string; v: string | number }[] = [];
     while (stmt.step()) rows.push(stmt.getAsObject() as { id: string; v: string | number });
     stmt.free();
@@ -234,7 +275,7 @@ export function decryptSharedItem(db: Database, userId: string, kind: ShareableK
   const ctx = als.getStore();
   const key = ctx?.key && ctx.userId === userId ? ctx.key : null;
   for (const { table, column, shareKind, shareKey } of ENCRYPTED_COLUMNS) {
-    if (shareKind !== kind || !tableHas(db, table, column)) continue;
+    if (shareKind !== kind || !tableHas(db, table, column)) continue; // includes transactions on a shared account
     const stmt = db.prepare(`SELECT id, ${column} AS v FROM ${table} WHERE ${shareKey ?? 'id'} = ? AND user_id = ? AND ${column} LIKE 'ue1:%'`);
     stmt.bind([itemId, userId]);
     const rows: { id: string; v: string }[] = [];
@@ -251,9 +292,10 @@ export function decryptSharedItem(db: Database, userId: string, kind: ShareableK
 /** Report: plain values still waiting per user (accounts not yet migrated). */
 export function migrationReport(db: Database): { userId: string; email: string; plainValues: number }[] {
   const users = new Map<string, number>();
-  for (const { table, column, shareKind, shareKey } of ENCRYPTED_COLUMNS) {
+  for (const c of ENCRYPTED_COLUMNS) {
+    const { table, column } = c;
     if (!tableHas(db, table, column)) continue;
-    const stmt = db.prepare(`SELECT user_id AS u, COUNT(*) AS n FROM ${table} WHERE user_id IS NOT NULL AND ${column} IS NOT NULL AND ${column} != '' AND ${column} NOT LIKE 'ue1:%'${notShared(shareKind, `${table}.user_id`, shareKey)} GROUP BY user_id`);
+    const stmt = db.prepare(`SELECT user_id AS u, COUNT(*) AS n FROM ${table} WHERE user_id IS NOT NULL AND ${column} IS NOT NULL AND ${column} != '' AND ${column} NOT LIKE 'ue1:%'${notPlain(c)} GROUP BY user_id`);
     while (stmt.step()) {
       const r = stmt.getAsObject() as { u: string; n: number };
       users.set(r.u, (users.get(r.u) ?? 0) + Number(r.n));

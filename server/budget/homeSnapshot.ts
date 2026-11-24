@@ -75,7 +75,7 @@ function receivedIncomeNzd(
      FROM transactions t
      INNER JOIN budget_categories c ON c.id = t.category_id AND c.user_id = t.user_id
        AND (c.type = 'income' OR (c.type IS NULL AND c.is_income = 1))
-     WHERE t.user_id = ? AND t.business_id IS NULL AND t.date >= ? AND t.date <= ? AND t.amount > 0`,
+     WHERE t.user_id = ? AND t.business_id IS NULL AND t.date >= ? AND t.date <= ?`, // amount > 0 is checked below: it may be encrypted (KAN-112)
     [userId, from, to],
   );
   for (const credit of credits) {

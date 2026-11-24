@@ -581,13 +581,14 @@ function debitMatches(t: { date: string; amount: number }, date: string, amount:
  * entry and not a manual transaction added by a rental entry (this one's included). Closest date wins.
  */
 function findBankDebit(db: Database, userId: string, entryId: string, date: string, amount: number): { id: string } | null {
-  const rows = queryAll<{ id: string; date: string }>(
+  // The amount is matched here (debitMatches), not in SQL: it may be encrypted (KAN-112).
+  const rows = queryAll<{ id: string; date: string; amount: number | null }>(
     db,
-    `SELECT t.id, t.date FROM transactions t
-     WHERE t.user_id = ? AND t.amount < 0 AND ABS(-t.amount - ?) < 0.005 AND t.date >= ? AND t.date <= ?
+    `SELECT t.id, t.date, t.amount FROM transactions t
+     WHERE t.user_id = ? AND t.date >= ? AND t.date <= ?
        AND NOT EXISTS (SELECT 1 FROM rental_entries r WHERE r.user_id = t.user_id AND r.transaction_id = t.id AND (r.id != ? OR r.txn_owned = 1))`,
-    [userId, amount, shiftDays(date, -BANK_MATCH_DAYS), shiftDays(date, BANK_MATCH_DAYS), entryId],
-  );
+    [userId, shiftDays(date, -BANK_MATCH_DAYS), shiftDays(date, BANK_MATCH_DAYS), entryId],
+  ).filter((t) => t.amount != null && debitMatches({ date: t.date, amount: Number(t.amount) }, date, amount));
   rows.sort((a, b) => dayGap(a.date, date) - dayGap(b.date, date) || a.id.localeCompare(b.id));
   return rows[0] ?? null;
 }

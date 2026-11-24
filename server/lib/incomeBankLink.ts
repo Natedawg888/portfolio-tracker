@@ -31,14 +31,14 @@ export function linkMirroredIncomeToBankCredits(db: Database, userId: string): n
   );
   let linked = 0;
   for (const rec of open) {
-    const candidates = queryAll<{ id: string; date: string }>(
+    // The amount is matched here, not in SQL: it may be encrypted (KAN-112).
+    const candidates = queryAll<{ id: string; date: string; amount: number | null }>(
       db,
-      `SELECT t.id, t.date FROM transactions t
-       WHERE t.user_id = ? AND t.amount > 0 AND ABS(t.amount - ?) < 0.005
-         AND t.date >= ? AND t.date <= ?
+      `SELECT t.id, t.date, t.amount FROM transactions t
+       WHERE t.user_id = ? AND t.date >= ? AND t.date <= ?
          AND NOT EXISTS (SELECT 1 FROM income_records r WHERE r.user_id = t.user_id AND r.transaction_id = t.id)`,
-      [userId, rec.amount_nzd, shift(rec.date, -BANK_MATCH_DAYS), shift(rec.date, BANK_MATCH_DAYS)],
-    );
+      [userId, shift(rec.date, -BANK_MATCH_DAYS), shift(rec.date, BANK_MATCH_DAYS)],
+    ).filter((t) => t.amount != null && Number(t.amount) > 0 && Math.abs(Number(t.amount) - Number(rec.amount_nzd)) < 0.005);
     if (candidates.length === 0) continue;
     candidates.sort((a, b) => dayDiff(a.date, rec.date) - dayDiff(b.date, rec.date) || a.id.localeCompare(b.id));
     run(db, `UPDATE income_records SET transaction_id = ? WHERE id = ? AND user_id = ?`, [candidates[0].id, rec.id, userId]);
