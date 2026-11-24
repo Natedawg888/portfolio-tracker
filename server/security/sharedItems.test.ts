@@ -3,6 +3,7 @@
  * shared the item with their household. Sharing decrypts it (owner unlocked, else 423), members
  * edit shared items without touching the owner's encrypted note, and unsharing encrypts it again.
  * Budgets (3b): plans follow their category's share and are added up in code, not with SUM().
+ * Accounts (3c): balance and institution follow the account's share.
  * Run: npm run test:isolation
  */
 import fs from 'node:fs';
@@ -26,6 +27,7 @@ const { setShared, updateSharedGoal, updateSharedBill, setSharedBudgetPlan, dash
 const { planTotalsForMonth } = await import('../budget/planTotals.ts');
 const { budgetRows } = await import('../export/userExport.ts');
 const { aucklandToday } = await import('../debts/model.ts');
+const { computeNetWorth } = await import('../lib/netWorth.ts');
 const { listSavingsGoals } = await import('../savings/store.ts');
 const { listRecurring } = await import('../recurring/store.ts');
 
@@ -105,6 +107,20 @@ try {
   encryptPendingForUser(db, 'owner', ownerKey, run);
   eq(raw(`SELECT amount_nzd FROM budgets WHERE id='p1'`), 650, "member's change saved plain and left plain");
   eq(migrationReport(db).some((r) => r.userId === 'owner'), false, 'report: nothing pending');
+
+  // Accounts (phase 3c): balance and institution follow the account's share.
+  run(db, `INSERT INTO bank_accounts (id, user_id, name, institution, account_type, currency, balance, created_at, updated_at) VALUES ('acc_joint', 'owner', 'Joint', 'Kiwibank', 'cheque', 'NZD', 2400.25, ?, ?), ('acc_mine', 'owner', 'Mine', 'ASB', 'savings', 'NZD', 9100, ?, ?)`, [now, now, now, now]);
+  encryptPendingForUser(db, 'owner', ownerKey, run);
+  eq(['balance', 'institution'].map((c) => sealed(raw(`SELECT ${c} FROM bank_accounts WHERE id='acc_mine'`))), [true, true], 'account balance and institution encrypted');
+  eq(raw(`SELECT name FROM bank_accounts WHERE id='acc_mine'`), 'Mine', 'account name stays plain (sorted in SQL)');
+  const nw = await asOwner(() => computeNetWorth(db, 'owner'));
+  eq(nw.cashNzd, 11500.25, "owner's net worth adds up decrypted balances");
+  eq(asOwner(() => setShared(db, 'owner', { kind: 'account', itemId: 'acc_joint', shared: true })).ok, true, 'owner shares the joint account');
+  eq([raw(`SELECT balance FROM bank_accounts WHERE id='acc_joint'`), raw(`SELECT institution FROM bank_accounts WHERE id='acc_joint'`)], [2400.25, 'Kiwibank'], 'shared account is plain');
+  encryptPendingForUser(db, 'owner', ownerKey, run);
+  eq(raw(`SELECT balance FROM bank_accounts WHERE id='acc_joint'`), 2400.25, 'encrypt pass leaves the shared account plain');
+  const dash2 = await asMember(() => dashboard(db, 'member'));
+  eq(dash2.ok ? dash2.value.netWorth.accounts.map((a) => [a.name, a.balanceNzd]) : dash2, [['Joint', 2400.25]], 'member sees the shared balance, not the private one');
   console.log('shared items tests passed');
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });

@@ -122,9 +122,9 @@ export function setShared(db: Database, userId: string, body: unknown): Result<S
   const on = b.shared === true;
   if (on && !householdActive(db, m)) return fail(402, 'Households are part of KoruLedger Plus.', 'PLAN_REQUIRED');
   const exists = !!queryOne(db, `SELECT 1 FROM household_shares WHERE household_id = ? AND kind = ? AND item_id = ?`, [m.householdId, b.kind, b.itemId]);
-  // KAN-112: members read shared items with their own session, so a shared goal, bill or budget is kept
+  // KAN-112: members read shared items with their own session, so a shared goal, bill, budget or account is kept
   // plain. Unsharing needs nothing here: the owner's next change or sign-in encrypts it again.
-  if (on && !exists && (b.kind === 'goal' || b.kind === 'bill' || b.kind === 'budget') && !decryptSharedItem(db, userId, b.kind, b.itemId, run)) {
+  if (on && !exists && b.kind !== 'holding' && !decryptSharedItem(db, userId, b.kind, b.itemId, run)) {
     return fail(423, 'Unlock your data to share this.', 'DATA_LOCKED');
   }
   if (on && !exists) {
