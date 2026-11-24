@@ -2,6 +2,7 @@
  * Dividend rows stay on the user who recorded them.
  * Run: npm run test:dividends
  */
+import '../db/useTempDbForTest.ts';
 import { getDb, queryOne, run } from '../db/index.ts';
 import { deleteScopedDataForUser } from '../lib/userScope.ts';
 import {
