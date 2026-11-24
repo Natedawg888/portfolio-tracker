@@ -62,8 +62,8 @@ export const PHASE1_COLUMNS: readonly (readonly [string, string])[] = [
  * that no background job reads (option A, KAN-115 not built yet), that no household member reads,
  * and that no GET handler reads and writes back (a locked GET would save the null over the value).
  * Left plain on purpose, for those reasons:
- * - holdings, bank_accounts, transactions, budgets, pay_sources (and goal/bill amounts until
- *   phase 3, which encrypts them only while unshared)
+ * - transactions, pay_sources (holdings, accounts, budgets, goal and bill amounts until phase 3,
+ *   which encrypts them only while unshared)
  *   (household sharing; alerts digest, Akahu, chain and quote jobs);
  * - kiwisaver_accounts (Akahu sync); bonds (coupon income is synced on GET);
  * - debt_people outstanding/interest rate/interest charged (interest is posted on GET);
@@ -104,10 +104,10 @@ export const PHASE2_NUMBER_COLUMNS: readonly (readonly [string, string])[] = [
 ];
 
 /** Household share kinds whose rows phase 3 encrypts only while they aren't shared. */
-export type ShareableKind = 'goal' | 'bill' | 'budget' | 'account';
+export type ShareableKind = 'goal' | 'bill' | 'budget' | 'account' | 'holding';
 
 /**
- * Phase 3 (KAN-112): goal, bill, budget-plan and account values, encrypted only while the owner hasn't shared the item
+ * Phase 3 (KAN-112): goal, bill, budget-plan, account and holding values, encrypted only while the owner hasn't shared the item
  * with their household. Members read shared items with their own session, so those stay plain:
  * sharing an item decrypts it (decryptSharedItem, in the owner's unlocked request), and once it's
  * unshared (or the household ends) the owner's next change or sign-in encrypts it again.
@@ -125,6 +125,13 @@ export const PHASE3_SHARED_COLUMNS: readonly { table: string; column: string; ki
   // name stays plain (sorted in SQL).
   { table: 'bank_accounts', column: 'balance', kind: 'account', key: 'id', number: true },
   { table: 'bank_accounts', column: 'institution', kind: 'account', key: 'id', number: false },
+  // Holdings (3d): quantities and money. No SQL filters, sorts or totals them; every write that
+  // reads one first (buys merged into a holding, BTC-linked spends, dividend reinvestment) is a
+  // POST/PATCH/DELETE, which a locked session can't make. Symbol, asset, class, exchange and name
+  // stay plain: the quote, FX and earnings jobs look market data up by them across users.
+  ...['shares', 'amount', 'cost_basis_nzd', 'purchase_price_nzd', 'estimated_value_nzd', 'last_valuation_nzd', 'valuation_nzd', 'property_value_nzd', 'mortgage_outstanding_nzd', 'metal_amount'].map(
+    (column) => ({ table: 'holdings', column, kind: 'holding' as const, key: 'id', number: true }),
+  ),
 ];
 
 /** shareKey: the column holding the shared item's id (the row's own id, or its budget category). */

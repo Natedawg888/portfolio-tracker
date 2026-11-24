@@ -3,7 +3,8 @@
  * shared the item with their household. Sharing decrypts it (owner unlocked, else 423), members
  * edit shared items without touching the owner's encrypted note, and unsharing encrypts it again.
  * Budgets (3b): plans follow their category's share and are added up in code, not with SUM().
- * Accounts (3c): balance and institution follow the account's share.
+ * Accounts (3c): balance and institution follow the account's share. Holdings (3d): quantities
+ * and money follow the holding's share; symbols and names stay plain.
  * Run: npm run test:isolation
  */
 import fs from 'node:fs';
@@ -28,6 +29,7 @@ const { planTotalsForMonth } = await import('../budget/planTotals.ts');
 const { budgetRows } = await import('../export/userExport.ts');
 const { aucklandToday } = await import('../debts/model.ts');
 const { computeNetWorth } = await import('../lib/netWorth.ts');
+const { candidateAlerts, DEFAULT_ALERT_SETTINGS } = await import('../alerts/store.ts');
 const { listSavingsGoals } = await import('../savings/store.ts');
 const { listRecurring } = await import('../recurring/store.ts');
 
@@ -108,6 +110,15 @@ try {
   eq(raw(`SELECT amount_nzd FROM budgets WHERE id='p1'`), 650, "member's change saved plain and left plain");
   eq(migrationReport(db).some((r) => r.userId === 'owner'), false, 'report: nothing pending');
 
+  // Overspend alerts check plan > 0 in code: an encrypted $0 plan must not raise a false alert.
+  run(db, `INSERT INTO budget_categories (id, user_id, name, type) VALUES ('cat_zero', 'owner', 'Zero', 'spending')`);
+  run(db, `INSERT INTO budgets (id, user_id, category_id, period_start, period_end, amount_nzd) VALUES ('p0', 'owner', 'cat_zero', ?, ?, 0)`, [`${ym}-01`, monthEnd]);
+  run(db, `INSERT INTO transactions (id, user_id, date, description, amount, category_id, created_at) VALUES ('t0', 'owner', ?, 'Spend', -40, 'cat_zero', ?)`, [today, now]);
+  encryptPendingForUser(db, 'owner', ownerKey, run);
+  eq(sealed(raw(`SELECT amount_nzd FROM budgets WHERE id='p0'`)), true, '$0 plan encrypted');
+  const alerts = asOwner(() => candidateAlerts(db, 'owner', today, DEFAULT_ALERT_SETTINGS)).filter((a) => a.kind === 'overspend' && a.key.includes('cat_zero'));
+  eq(alerts.length, 0, 'no false overspend alert for an encrypted $0 plan');
+
   // Accounts (phase 3c): balance and institution follow the account's share.
   run(db, `INSERT INTO bank_accounts (id, user_id, name, institution, account_type, currency, balance, created_at, updated_at) VALUES ('acc_joint', 'owner', 'Joint', 'Kiwibank', 'cheque', 'NZD', 2400.25, ?, ?), ('acc_mine', 'owner', 'Mine', 'ASB', 'savings', 'NZD', 9100, ?, ?)`, [now, now, now, now]);
   encryptPendingForUser(db, 'owner', ownerKey, run);
@@ -121,6 +132,23 @@ try {
   eq(raw(`SELECT balance FROM bank_accounts WHERE id='acc_joint'`), 2400.25, 'encrypt pass leaves the shared account plain');
   const dash2 = await asMember(() => dashboard(db, 'member'));
   eq(dash2.ok ? dash2.value.netWorth.accounts.map((a) => [a.name, a.balanceNzd]) : dash2, [['Joint', 2400.25]], 'member sees the shared balance, not the private one');
+
+  // Holdings (phase 3d): quantities and money follow the holding's share; identifiers stay plain.
+  run(db, `INSERT INTO holdings (id, user_id, asset_class, name, property_value_nzd, mortgage_outstanding_nzd, cost_basis_nzd, created_at, updated_at) VALUES ('h_home', 'owner', 'real_estate', 'Home', 850000, 400000, 600000, ?, ?), ('h_bach', 'owner', 'real_estate', 'Bach', 420000, 0, 300000, ?, ?)`, [now, now, now, now]);
+  run(db, `INSERT INTO holdings (id, user_id, asset_class, name, symbol, shares, cost_basis_nzd, created_at, updated_at) VALUES ('h_stock', 'owner', 'stock', 'Fisher & Paykel', 'FPH', 120.5, 3100, ?, ?)`, [now, now]);
+  encryptPendingForUser(db, 'owner', ownerKey, run);
+  eq(['property_value_nzd', 'mortgage_outstanding_nzd', 'cost_basis_nzd'].map((c) => sealed(raw(`SELECT ${c} FROM holdings WHERE id='h_bach'`))), [true, true, true], 'holding figures encrypted (0 included)');
+  eq([sealed(raw(`SELECT shares FROM holdings WHERE id='h_stock'`)), raw(`SELECT symbol FROM holdings WHERE id='h_stock'`), raw(`SELECT name FROM holdings WHERE id='h_stock'`)], [true, 'FPH', 'Fisher & Paykel'], 'shares encrypted; symbol and name stay plain for quote lookups');
+  const ownerNw = await asOwner(() => computeNetWorth(db, 'owner'));
+  const ownerPoint = (id: string) => ownerNw.breakdown.holdings.find((p) => p.id === id)?.valueNzd;
+  eq([ownerPoint('h_home'), ownerPoint('h_bach')].every((v) => typeof v === 'number' && v > 0), true, 'owner net worth values the encrypted holdings');
+  eq(asOwner(() => setShared(db, 'owner', { kind: 'holding', itemId: 'h_home', shared: true })).ok, true, 'owner shares the home');
+  eq([raw(`SELECT property_value_nzd FROM holdings WHERE id='h_home'`), sealed(raw(`SELECT property_value_nzd FROM holdings WHERE id='h_bach'`))], [850000, true], 'shared holding plain, the other still encrypted');
+  encryptPendingForUser(db, 'owner', ownerKey, run);
+  eq(raw(`SELECT mortgage_outstanding_nzd FROM holdings WHERE id='h_home'`), 400000, 'encrypt pass leaves the shared holding plain');
+  const dash3 = await asMember(() => dashboard(db, 'member'));
+  eq(dash3.ok ? dash3.value.netWorth.holdings.map((h) => [h.name, h.valueNzd]) : dash3, [['Home', ownerPoint('h_home')]], "member sees the shared holding at the owner's valuation, nothing else");
+  eq(migrationReport(db).some((r) => r.userId === 'owner'), false, 'report: nothing pending after holdings');
   console.log('shared items tests passed');
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });
