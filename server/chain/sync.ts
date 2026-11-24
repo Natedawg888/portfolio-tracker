@@ -22,6 +22,7 @@ import { HISTORY_LIMIT, historyDue, importWalletHistory, type HistorySource } fr
 import { ChainProviderError } from './types.ts';
 import { primeBalanceCache } from './valuation.ts';
 import { blockNetwork, networkBlockedSec, paceNetwork, resetRateLimitsForTest } from './rateLimit.ts';
+import { jobUserFilter, runAsUser } from '../security/sessionJobs.ts';
 
 const TICK_MS = 60_000;
 const TICK_BATCH = 10;
@@ -214,21 +215,33 @@ export async function requestManualSync(walletId: string, userId: string): Promi
 
 // --- scheduler ---------------------------------------------------------------------
 
-/** One scheduler pass: sync up to TICK_BATCH due wallets, one at a time. */
+/**
+ * One scheduler pass: sync up to TICK_BATCH due wallets, one at a time. With encryption on, only
+ * wallets of users with an unlocked session (KAN-115); the rest stay due and are synced on the
+ * first pass after their owner unlocks. Filtering in SQL keeps locked users' overdue wallets from
+ * filling every batch.
+ */
 export async function runSyncTick(now = Date.now()): Promise<{ attempted: number; ok: number; failed: number; deferred: number }> {
   const db = await getDb();
-  const due = queryAll<{ id: string }>(
+  const counts = { attempted: 0, ok: 0, failed: 0, deferred: 0 };
+  const allowed = jobUserFilter();
+  if (allowed && allowed.size === 0) return counts;
+  const users = allowed ? [...allowed] : [];
+  const due = queryAll<{ id: string; user_id: string }>(
     db,
-    `SELECT id FROM wallets
+    `SELECT id, user_id FROM wallets
      WHERE (next_sync_at IS NULL OR next_sync_at <= ?)
        AND (status != 'syncing' OR updated_at <= ?)
+       ${allowed ? `AND user_id IN (${users.map(() => '?').join(',')})` : ''}
      ORDER BY COALESCE(next_sync_at, '') ASC, created_at ASC
      LIMIT ?`,
-    [new Date(now).toISOString(), new Date(now - STUCK_SYNCING_MS).toISOString(), TICK_BATCH],
+    [new Date(now).toISOString(), new Date(now - STUCK_SYNCING_MS).toISOString(), ...users, TICK_BATCH],
   );
-  const counts = { attempted: due.length, ok: 0, failed: 0, deferred: 0 };
-  for (const { id } of due) {
-    const r = await syncWallet(id);
+  for (const { id, user_id } of due) {
+    const job = await runAsUser(db, user_id, () => syncWallet(id));
+    if (!job.ran) continue; // locked since the query ran
+    counts.attempted++;
+    const r = job.value;
     if (r.ok) counts.ok++;
     else if (r.deferred) counts.deferred++;
     else counts.failed++;

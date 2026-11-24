@@ -9,6 +9,7 @@ import { emailEnabled, messageHtml, sendEmail } from '../invoices/email.ts';
 import { logger } from '../lib/logger.ts';
 import { aucklandToday } from '../debts/model.ts';
 import { getAlertSettings, markEmailed, raiseAlerts, unemailed, type Alert } from './store.ts';
+import { runAsUser } from '../security/sessionJobs.ts';
 
 const HOUR = 60 * 60 * 1000;
 
@@ -49,19 +50,25 @@ export async function runForUser(db: Database, userId: string, email: string, to
   return { raised, emailed: pending.length };
 }
 
-/** Every user, once. */
-export async function runAlertsForEveryone(today = aucklandToday()): Promise<{ users: number; emailed: number }> {
+/**
+ * Every user, once. With encryption on, only users with an unlocked session (KAN-115); the rest
+ * get their alerts raised when they next open Alerts, and emailed on a later pass.
+ */
+export async function runAlertsForEveryone(today = aucklandToday(), send: Sender = sendEmail): Promise<{ users: number; emailed: number; skipped: number }> {
   const db = await getDb();
   const users = queryAll<{ id: string; email: string }>(db, `SELECT id, email FROM users`);
   let emailed = 0;
+  let skipped = 0;
   for (const u of users) {
     try {
-      emailed += (await runForUser(db, u.id, u.email, today)).emailed;
+      const r = await runAsUser(db, u.id, () => runForUser(db, u.id, u.email, today, send));
+      if (r.ran) emailed += r.value.emailed;
+      else skipped++;
     } catch (err) {
       logger.warn('alerts_user_failed', { userId: u.id, err: String(err).slice(0, 200) });
     }
   }
-  return { users: users.length, emailed };
+  return { users: users.length, emailed, skipped };
 }
 
 /** Run at start-up (after a minute) and then every 24 hours. Returns a stop function. */
