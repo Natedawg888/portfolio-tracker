@@ -118,12 +118,14 @@ export function candidateAlerts(db: Database, userId: string, today: string, s: 
   const month = today.slice(0, 7);
 
   if (s.overspend) {
-    const plans = queryAll<{ category_id: string; amount_nzd: number; name: string }>(
+    // amount_nzd > 0 is checked here, not in SQL: an encrypted plan (KAN-112) is text, which SQLite
+    // compares as greater than any number, so a $0 plan would pass and raise a false alert.
+    const plans = queryAll<{ category_id: string; amount_nzd: number | null; name: string }>(
       db,
       `SELECT b.category_id, b.amount_nzd, c.name FROM budgets b JOIN budget_categories c ON c.id = b.category_id
-       WHERE b.user_id = ? AND b.period_start <= ? AND b.period_end >= ? AND b.amount_nzd > 0 AND c.type = 'spending'`,
+       WHERE b.user_id = ? AND b.period_start <= ? AND b.period_end >= ? AND c.type = 'spending'`,
       [userId, today, today],
-    );
+    ).filter((p): p is { category_id: string; amount_nzd: number; name: string } => typeof p.amount_nzd === 'number' && p.amount_nzd > 0);
     for (const p of plans) {
       const spent = Number(
         queryOne<{ s: number | null }>(db, `SELECT SUM(-amount) AS s FROM transactions WHERE user_id = ? AND category_id = ? AND amount < 0 AND substr(date, 1, 7) = ?`, [userId, p.category_id, month])?.s ?? 0,
