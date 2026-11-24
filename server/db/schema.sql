@@ -1841,6 +1841,31 @@ CREATE TABLE IF NOT EXISTS provider_events (
   received_at  TEXT NOT NULL,
   PRIMARY KEY (provider, event_id)
 );
+-- Wallet transaction history (KAN-43), stored by the sync job for the timeline. One row per
+-- (wallet, tx hash, asset); amounts are integer strings in the smallest unit.
+CREATE TABLE IF NOT EXISTS wallet_txns (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  wallet_id    TEXT NOT NULL,
+  network      TEXT NOT NULL,
+  hash         TEXT NOT NULL,
+  asset_key    TEXT NOT NULL,
+  ts           TEXT,
+  status       TEXT NOT NULL,
+  kind         TEXT NOT NULL,   -- received | sent | transfer | staking | swap
+  direction    TEXT NOT NULL,   -- in | out | self
+  symbol       TEXT NOT NULL,
+  contract     TEXT,
+  amount_raw   TEXT NOT NULL,
+  decimals     INTEGER NOT NULL,
+  fee_raw      TEXT,
+  counterparty TEXT,
+  hidden       INTEGER NOT NULL DEFAULT 0,   -- spam / unknown token (KAN-39)
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL,
+  UNIQUE (wallet_id, hash, asset_key)
+);
+CREATE INDEX IF NOT EXISTS idx_wallet_txns_user_ts ON wallet_txns(user_id, ts);
 -- Alerts (KAN-64): raised once per dedupe_key; read in the app, emailed in a daily digest.
 CREATE TABLE IF NOT EXISTS alerts (
   id          TEXT PRIMARY KEY,
