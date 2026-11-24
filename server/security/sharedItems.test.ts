@@ -2,6 +2,7 @@
  * Encrypted goals and bills, phase 3 (KAN-112): amounts are encrypted only while the owner hasn't
  * shared the item with their household. Sharing decrypts it (owner unlocked, else 423), members
  * edit shared items without touching the owner's encrypted note, and unsharing encrypts it again.
+ * Budgets (3b): plans follow their category's share and are added up in code, not with SUM().
  * Run: npm run test:isolation
  */
 import fs from 'node:fs';
@@ -21,7 +22,10 @@ process.env.PLAN_PLUS_EMAILS = 'owner@x.test';
 
 const { getDb, run } = await import('../db/index.ts');
 const { encryptPendingForUser, migrationReport, runWithCryptoContext } = await import('./fieldCrypto.ts');
-const { setShared, updateSharedGoal, updateSharedBill } = await import('../households/sharing.ts');
+const { setShared, updateSharedGoal, updateSharedBill, setSharedBudgetPlan, dashboard } = await import('../households/sharing.ts');
+const { planTotalsForMonth } = await import('../budget/planTotals.ts');
+const { budgetRows } = await import('../export/userExport.ts');
+const { aucklandToday } = await import('../debts/model.ts');
 const { listSavingsGoals } = await import('../savings/store.ts');
 const { listRecurring } = await import('../recurring/store.ts');
 
@@ -78,6 +82,29 @@ try {
   eq(sealed(raw(`SELECT target_nzd FROM savings_goals WHERE id='g1'`)), true, 'unshared goal encrypted again');
   eq(asOwner(() => listSavingsGoals(db, 'owner', '2026-11-24'))[0].targetNzd, 6000, 'owner reads the re-encrypted value');
   eq(raw(`SELECT amount_nzd FROM recurring_items WHERE id='b1'`), 199, 'still-shared bill stays plain');
+
+  // Budgets (phase 3b): plans follow their category's share; totals are added up in code.
+  const today = aucklandToday();
+  const ym = today.slice(0, 7);
+  const monthEnd = new Date(Date.UTC(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0)).toISOString().slice(0, 10);
+  run(db, `INSERT INTO budget_categories (id, user_id, name, type) VALUES ('cat_food', 'owner', 'Groceries', 'spending'), ('cat_fun', 'owner', 'Fun', 'spending')`);
+  run(db, `INSERT INTO budgets (id, user_id, category_id, period_start, period_end, amount_nzd) VALUES ('p1', 'owner', 'cat_food', ?, ?, 600), ('p2', 'owner', 'cat_fun', ?, ?, 200), ('p3', 'owner', 'cat_fun', ?, ?, 50)`, [`${ym}-01`, monthEnd, `${ym}-01`, monthEnd, `${ym}-15`, monthEnd]);
+  encryptPendingForUser(db, 'owner', ownerKey, run);
+  eq(['p1', 'p2', 'p3'].map((id) => sealed(raw(`SELECT amount_nzd FROM budgets WHERE id='${id}'`))), [true, true, true], 'unshared plans encrypted');
+  eq(asOwner(() => planTotalsForMonth(db, 'owner', ym).get('cat_fun')), { total: 250, n: 2 }, 'owner: plans added up in code, not SUM() over ciphertext');
+  eq(planTotalsForMonth(db, 'owner', ym).get('cat_fun'), { total: 0, n: 0 }, 'no key: unreadable plans left out (n = 0 means no plan), not added as 0');
+  const exported = asOwner(() => budgetRows(db, 'owner', [ym])).find((r) => r[1] === 'Fun');
+  eq(exported?.[3], '250', 'export shows the real planned total');
+
+  eq(asOwner(() => setShared(db, 'owner', { kind: 'budget', itemId: 'cat_food', shared: true })).ok, true, 'owner shares the Groceries budget');
+  eq(raw(`SELECT amount_nzd FROM budgets WHERE id='p1'`), 600, 'shared category plans are plain');
+  eq(sealed(raw(`SELECT amount_nzd FROM budgets WHERE id='p2'`)), true, 'other categories stay encrypted');
+  const dash = await asMember(() => dashboard(db, 'member'));
+  eq(dash.ok ? dash.value.budgets.map((b) => [b.name, b.plannedNzd]) : dash, [['Groceries', 600]], 'member sees the shared plan on the dashboard');
+  eq(asMember(() => setSharedBudgetPlan(db, 'member', 'cat_food', { amountNzd: 650 })).ok, true, 'member changes the shared plan');
+  encryptPendingForUser(db, 'owner', ownerKey, run);
+  eq(raw(`SELECT amount_nzd FROM budgets WHERE id='p1'`), 650, "member's change saved plain and left plain");
+  eq(migrationReport(db).some((r) => r.userId === 'owner'), false, 'report: nothing pending');
   console.log('shared items tests passed');
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });
