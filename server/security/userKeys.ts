@@ -19,6 +19,13 @@ import type { Database } from 'sql.js';
 import { queryAll, queryOne, run } from '../db/index.ts';
 import { randomBytes } from 'node:crypto';
 import { generateDataKey, sessionKeyStore, unwrapDataKey, wrapDataKey } from './dataKey.ts';
+import { verifyPassword } from '../auth/passwords.ts';
+
+/** The account's password hash when it has a real one (SSO-only and linked accounts don't). */
+function passwordHashOf(db: Database, userId: string): string | null {
+  const h = queryOne<{ password_hash: string | null }>(db, `SELECT password_hash FROM users WHERE id = ?`, [userId])?.password_hash ?? null;
+  return h && h.startsWith('scrypt$') ? h : null;
+}
 
 export type WrapKind = 'password' | 'sso_passphrase' | 'recovery';
 
@@ -94,7 +101,9 @@ export type DataKeyState = 'unlocked' | 'locked' | 'needs_passphrase';
 export function dataKeyState(db: Database, userId: string, sessionId: string | null | undefined): DataKeyState {
   if (sessionId && sessionKeyStore.get(sessionId, userId)) return 'unlocked';
   const kinds = wrapKinds(db, userId);
-  if (kinds.length === 0) return 'needs_passphrase';
+  // No key yet: a password account unlocks with its password (the key is made then, as at sign-in);
+  // only accounts without a password set a passphrase.
+  if (kinds.length === 0) return passwordHashOf(db, userId) ? 'locked' : 'needs_passphrase';
   return 'locked';
 }
 
@@ -125,6 +134,15 @@ export async function unlockWithSecret(db: Database, userId: string, sessionId: 
       sessionKeyStore.set(sessionId, userId, key);
       return true;
     }
+  }
+  // An account from before KAN-106 that's still on an old session (no wrap yet): its password
+  // unlocks it and makes the key, exactly as a password sign-in would.
+  const hash = wrapKinds(db, userId).length === 0 ? passwordHashOf(db, userId) : null;
+  if (hash && (await verifyPassword(secret, hash))) {
+    const key = await createKeyForPassword(db, userId, secret);
+    sessionKeyStore.set(sessionId, userId, key);
+    key.fill(0);
+    return true;
   }
   return false;
 }
