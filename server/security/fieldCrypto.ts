@@ -62,7 +62,8 @@ export const PHASE1_COLUMNS: readonly (readonly [string, string])[] = [
  * that no background job reads (option A, KAN-115 not built yet), that no household member reads,
  * and that no GET handler reads and writes back (a locked GET would save the null over the value).
  * Left plain on purpose, for those reasons:
- * - holdings, bank_accounts, transactions, budgets, savings_goals, recurring_items, pay_sources
+ * - holdings, bank_accounts, transactions, budgets, pay_sources (and goal/bill amounts until
+ *   phase 3, which encrypts them only while unshared)
  *   (household sharing; alerts digest, Akahu, chain and quote jobs);
  * - kiwisaver_accounts (Akahu sync); bonds (coupon income is synced on GET);
  * - debt_people outstanding/interest rate/interest charged (interest is posted on GET);
@@ -102,13 +103,35 @@ export const PHASE2_NUMBER_COLUMNS: readonly (readonly [string, string])[] = [
   ['commodities', 'price_nzd'],
 ];
 
-type Column = { table: string; column: string; number: boolean };
+/** Household share kinds whose rows phase 3 encrypts only while they aren't shared. */
+export type ShareableKind = 'goal' | 'bill';
+
+/**
+ * Phase 3 (KAN-112): goal and bill amounts, encrypted only while the owner hasn't shared the item
+ * with their household. Members read shared items with their own session, so those stay plain:
+ * sharing an item decrypts it (decryptSharedItem, in the owner's unlocked request), and once it's
+ * unshared (or the household ends) the owner's next change or sign-in encrypts it again.
+ * Bill names stay plain: bills are sorted by name in SQL. Background jobs that read these (the
+ * alerts digest) run in the owner's context only (KAN-115).
+ */
+export const PHASE3_SHARED_NUMBER_COLUMNS: readonly (readonly [string, string, ShareableKind])[] = [
+  ['savings_goals', 'target_nzd', 'goal'],
+  ['savings_goals', 'current_amount_nzd', 'goal'],
+  ['recurring_items', 'amount_nzd', 'bill'],
+];
+
+type Column = { table: string; column: string; number: boolean; shareKind?: ShareableKind };
 /** Every encrypted column, text (phase 1 notes + phase 2 details) and number. */
 export const ENCRYPTED_COLUMNS: readonly Column[] = [
   ...PHASE1_COLUMNS.map(([table, column]) => ({ table, column, number: false })),
   ...PHASE2_TEXT_COLUMNS.map(([table, column]) => ({ table, column, number: false })),
   ...PHASE2_NUMBER_COLUMNS.map(([table, column]) => ({ table, column, number: true })),
+  ...PHASE3_SHARED_NUMBER_COLUMNS.map(([table, column, shareKind]) => ({ table, column, number: true, shareKind })),
 ];
+
+/** SQL that leaves out rows the owner (`owner` = SQL for their id) has shared with a household. */
+const notShared = (kind: ShareableKind | undefined, owner: string) =>
+  kind ? ` AND id NOT IN (SELECT item_id FROM household_shares WHERE owner_id = ${owner} AND kind = '${kind}')` : '';
 
 export const encryptionEnabled = () => process.env.DATA_ENCRYPTION === '1';
 
@@ -150,10 +173,10 @@ function tableHas(db: Database, table: string, column: string): boolean {
 export function encryptPendingForUser(db: Database, userId: string, key: Buffer, write: (db: Database, sql: string, params: unknown[]) => void = (d, sql, params) => d.run(sql, params as never[])): number {
   if (!encryptionEnabled()) return 0;
   let n = 0;
-  for (const { table, column, number } of ENCRYPTED_COLUMNS) {
+  for (const { table, column, number, shareKind } of ENCRYPTED_COLUMNS) {
     if (!tableHas(db, table, column)) continue;
-    const stmt = db.prepare(`SELECT id, ${column} AS v FROM ${table} WHERE user_id = ? AND ${column} IS NOT NULL AND ${column} != '' AND ${column} NOT LIKE 'ue1:%'`);
-    stmt.bind([userId]);
+    const stmt = db.prepare(`SELECT id, ${column} AS v FROM ${table} WHERE user_id = ? AND ${column} IS NOT NULL AND ${column} != '' AND ${column} NOT LIKE 'ue1:%'${notShared(shareKind, '?')}`);
+    stmt.bind(shareKind ? [userId, userId] : [userId]);
     const rows: { id: string; v: string | number }[] = [];
     while (stmt.step()) rows.push(stmt.getAsObject() as { id: string; v: string | number });
     stmt.free();
@@ -187,12 +210,35 @@ export function lockedOutOfData(db: Database, userId: string): boolean {
   return false;
 }
 
+/**
+ * Before an item is shared with the household: turn its encrypted phase-3 values back into plain,
+ * so members (who read with their own session) can see them. Needs the owner's unlocked key; false
+ * when something is encrypted and this request can't open it (the caller refuses with 423).
+ */
+export function decryptSharedItem(db: Database, userId: string, kind: ShareableKind, itemId: string, write: (db: Database, sql: string, params: unknown[]) => void = (d, sql, params) => d.run(sql, params as never[])): boolean {
+  const ctx = als.getStore();
+  const key = ctx?.key && ctx.userId === userId ? ctx.key : null;
+  for (const { table, column, shareKind } of ENCRYPTED_COLUMNS) {
+    if (shareKind !== kind || !tableHas(db, table, column)) continue;
+    const stmt = db.prepare(`SELECT ${column} AS v FROM ${table} WHERE id = ? AND user_id = ?`);
+    stmt.bind([itemId, userId]);
+    const v = stmt.step() ? stmt.getAsObject().v : null;
+    stmt.free();
+    if (!isEncryptedField(v)) continue;
+    if (!key) return false;
+    const plain = openValue(key, v, userId);
+    if (plain === null) return false;
+    write(db, `UPDATE ${table} SET ${column} = ? WHERE id = ? AND user_id = ?`, [plain, itemId, userId]);
+  }
+  return true;
+}
+
 /** Report: plain values still waiting per user (accounts not yet migrated). */
 export function migrationReport(db: Database): { userId: string; email: string; plainValues: number }[] {
   const users = new Map<string, number>();
-  for (const { table, column } of ENCRYPTED_COLUMNS) {
+  for (const { table, column, shareKind } of ENCRYPTED_COLUMNS) {
     if (!tableHas(db, table, column)) continue;
-    const stmt = db.prepare(`SELECT user_id AS u, COUNT(*) AS n FROM ${table} WHERE user_id IS NOT NULL AND ${column} IS NOT NULL AND ${column} != '' AND ${column} NOT LIKE 'ue1:%' GROUP BY user_id`);
+    const stmt = db.prepare(`SELECT user_id AS u, COUNT(*) AS n FROM ${table} WHERE user_id IS NOT NULL AND ${column} IS NOT NULL AND ${column} != '' AND ${column} NOT LIKE 'ue1:%'${notShared(shareKind, `${table}.user_id`)} GROUP BY user_id`);
     while (stmt.step()) {
       const r = stmt.getAsObject() as { u: string; n: number };
       users.set(r.u, (users.get(r.u) ?? 0) + Number(r.n));

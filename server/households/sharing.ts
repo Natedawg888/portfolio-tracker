@@ -21,6 +21,7 @@ import { listRecurring, parseRecurring, updateRecurring } from '../recurring/sto
 import { aucklandToday, roundMoney } from '../debts/model.ts';
 import { householdActive, logActivity, memberLabel, membershipOf, type Membership } from './store.ts';
 import { budgetMoneyIn } from './paye.ts';
+import { decryptSharedItem } from '../security/fieldCrypto.ts';
 
 export const SHARE_KINDS = ['budget', 'bill', 'goal', 'holding', 'account'] as const;
 export type ShareKind = (typeof SHARE_KINDS)[number];
@@ -120,6 +121,11 @@ export function setShared(db: Database, userId: string, body: unknown): Result<S
   const on = b.shared === true;
   if (on && !householdActive(db, m)) return fail(402, 'Households are part of KoruLedger Plus.', 'PLAN_REQUIRED');
   const exists = !!queryOne(db, `SELECT 1 FROM household_shares WHERE household_id = ? AND kind = ? AND item_id = ?`, [m.householdId, b.kind, b.itemId]);
+  // KAN-112: members read shared items with their own session, so a shared goal or bill is kept
+  // plain. Unsharing needs nothing here: the owner's next change or sign-in encrypts it again.
+  if (on && !exists && (b.kind === 'goal' || b.kind === 'bill') && !decryptSharedItem(db, userId, b.kind, b.itemId, run)) {
+    return fail(423, 'Unlock your data to share this.', 'DATA_LOCKED');
+  }
   if (on && !exists) {
     run(db, `INSERT INTO household_shares (household_id, owner_id, kind, item_id, shared_at) VALUES (?,?,?,?,?)`, [m.householdId, userId, b.kind, b.itemId, new Date().toISOString()]);
     logActivity(db, m.householdId, userId, `shared ${KIND_WORD[b.kind]}`, itemName(db, b.kind, b.itemId));
