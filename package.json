@@ -16,6 +16,7 @@
     "plan:set": "node --import tsx scripts/set-plan.ts",
     "stripe:setup": "node --import tsx scripts/stripe-setup.ts",
     "auth:reset-2fa": "node --import tsx scripts/reset-2fa.ts",
+    "test:ci": "node scripts/run-tests.mjs",
     "test:metals": "node --import tsx server/quotes/metals.public.test.ts",
     "test:cash-sync": "node --import tsx server/akahu/sync.cash.test.ts && node --import tsx server/lib/txnBtcLink.test.ts && node --import tsx server/lib/categoryPredict.test.ts",
     "test:onboarding": "node --import tsx server/auth/registerAkahuOnboarding.test.ts && node --import tsx src/lib/usageMode.test.ts",
