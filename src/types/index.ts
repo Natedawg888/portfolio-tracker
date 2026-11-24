@@ -2806,6 +2806,19 @@ export interface TimelineEvent {
   link: string | null;
 }
 
+/** Payment providers for invoices (KAN-73). */
+export interface PaymentIntegrations {
+  stripe: { available: boolean; mode: 'test' | 'live' | null; connected: boolean; accountId: string | null };
+  paddle: { connected: boolean; mode: 'test' | 'live' | null; webhookUrl: string | null };
+}
+export interface InvoiceProviderLink {
+  invoiceId: string;
+  provider: 'stripe' | 'paddle';
+  providerInvoiceId: string;
+  paymentUrl: string | null;
+  status: 'open' | 'paid' | 'void' | 'failed';
+  updatedAt: string;
+}
 /** Alerts (KAN-64). */
 export interface AlertItem {
   id: string;

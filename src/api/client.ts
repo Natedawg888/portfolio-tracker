@@ -132,6 +132,8 @@ import type {
   WalletNetwork,
   WalletNetworkInfo,
   WalletsValuationResponse,
+  PaymentIntegrations,
+  InvoiceProviderLink,
   WalletTxn,
   ScenarioSummary,
   AlertItem,
@@ -1363,6 +1365,17 @@ export const api = {
   timeline: {
     list: (opts: { from: string; to: string; types: TimelineType[] }) =>
       req<TimelineEvent[]>(`/timeline?${new URLSearchParams({ from: opts.from, to: opts.to, types: opts.types.join(',') })}`),
+  },
+  integrations: {
+    status: () => req<PaymentIntegrations>('/integrations'),
+    stripeConnectUrl: () => req<{ url: string }>('/integrations/stripe/connect'),
+    connectPaddle: (apiKey: string, webhookSecret: string) =>
+      req<{ ok: boolean; webhookUrl: string }>('/integrations/paddle', { method: 'PUT', body: JSON.stringify({ apiKey, webhookSecret }) }),
+    disconnect: (provider: 'stripe' | 'paddle') => req<{ ok: boolean }>(`/integrations/${provider}`, { method: 'DELETE' }),
+    invoiceLink: (invoiceId: string) => req<{ link: InvoiceProviderLink | null }>(`/integrations/invoices/${encodeURIComponent(invoiceId)}`),
+    pushInvoice: (invoiceId: string, provider: 'stripe' | 'paddle') =>
+      req<{ link: InvoiceProviderLink }>(`/integrations/invoices/${encodeURIComponent(invoiceId)}/push`, { method: 'POST', body: JSON.stringify({ provider }) }),
+    syncInvoice: (invoiceId: string) => req<{ changed: boolean; link: InvoiceProviderLink | null }>(`/integrations/invoices/${encodeURIComponent(invoiceId)}/sync`, { method: 'POST' }),
   },
   receipts: {
     /** Read a receipt photo on the server (KAN-60): merchant, date and total when found. */
