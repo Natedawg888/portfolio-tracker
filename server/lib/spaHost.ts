@@ -40,10 +40,16 @@ export function apiNotFound(_req: Request, res: Response) {
  * `apiNotFound`, so /api is already finished.
  */
 export function mountSpa(app: Express, distDir: string): void {
+  const hashedDir = path.join(distDir, 'assets') + path.sep;
   const assets = staticGetHead(distDir, {
     index: false,
     maxAge: '1h',
     redirect: false,
+    // Vite puts a content hash in every file name under assets/, so a new build never reuses a
+    // name: browsers can keep these forever instead of re-checking them every hour.
+    setHeaders: (res, filePath) => {
+      if (filePath.startsWith(hashedDir)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    },
   });
 
   app.use((req, res, next) => {
