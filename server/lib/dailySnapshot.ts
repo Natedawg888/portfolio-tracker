@@ -15,6 +15,7 @@
 import type { Database } from 'sql.js';
 import { newId, queryAll, queryOne, run } from '../db/index.ts';
 import { aucklandToday } from '../debts/model.ts';
+import { lockedOutOfData } from '../security/fieldCrypto.ts';
 import type { NetWorthResult } from './netWorth.ts';
 import { normalizeSnapshotPrefs } from '../../src/lib/snapshotPrefs.ts';
 
@@ -55,6 +56,8 @@ export function recordDailySnapshot(
 ): DailySnapshotResult {
   if (!dailySnapshotEnabled(db, userId)) return 'disabled';
   if ((nw.cryptoWalletsFailed ?? 0) > 0 || !Number.isFinite(nw.totalKnownNzd)) return 'skipped';
+  // KAN-112: a locked session reads encrypted figures as null, so its total is wrong. Keep the last reading.
+  if (lockedOutOfData(db, userId)) return 'skipped';
 
   const today = aucklandToday(now);
   // An Auckland day spans at most ~14h either side of its UTC date; 2 days back is plenty.
