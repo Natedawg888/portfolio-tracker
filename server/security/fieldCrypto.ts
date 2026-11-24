@@ -104,10 +104,10 @@ export const PHASE2_NUMBER_COLUMNS: readonly (readonly [string, string])[] = [
 ];
 
 /** Household share kinds whose rows phase 3 encrypts only while they aren't shared. */
-export type ShareableKind = 'goal' | 'bill' | 'budget';
+export type ShareableKind = 'goal' | 'bill' | 'budget' | 'account';
 
 /**
- * Phase 3 (KAN-112): goal and bill amounts, encrypted only while the owner hasn't shared the item
+ * Phase 3 (KAN-112): goal, bill, budget-plan and account values, encrypted only while the owner hasn't shared the item
  * with their household. Members read shared items with their own session, so those stay plain:
  * sharing an item decrypts it (decryptSharedItem, in the owner's unlocked request), and once it's
  * unshared (or the household ends) the owner's next change or sign-in encrypts it again.
@@ -116,11 +116,15 @@ export type ShareableKind = 'goal' | 'bill' | 'budget';
  * (server/budget/planTotals.ts), never with SUM(). Background jobs that read these (the alerts
  * digest) run in the owner's context only (KAN-115).
  */
-export const PHASE3_SHARED_NUMBER_COLUMNS: readonly (readonly [string, string, ShareableKind, string])[] = [
-  ['savings_goals', 'target_nzd', 'goal', 'id'],
-  ['savings_goals', 'current_amount_nzd', 'goal', 'id'],
-  ['recurring_items', 'amount_nzd', 'bill', 'id'],
-  ['budgets', 'amount_nzd', 'budget', 'category_id'],
+export const PHASE3_SHARED_COLUMNS: readonly { table: string; column: string; kind: ShareableKind; key: string; number: boolean }[] = [
+  { table: 'savings_goals', column: 'target_nzd', kind: 'goal', key: 'id', number: true },
+  { table: 'savings_goals', column: 'current_amount_nzd', kind: 'goal', key: 'id', number: true },
+  { table: 'recurring_items', column: 'amount_nzd', kind: 'bill', key: 'id', number: true },
+  { table: 'budgets', column: 'amount_nzd', kind: 'budget', key: 'category_id', number: true },
+  // Accounts (3c): balance is only ever written whole (create, Akahu sync), never added to in SQL.
+  // name stays plain (sorted in SQL).
+  { table: 'bank_accounts', column: 'balance', kind: 'account', key: 'id', number: true },
+  { table: 'bank_accounts', column: 'institution', kind: 'account', key: 'id', number: false },
 ];
 
 /** shareKey: the column holding the shared item's id (the row's own id, or its budget category). */
@@ -130,7 +134,7 @@ export const ENCRYPTED_COLUMNS: readonly Column[] = [
   ...PHASE1_COLUMNS.map(([table, column]) => ({ table, column, number: false })),
   ...PHASE2_TEXT_COLUMNS.map(([table, column]) => ({ table, column, number: false })),
   ...PHASE2_NUMBER_COLUMNS.map(([table, column]) => ({ table, column, number: true })),
-  ...PHASE3_SHARED_NUMBER_COLUMNS.map(([table, column, shareKind, shareKey]) => ({ table, column, number: true, shareKind, shareKey })),
+  ...PHASE3_SHARED_COLUMNS.map(({ table, column, kind, key, number }) => ({ table, column, number, shareKind: kind, shareKey: key })),
 ];
 
 /** SQL that leaves out rows the owner (`owner` = SQL for their id) has shared with a household. */
