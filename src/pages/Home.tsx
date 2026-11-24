@@ -7,6 +7,7 @@ import { useEffect, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { HomeTopBar } from '../components/home/HomeTopBar';
 import { PreviewCard } from '../components/home/PreviewCard';
+import { prefetchPage } from '../lib/routePrefetch';
 
 const PAGE_TITLE = 'KoruLedger · your whole financial picture in NZD';
 
@@ -112,6 +113,9 @@ export function Home() {
   useEffect(() => {
     const previous = document.title;
     document.title = PAGE_TITLE;
+    // The home page's buttons lead to sign in and sign up: fetch those pages while the visitor reads.
+    prefetchPage('login');
+    prefetchPage('register');
     return () => {
       document.title = previous;
     };

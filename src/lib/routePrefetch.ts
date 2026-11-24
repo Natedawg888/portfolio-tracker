@@ -1,133 +1,77 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
 
+/** Each page: its chunk loader and the named export it renders (the page's file name). */
 const loaders = {
-  spending: () => import('../pages/Spending'),
-  debts: () => import('../pages/Debts'),
-  yearly: () => import('../pages/YearlyReport'),
-  portfolio: () => import('../pages/Portfolio'),
-  projections: () => import('../pages/Projections'),
-  news: () => import('../pages/News'),
-  kiwisaver: () => import('../pages/KiwiSaver'),
-  paye: () => import('../pages/Paye'),
-  business: () => import('../pages/Business'),
-  businessDetail: () => import('../pages/BusinessDetail'),
-  businessClients: () => import('../pages/BusinessClients'),
-  businessStock: () => import('../pages/BusinessStock'),
-  businessProfitLoss: () => import('../pages/BusinessProfitLoss'),
-  businessGst: () => import('../pages/BusinessGst'),
-  businessSales: () => import('../pages/BusinessSales'),
-  businessSuppliers: () => import('../pages/BusinessSuppliers'),
-  businessBudget: () => import('../pages/BusinessBudget'),
-  calendar: () => import('../pages/Calendar'),
-  invoices: () => import('../pages/Invoices'),
-  invoiceEditor: () => import('../pages/InvoiceEditor'),
-  invoiceDetail: () => import('../pages/InvoiceDetail'),
-  publicInvoice: () => import('../pages/PublicInvoice'),
-  bills: () => import('../pages/Bills'),
-  warranties: () => import('../pages/Warranties'),
-  donations: () => import('../pages/Donations'),
-  alerts: () => import('../pages/Alerts'),
-  timeline: () => import('../pages/Timeline'),
-  rentals: () => import('../pages/Rentals'),
-  payslips: () => import('../pages/Payslips'),
-  vehicles: () => import('../pages/Vehicles'),
-  crypto: () => import('../pages/Crypto'),
-  shopping: () => import('../pages/ShoppingLists'),
-  household: () => import('../pages/Household'),
-  valueSearch: () => import('../pages/ValueSearch'),
-  settings: () => import('../pages/Settings'),
-  economicCycle: () => import('../pages/EconomicCycle'),
-} as const;
+  dashboard: [() => import('../pages/Dashboard'), 'Dashboard'],
+  spending: [() => import('../pages/Spending'), 'Spending'],
+  debts: [() => import('../pages/Debts'), 'Debts'],
+  yearly: [() => import('../pages/YearlyReport'), 'YearlyReport'],
+  portfolio: [() => import('../pages/Portfolio'), 'Portfolio'],
+  projections: [() => import('../pages/Projections'), 'Projections'],
+  news: [() => import('../pages/News'), 'News'],
+  kiwisaver: [() => import('../pages/KiwiSaver'), 'KiwiSaver'],
+  paye: [() => import('../pages/Paye'), 'Paye'],
+  business: [() => import('../pages/Business'), 'Business'],
+  businessDetail: [() => import('../pages/BusinessDetail'), 'BusinessDetail'],
+  businessClients: [() => import('../pages/BusinessClients'), 'BusinessClients'],
+  businessStock: [() => import('../pages/BusinessStock'), 'BusinessStock'],
+  businessProfitLoss: [() => import('../pages/BusinessProfitLoss'), 'BusinessProfitLoss'],
+  businessGst: [() => import('../pages/BusinessGst'), 'BusinessGst'],
+  businessSales: [() => import('../pages/BusinessSales'), 'BusinessSales'],
+  businessSuppliers: [() => import('../pages/BusinessSuppliers'), 'BusinessSuppliers'],
+  businessBudget: [() => import('../pages/BusinessBudget'), 'BusinessBudget'],
+  calendar: [() => import('../pages/Calendar'), 'Calendar'],
+  invoices: [() => import('../pages/Invoices'), 'Invoices'],
+  invoiceEditor: [() => import('../pages/InvoiceEditor'), 'InvoiceEditor'],
+  invoiceDetail: [() => import('../pages/InvoiceDetail'), 'InvoiceDetail'],
+  publicInvoice: [() => import('../pages/PublicInvoice'), 'PublicInvoice'],
+  bills: [() => import('../pages/Bills'), 'Bills'],
+  warranties: [() => import('../pages/Warranties'), 'Warranties'],
+  donations: [() => import('../pages/Donations'), 'Donations'],
+  alerts: [() => import('../pages/Alerts'), 'Alerts'],
+  timeline: [() => import('../pages/Timeline'), 'Timeline'],
+  rentals: [() => import('../pages/Rentals'), 'Rentals'],
+  payslips: [() => import('../pages/Payslips'), 'Payslips'],
+  vehicles: [() => import('../pages/Vehicles'), 'Vehicles'],
+  crypto: [() => import('../pages/Crypto'), 'Crypto'],
+  shopping: [() => import('../pages/ShoppingLists'), 'ShoppingLists'],
+  household: [() => import('../pages/Household'), 'Household'],
+  valueSearch: [() => import('../pages/ValueSearch'), 'ValueSearch'],
+  settings: [() => import('../pages/Settings'), 'Settings'],
+  economicCycle: [() => import('../pages/EconomicCycle'), 'EconomicCycle'],
+  login: [() => import('../pages/Login'), 'Login'],
+  register: [() => import('../pages/Register'), 'Register'],
+  privacy: [() => import('../pages/Privacy'), 'Privacy'],
+  terms: [() => import('../pages/Terms'), 'Terms'],
+  confirmEmail: [() => import('../pages/ConfirmEmail'), 'ConfirmEmail'],
+  recover: [() => import('../pages/Recover'), 'Recover'],
+  businessJoin: [() => import('../pages/BusinessJoin'), 'BusinessJoin'],
+  householdJoin: [() => import('../pages/HouseholdJoin'), 'HouseholdJoin'],
+} as const satisfies Record<string, readonly [() => Promise<unknown>, string]>;
 
-type PageName = keyof typeof loaders;
+export type PageName = keyof typeof loaders;
 
 const started = new Set<PageName>();
 
 function lazyNamed(name: PageName): LazyExoticComponent<ComponentType> {
+  const [load, exportName] = loaders[name];
   return lazy(async () => {
-    const mod = (await loaders[name]()) as Record<string, ComponentType>;
-    const component = mod[exportName(name)];
-    if (!component) throw new Error(`Missing page export ${exportName(name)}`);
+    const component = ((await load()) as Record<string, ComponentType>)[exportName];
+    if (!component) throw new Error(`Missing page export ${exportName}`);
     return { default: component };
   });
 }
 
-function exportName(name: PageName): string {
-  switch (name) {
-    case 'spending':
-      return 'Spending';
-    case 'debts':
-      return 'Debts';
-    case 'yearly':
-      return 'YearlyReport';
-    case 'portfolio':
-      return 'Portfolio';
-    case 'projections':
-      return 'Projections';
-    case 'news':
-      return 'News';
-    case 'kiwisaver':
-      return 'KiwiSaver';
-    case 'paye':
-      return 'Paye';
-    case 'business':
-      return 'Business';
-    case 'businessDetail':
-      return 'BusinessDetail';
-    case 'businessClients':
-      return 'BusinessClients';
-    case 'businessStock':
-      return 'BusinessStock';
-    case 'businessProfitLoss':
-      return 'BusinessProfitLoss';
-    case 'businessGst':
-      return 'BusinessGst';
-    case 'businessSales':
-      return 'BusinessSales';
-    case 'businessSuppliers':
-      return 'BusinessSuppliers';
-    case 'businessBudget':
-      return 'BusinessBudget';
-    case 'calendar':
-      return 'Calendar';
-    case 'invoices':
-      return 'Invoices';
-    case 'invoiceEditor':
-      return 'InvoiceEditor';
-    case 'invoiceDetail':
-      return 'InvoiceDetail';
-    case 'publicInvoice':
-      return 'PublicInvoice';
-    case 'bills':
-      return 'Bills';
-    case 'warranties':
-      return 'Warranties';
-    case 'donations':
-      return 'Donations';
-    case 'alerts':
-      return 'Alerts';
-    case 'timeline':
-      return 'Timeline';
-    case 'rentals':
-      return 'Rentals';
-    case 'payslips':
-      return 'Payslips';
-    case 'vehicles':
-      return 'Vehicles';
-    case 'crypto':
-      return 'Crypto';
-    case 'shopping':
-      return 'ShoppingLists';
-    case 'household':
-      return 'Household';
-    case 'valueSearch':
-      return 'ValueSearch';
-    case 'settings':
-      return 'Settings';
-    case 'economicCycle':
-      return 'EconomicCycle';
-  }
-}
+export const DashboardPage = lazyNamed('dashboard');
+// Signed-out pages: rendered outside Layout, so App wraps them in its own Suspense.
+export const LoginPage = lazyNamed('login');
+export const RegisterPage = lazyNamed('register');
+export const PrivacyPage = lazyNamed('privacy');
+export const TermsPage = lazyNamed('terms');
+export const ConfirmEmailPage = lazyNamed('confirmEmail');
+export const RecoverPage = lazyNamed('recover');
+export const BusinessJoinPage = lazyNamed('businessJoin');
+export const HouseholdJoinPage = lazyNamed('householdJoin');
 
 export const SpendingPage = lazyNamed('spending');
 export const DebtsPage = lazyNamed('debts');
@@ -167,6 +111,7 @@ export const SettingsPage = lazyNamed('settings');
 export const EconomicCyclePage = lazyNamed('economicCycle');
 
 const NAV_PAGES: Record<string, PageName> = {
+  '/dashboard': 'dashboard',
   '/spending': 'spending',
   '/debts': 'debts',
   '/yearly': 'yearly',
@@ -199,7 +144,7 @@ const NAV_PAGES: Record<string, PageName> = {
 export function prefetchPage(name: PageName): void {
   if (started.has(name)) return;
   started.add(name);
-  void loaders[name]().catch(() => {
+  void loaders[name][0]().catch(() => {
     started.delete(name);
   });
 }
@@ -210,8 +155,13 @@ export function prefetchNavTarget(to: string): void {
   if (name) prefetchPage(name);
 }
 
+/** Pages only a signed-out visitor sees; a signed-in session never needs their chunks. */
+const SIGNED_OUT_PAGES = new Set<PageName>(['login', 'register', 'confirmEmail', 'recover', 'businessJoin', 'householdJoin']);
+
 export function prefetchAppRoutes(): void {
-  (Object.keys(loaders) as PageName[]).forEach((name) => prefetchPage(name));
+  (Object.keys(loaders) as PageName[]).forEach((name) => {
+    if (!SIGNED_OUT_PAGES.has(name)) prefetchPage(name);
+  });
 }
 
 /** Warm route chunks after first paint so the first click does not wait on the network. */
