@@ -27,14 +27,36 @@ function ensureDataDir() {
   }
 }
 
-/** A save slower than this logs slow_db_persist (every write rewrites the whole file). */
+/** A save slower than this logs slow_db_persist (every save rewrites the whole file). */
 const SLOW_PERSIST_MS = 50;
 
+let persistQueued = false;
+let exitFlushHooked = false;
+
+/**
+ * Ask for the database to be saved. Saving rewrites the whole file, so the writes made in one
+ * turn of the event loop (a sync loop inserting hundreds of rows, say) share one save, run
+ * right after that turn. Process exit flushes anything still queued.
+ */
 export function persist() {
-  if (!db) return;
+  if (!db || persistQueued) return;
+  persistQueued = true;
+  if (!exitFlushHooked) {
+    exitFlushHooked = true;
+    process.on('exit', flushPersist);
+  }
+  setImmediate(flushPersist);
+}
+
+/** Save now if a save is queued. Never throws: a failed save is logged and retried on the next write. */
+export function flushPersist() {
+  if (!persistQueued || !db) return;
+  persistQueued = false;
   const started = performance.now();
   try {
     persistNow(db);
+  } catch (err) {
+    logger.error('db_persist_failed', { err: String(err) });
   } finally {
     const ms = Math.round(performance.now() - started);
     if (ms >= SLOW_PERSIST_MS) logger.warn('slow_db_persist', { ms });
@@ -1011,7 +1033,14 @@ export async function getDb(): Promise<Database> {
   migrateNullableTransactionAccount(db);
   migrateMiningTag(db);
   seedDefaults(db);
-  persist();
+  // Save the migrated file now, not on the next tick.
+  persistQueued = true;
+  flushPersist();
+  // schema.sql turns foreign keys on for the migrations above. The app has always run with them
+  // off after that: sql.js's export() reopens the database, which resets the pragma, and
+  // userScope.ts deletes child rows itself because cascades never fire. Say so explicitly
+  // rather than depend on when the first save happens.
+  db.run('PRAGMA foreign_keys = OFF');
   return db;
 }
 

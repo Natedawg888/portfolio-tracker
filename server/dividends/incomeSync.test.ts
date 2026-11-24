@@ -2,6 +2,7 @@
  * Paid dividends become that user's income row, and only that user's.
  * Run: npm run test:dividends
  */
+import '../db/useTempDbForTest.ts';
 import { getDb, queryAll, queryOne, run } from '../db/index.ts';
 import { savePayeeSetting } from '../payees/store.ts';
 import { deleteDividend, insertDividend, updateDividend } from './store.ts';

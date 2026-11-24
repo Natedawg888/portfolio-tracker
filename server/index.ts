@@ -5,6 +5,7 @@
  * Data: ./data/portfolio.db (sql.js) — mount a volume at /app/data when hosted.
  */
 import express from 'express';
+import compression from 'compression';
 import cors from 'cors';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -114,6 +115,9 @@ async function main() {
       credentials: true,
     }),
   );
+  // Railway's edge passes responses through uncompressed, so gzip here: JS bundles and API JSON
+  // shrink to about a third. Webhooks below read the raw request body; compression only touches responses.
+  app.use(compression());
   // Stripe signs the raw body (KAN-52), so the webhook is mounted before the JSON parser and
   // before the session gate: the signature is its credential.
   app.post('/api/billing/webhook', express.raw({ type: 'application/json', limit: '1mb' }), billingWebhook);
