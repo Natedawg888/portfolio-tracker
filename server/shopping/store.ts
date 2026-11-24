@@ -164,12 +164,13 @@ function budgetLines(db: Database, userId: string, items: ShoppingItem[], listCa
   return [...toBuy.entries()].map(([categoryId, amount]) => {
     const cat = queryOne<{ name: string }>(db, `SELECT name FROM budget_categories WHERE id = ? AND user_id = ?`, [categoryId, userId]);
     const plan = planTotalOverlapping(db, userId, categoryId, start, end);
-    const spent = queryOne<{ total: number | null }>(
-      db,
-      `SELECT SUM(-amount) AS total FROM transactions
-       WHERE user_id = ? AND category_id = ? AND amount < 0 AND date >= ? AND date <= ?`,
-      [userId, categoryId, start, end],
-    );
+    // Added up here, not with SUM(): amounts may be encrypted (KAN-112).
+    let spentTotal = 0;
+    for (const t of queryAll<{ amount: number | null }>(db, `SELECT amount FROM transactions WHERE user_id = ? AND category_id = ? AND date >= ? AND date <= ?`, [userId, categoryId, start, end])) {
+      const a = Number(t.amount);
+      if (t.amount != null && Number.isFinite(a) && a < 0) spentTotal -= a;
+    }
+    const spent = { total: spentTotal };
     const planned = plan.n > 0 ? roundMoney(plan.total) : null;
     const spentNzd = roundMoney(Number(spent?.total ?? 0));
     return {

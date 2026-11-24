@@ -69,15 +69,25 @@ export function budgetRows(db: Database, userId: string, months: string[]): stri
   const out: string[][] = [];
   for (const month of months) {
     const planned = planTotalsForMonth(db, userId, month);
-    const plans = queryAll<{ id: string; name: string; type: string; actual: number | null }>(
+    const cats = queryAll<{ id: string; name: string; type: string }>(
       db,
-      `SELECT c.id, c.name, c.type,
-              (SELECT SUM(CASE WHEN c.type = 'income' THEN t.amount ELSE -t.amount END) FROM transactions t
-                WHERE t.user_id = c.user_id AND t.category_id = c.id AND substr(t.date, 1, 7) = ?
-                  AND ((c.type = 'income' AND t.amount > 0) OR (c.type = 'spending' AND t.amount < 0))) AS actual
-       FROM budget_categories c WHERE c.user_id = ? AND c.type IN ('spending', 'income') ORDER BY c.type DESC, c.name COLLATE NOCASE`,
-      [month, userId],
+      `SELECT c.id, c.name, c.type FROM budget_categories c WHERE c.user_id = ? AND c.type IN ('spending', 'income') ORDER BY c.type DESC, c.name COLLATE NOCASE`,
+      [userId],
     );
+    // Actuals are added up here, not with SUM(): amounts may be encrypted (KAN-112).
+    const byCat = new Map<string, { amount: unknown }[]>();
+    for (const t of queryAll<{ category_id: string; amount: unknown }>(db, `SELECT category_id, amount FROM transactions WHERE user_id = ? AND category_id IS NOT NULL AND substr(date, 1, 7) = ?`, [userId, month])) {
+      byCat.set(t.category_id, [...(byCat.get(t.category_id) ?? []), t]);
+    }
+    const plans = cats.map((c) => {
+      let actual: number | null = null;
+      for (const t of byCat.get(c.id) ?? []) {
+        const a = Number(t.amount);
+        if (t.amount == null || !Number.isFinite(a)) continue;
+        if (c.type === 'income' ? a > 0 : a < 0) actual = (actual ?? 0) + (c.type === 'income' ? a : -a);
+      }
+      return { ...c, actual };
+    });
     for (const p of plans) {
       const plan = planned.get(p.id);
       const plannedNzd = plan && plan.n > 0 ? plan.total : null;

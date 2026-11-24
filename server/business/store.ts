@@ -922,14 +922,18 @@ export function getClientView(db: Database, userId: string, clientId: string, to
  */
 export function moneyCandidates(db: Database, userId: string, start: string, end: string, q: string): BusinessMoneyItem[] {
   const like = `%${q.trim().toLowerCase().replace(/[%_]/g, '')}%`;
+  const needle = q.trim().toLowerCase().replace(/[%_]/g, '');
+  // Untagged transactions may be encrypted (KAN-112): the search runs here, not with LIKE.
   const txns = queryAll<TxnRow>(
     db,
     `SELECT id, date, description, merchant, amount, kind, business_id FROM transactions
      WHERE user_id = ? AND business_id IS NULL AND kind != 'transfer' AND date >= ? AND date <= ?
-       AND (lower(COALESCE(description, '')) LIKE ? OR lower(COALESCE(merchant, '')) LIKE ?)
-     ORDER BY date DESC, id LIMIT 100`,
-    [userId, start, end, like, like],
-  ).map((t): BusinessMoneyItem => ({
+     ORDER BY date DESC, id`,
+    [userId, start, end],
+  )
+    .filter((t) => !needle || (t.description ?? '').toLowerCase().includes(needle) || (t.merchant ?? '').toLowerCase().includes(needle))
+    .slice(0, 100)
+    .map((t): BusinessMoneyItem => ({
     kind: 'transaction',
     id: t.id,
     date: t.date,

@@ -81,14 +81,19 @@ function recordedMiningIncome(db: Database, userId: string, from: string, to: st
      WHERE user_id = ? AND category_id = ? AND date >= ? AND date <= ?`,
     [userId, categoryId, from, to],
   )[0];
-  const txns = queryAll<{ total?: number }>(
+  // Credits are added up here, not with SUM(): amounts may be encrypted (KAN-112).
+  let credits = 0;
+  for (const t of queryAll<{ amount: number | null }>(
     db,
-    `SELECT COALESCE(SUM(t.amount), 0) AS total FROM transactions t
-     WHERE t.user_id = ? AND t.category_id = ? AND t.date >= ? AND t.date <= ? AND t.amount > 0
+    `SELECT t.amount FROM transactions t
+     WHERE t.user_id = ? AND t.category_id = ? AND t.date >= ? AND t.date <= ?
        AND NOT EXISTS (SELECT 1 FROM income_records r WHERE r.user_id = t.user_id AND r.transaction_id = t.id)`,
     [userId, categoryId, from, to],
-  )[0];
-  return roundMoney(Number(records?.total ?? 0) + Number(txns?.total ?? 0));
+  )) {
+    const a = Number(t.amount);
+    if (t.amount != null && Number.isFinite(a) && a > 0) credits += a;
+  }
+  return roundMoney(Number(records?.total ?? 0) + credits);
 }
 
 async function loadMining(opts: {
@@ -192,13 +197,16 @@ const INVESTMENTS_SLUG = 'cat-investments';
 export function investmentsMoved(db: Database, userId: string, from: string, to: string): { total: number; count: number } {
   const categoryId = resolveCategoryId(db, userId, INVESTMENTS_SLUG);
   if (!categoryId) return { total: 0, count: 0 };
-  const row = queryAll<{ total?: number; c?: number }>(
-    db,
-    `SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS c FROM transactions
-     WHERE user_id = ? AND category_id = ? AND date >= ? AND date <= ?`,
-    [userId, categoryId, from, to],
-  )[0];
-  return { total: roundMoney(-(Number(row?.total ?? 0))), count: Number(row?.c ?? 0) };
+  // Added up here, not with SUM(): amounts may be encrypted (KAN-112). Unreadable rows are left out.
+  let total = 0;
+  let count = 0;
+  for (const t of queryAll<{ amount: number | null }>(db, `SELECT amount FROM transactions WHERE user_id = ? AND category_id = ? AND date >= ? AND date <= ?`, [userId, categoryId, from, to])) {
+    const a = Number(t.amount);
+    if (t.amount == null || !Number.isFinite(a)) continue;
+    total += a;
+    count++;
+  }
+  return { total: roundMoney(-total), count };
 }
 
 type ClassStart = Record<ProjectionClassKey, number>;

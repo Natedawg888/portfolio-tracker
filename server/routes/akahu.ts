@@ -6,6 +6,7 @@ import type { Response } from 'express';
 import { getDb } from '../db/index.ts';
 import { getAkahuAppCredentials } from '../akahu/loadEnv.ts';
 import { syncAkahuPortfolio } from '../akahu/sync.ts';
+import { lockedOutOfData } from '../security/fieldCrypto.ts';
 import {
   syncBankTransactionsFromAkahu,
   TXN_SYNC_FROM_DATE,
@@ -207,6 +208,9 @@ router.get('/callback', async (req, res) => {
     try {
       await refreshInstitutionCache(userId);
       const db = await getDb();
+      // KAN-112: this is a GET, so the session may be locked. Matching bank transactions to
+      // existing ones needs their (encrypted) amounts, so wait until the user syncs unlocked.
+      if (lockedOutOfData(db, userId)) throw new Error('data locked; sync later');
       await withUserAkahuCreds(userId, async () => {
         await syncAkahuPortfolio(db, userId);
         await syncBankTransactionsFromAkahu(db, TXN_SYNC_FROM_DATE, userId);

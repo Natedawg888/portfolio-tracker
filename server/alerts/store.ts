@@ -112,6 +112,16 @@ function median(xs: number[]): number {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
+/** Money spent in a category in month YYYY-MM, added up in code (amounts may be encrypted, KAN-112). */
+function spentIn(db: Database, userId: string, categoryId: string, month: string): number {
+  let s = 0;
+  for (const r of queryAll<{ amount: number | null }>(db, `SELECT amount FROM transactions WHERE user_id = ? AND category_id = ? AND substr(date, 1, 7) = ?`, [userId, categoryId, month])) {
+    const a = Number(r.amount);
+    if (r.amount != null && Number.isFinite(a) && a < 0) s -= a;
+  }
+  return s;
+}
+
 /** Work out which alerts apply today. Pure apart from reading the user's rows. */
 export function candidateAlerts(db: Database, userId: string, today: string, s: AlertSettings): Draft[] {
   const out: Draft[] = [];
@@ -127,9 +137,7 @@ export function candidateAlerts(db: Database, userId: string, today: string, s: 
       [userId, today, today],
     ).filter((p): p is { category_id: string; amount_nzd: number; name: string } => typeof p.amount_nzd === 'number' && p.amount_nzd > 0);
     for (const p of plans) {
-      const spent = Number(
-        queryOne<{ s: number | null }>(db, `SELECT SUM(-amount) AS s FROM transactions WHERE user_id = ? AND category_id = ? AND amount < 0 AND substr(date, 1, 7) = ?`, [userId, p.category_id, month])?.s ?? 0,
-      );
+      const spent = spentIn(db, userId, p.category_id, month);
       const pct = (spent / p.amount_nzd) * 100;
       if (pct >= s.overspendPct) {
         const over = spent > p.amount_nzd;
@@ -175,27 +183,26 @@ export function candidateAlerts(db: Database, userId: string, today: string, s: 
   }
 
   if (s.unusual) {
-    const recent = queryAll<{ id: string; date: string; amount: number; merchant: string | null; description: string }>(
+    // Amounts and payees may be encrypted (KAN-112), so spends are picked out and matched here.
+    const spends = queryAll<{ id: string; date: string; amount: number | null; merchant: string | null; description: string | null }>(
       db,
-      `SELECT id, date, amount, merchant, description FROM transactions WHERE user_id = ? AND amount < 0 AND date >= ? AND date <= ?`,
-      [userId, addDays(today, -7), today],
-    );
+      `SELECT id, date, amount, merchant, description FROM transactions WHERE user_id = ? AND date <= ?`,
+      [userId, today],
+    ).filter((t) => t.amount != null && Number(t.amount) < 0);
+    const whoOf = (t: { merchant: string | null; description: string | null }) => (t.merchant?.trim() || t.description?.trim() || '').toLowerCase();
+    const recent = spends.filter((t) => t.date >= addDays(today, -7));
     for (const t of recent) {
-      const who = (t.merchant?.trim() || t.description?.trim() || '').toLowerCase();
+      const who = whoOf(t);
       const spend = -Number(t.amount);
       if (!who || spend < 50) continue;
-      const earlier = queryAll<{ amount: number }>(
-        db,
-        `SELECT amount FROM transactions WHERE user_id = ? AND amount < 0 AND date < ? AND lower(COALESCE(NULLIF(trim(merchant), ''), trim(description))) = ?`,
-        [userId, t.date, who],
-      ).map((r) => -Number(r.amount));
+      const earlier = spends.filter((e) => e.date < t.date && whoOf(e) === who).map((r) => -Number(r.amount));
       if (earlier.length < 3) continue;
       const usual = median(earlier);
       if (usual > 0 && spend >= usual * s.unusualMultiple) {
         out.push({
           kind: 'unusual',
           key: `unusual:${t.id}`,
-          title: `Bigger than usual at ${t.merchant?.trim() || t.description.trim()}`,
+          title: `Bigger than usual at ${t.merchant?.trim() || (t.description ?? '').trim()}`,
           body: `${money(spend)} on ${t.date}; you usually spend about ${money(usual)} there.`,
           link: '/spending',
         });

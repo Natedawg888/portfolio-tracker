@@ -257,17 +257,17 @@ export async function syncBankTransactionsFromAkahu(
       // whose description loosely matches Akahu merchant/description so a same-day
       // same-amount placeholder for a *different* spend does not steal a new Akahu id.
       // Genuinely unmatched Akahu ids always INSERT below.
-      const candidates = queryAll<{ id: string; description: string }>(
+      // amount is compared here, not in SQL: it may be encrypted (KAN-112).
+      const candidates = queryAll<{ id: string; description: string; amount: number | null }>(
         db,
-        `SELECT id, description FROM transactions
+        `SELECT id, description, amount FROM transactions
          WHERE account_id = ?
-           AND amount = ?
            AND date = ?
            AND external_id IS NULL
            AND source IN ('bank', 'manual')
          ORDER BY created_at ASC`,
-        [local.id, amount, ymd],
-      );
+        [local.id, ymd],
+      ).filter((c) => c.amount != null && Number(c.amount) === amount);
       const needle = `${merchant ?? ''} ${description}`.toLowerCase();
       const pending =
         candidates.find((c) => {

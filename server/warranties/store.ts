@@ -234,14 +234,17 @@ export function clearWarrantyReceipt(db: Database, userId: string, id: string, t
  */
 export function searchPurchases(db: Database, userId: string, q: string, limit = 25): WarrantyPurchase[] {
   const term = q.trim().slice(0, 80).toLowerCase();
-  const like = `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  // Money out and the search are checked here, not in SQL: amounts, descriptions and merchants
+  // may be encrypted (KAN-112).
   return queryAll<{ id: string; date: string; description: string | null; merchant: string | null; amount: number; receipt_path: string | null }>(
     db,
     `SELECT id, date, description, merchant, amount, receipt_path FROM transactions
-     WHERE user_id = ? AND amount < 0
-       AND (? = '' OR lower(coalesce(description, '')) LIKE ? ESCAPE '\\' OR lower(coalesce(merchant, '')) LIKE ? ESCAPE '\\')
-     ORDER BY date DESC, created_at DESC
-     LIMIT ?`,
-    [userId, term, like, like, Math.max(1, Math.min(limit, 50))],
-  ).map(purchaseFrom);
+     WHERE user_id = ?
+     ORDER BY date DESC, created_at DESC`,
+    [userId],
+  )
+    .filter((t) => t.amount != null && Number(t.amount) < 0)
+    .filter((t) => !term || (t.description ?? '').toLowerCase().includes(term) || (t.merchant ?? '').toLowerCase().includes(term))
+    .slice(0, Math.max(1, Math.min(limit, 50)))
+    .map(purchaseFrom);
 }
