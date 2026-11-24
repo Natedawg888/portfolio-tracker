@@ -96,6 +96,18 @@ try {
   assert(oldLogin.status === 200 && await state(oldLogin.cookie!) === 'unlocked', 'old account unlocked');
   assert(queryOne<{ n: number }>(db, `SELECT COUNT(*) AS n FROM user_key_wraps WHERE user_id = 'user_old'`)?.n === 1, 'old account got a wrap');
 
+  // An account from before KAN-106 still on an old session (no wrap, no fresh sign-in): it's
+  // "locked", not "needs a passphrase", and its password unlocks it and makes the key.
+  run(db, `INSERT INTO users (id, email, password_hash, first_name, last_name, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`, ['user_stale', 'stale@example.com', await hashPassword(PW), 'Stale', 'User', '2026-01-01', '2026-01-01']);
+  const staleSession = await createSession('user_stale');
+  const stc = `${SESSION_COOKIE}=${staleSession.rawToken}`;
+  assert(await state(stc) === 'locked', 'old password account on an old session: locked (unlock with password)');
+  assert((await call('POST', '/data-key/unlock', stc, { secret: 'wrong password 1' })).status !== 200 && await state(stc) === 'locked', 'wrong password does not unlock');
+  assert((await call('POST', '/data-key/unlock', stc, { secret: PW })).status === 200 && await state(stc) === 'unlocked', 'password unlocks and makes the key');
+  assert(queryOne<{ k: string }>(db, `SELECT GROUP_CONCAT(kind) AS k FROM user_key_wraps WHERE user_id = 'user_stale'`)?.k === 'password', 'key wrapped under the password');
+  const staleNext = await call('POST', '/login', undefined, { email: 'stale@example.com', password: PW });
+  assert(staleNext.status === 200 && await state(staleNext.cookie!) === 'unlocked', 'later password sign-ins unwrap the same key');
+
   // SSO-only account: no password, so it sets a passphrase, then unlocks with it.
   run(db, `INSERT INTO users (id, email, password_hash, first_name, last_name, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`, ['user_sso', 'sso@example.com', '', 'Sso', 'User', '2026-01-01', '2026-01-01']);
   const ssoSession = await createSession('user_sso');
