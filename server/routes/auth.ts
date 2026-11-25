@@ -66,7 +66,9 @@ import {
   deleteAvatarFile,
   photoUrlFromPath,
   saveUserAvatar,
+  sealPendingUploadsForUser,
 } from '../lib/uploads.ts';
+import { sessionKeyStore } from '../security/dataKey.ts';
 import {
   completedOnboardingFlags,
   parseOnboardingFromPreferencesJson,
@@ -847,6 +849,15 @@ router.post('/data-key/unlock', async (req: AuthedRequest, res) => {
     return;
   }
   clearLoginFailures(req.user.email);
+  // KAN-113: seal any personal files still plain, now the key is here.
+  const unlocked = sessionKeyStore.get(req.user.sessionId, req.user.id);
+  if (unlocked) {
+    try {
+      sealPendingUploadsForUser(await getDb(), req.user.id, unlocked);
+    } catch {
+      /* next sign-in or unlock tries again */
+    }
+  }
   res.json({ ok: true, state: 'unlocked' });
 });
 

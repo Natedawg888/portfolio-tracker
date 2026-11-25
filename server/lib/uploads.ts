@@ -7,6 +7,41 @@ import path from 'node:path';
 import type { NextFunction, Request, Response } from 'express';
 import { DATA_DIR, getDb, queryAll, queryOne } from '../db/index.ts';
 import type { AuthedRequest } from '../middleware/requireAuth.ts';
+import { decryptBytes, encryptBytes } from '../security/dataKey.ts';
+import { cryptoContext, encryptionEnabled } from '../security/fieldCrypto.ts';
+
+/**
+ * Encrypted uploads (KAN-113). Personal files (only their owner can fetch them) are sealed with
+ * the owner's data key when DATA_ENCRYPTION is on: MAGIC | iv | tag | ciphertext, AES-256-GCM,
+ * AAD = "<userId>:upload:<relative path>", so a file can't be moved to another user or path.
+ * The gate below opens them for the owner; a locked session gets 423. Existing plain files are
+ * sealed at the owner's next sign-in (sealPendingUploadsForUser).
+ * Business files (logos, stock photos, supplier invoices, sale receipts, employee contracts) are
+ * read by the business's members with their own session, so they stay plain until per-business
+ * keys exist (KAN-129 design), like business rows in KAN-112.
+ */
+const SEALED_MAGIC = Buffer.from('KLUPLD1\0', 'latin1');
+export const PERSONAL_UPLOAD_FOLDERS: ReadonlySet<string> = new Set(['avatars', 'receipts', 'warranties', 'payslips', 'properties', 'collectables', 'art']);
+const uploadAad = (userId: string, rel: string) => `${userId}:upload:${rel}`;
+
+export function isSealedUpload(buf: Buffer): boolean {
+  return buf.length > SEALED_MAGIC.length && buf.subarray(0, SEALED_MAGIC.length).equals(SEALED_MAGIC);
+}
+
+export function sealUpload(key: Buffer, userId: string, rel: string, plain: Buffer): Buffer {
+  return Buffer.concat([SEALED_MAGIC, encryptBytes(key, plain, uploadAad(userId, rel))]);
+}
+
+export function openUpload(key: Buffer, userId: string, rel: string, sealed: Buffer): Buffer | null {
+  return decryptBytes(key, sealed.subarray(SEALED_MAGIC.length), uploadAad(userId, rel));
+}
+
+/** Write a personal upload: sealed with this request's data key when encryption is on. */
+function writePersonalUpload(rel: string, plain: Buffer): void {
+  const ctx = cryptoContext();
+  const out = encryptionEnabled() && ctx?.key && ctx.userId ? sealUpload(ctx.key, ctx.userId, rel, plain) : plain;
+  fs.writeFileSync(path.join(UPLOADS_DIR, rel), out);
+}
 
 export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 export const PROPERTIES_DIR = path.join(UPLOADS_DIR, 'properties');
@@ -66,8 +101,7 @@ export function savePropertyPhoto(holdingId: string, dataUrlOrBase64: string): s
     if (fs.existsSync(prev)) fs.unlinkSync(prev);
   }
   const rel = `properties/${holdingId}${decoded.ext}`;
-  const abs = path.join(UPLOADS_DIR, rel);
-  fs.writeFileSync(abs, decoded.buffer);
+  writePersonalUpload(rel, decoded.buffer);
   return rel;
 }
 
@@ -107,7 +141,7 @@ export function saveCollectablePhoto(holdingId: string, dataUrlOrBase64: string)
     if (fs.existsSync(prev)) fs.unlinkSync(prev);
   }
   const rel = `collectables/${holdingId}${decoded.ext}`;
-  fs.writeFileSync(path.join(UPLOADS_DIR, rel), decoded.buffer);
+  writePersonalUpload(rel, decoded.buffer);
   return rel;
 }
 
@@ -128,7 +162,7 @@ export function saveArtPhoto(holdingId: string, dataUrlOrBase64: string): string
     if (fs.existsSync(prev)) fs.unlinkSync(prev);
   }
   const rel = `art/${holdingId}${decoded.ext}`;
-  fs.writeFileSync(path.join(UPLOADS_DIR, rel), decoded.buffer);
+  writePersonalUpload(rel, decoded.buffer);
   return rel;
 }
 
@@ -151,7 +185,7 @@ export function saveUserAvatar(userId: string, dataUrlOrBase64: string): string 
     if (fs.existsSync(prev)) fs.unlinkSync(prev);
   }
   const rel = `avatars/${userId}${decoded.ext}`;
-  fs.writeFileSync(path.join(UPLOADS_DIR, rel), decoded.buffer);
+  writePersonalUpload(rel, decoded.buffer);
   return rel;
 }
 
@@ -221,7 +255,7 @@ export function saveCharityReceipt(txnId: string, dataUrlOrBase64: string): stri
   }
   const safeId = txnId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
   const rel = `receipts/${safeId}${decoded.ext}`;
-  fs.writeFileSync(path.join(UPLOADS_DIR, rel), decoded.buffer);
+  writePersonalUpload(rel, decoded.buffer);
   return rel;
 }
 
@@ -240,7 +274,7 @@ export function saveWarrantyReceipt(warrantyId: string, dataUrlOrBase64: string)
     if (fs.existsSync(prev)) fs.unlinkSync(prev);
   }
   const rel = `warranties/${safeId}${decoded.ext}`;
-  fs.writeFileSync(path.join(UPLOADS_DIR, rel), decoded.buffer);
+  writePersonalUpload(rel, decoded.buffer);
   return rel;
 }
 
@@ -259,7 +293,7 @@ export function savePayslipFile(payslipId: string, dataUrlOrBase64: string): str
     if (fs.existsSync(prev)) fs.unlinkSync(prev);
   }
   const rel = `payslips/${safeId}${decoded.ext}`;
-  fs.writeFileSync(path.join(UPLOADS_DIR, rel), decoded.buffer);
+  writePersonalUpload(rel, decoded.buffer);
   return rel;
 }
 
@@ -345,6 +379,46 @@ export function normalizeUploadRel(rawPath: string): string | null {
   if (!UPLOAD_FOLDERS.has(folder)) return null;
   if (!/^[\w.-]+$/.test(file)) return null;
   return `${folder}/${file}`;
+}
+
+/** A user's personal upload paths (relative to UPLOADS_DIR), from the rows that point at them. */
+export function personalUploadPaths(db: Awaited<ReturnType<typeof getDb>>, userId: string): string[] {
+  const stored = [
+    queryOne<{ p: string | null }>(db, `SELECT avatar_url AS p FROM users WHERE id = ?`, [userId])?.p ?? null,
+    ...queryAll<{ p: string | null }>(db, `SELECT receipt_path AS p FROM transactions WHERE user_id = ? AND receipt_path IS NOT NULL`, [userId]).map((r) => r.p),
+    ...queryAll<{ p: string | null }>(db, `SELECT receipt_path AS p FROM warranties WHERE user_id = ? AND receipt_path IS NOT NULL`, [userId]).map((r) => r.p),
+    ...queryAll<{ p: string | null }>(db, `SELECT file_path AS p FROM payslips WHERE user_id = ? AND file_path IS NOT NULL`, [userId]).map((r) => r.p),
+    ...queryAll<{ p: string | null }>(db, `SELECT photo_path AS p FROM holdings WHERE user_id = ? AND photo_path IS NOT NULL`, [userId]).map((r) => r.p),
+  ];
+  const out = new Set<string>();
+  for (const s of stored) {
+    const t = s?.trim();
+    if (!t || t.startsWith('data:') || t.startsWith('http://') || t.startsWith('https://')) continue;
+    const rel = t.replace(/\\/g, '/').replace(/^\/+/, '').replace(/^api\/uploads\//, '');
+    if (PERSONAL_UPLOAD_FOLDERS.has(rel.split('/')[0]) && !rel.includes('..')) out.add(rel);
+  }
+  return [...out];
+}
+
+/**
+ * Seal this user's personal uploads that are still plain (files from before KAN-113, or saved
+ * while encryption was off). Run when the user signs in or unlocks. Returns how many.
+ */
+export function sealPendingUploadsForUser(db: Awaited<ReturnType<typeof getDb>>, userId: string, key: Buffer): number {
+  if (!encryptionEnabled()) return 0;
+  const root = path.resolve(UPLOADS_DIR);
+  let n = 0;
+  for (const rel of personalUploadPaths(db, userId)) {
+    const abs = path.resolve(root, rel);
+    if (!abs.startsWith(root + path.sep) || !fs.existsSync(abs) || !fs.statSync(abs).isFile()) continue;
+    const buf = fs.readFileSync(abs);
+    if (isSealedUpload(buf)) continue;
+    const tmp = `${abs}.sealing`;
+    fs.writeFileSync(tmp, sealUpload(key, userId, rel, buf));
+    fs.renameSync(tmp, abs);
+    n++;
+  }
+  return n;
 }
 
 function storedPathMatches(stored: string | null | undefined, rel: string): boolean {
@@ -473,6 +547,23 @@ export function uploadsGate() {
     if (!abs.startsWith(root + path.sep) || !fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
       res.status(404).json({ error: 'Not found', code: 'NOT_FOUND' });
       return;
+    }
+    // KAN-113: a sealed personal file is opened with the owner's data key (only its owner gets
+    // here). Locked: 423, like any other encrypted data.
+    if (PERSONAL_UPLOAD_FOLDERS.has(rel.split('/')[0])) {
+      const buf = fs.readFileSync(abs);
+      if (isSealedUpload(buf)) {
+        const ctx = cryptoContext();
+        const plain = ctx?.key && ctx.userId === userId ? openUpload(ctx.key, userId, rel, buf) : null;
+        if (!plain) {
+          res.status(423).json({ error: 'Unlock your data to see this file.', code: 'DATA_LOCKED' });
+          return;
+        }
+        res.setHeader('Cache-Control', 'private, no-store');
+        res.type(path.extname(rel));
+        res.send(plain);
+        return;
+      }
     }
     res.setHeader('Cache-Control', 'private, max-age=3600');
     res.sendFile(rel, { root, dotfiles: 'deny' }, (err) => {
