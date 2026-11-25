@@ -6,6 +6,7 @@
 import type { Request, Response } from 'express';
 import { getDb, run } from '../db/index.ts';
 import { encryptPendingForUser } from '../security/fieldCrypto.ts';
+import { sealPendingUploadsForUser } from '../lib/uploads.ts';
 import { createSession, parseCookieHeader, sessionCookieHeader } from './sessions.ts';
 import { TRUSTED_DEVICE_COOKIE, parseTrustedCookie, trustedDeviceIdFor } from './twoFactor.ts';
 import { deviceLabel } from './deviceLabel.ts';
@@ -62,6 +63,7 @@ export async function startSession(
     // KAN-112: migrate this account's plain notes now it's unlocked.
     try {
       encryptPendingForUser(db, userId, opts.dataKey, run);
+      sealPendingUploadsForUser(db, userId, opts.dataKey); // KAN-113: personal files too
     } catch {
       /* next change or sign-in tries again */
     }
